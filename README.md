@@ -1,5 +1,25 @@
 # Paradox Localization Translator v0.6.3
 
+
+## v0.6.6: 自動生成ファイルの保存先を統一
+
+アプリが自動生成するデータをすべて **`Paradox Localization Translator`** フォルダにまとめます。既定位置は `Documents/Paradox Localization Translator` です。
+
+```text
+Paradox Localization Translator/
+├── 翻訳結果/
+├── キャッシュ/
+├── バックアップ/
+└── 設定/
+    ├── session.json
+    ├── glossary.json
+    ├── model_stats.json
+    ├── model_profiles.json
+    └── steam_library_roots.json
+```
+
+GUIの **設定** タブから保存場所を変更できます。別ドライブ・外付けSSD・任意フォルダを選択可能で、既存データを新しい場所へコピーしてから切り替えることもできます。
+
 Paradox Interactive系ゲームのローカライズYAMLを、ローカルLLMまたはクラウドLLM APIで日本語化・修復・QAするGUIアプリです。
 
 ## 対応LLMプロバイダ
@@ -240,7 +260,7 @@ Pythonを利用者側へインストールする必要はありません。
 
 Europa Universalis IV と Imperator: Rome は日本語非対応タイトルのため、自動検出対象には含めません。
 
-## v0.6.5: 別ドライブ・外付けSSDのSteamライブラリ検出
+## v0.6.6: 別ドライブ・外付けSSDのSteamライブラリ検出
 
 ゲームやSteamライブラリがOSの標準ドライブ以外にある場合にもMod場所を自動検出できるようにしました。
 
