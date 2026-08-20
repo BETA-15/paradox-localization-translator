@@ -34,7 +34,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.9.9"
+APP_VERSION = "0.10.1"
 
 
 def _app_container_dir() -> Path:
@@ -261,6 +261,8 @@ class App(BaseTk):
         self.progress_text = tk.StringVar(value="待機中")
         self.review_src_var = tk.StringVar()
         self.review_dst_var = tk.StringVar()
+        self.review_src_display_var = tk.StringVar()
+        self.review_dst_display_var = tk.StringVar()
         self.qa_summary_var = tk.StringVar(value="QA未実行")
         self.review_source_lang = "english"
 
@@ -277,6 +279,8 @@ class App(BaseTk):
         # Difference inspector / translation search
         self.diff_src_var = tk.StringVar(value="")
         self.diff_dst_var = tk.StringVar(value="")
+        self.diff_src_display_var = tk.StringVar(value="")
+        self.diff_dst_display_var = tk.StringVar(value="")
         self.diff_summary_var = tk.StringVar(value="差分未調査")
         self.diff_source_entries = {}
         self.diff_target_entries = {}
@@ -284,7 +288,8 @@ class App(BaseTk):
         self.diff_row_by_key = {}
         self.diff_controller: core.TranslationController | None = None
         self.diff_source_lang = "english"
-        self.search_path_var = tk.StringVar(value="")
+        self.search_path_var = tk.StringVar(value="")  # legacy/internal compatibility; search is now game-scoped
+        self.search_game_var = tk.StringVar(value="Crusader Kings III")
         self.search_query_var = tk.StringVar(value="")
         self.search_summary_var = tk.StringVar(value="検索待機中")
         self.search_result_map = {}
@@ -326,6 +331,9 @@ class App(BaseTk):
             threading.excepthook = self._thread_excepthook
 
         self._build_ui()
+        for actual, display in ((self.review_src_var,self.review_src_display_var),(self.review_dst_var,self.review_dst_display_var),(self.diff_src_var,self.diff_src_display_var),(self.diff_dst_var,self.diff_dst_display_var)):
+            actual.trace_add("write", lambda *_args, a=actual, d=display: d.set(self._localization_display_path(a.get())))
+            display.set(self._localization_display_path(actual.get()))
         self.after(100, self._poll_events)
         self.after(300, self.refresh_models)
         self.after(450, self.refresh_monitor_models)
@@ -707,7 +715,12 @@ class App(BaseTk):
         if not hasattr(self,"chinese_queue_tree"): return
         for x in self.chinese_queue_tree.get_children(): self.chinese_queue_tree.delete(x)
         for i,item in enumerate(self.chinese_queue_items):
-            self.chinese_queue_tree.insert("","end",iid=f"zh_{i}",values=(item.get("mod_name",Path(item.get("input","")).name),item.get("input",""),item.get("output",""),item.get("status","待機")))
+            self.chinese_queue_tree.insert("","end",iid=f"zh_{i}",values=(
+                item.get("mod_name",Path(item.get("input","")).name),
+                self._queue_display_path(item.get("input","")),
+                self._queue_display_path(item.get("output","")),
+                item.get("status","待機")
+            ))
 
     def _append_chinese_queue(self, path, mod_name=""):
         path=Path(path); ok,msg=self._validate_chinese_input(path)
@@ -948,6 +961,52 @@ class App(BaseTk):
         # 旧内部呼び出しとの互換用。中国語基準翻訳は常にキャッシュを保存して安全に中断する。
         self.save_and_stop_chinese_translation()
 
+    def _localization_display_path(self, value):
+        """Return only the localization language folder and the path below it for UI display."""
+        if not value:
+            return ""
+        try:
+            p = Path(value)
+            parts = list(p.parts)
+            language_names = {"english", "japanese", "simp_chinese", "korean", "french", "german", "spanish", "russian"}
+            for i, part in enumerate(parts):
+                if part.lower() in language_names:
+                    return str(Path(*parts[i:]))
+            # Some mods keep files directly below localization; showing only the filename is clearer than a full system path.
+            return p.name
+        except Exception:
+            return str(value)
+
+    def _queue_display_path(self, value):
+        """Short path representation for translation queue tables; full paths remain stored internally."""
+        if not value:
+            return ""
+        try:
+            p = Path(value)
+            parts = list(p.parts)
+            language_names = {"english", "japanese", "simp_chinese", "korean", "french", "german", "spanish", "russian"}
+            for i, part in enumerate(parts):
+                if part.lower() in language_names:
+                    return str(Path(*parts[i:]))
+
+            # Generated outputs are most useful relative to the app's data/output roots.
+            for root in (OUTPUT_ROOT, DATA_ROOT):
+                try:
+                    rel = p.relative_to(root)
+                    if str(rel) not in ("", "."):
+                        return str(rel)
+                except Exception:
+                    pass
+
+            # For a localization directory retain its parent Mod name so multiple entries are distinguishable.
+            if p.name.lower() == "localization" and p.parent.name:
+                return str(Path(p.parent.name) / p.name)
+            if p.is_dir():
+                return p.name or str(p)
+            return p.name
+        except Exception:
+            return str(value)
+
     def _collect_qa_diff_pairs(self, source_root, target_root, source_langs=("english", "simp_chinese")):
         """Return source/Japanese YAML pairs for QA/diff import buttons."""
         source_root = Path(source_root)
@@ -1052,7 +1111,7 @@ class App(BaseTk):
         sy.pack(side="right", fill="y")
         labels = {"english":"英語", "simp_chinese":"簡体字中国語"}
         for i, pair in enumerate(pairs):
-            tree.insert("", "end", iid=str(i), values=(labels.get(pair["lang"], pair["lang"]), str(pair["source"]), str(pair["target"])))
+            tree.insert("", "end", iid=str(i), values=(labels.get(pair["lang"], pair["lang"]), self._localization_display_path(pair["source"]), self._localization_display_path(pair["target"])))
         tree.selection_set("0"); tree.focus("0")
 
         buttons = ttk.Frame(win, padding=(10,0,10,10)); buttons.pack(fill="x")
@@ -1126,11 +1185,11 @@ class App(BaseTk):
         pf=ttk.LabelFrame(t,text="原文 / 訳文",padding=8); pf.pack(fill="x")
         pf.columnconfigure(1,weight=1)
         ttk.Label(pf,text="原文").grid(row=0,column=0,sticky="w")
-        self.review_src_entry=ttk.Entry(pf,textvariable=self.review_src_var)
+        self.review_src_entry=ttk.Entry(pf,textvariable=self.review_src_display_var,state="readonly")
         self.review_src_entry.grid(row=0,column=1,sticky="ew",padx=6)
         ttk.Button(pf,text="選択",command=lambda:self.pick_review_file(self.review_src_var)).grid(row=0,column=2)
         ttk.Label(pf,text="訳文").grid(row=1,column=0,sticky="w",pady=(5,0))
-        self.review_dst_entry=ttk.Entry(pf,textvariable=self.review_dst_var)
+        self.review_dst_entry=ttk.Entry(pf,textvariable=self.review_dst_display_var,state="readonly")
         self.review_dst_entry.grid(row=1,column=1,sticky="ew",padx=6,pady=(5,0))
         ttk.Button(pf,text="選択",command=lambda:self.pick_review_file(self.review_dst_var)).grid(row=1,column=2,pady=(5,0))
         ttk.Button(pf,text="比較を読み込む",command=self.load_review).grid(row=0,column=3,rowspan=2,padx=(8,0))
@@ -1178,11 +1237,11 @@ class App(BaseTk):
         pf = ttk.LabelFrame(t, text="原文（英語 / 簡体字中国語） / 日本語ファイル", padding=8); pf.pack(fill="x")
         pf.columnconfigure(1, weight=1)
         ttk.Label(pf, text="原文（英語 / 中国語）").grid(row=0, column=0, sticky="w")
-        self.diff_src_entry=ttk.Entry(pf, textvariable=self.diff_src_var)
+        self.diff_src_entry=ttk.Entry(pf, textvariable=self.diff_src_display_var, state="readonly")
         self.diff_src_entry.grid(row=0, column=1, sticky="ew", padx=6)
         ttk.Button(pf, text="選択", command=lambda:self.pick_review_file(self.diff_src_var)).grid(row=0, column=2)
         ttk.Label(pf, text="日本語").grid(row=1, column=0, sticky="w", pady=(5,0))
-        self.diff_dst_entry=ttk.Entry(pf, textvariable=self.diff_dst_var)
+        self.diff_dst_entry=ttk.Entry(pf, textvariable=self.diff_dst_display_var, state="readonly")
         self.diff_dst_entry.grid(row=1, column=1, sticky="ew", padx=6, pady=(5,0))
         ttk.Button(pf, text="選択", command=lambda:self.pick_review_file(self.diff_dst_var)).grid(row=1, column=2, pady=(5,0))
         ttk.Button(pf, text="差分を調査", command=self.load_diff_inspector).grid(row=0, column=3, rowspan=2, padx=(8,0))
@@ -1230,26 +1289,29 @@ class App(BaseTk):
 
     def _build_search_tab(self):
         t = self.tab_search
-        top = ttk.LabelFrame(t, text="翻訳ファイル検索", padding=8); top.pack(fill="x")
+        top = ttk.LabelFrame(t, text="ゲーム内の日本語翻訳を検索", padding=8); top.pack(fill="x")
         top.columnconfigure(1, weight=1)
-        ttk.Label(top, text="検索場所").grid(row=0, column=0, sticky="w")
-        ttk.Entry(top, textvariable=self.search_path_var).grid(row=0, column=1, sticky="ew", padx=6)
-        ttk.Button(top, text="フォルダ", command=self.pick_search_folder).grid(row=0, column=2)
-        ttk.Button(top, text="YAML", command=self.pick_search_file).grid(row=0, column=3, padx=(5,0))
-        ttk.Label(top, text="検索語").grid(row=1, column=0, sticky="w", pady=(4,0))
-        ent = ttk.Entry(top, textvariable=self.search_query_var); ent.grid(row=1, column=1, sticky="ew", padx=6, pady=(4,0)); ent.bind("<Return>", lambda e:self.run_translation_search())
-        ttk.Button(top, text="検索", command=self.run_translation_search).grid(row=1, column=2, columnspan=2, sticky="ew", pady=(4,0))
+        ttk.Label(top, text="対象ゲーム").grid(row=0, column=0, sticky="w")
+        self.search_game_combo = ttk.Combobox(top, textvariable=self.search_game_var, values=list(core.PARADOX_STEAM_GAMES), state="readonly", width=28)
+        self.search_game_combo.grid(row=0, column=1, sticky="w", padx=6)
+        ttk.Button(top, text="ゲーム / Mod場所を再検出", command=self.discover_mod_locations).grid(row=0, column=2, columnspan=2, sticky="e")
+        ttk.Label(top, text="検索語").grid(row=1, column=0, sticky="w", pady=(6,0))
+        ent = ttk.Entry(top, textvariable=self.search_query_var); ent.grid(row=1, column=1, sticky="ew", padx=6, pady=(6,0)); ent.bind("<Return>", lambda e:self.run_translation_search())
+        ttk.Button(top, text="検索", command=self.run_translation_search).grid(row=1, column=2, sticky="ew", pady=(6,0))
+        ttk.Button(top, text="結果を消去", command=self.clear_translation_search_results).grid(row=1, column=3, sticky="ew", padx=(6,0), pady=(6,0))
+        ttk.Label(top, text="検索語は必須です。選択したゲームの自動検出済みModにある l_japanese だけを検索します。", foreground="#666").grid(row=2, column=0, columnspan=4, sticky="w", pady=(6,0))
 
         ttk.Label(t, textvariable=self.search_summary_var).pack(anchor="w", pady=(7,4))
         paned = ttk.Panedwindow(t, orient="horizontal"); paned.pack(fill="both", expand=True)
         left = ttk.Frame(paned); right = ttk.Frame(paned); paned.add(left, weight=3); paned.add(right, weight=2)
-        self.search_tree = ttk.Treeview(left, columns=("file","key","value"), show="headings")
-        for c, txt, w in (("file","ファイル",190),("key","キー",260),("value","日本語訳",350)):
+        self.search_tree = ttk.Treeview(left, columns=("mod","file","key","value"), show="headings")
+        for c, txt, w in (("mod","Mod",210),("file","ファイル",180),("key","キー",250),("value","日本語訳",330)):
             self.search_tree.heading(c, text=txt); self.search_tree.column(c, width=w)
         self.search_tree.bind("<<TreeviewSelect>>", self.on_search_select)
         self._enable_tree_sort(self.search_tree)
-        ys = ttk.Scrollbar(left, command=self.search_tree.yview); self.search_tree.configure(yscrollcommand=ys.set)
-        self.search_tree.pack(side="left", fill="both", expand=True); ys.pack(side="right", fill="y")
+        ys = ttk.Scrollbar(left, command=self.search_tree.yview); xs=ttk.Scrollbar(left,orient="horizontal",command=self.search_tree.xview)
+        self.search_tree.configure(yscrollcommand=ys.set,xscrollcommand=xs.set)
+        self.search_tree.pack(side="top", fill="both", expand=True); xs.pack(side="bottom",fill="x"); ys.pack(side="right", fill="y")
         self.search_selected_var = tk.StringVar(value="検索結果を選択してください")
         ttk.Label(right, textvariable=self.search_selected_var, wraplength=420).pack(fill="x", anchor="w")
         self.search_edit_text = tk.Text(right, wrap="word"); self.search_edit_text.pack(fill="both", expand=True, pady=(6,6))
@@ -3730,7 +3792,11 @@ Mod更新後だけ追加翻訳:
     def _refresh_queue_tree(self):
         for x in self.queue_tree.get_children(): self.queue_tree.delete(x)
         for i,item in enumerate(self.queue_items):
-            self.queue_tree.insert("", "end", iid=str(i), values=(item["input"],item["output"],item["status"]))
+            self.queue_tree.insert("", "end", iid=str(i), values=(
+                self._queue_display_path(item.get("input", "")),
+                self._queue_display_path(item.get("output", "")),
+                item.get("status", "")
+            ))
 
     def remove_queue(self):
         sels=sorted((int(x) for x in self.queue_tree.selection()),reverse=True)
@@ -4105,57 +4171,105 @@ Mod更新後だけ追加翻訳:
         threading.Thread(target=work, daemon=True).start()
 
     def pick_search_folder(self):
-        p = filedialog.askdirectory()
-        if p: self.search_path_var.set(p)
+        # Legacy compatibility: translation search is now game-scoped.
+        messagebox.showinfo(APP_NAME, "翻訳検索はゲーム単位の検索に変更されました。対象ゲームを選んで検索してください。")
 
     def pick_search_file(self):
-        p = filedialog.askopenfilename(filetypes=[("Paradox YAML","*.yml"),("All","*")])
-        if p: self.search_path_var.set(p)
+        messagebox.showinfo(APP_NAME, "翻訳検索はゲーム単位の検索に変更されました。個別YAMLはQA / 比較編集または差分調査から選択できます。")
+
+    def clear_translation_search_results(self):
+        if hasattr(self, "search_tree"):
+            for iid in self.search_tree.get_children():
+                self.search_tree.delete(iid)
+        self.search_result_map = {}
+        self.search_summary_var.set("検索待機中")
+        if hasattr(self, "search_edit_text"):
+            self.search_edit_text.delete("1.0", "end")
+        if hasattr(self, "search_selected_var"):
+            self.search_selected_var.set("検索結果を選択してください")
+
+    def _translation_search_mod_roots_for_game(self, game):
+        roots = []
+        seen = set()
+        for row in self.detected_mod_locations:
+            if row.get("game") != game:
+                continue
+            location = Path(row.get("path", ""))
+            if not location.exists():
+                continue
+            try:
+                candidates = core.find_mod_roots(location)
+            except Exception:
+                candidates = []
+            for root in candidates:
+                key = str(Path(root).resolve())
+                if key not in seen:
+                    seen.add(key); roots.append(Path(root))
+        return roots
 
     def run_translation_search(self):
-        root = Path(self.search_path_var.get())
-        if not root.exists():
-            messagebox.showerror(APP_NAME, "検索するファイルまたはフォルダを選択してください。")
+        game = self.search_game_var.get().strip()
+        q = self.search_query_var.get().strip().casefold()
+        if not game:
+            messagebox.showerror(APP_NAME, "検索するゲームを選択してください。")
             return
-        q = self.search_query_var.get().strip().lower()
-        files = [root] if root.is_file() else core.gather_yml_files(root)
+        if not q:
+            messagebox.showinfo(APP_NAME, "全件列挙を防ぐため、検索語を入力してください。")
+            return
+        roots = self._translation_search_mod_roots_for_game(game)
+        if not roots:
+            messagebox.showinfo(APP_NAME, f"{game} のMod場所がまだ検出されていません。［ゲーム / Mod場所を再検出］を実行してから再度検索してください。")
+            return
         for iid in self.search_tree.get_children(): self.search_tree.delete(iid)
         self.search_result_map = {}
         count = 0
-        for f in files:
+        scanned_mods = 0
+        for mod_root in roots:
+            loc = core.mod_localization_root(mod_root)
+            if not loc:
+                continue
+            scanned_mods += 1
+            mod_name = core.detect_mod_name(mod_root)
             try:
-                lang, entries, _ = core.parse_localization_file(f)
+                files = core.gather_yml_files(loc)
             except Exception:
                 continue
-            if lang != "japanese": continue
-            for key, value in entries.items():
-                if q and q not in key.lower() and q not in value.lower() and q not in f.name.lower():
+            for f in files:
+                try:
+                    lang, entries, _ = core.parse_localization_file(f)
+                except Exception:
                     continue
-                iid = f"r{count}"
-                self.search_result_map[iid] = (f, key, value)
-                self.search_tree.insert("", "end", iid=iid, values=(f.name, key, value[:180]))
-                count += 1
-        self.search_summary_var.set(f"検索結果: {count}件")
+                if lang != "japanese":
+                    continue
+                display_file = self._localization_display_path(f)
+                for key, value in entries.items():
+                    if q not in key.casefold() and q not in value.casefold() and q not in f.name.casefold() and q not in mod_name.casefold():
+                        continue
+                    iid = f"r{count}"
+                    self.search_result_map[iid] = (f, key, value, mod_name)
+                    self.search_tree.insert("", "end", iid=iid, values=(mod_name, display_file, key, value[:180]))
+                    count += 1
+        self.search_summary_var.set(f"{game}: {scanned_mods} Modを検索 / {count}件一致")
 
     def on_search_select(self, _=None):
         sel = self.search_tree.selection()
         if not sel: return
-        f, key, value = self.search_result_map.get(sel[0], (None,"",""))
+        f, key, value, mod_name = self.search_result_map.get(sel[0], (None,"","", ""))
         if not f: return
-        self.search_selected_var.set(f"{f} / {key}")
+        self.search_selected_var.set(f"{mod_name} / {self._localization_display_path(f)} / {key}")
         self.search_edit_text.delete("1.0", "end"); self.search_edit_text.insert("1.0", value)
 
     def save_search_value(self):
         sel = self.search_tree.selection()
         if not sel: return
-        f, key, _ = self.search_result_map.get(sel[0], (None,"",""))
+        f, key, _, mod_name = self.search_result_map.get(sel[0], (None,"","", ""))
         if not f: return
         value = self.search_edit_text.get("1.0", "end-1c")
         try:
             if not core.update_localization_value(Path(f), key, value):
                 raise RuntimeError("対象キーをファイル内で更新できませんでした")
-            self.search_result_map[sel[0]] = (f, key, value)
-            self.search_tree.item(sel[0], values=(Path(f).name, key, value[:180]))
+            self.search_result_map[sel[0]] = (f, key, value, mod_name)
+            self.search_tree.item(sel[0], values=(mod_name, self._localization_display_path(f), key, value[:180]))
             self.search_summary_var.set(f"保存しました: {key}")
         except Exception as e:
             record_error("翻訳検索から直接訂正", e); messagebox.showerror(APP_NAME, str(e))
