@@ -13,6 +13,7 @@ import subprocess
 import sys
 import threading
 import urllib.request
+from urllib.parse import urlparse, unquote
 import uuid
 import shutil
 import re
@@ -33,7 +34,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.7.6"
+APP_VERSION = "0.7.7"
 
 
 def _app_container_dir() -> Path:
@@ -222,6 +223,7 @@ class App(BaseTk):
         self.monitor_llm_busy_since = None
         self.monitor_llm_active_ids = set()
         self.monitor_current_mod = ""
+        self.dnd_status_var = tk.StringVar(value="ドラッグ＆ドロップ: 初期化確認中")
         self.translation_llm_last_response = ""
         self.monitor_llm_last_response = ""
         self.translation_llm_response_meta = "応答待機中"
@@ -408,7 +410,8 @@ class App(BaseTk):
         self.profile_combo=ttk.Combobox(settings,textvariable=self.profile_var,state="readonly")
         self.profile_combo.grid(row=1,column=3,sticky="ew",padx=(5,5),pady=(8,0))
         ttk.Button(settings,text="適用",command=self.apply_selected_profile).grid(row=1,column=4,pady=(8,0))
-        ttk.Button(settings,text="現在設定を保存",command=self.save_current_profile).grid(row=1,column=5,columnspan=2,sticky="e",pady=(8,0))
+        ttk.Button(settings,text="削除",command=self.delete_selected_profile_combo).grid(row=1,column=5,pady=(8,0))
+        ttk.Button(settings,text="現在設定を保存",command=self.save_current_profile).grid(row=1,column=6,sticky="e",pady=(8,0))
 
         ttk.Checkbutton(settings,text="既存日本語の未翻訳を修復",variable=self.repair_var).grid(row=2,column=0,columnspan=2,sticky="w",pady=(8,0))
         ttk.Checkbutton(settings,text="英語＋簡体字中国語を併用",variable=self.dual_var).grid(row=2,column=2,columnspan=2,sticky="w",pady=(8,0))
@@ -453,7 +456,7 @@ class App(BaseTk):
         ttk.Button(toolbar,text="セッション読込",command=self.restore_session).pack(side="right")
         ttk.Button(toolbar,text="セッション保存",command=self.save_session).pack(side="right",padx=(0,6))
 
-        self.drop_hint = ttk.Label(qf, text="ここへYAMLファイル / localizationフォルダをドラッグ＆ドロップできます" if DND_AVAILABLE else "ドラッグ＆ドロップ機能を利用できません（tkinterdnd2未読込）", foreground="#666")
+        self.drop_hint = ttk.Label(qf, textvariable=self.dnd_status_var, foreground="#666")
         self.drop_hint.pack(fill="x", pady=(0,6))
 
         cols=("input","output","status")
@@ -466,12 +469,13 @@ class App(BaseTk):
         self.queue_tree.pack(side="left",fill="both",expand=True); ys.pack(side="right",fill="y")
         if DND_AVAILABLE:
             try:
-                self.queue_tree.drop_target_register(DND_FILES)
-                self.queue_tree.dnd_bind("<<Drop>>", self.on_drop_paths)
-                self.drop_hint.drop_target_register(DND_FILES)
-                self.drop_hint.dnd_bind("<<Drop>>", self.on_drop_paths)
+                self._register_dnd_widgets([self, qf, self.queue_tree, self.drop_hint], self.on_drop_paths)
+                self.dnd_status_var.set("ドラッグ＆ドロップ有効 — YAMLファイル / localizationフォルダをここへドロップできます")
             except Exception as e:
-                self.drop_hint.config(text=f"ドラッグ＆ドロップ初期化失敗: {e}")
+                self.dnd_status_var.set(f"ドラッグ＆ドロップ初期化失敗: {e}")
+                self._record_error("DnD初期化", e)
+        else:
+            self.dnd_status_var.set("ドラッグ＆ドロップ無効 — TkDnDを読み込めません。『追加』ボタンは利用できます")
 
         actions=ttk.Frame(t); actions.pack(fill="x",pady=(10,0))
         self.start_btn=ttk.Button(actions,text="翻訳開始",command=self.start_queue); self.start_btn.pack(side="left")
@@ -494,24 +498,30 @@ class App(BaseTk):
         pf=ttk.LabelFrame(t,text="原文 / 訳文",padding=8); pf.pack(fill="x")
         pf.columnconfigure(1,weight=1)
         ttk.Label(pf,text="原文").grid(row=0,column=0,sticky="w")
-        ttk.Entry(pf,textvariable=self.review_src_var).grid(row=0,column=1,sticky="ew",padx=6)
+        self.review_src_entry=ttk.Entry(pf,textvariable=self.review_src_var)
+        self.review_src_entry.grid(row=0,column=1,sticky="ew",padx=6)
         ttk.Button(pf,text="選択",command=lambda:self.pick_review_file(self.review_src_var)).grid(row=0,column=2)
         ttk.Label(pf,text="訳文").grid(row=1,column=0,sticky="w",pady=(5,0))
-        ttk.Entry(pf,textvariable=self.review_dst_var).grid(row=1,column=1,sticky="ew",padx=6,pady=(5,0))
+        self.review_dst_entry=ttk.Entry(pf,textvariable=self.review_dst_var)
+        self.review_dst_entry.grid(row=1,column=1,sticky="ew",padx=6,pady=(5,0))
         ttk.Button(pf,text="選択",command=lambda:self.pick_review_file(self.review_dst_var)).grid(row=1,column=2,pady=(5,0))
         ttk.Button(pf,text="比較を読み込む",command=self.load_review).grid(row=0,column=3,rowspan=2,padx=(8,0))
+        self.review_drop_hint=ttk.Label(pf,text="英語/原文YAMLと日本語YAMLをここへドラッグ＆ドロップできます" if DND_AVAILABLE else "ドラッグ＆ドロップはこのビルドでは利用できません",foreground="#555")
+        self.review_drop_hint.grid(row=2,column=0,columnspan=4,sticky="ew",pady=(7,0))
 
         qa=ttk.Frame(t); qa.pack(fill="x",pady=(8,5))
         ttk.Button(qa,text="QA再実行",command=self.run_review_qa).pack(side="left")
         ttk.Button(qa,text="警告だけ表示",command=lambda:self.populate_review(True)).pack(side="left",padx=(6,0))
         ttk.Button(qa,text="全キー表示",command=lambda:self.populate_review(False)).pack(side="left",padx=(6,0))
+        ttk.Label(qa,text="一覧は 重要度 → 問題種別 → キー の階層で自動整理されます",foreground="#666").pack(side="left",padx=(12,0))
         ttk.Label(qa,textvariable=self.qa_summary_var).pack(side="right")
 
         paned=ttk.Panedwindow(t,orient="horizontal"); paned.pack(fill="both",expand=True)
         left=ttk.Frame(paned); right=ttk.Frame(paned); paned.add(left,weight=2); paned.add(right,weight=3)
-        self.review_tree=ttk.Treeview(left,columns=("level","type","key"),show="headings")
-        for c,txt,w in (("level","重要度",65),("type","種別",100),("key","キー",330)):
-            self.review_tree.heading(c,text=txt); self.review_tree.column(c,width=w)
+        self.review_tree=ttk.Treeview(left,columns=("type","key"),show="tree headings")
+        self.review_tree.heading("#0",text="重要度 / 分類"); self.review_tree.column("#0",width=150)
+        self.review_tree.heading("type",text="種別"); self.review_tree.column("type",width=130)
+        self.review_tree.heading("key",text="キー"); self.review_tree.column("key",width=300)
         self.review_tree.bind("<<TreeviewSelect>>",self.on_review_select)
         rys=ttk.Scrollbar(left,command=self.review_tree.yview); self.review_tree.configure(yscrollcommand=rys.set)
         self.review_tree.pack(side="left",fill="both",expand=True); rys.pack(side="right",fill="y")
@@ -526,29 +536,35 @@ class App(BaseTk):
         ttk.Button(eb,text="この訳を保存",command=self.save_review_value).pack(side="left")
         ttk.Button(eb,text="AIで誤字脱字校正",command=self.ai_proofread_selected).pack(side="left",padx=(6,0))
         ttk.Button(eb,text="原文に戻す",command=self.restore_source_to_target).pack(side="left",padx=(6,0))
+        self._register_dnd_widgets([pf,self.review_src_entry,self.review_dst_entry,self.review_drop_hint,self.review_tree,self.src_text,self.dst_text],self.on_review_drop_paths)
 
     def _build_diff_tab(self):
         t = self.tab_diff
         pf = ttk.LabelFrame(t, text="英語 / 日本語ファイル", padding=8); pf.pack(fill="x")
         pf.columnconfigure(1, weight=1)
         ttk.Label(pf, text="英語・原文").grid(row=0, column=0, sticky="w")
-        ttk.Entry(pf, textvariable=self.diff_src_var).grid(row=0, column=1, sticky="ew", padx=6)
+        self.diff_src_entry=ttk.Entry(pf, textvariable=self.diff_src_var)
+        self.diff_src_entry.grid(row=0, column=1, sticky="ew", padx=6)
         ttk.Button(pf, text="選択", command=lambda:self.pick_review_file(self.diff_src_var)).grid(row=0, column=2)
         ttk.Label(pf, text="日本語").grid(row=1, column=0, sticky="w", pady=(5,0))
-        ttk.Entry(pf, textvariable=self.diff_dst_var).grid(row=1, column=1, sticky="ew", padx=6, pady=(5,0))
+        self.diff_dst_entry=ttk.Entry(pf, textvariable=self.diff_dst_var)
+        self.diff_dst_entry.grid(row=1, column=1, sticky="ew", padx=6, pady=(5,0))
         ttk.Button(pf, text="選択", command=lambda:self.pick_review_file(self.diff_dst_var)).grid(row=1, column=2, pady=(5,0))
         ttk.Button(pf, text="差分を調査", command=self.load_diff_inspector).grid(row=0, column=3, rowspan=2, padx=(8,0))
+        self.diff_drop_hint=ttk.Label(pf,text="英語/原文YAMLと日本語YAMLをここへドラッグ＆ドロップできます" if DND_AVAILABLE else "ドラッグ＆ドロップはこのビルドでは利用できません",foreground="#555")
+        self.diff_drop_hint.grid(row=2,column=0,columnspan=4,sticky="ew",pady=(7,0))
 
         bar = ttk.Frame(t); bar.pack(fill="x", pady=(8,5))
         ttk.Button(bar, text="選択項目を翻訳", command=lambda:self.translate_diff_items(False)).pack(side="left")
         ttk.Button(bar, text="欠落・未翻訳をまとめて翻訳", command=lambda:self.translate_diff_items(True)).pack(side="left", padx=(6,0))
         ttk.Button(bar, text="選択訳を保存", command=self.save_diff_value).pack(side="left", padx=(6,0))
+        ttk.Label(bar,text="一覧は 状態 → キー の階層で自動整理されます",foreground="#666").pack(side="left",padx=(12,0))
         ttk.Label(bar, textvariable=self.diff_summary_var).pack(side="right")
 
         paned = ttk.Panedwindow(t, orient="horizontal"); paned.pack(fill="both", expand=True)
         left = ttk.Frame(paned); right = ttk.Frame(paned); paned.add(left, weight=2); paned.add(right, weight=3)
-        self.diff_tree = ttk.Treeview(left, columns=("status","key"), show="headings", selectmode="extended")
-        self.diff_tree.heading("status", text="状態"); self.diff_tree.column("status", width=110)
+        self.diff_tree = ttk.Treeview(left, columns=("key",), show="tree headings", selectmode="extended")
+        self.diff_tree.heading("#0", text="状態"); self.diff_tree.column("#0", width=150)
         self.diff_tree.heading("key", text="キー"); self.diff_tree.column("key", width=360)
         self.diff_tree.tag_configure("missing", background="#fee2e2")
         self.diff_tree.tag_configure("untranslated", background="#fef3c7")
@@ -565,6 +581,7 @@ class App(BaseTk):
         self.diff_dst_text = tk.Text(dstf, wrap="word"); self.diff_dst_text.pack(fill="both", expand=True, padx=(4,0), pady=(2,0))
         self.diff_message_var = tk.StringVar(value="")
         ttk.Label(right, textvariable=self.diff_message_var, wraplength=650).pack(fill="x", pady=(6,0))
+        self._register_dnd_widgets([pf,self.diff_src_entry,self.diff_dst_entry,self.diff_drop_hint,self.diff_tree,self.diff_src_text,self.diff_dst_text],self.on_diff_drop_paths)
 
     def _build_search_tab(self):
         t = self.tab_search
@@ -2043,6 +2060,18 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
         if self.profile_var.get() in names: self.profile_var.set("")
         core.save_json(PROFILES_PATH,self.model_profiles); self.refresh_profiles_ui()
 
+    def delete_selected_profile_combo(self):
+        name=self.profile_var.get().strip()
+        if not name:
+            messagebox.showinfo(APP_NAME,"削除するモデルプロファイルを選択してください。")
+            return
+        if not messagebox.askyesno(APP_NAME,f"モデルプロファイル『{name}』を削除しますか？"):
+            return
+        self.model_profiles.pop(name,None)
+        self.profile_var.set("")
+        core.save_json(PROFILES_PATH,self.model_profiles)
+        self.refresh_profiles_ui()
+
     # ---------------- queue ----------------
     def _default_output(self,p:Path):
         root = _automatic_output_root()
@@ -2199,15 +2228,115 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
             messagebox.showinfo(APP_NAME, "前回翻訳時から原文の差分はありません。")
         self._refresh_queue_tree()
 
-    def on_drop_paths(self, event):
+    def _register_dnd_widgets(self, widgets, handler):
+        """Register widgets as native file-drop targets and surface failures."""
+        if not DND_AVAILABLE:
+            return False
+        ok = False
+        last_error = None
+        for widget in widgets:
+            try:
+                widget.drop_target_register(DND_FILES)
+                widget.dnd_bind("<<Drop>>", handler)
+                ok = True
+            except Exception as e:
+                last_error = e
+        if not ok and last_error is not None:
+            raise last_error
+        return ok
+
+    def _normalize_drop_path(self, raw):
+        """Normalize TkDND paths, including macOS file:// URLs and Tcl braces."""
+        text = str(raw).strip().strip('\x00')
+        if len(text) >= 2 and text[0] == '{' and text[-1] == '}':
+            text = text[1:-1]
+        if text.lower().startswith('file://'):
+            parsed = urlparse(text)
+            text = unquote(parsed.path or '')
+            # Windows file URLs look like /C:/path.
+            if os.name == 'nt' and re.match(r'^/[A-Za-z]:/', text):
+                text = text[1:]
+        return Path(text).expanduser()
+
+    def _raw_drop_paths(self, event):
         try:
             raw_paths = list(self.tk.splitlist(event.data))
         except Exception:
-            raw_paths = [event.data]
+            raw_paths = [getattr(event, 'data', '')]
+        out=[]
+        for raw in raw_paths:
+            if not str(raw).strip():
+                continue
+            p=self._normalize_drop_path(raw)
+            out.append(p)
+        return out
+
+    def _extract_drop_paths(self, event):
+        files=[]
+        for p in self._raw_drop_paths(event):
+            if p.is_dir():
+                try:
+                    files.extend(core.gather_yml_files(p)[:2000])
+                except Exception as e:
+                    self._record_error("DnDフォルダ解析", e)
+            elif p.is_file() and p.suffix.lower() in {".yml",".yaml"}:
+                files.append(p)
+        # Preserve order while removing duplicates.
+        seen=set(); out=[]
+        for f in files:
+            try:
+                k=str(f.resolve())
+            except Exception:
+                k=str(f)
+            if k not in seen:
+                seen.add(k); out.append(f)
+        return out
+
+    def _classify_drop_pair(self, files):
+        src=None; dst=None
+        for f in files:
+            try:
+                lang,_,_=core.parse_localization_file(f)
+            except Exception:
+                lang=""
+            if lang == "japanese" and dst is None:
+                dst=f
+            elif lang != "japanese" and src is None:
+                src=f
+        if len(files) == 1 and src is None and dst is None:
+            src=files[0]
+        return src,dst
+
+    def on_review_drop_paths(self,event):
+        files=self._extract_drop_paths(event)
+        src,dst=self._classify_drop_pair(files)
+        if src: self.review_src_var.set(str(src))
+        if dst: self.review_dst_var.set(str(dst))
+        if dst:
+            self.load_review()
+        elif files:
+            self.qa_summary_var.set("原文を受け取りました。日本語YAMLもドロップしてください。")
+        else:
+            messagebox.showinfo(APP_NAME,"QAにはYAMLファイル、またはYAMLを含むフォルダをドロップしてください。")
+        return event.action if hasattr(event,"action") else None
+
+    def on_diff_drop_paths(self,event):
+        files=self._extract_drop_paths(event)
+        src,dst=self._classify_drop_pair(files)
+        if src: self.diff_src_var.set(str(src))
+        if dst: self.diff_dst_var.set(str(dst))
+        if src and dst:
+            self.load_diff_inspector()
+        elif files:
+            self.diff_summary_var.set("片方を受け取りました。英語/原文と日本語の両方をドロップしてください。")
+        else:
+            messagebox.showinfo(APP_NAME,"差分調査にはYAMLファイル、またはYAMLを含むフォルダをドロップしてください。")
+        return event.action if hasattr(event,"action") else None
+
+    def on_drop_paths(self, event):
         added = 0
         ignored = []
-        for raw in raw_paths:
-            p = Path(raw)
+        for p in self._raw_drop_paths(event):
             if p.is_dir():
                 self._append_queue(p); added += 1
             elif p.is_file() and p.suffix.lower() in {".yml", ".yaml"}:
@@ -2353,6 +2482,17 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
         self._clear_log(); self.progress["value"]=0
         self.llm_operation = "翻訳"
         self.controller=core.TranslationController(progress_callback=lambda x:self.events.put(("progress",x)), checkpoint_callback=self._checkpoint)
+        self.controller.update_runtime_settings(
+            provider=self.provider_var.get(), url=self.url_var.get().strip(), model=self.model_var.get().strip(),
+            api_key=self.api_key_var.get().strip(), preset=self.preset_var.get(),
+            batch_size=max(1,self.batch_var.get()), workers=max(1,self.workers_var.get()),
+            glossary_path=self.glossary_path_var.get().strip() or None, dual_source=self.dual_var.get())
+        self.translation_start_settings={
+            "provider":self.provider_var.get(), "url":self.url_var.get().strip(), "model":self.model_var.get().strip(),
+            "api_key":self.api_key_var.get().strip(), "preset":self.preset_var.get(),
+            "batch":max(1,self.batch_var.get()), "workers":max(1,self.workers_var.get()),
+            "glossary":self.glossary_path_var.get().strip() or None, "dual":self.dual_var.get(),
+            "repair":self.repair_var.get(), "autoqa":self.autoqa_var.get()}
         self.start_btn.config(state="disabled"); self.pause_btn.config(state="normal",text="一時停止"); self.stop_btn.config(state="normal")
         self.worker=threading.Thread(target=self._queue_worker,daemon=True); self.worker.start()
         self.save_session(active=True)
@@ -2365,12 +2505,14 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
                 item["status"]="翻訳中"; self.events.put(("queue_refresh",None))
                 self._checkpoint({"queue_index":i})
                 out=Path(item["output"]); cache_file=Path(self._ensure_item_cache(item))
+                st=getattr(self,"translation_start_settings",{})
                 result=core.run_translation(
-                    item["input"], item["output"], model=self.model_var.get().strip(), url=self.url_var.get().strip(),
-                    workers=max(1,self.workers_var.get()), batch_size=max(1,self.batch_var.get()), cache_path=cache_file,
-                    resume=True, verbose=True, include_target_files=self.repair_var.get(), controller=self.controller,
-                    glossary_path=self.glossary_path_var.get().strip() or None, preset=self.preset_var.get(),
-                    dual_source=self.dual_var.get(), auto_qa=self.autoqa_var.get(), provider=self.provider_var.get(), api_key=self.api_key_var.get().strip())
+                    item["input"], item["output"], model=st.get("model",self.model_var.get().strip()), url=st.get("url",self.url_var.get().strip()),
+                    workers=max(1,st.get("workers",self.workers_var.get())), batch_size=max(1,st.get("batch",self.batch_var.get())), cache_path=cache_file,
+                    resume=True, verbose=True, include_target_files=st.get("repair",self.repair_var.get()), controller=self.controller,
+                    glossary_path=st.get("glossary") or None, preset=st.get("preset",self.preset_var.get()),
+                    dual_source=st.get("dual",self.dual_var.get()), auto_qa=st.get("autoqa",self.autoqa_var.get()),
+                    provider=st.get("provider",self.provider_var.get()), api_key=st.get("api_key",self.api_key_var.get().strip()))
                 self._register_cache_job(item)
                 if result.get("interrupted"):
                     item["status"]="中断（再開可）"; self.events.put(("queue_refresh",None)); self.save_session(active=True); break
@@ -2463,34 +2605,51 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
             self.diff_rows = core.compare_localization_entries(self.diff_source_entries, self.diff_target_entries, source_lang)
             self.diff_row_by_key = {r["key"]: r for r in self.diff_rows}
             for iid in self.diff_tree.get_children(): self.diff_tree.delete(iid)
+            self.diff_tree_key_map={}
             labels = {"missing":"欠落", "untranslated":"未翻訳", "extra":"日本語のみ", "ok":"対応あり"}
             counts = {k:0 for k in labels}
+            parents={}
+            for status in ("missing","untranslated","extra","ok"):
+                parents[status]=self.diff_tree.insert("","end",iid=f"diff_group_{status}",text=labels[status],open=status!="ok",values=("",),tags=(status,))
+            n=0
             for row in self.diff_rows:
-                counts[row["status"]] = counts.get(row["status"], 0) + 1
-                self.diff_tree.insert("", "end", iid=row["key"], values=(labels.get(row["status"],row["status"]), row["key"]), tags=(row["status"],))
+                status=row["status"]
+                counts[status] = counts.get(status, 0) + 1
+                iid=f"diff_leaf_{n}"; n+=1
+                self.diff_tree.insert(parents[status], "end", iid=iid, text="", values=(row["key"],), tags=(status,))
+                self.diff_tree_key_map[iid]=row["key"]
             self.diff_summary_var.set(f"欠落 {counts['missing']} / 未翻訳 {counts['untranslated']} / 日本語のみ {counts['extra']} / 対応あり {counts['ok']}")
         except Exception as e:
             record_error("差分調査", e)
             messagebox.showerror(APP_NAME, str(e))
 
+    def _selected_diff_keys(self):
+        out=[]
+        for iid in self.diff_tree.selection():
+            key=getattr(self,"diff_tree_key_map",{}).get(iid)
+            if key: out.append(key)
+        return out
+
     def on_diff_select(self, _=None):
-        sel = self.diff_tree.selection()
-        if not sel: return
-        key = sel[0]
+        keys=self._selected_diff_keys()
+        if not keys: return
+        key=keys[0]
         row = self.diff_row_by_key.get(key, {})
         self.diff_src_text.delete("1.0", "end"); self.diff_src_text.insert("1.0", row.get("source", ""))
         self.diff_dst_text.delete("1.0", "end"); self.diff_dst_text.insert("1.0", row.get("target", ""))
         self.diff_message_var.set(row.get("message", ""))
 
     def save_diff_value(self):
-        sel = self.diff_tree.selection()
-        if not sel: return
-        key = sel[0]
+        keys=self._selected_diff_keys()
+        if not keys: return
+        key=keys[0]
         value = self.diff_dst_text.get("1.0", "end-1c")
         try:
             core.upsert_localization_values(Path(self.diff_dst_var.get()), {key:value})
             self.load_diff_inspector()
-            if self.diff_tree.exists(key): self.diff_tree.selection_set(key); self.diff_tree.see(key)
+            for iid,k in getattr(self,"diff_tree_key_map",{}).items():
+                if k==key and self.diff_tree.exists(iid):
+                    self.diff_tree.selection_set(iid); self.diff_tree.see(iid); break
         except Exception as e:
             record_error("差分訳保存", e); messagebox.showerror(APP_NAME, str(e))
 
@@ -2504,7 +2663,7 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
         if all_missing:
             keys = [r["key"] for r in self.diff_rows if r["status"] in ("missing","untranslated") and r.get("source")]
         else:
-            keys = [k for k in self.diff_tree.selection() if self.diff_row_by_key.get(k,{}).get("source")]
+            keys = [k for k in self._selected_diff_keys() if self.diff_row_by_key.get(k,{}).get("source")]
         if not keys:
             messagebox.showinfo(APP_NAME, "翻訳対象の欠落/未翻訳キーを選択してください。")
             return
@@ -2614,43 +2773,76 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
 
     def populate_review(self,warnings_only):
         for x in self.review_tree.get_children(): self.review_tree.delete(x)
+        self.review_tree_key_map={}
         keys=sorted(self.review_target_entries)
         if self.review_source_entries:
             keys=sorted(set(keys)|set(self.review_source_entries))
+
+        parents={}
+        type_parents={}
+        def ensure_parent(group,label):
+            if group not in parents:
+                parents[group]=self.review_tree.insert("","end",iid=f"qa_group_{group}",text=label,open=True,values=("",""))
+            return parents[group]
+        def ensure_type(group,typ):
+            k=(group,typ)
+            if k not in type_parents:
+                parent=ensure_parent(group,{"error":"エラー","warning":"警告","ok":"問題なし"}[group])
+                type_parents[k]=self.review_tree.insert(parent,"end",text=typ,open=True,values=(typ,""))
+            return type_parents[k]
+
+        leaf_no=0
         for key in keys:
             issues=self.review_issue_by_key.get(key,[])
-            if warnings_only and not issues: continue
-            level=""; typ=""
+            if warnings_only and not issues:
+                continue
             if issues:
-                level="ERROR" if any(i["severity"]=="error" for i in issues) else "WARN"
-                typ=",".join(sorted(set(i["type"] for i in issues)))
-            self.review_tree.insert("","end",iid=key,values=(level,typ,key))
+                group="error" if any(i["severity"]=="error" for i in issues) else "warning"
+                types=sorted(set(i["type"] for i in issues)) or ["その他"]
+                for typ in types:
+                    parent=ensure_type(group,typ)
+                    iid=f"qa_leaf_{leaf_no}"; leaf_no+=1
+                    self.review_tree.insert(parent,"end",iid=iid,text="",values=(typ,key))
+                    self.review_tree_key_map[iid]=key
+            else:
+                parent=ensure_parent("ok","問題なし")
+                iid=f"qa_leaf_{leaf_no}"; leaf_no+=1
+                self.review_tree.insert(parent,"end",iid=iid,text="",values=("",key))
+                self.review_tree_key_map[iid]=key
+
+    def _selected_review_key(self):
+        for iid in self.review_tree.selection():
+            key=getattr(self,"review_tree_key_map",{}).get(iid)
+            if key:
+                return key
+        return None
 
     def on_review_select(self,_=None):
-        sel=self.review_tree.selection()
-        if not sel: return
-        key=sel[0]
+        key=self._selected_review_key()
+        if not key: return
         self.src_text.delete("1.0","end"); self.src_text.insert("1.0",self.review_source_entries.get(key,""))
         self.dst_text.delete("1.0","end"); self.dst_text.insert("1.0",self.review_target_entries.get(key,""))
         self.issue_text.set(" / ".join(i["message"] for i in self.review_issue_by_key.get(key,[])))
 
     def save_review_value(self):
-        sel=self.review_tree.selection()
-        if not sel: return
-        key=sel[0]; value=self.dst_text.get("1.0","end-1c")
+        key=self._selected_review_key()
+        if not key: return
+        value=self.dst_text.get("1.0","end-1c")
         if core.update_localization_value(Path(self.review_dst_var.get()),key,value):
             self.review_target_entries[key]=value; self.run_review_qa();
-            if self.review_tree.exists(key): self.review_tree.selection_set(key)
+            for iid,k in getattr(self,"review_tree_key_map",{}).items():
+                if k==key and self.review_tree.exists(iid):
+                    self.review_tree.selection_set(iid); self.review_tree.see(iid); break
 
     def restore_source_to_target(self):
-        sel=self.review_tree.selection()
-        if sel:
-            self.dst_text.delete("1.0","end"); self.dst_text.insert("1.0",self.review_source_entries.get(sel[0],""))
+        key=self._selected_review_key()
+        if key:
+            self.dst_text.delete("1.0","end"); self.dst_text.insert("1.0",self.review_source_entries.get(key,""))
 
     def ai_proofread_selected(self):
-        sel=self.review_tree.selection()
-        if not sel: return
-        key=sel[0]; text=self.dst_text.get("1.0","end-1c"); src=self.review_source_entries.get(key,"")
+        key=self._selected_review_key()
+        if not key: return
+        text=self.dst_text.get("1.0","end-1c"); src=self.review_source_entries.get(key,"")
         self.issue_text.set("AI校正中…（上部のLLM動作表示から停止できます）")
         self.llm_operation = "AI誤字脱字校正"
         self.proofread_controller=core.TranslationController(progress_callback=lambda p:self.events.put(("proofread_progress",p)))
