@@ -34,7 +34,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.1"
+APP_VERSION = "0.11.3"
 
 
 def _app_container_dir() -> Path:
@@ -1381,7 +1381,9 @@ class App(BaseTk):
         import_menu.add_command(label="日本語YAMLファイルから取り込む",command=lambda:self.import_glossary_from_japanese_source("file"))
         import_menu.add_command(label="日本語化Mod / localizationフォルダから取り込む",command=lambda:self.import_glossary_from_japanese_source("folder"))
         ttk.Menubutton(gbar,text="日本語化ファイル / Modから取り込む",menu=import_menu).pack(side="left",padx=(6,0))
-        ttk.Label(generated,text="通常翻訳・中国語基準翻訳・QA・差分調査で作成した用語と、ゲーム本体や既存日本語化から取り込んだ用語を表示します。自動生成は各作業タブから実行します。",foreground="#666",wraplength=560,justify="left").pack(fill="x",anchor="w",pady=(0,6))
+        ttk.Label(generated,text="通常翻訳・中国語基準翻訳・QA・差分調査で作成した用語と、ゲーム本体や既存日本語化から取り込んだ用語を表示します。自動生成は各作業タブから実行します。",foreground="#666",wraplength=560,justify="left").pack(fill="x",anchor="w",pady=(0,4))
+        self.auto_glossary_drop_hint=ttk.Label(generated,text=("ドラッグ＆ドロップ対応 — 日本語YAML / 日本語化Mod / localizationフォルダ" if DND_AVAILABLE else "ドラッグ＆ドロップはこのビルドでは利用できません"),foreground="#555")
+        self.auto_glossary_drop_hint.pack(fill="x",anchor="w",pady=(0,6))
         self.auto_glossary_tree=ttk.Treeview(generated,columns=("src","dst","kind"),show="headings")
         for c,label,w in (("src","原語",250),("dst","日本語",280),("kind","由来",140)):
             self.auto_glossary_tree.heading(c,text=label); self.auto_glossary_tree.column(c,width=w,stretch=True)
@@ -1389,6 +1391,12 @@ class App(BaseTk):
         gy=ttk.Scrollbar(generated,orient="vertical",command=self.auto_glossary_tree.yview); gx=ttk.Scrollbar(generated,orient="horizontal",command=self.auto_glossary_tree.xview)
         self.auto_glossary_tree.configure(yscrollcommand=gy.set,xscrollcommand=gx.set)
         self.auto_glossary_tree.pack(fill="both",expand=True); gx.pack(fill="x")
+        if DND_AVAILABLE:
+            try:
+                self._register_dnd_widgets([generated,self.auto_glossary_drop_hint,self.auto_glossary_tree],self.on_glossary_import_drop_paths)
+            except Exception as exc:
+                self.auto_glossary_drop_hint.configure(text=f"ドラッグ＆ドロップ初期化失敗: {exc}")
+                record_error("用語集DnD初期化",exc)
         self.load_glossary_ui(silent=True)
 
     def _build_settings_tab(self):
@@ -1970,13 +1978,24 @@ Mod更新後だけ追加翻訳:
     def _build_monitor_tab(self):
         t = self.tab_monitor
 
-        # フルHDで縦方向に詰まりすぎないよう、監視設定と候補一覧を左右に分離する。
+        # 未翻訳監視は左右2ブロックを同幅にし、左ブロック全体は縦スクロール可能にする。
         body = ttk.Panedwindow(t, orient="horizontal")
         body.pack(fill="both", expand=True)
         left_outer, left, self.monitor_left_canvas, self.monitor_left_scrollbar = self._make_vertical_scroll_area(body)
         right = ttk.Frame(body)
-        body.add(left_outer, weight=2)
-        body.add(right, weight=5)
+        body.add(left_outer, weight=1)
+        body.add(right, weight=1)
+
+        def _balance_monitor_panes(event=None):
+            try:
+                total = max(body.winfo_width(), 200)
+                # 左右ほぼ同幅。少しだけ右へ余裕を持たせる。
+                body.sashpos(0, max(320, total // 2))
+            except Exception:
+                pass
+
+        body.bind("<Configure>", _balance_monitor_panes, add="+")
+        self.after_idle(_balance_monitor_panes)
 
         discovery = ttk.LabelFrame(left, text="ゲーム / Mod場所の自動検出", padding=8)
         discovery.pack(fill="x", pady=(0,8))
@@ -2130,7 +2149,7 @@ Mod更新後だけ追加翻訳:
         cols=("status","mod","gaps","chinese","jpmod","jpmod_gaps")
         self.mod_status_tree=ttk.Treeview(tree_frame, columns=cols, show="headings", height=16, selectmode="extended")
         self._enable_ctrl_multiselect(self.mod_status_tree)
-        # v0.11.1: 翻訳状況一覧は列幅を固定し、表示領域に合わせて潰さない。
+        # v0.11.2: 翻訳状況一覧は列幅を固定し、表示領域に合わせて潰さない。
         # 長いMod名・日本語化Mod名は下部の横スクロールバーで確認する。
         for c,txt,w in (("status","状態",165),("mod","Mod",430),("gaps","欠損",80),("chinese","中国語",90),("jpmod","日本語化Mod",430),("jpmod_gaps","日本語化Mod欠損",150)):
             self.mod_status_tree.heading(c,text=txt)
@@ -4684,6 +4703,65 @@ Mod更新後だけ追加翻訳:
             source_kind="import:mod"
             label="日本語化Modからの用語取り込み"
         self._save_imported_glossary_pairs(pairs,source_kind,label)
+
+    def _collect_glossary_import_pairs_from_path(self, target: Path):
+        """DnDされた日本語YAML / Mod / localizationフォルダから原文-日本語ペアを集める。"""
+        target=Path(target)
+        if not target.exists():
+            return []
+        if target.is_file():
+            if target.suffix.lower() not in {".yml",".yaml"}:
+                return []
+            try:
+                lang,_,_=core.parse_localization_file(target)
+            except Exception:
+                return []
+            if lang != "japanese":
+                return []
+            source_root=target.parent
+            cur=target.parent
+            for _ in range(8):
+                if cur.name.lower()=="japanese":
+                    source_root=cur.parent
+                    break
+                if cur.parent==cur:
+                    break
+                cur=cur.parent
+            return self._collect_qa_diff_pairs(source_root,target,source_langs=("english","simp_chinese"))
+
+        loc=core.mod_localization_root(target) or target
+        return self._collect_qa_diff_pairs(loc,loc,source_langs=("english","simp_chinese"))
+
+    def on_glossary_import_drop_paths(self,event):
+        raw_paths=self._raw_drop_paths(event)
+        all_pairs=[]
+        seen=set()
+        accepted=[]
+        ignored=[]
+        for target in raw_paths:
+            try:
+                pairs=self._collect_glossary_import_pairs_from_path(target)
+            except Exception as exc:
+                record_error("用語集DnD取り込み",exc,str(target))
+                pairs=[]
+            if not pairs:
+                ignored.append(target.name or str(target))
+                continue
+            accepted.append(target.name or str(target))
+            for pair in pairs:
+                key=(str(pair.get("source","")),str(pair.get("target","")))
+                if key in seen:
+                    continue
+                seen.add(key)
+                all_pairs.append(pair)
+        if all_pairs:
+            label=f"ドラッグ＆ドロップからの用語取り込み（{len(accepted)}項目）"
+            self._save_imported_glossary_pairs(all_pairs,"import:dnd",label)
+        else:
+            messagebox.showinfo(APP_NAME,"取り込み可能な日本語YAML / 日本語化Mod / localizationフォルダを確認できませんでした。")
+        if ignored and all_pairs:
+            self.auto_glossary_status_var.set(f"DnD取り込み完了 / 対象外 {len(ignored)}件")
+        return event.action if hasattr(event,"action") else None
 
     def pick_glossary(self):
         p=filedialog.askopenfilename(filetypes=[("JSON","*.json"),("All","*")])
