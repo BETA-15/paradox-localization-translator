@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Core engine for Paradox Localization Translator v0.5.0.
+"""Core engine for Paradox Localization Translator v0.6.0.
 
 Features:
 - Batch translation via Ollama, LM Studio, OpenAI, Anthropic, Gemini, or OpenAI-compatible APIs
@@ -38,6 +38,10 @@ DEFAULT_OPENAI_COMPAT_URL = ""
 DEFAULT_TARGET_LANG = "japanese"
 CACHE_FILE_NAME = "translate_cache.json"
 SESSION_FILE_NAME = ".plt_session.json"
+
+SOURCE_MANIFEST_NAME = "source_manifest.json"
+JOB_META_NAME = "job_meta.json"
+
 BATCH_LINE_SEP = "|||"
 DUAL_SEP = " ⟪ZH_REF⟫ "
 
@@ -595,6 +599,166 @@ def gather_yml_files(input_path: Path, exclude_lang_dir: Optional[str] = None):
     return files
 
 
+
+
+# ---------------------------------------------------------------------------
+# Lightweight live localization monitoring
+# ---------------------------------------------------------------------------
+
+def localization_file_stats(root: Path) -> dict:
+    """Return a cheap snapshot (mtime_ns, size) for YAML files under root.
+
+    This intentionally does not parse file contents, so an idle live monitor only
+    performs directory/stat checks. Full parsing is done only when this snapshot
+    changes.
+    """
+    root = Path(root)
+    files = gather_yml_files(root) if root.exists() else []
+    base = root if root.is_dir() else root.parent
+    out = {}
+    for f in files:
+        try:
+            st = f.stat()
+            rel = str(f.relative_to(base)) if root.is_dir() else f.name
+            out[rel] = (int(st.st_mtime_ns), int(st.st_size))
+        except OSError:
+            continue
+    return out
+
+
+def _logical_localization_id(path: Path, root: Path, lang: str) -> str:
+    """Normalize english/japanese/simp_chinese variants to one logical file id."""
+    base = root if root.is_dir() else root.parent
+    try:
+        rel = path.relative_to(base)
+    except ValueError:
+        rel = Path(path.name)
+    parts = [x for x in rel.parts[:-1] if x.lower() not in KNOWN_SOURCE_LANGS]
+    name = rel.name
+    for known in KNOWN_SOURCE_LANGS:
+        name = re.sub(rf'_l_{re.escape(known)}(?=\.yml$)', '_l_LANG', name, flags=re.I)
+    if re.fullmatch(r'l_[a-z_]+\.yml', name, flags=re.I):
+        name = 'l_LANG.yml'
+    return '/'.join(parts + [name])
+
+def scan_translation_gaps(root: Path, preferred_source: str = "english") -> List[dict]:
+    """Scan a localization tree and list missing/likely-untranslated Japanese entries.
+
+    The scan is deterministic and does not call an LLM. Missing Japanese files/keys
+    are treated as definite candidates. Existing Japanese values that are identical
+    to English/Chinese source text, or look like foreign prose, are marked as
+    candidates; short ambiguous foreign labels may optionally be refined by a small
+    LLM in ``classify_monitor_candidates``.
+    """
+    root = Path(root)
+    groups: Dict[str, dict] = {}
+    for f in gather_yml_files(root):
+        try:
+            lang, entries, _ = parse_localization_file(f)
+        except Exception:
+            continue
+        lid = _logical_localization_id(f, root, lang)
+        groups.setdefault(lid, {})[lang] = {"path": str(f), "entries": entries}
+
+    candidates: List[dict] = []
+    for lid, langs in sorted(groups.items()):
+        src_lang = preferred_source if preferred_source in langs else ("simp_chinese" if "simp_chinese" in langs else None)
+        src = langs.get(src_lang) if src_lang else None
+        ja = langs.get("japanese")
+
+        if src and not ja:
+            for key, value in src["entries"].items():
+                if looks_untranslatable(value):
+                    continue
+                candidates.append({
+                    "kind": "日本語ファイルなし", "logical_file": lid,
+                    "source_file": src["path"], "target_file": "",
+                    "source_lang": src_lang, "key": key, "source": value,
+                    "target": "", "needs_llm": False, "confidence": "確定",
+                })
+            continue
+
+        if src and ja:
+            src_entries = src["entries"]
+            ja_entries = ja["entries"]
+            for key, value in src_entries.items():
+                if key not in ja_entries and not looks_untranslatable(value):
+                    candidates.append({
+                        "kind": "日本語キーなし", "logical_file": lid,
+                        "source_file": src["path"], "target_file": ja["path"],
+                        "source_lang": src_lang, "key": key, "source": value,
+                        "target": "", "needs_llm": False, "confidence": "確定",
+                    })
+
+            # Existing Japanese entries: exact source copies are highly suspicious.
+            for key, target in ja_entries.items():
+                if not target or looks_untranslatable(target):
+                    continue
+                source = src_entries.get(key, "")
+                exact = bool(source and target.strip() == source.strip())
+                foreign = looks_foreign_in_target(target, "japanese")
+                if exact or foreign:
+                    ambiguous = not exact and len(PROTECT_RE.sub('', target).strip()) <= 80
+                    candidates.append({
+                        "kind": "英語/外国語残り", "logical_file": lid,
+                        "source_file": src["path"], "target_file": ja["path"],
+                        "source_lang": src_lang, "key": key, "source": source,
+                        "target": target, "needs_llm": ambiguous,
+                        "confidence": "要確認" if ambiguous else "高",
+                    })
+        elif ja:
+            # Japanese-only tree: still detect obvious foreign-only values.
+            for key, target in ja["entries"].items():
+                if looks_foreign_in_target(target, "japanese"):
+                    candidates.append({
+                        "kind": "英語/外国語残り", "logical_file": lid,
+                        "source_file": "", "target_file": ja["path"],
+                        "source_lang": "", "key": key, "source": "",
+                        "target": target, "needs_llm": True, "confidence": "要確認",
+                    })
+    return candidates
+
+def classify_monitor_candidates(provider: str, url: str, model: str, candidates: List[dict],
+                                controller: Optional[TranslationController] = None,
+                                api_key: str = "", batch_size: int = 40) -> Dict[int, bool]:
+    """Use a small LLM only for ambiguous monitor candidates.
+
+    Returns ``{candidate_index: True}`` for entries that should be translated to
+    Japanese. Definite missing-file/key candidates should not be passed here.
+    """
+    decisions: Dict[int, bool] = {}
+    if not candidates:
+        return decisions
+    system = """あなたは日本語ゲームローカライズの軽量QA判定器です。
+各行が『日本語版に残った未翻訳テキストで、日本語へ翻訳すべきか』だけを判定してください。
+固有の商品名・人名・一般的な略語・コード・型番など、通常そのまま表示してよいものは NO。
+英語などの説明文、UI語、文章、翻訳されるべき一般語は YES。
+出力は入力と同じ番号を使い、必ず `N|||YES` または `N|||NO` の1行だけ。説明は禁止。"""
+    for start in range(0, len(candidates), max(1, batch_size)):
+        if controller:
+            controller.wait_if_paused()
+        chunk = candidates[start:start + max(1, batch_size)]
+        lines = []
+        for i, c in enumerate(chunk):
+            text = c.get("target") or c.get("source") or ""
+            lines.append(f"{i}{BATCH_LINE_SEP}{text}")
+        raw = call_llm_raw(provider, url, model, "\n".join(lines), system,
+                           timeout=180, retries=2, controller=controller,
+                           temperature=0.0, api_key=api_key)
+        parsed = {}
+        for line in raw.splitlines():
+            if BATCH_LINE_SEP not in line:
+                continue
+            n, _, ans = line.partition(BATCH_LINE_SEP)
+            n = n.strip()
+            if n.isdigit():
+                parsed[int(n)] = ans.strip().upper().startswith("YES")
+        for i in range(len(chunk)):
+            # Conservative fallback: keep the candidate if the model omitted it.
+            decisions[start + i] = parsed.get(i, True)
+    return decisions
+
+
 def remap_rel_dir(rel_dir: Path, target_lang: str) -> Path:
     parts = [target_lang if p.lower() in KNOWN_SOURCE_LANGS else p for p in rel_dir.parts]
     return Path(*parts) if parts else rel_dir
@@ -607,6 +771,72 @@ def rename_for_target(path: Path, target_lang: str, source_lang: str) -> str:
     if path.name.endswith(".yml"):
         return path.name[:-4] + f"_l_{target_lang}.yml"
     return path.name
+
+
+def build_source_manifest(input_path: Path, exclude_lang_dir: Optional[str] = None) -> dict:
+    """Build a stable source snapshot used for differential updates."""
+    input_path = Path(input_path)
+    files = gather_yml_files(input_path, exclude_lang_dir)
+    base = input_path if input_path.is_dir() else input_path.parent
+    manifest = {
+        "schema": 1,
+        "input": str(input_path.resolve()),
+        "created_at": time.time(),
+        "files": {},
+    }
+    for f in files:
+        try:
+            lang, entries, _ = parse_localization_file(f)
+        except Exception:
+            continue
+        rel = str(f.relative_to(base)) if input_path.is_dir() else f.name
+        manifest["files"][rel] = {
+            "language": lang,
+            "keys": {k: text_hash(v) for k, v in entries.items()},
+        }
+    return manifest
+
+
+def compare_source_manifests(old: dict, new: dict) -> dict:
+    """Return added/changed/removed keys and files between two manifests."""
+    old_files = (old or {}).get("files", {})
+    new_files = (new or {}).get("files", {})
+    details = []
+    counts = {"added": 0, "changed": 0, "removed": 0, "unchanged": 0,
+              "added_files": 0, "removed_files": 0}
+    for rel in sorted(set(old_files) | set(new_files)):
+        if rel not in old_files:
+            keys = new_files[rel].get("keys", {})
+            counts["added_files"] += 1
+            counts["added"] += len(keys)
+            details.append({"file": rel, "kind": "added_file", "keys": sorted(keys)})
+            continue
+        if rel not in new_files:
+            keys = old_files[rel].get("keys", {})
+            counts["removed_files"] += 1
+            counts["removed"] += len(keys)
+            details.append({"file": rel, "kind": "removed_file", "keys": sorted(keys)})
+            continue
+        ok = old_files[rel].get("keys", {})
+        nk = new_files[rel].get("keys", {})
+        added = sorted(set(nk) - set(ok))
+        removed = sorted(set(ok) - set(nk))
+        changed = sorted(k for k in set(ok) & set(nk) if ok[k] != nk[k])
+        unchanged = len(set(ok) & set(nk)) - len(changed)
+        counts["added"] += len(added); counts["removed"] += len(removed)
+        counts["changed"] += len(changed); counts["unchanged"] += unchanged
+        if added or removed or changed:
+            details.append({"file": rel, "kind": "modified",
+                            "added": added, "changed": changed, "removed": removed})
+    return {"counts": counts, "details": details}
+
+
+def save_source_manifest(cache_file: Path, manifest: dict):
+    save_json(Path(cache_file).parent / SOURCE_MANIFEST_NAME, manifest)
+
+
+def load_source_manifest(cache_file: Path) -> dict:
+    return load_json(Path(cache_file).parent / SOURCE_MANIFEST_NAME, {})
 
 
 def build_chinese_reference_map(input_path: Path) -> Dict[str, str]:
@@ -795,6 +1025,7 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
     else:
         cache_file = output_path / CACHE_FILE_NAME
     cache = load_cache(cache_file) if (resume or cache_file.exists()) else {}
+    current_manifest = build_source_manifest(input_path, None if include_target_files else target_lang)
     glossary = load_glossary(Path(glossary_path)) if glossary_path else {}
     zh_refs = build_chinese_reference_map(input_path) if dual_source and input_path.is_dir() else {}
     exclude = None if include_target_files else target_lang
@@ -849,12 +1080,14 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
                     raise StopRequested()
     except StopRequested:
         save_cache(cache_file, cache)
+        save_source_manifest(cache_file, current_manifest)
         print("保存して中断しました。次回はキャッシュから再開できます。")
         return {"processed": processed, "interrupted": True, "jobs": total_jobs, "failed": total_failed,
                 "cache": str(cache_file)}
+    save_source_manifest(cache_file, current_manifest)
     print("完了しました。")
     return {"processed": processed, "interrupted": False, "jobs": total_jobs, "failed": total_failed,
-            "cache": str(cache_file)}
+            "cache": str(cache_file), "manifest": str(cache_file.parent / SOURCE_MANIFEST_NAME)}
 
 
 # ------------------------- QA / proofreading -------------------------
@@ -942,3 +1175,140 @@ def update_localization_value(path: Path, key: str, new_value: str) -> bool:
     if changed:
         Path(path).write_text("\ufeff" + "\n".join(out) + "\n", encoding="utf-8")
     return changed
+
+# ---------------------------------------------------------------------------
+# Mod-level translation availability research
+# ---------------------------------------------------------------------------
+
+def detect_mod_name(mod_root: Path) -> str:
+    """Best-effort display name for a Paradox mod directory."""
+    mod_root = Path(mod_root)
+    candidates = []
+    if mod_root.is_dir():
+        descriptor = mod_root / "descriptor.mod"
+        if descriptor.exists():
+            candidates.append(descriptor)
+        candidates.extend(sorted(mod_root.glob("*.mod"))[:5])
+    for p in candidates:
+        try:
+            text = p.read_text(encoding="utf-8-sig", errors="ignore")
+        except Exception:
+            continue
+        m = re.search(r'^\s*name\s*=\s*["\']([^"\']+)["\']', text, flags=re.I | re.M)
+        if m:
+            return m.group(1).strip()
+    return mod_root.name or str(mod_root)
+
+
+def find_mod_roots(root: Path) -> List[Path]:
+    """Find likely mod roots below *root* without crawling arbitrary deep trees.
+
+    - If root itself is a localization directory, its parent is treated as one mod.
+    - If root contains localization/, root itself is treated as one mod.
+    - Otherwise immediate child directories containing localization/ are returned.
+    - As a fallback, localization directories up to two levels below root are used.
+    """
+    root = Path(root)
+    if not root.exists():
+        return []
+    if root.is_file():
+        return []
+    if root.name.lower() == "localization":
+        return [root.parent]
+    if (root / "localization").is_dir():
+        return [root]
+
+    found: List[Path] = []
+    try:
+        for child in sorted(p for p in root.iterdir() if p.is_dir()):
+            if (child / "localization").is_dir():
+                found.append(child)
+    except OSError:
+        pass
+    if found:
+        return found
+
+    # Fallback for layouts such as <root>/<category>/<mod>/localization.
+    seen = set()
+    try:
+        for loc in root.glob("*/*/localization"):
+            if loc.is_dir():
+                mod = loc.parent
+                key = str(mod.resolve())
+                if key not in seen:
+                    seen.add(key); found.append(mod)
+    except OSError:
+        pass
+    return sorted(found)
+
+
+def mod_localization_root(mod_root: Path) -> Optional[Path]:
+    mod_root = Path(mod_root)
+    if mod_root.name.lower() == "localization" and mod_root.is_dir():
+        return mod_root
+    loc = mod_root / "localization"
+    if loc.is_dir():
+        return loc
+    return None
+
+
+def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "english") -> dict:
+    """Return a mod-level Japanese translation status without invoking an LLM."""
+    mod_root = Path(mod_root)
+    loc = mod_localization_root(mod_root)
+    name = detect_mod_name(mod_root)
+    result = {
+        "mod": name,
+        "path": str(mod_root),
+        "localization": str(loc) if loc else "",
+        "status": "不明",
+        "message": f"{name}のlocalizationフォルダを確認できませんでした。",
+        "source_files": 0,
+        "japanese_files": 0,
+        "source_keys": 0,
+        "japanese_keys": 0,
+        "gap_count": 0,
+        "candidates": [],
+    }
+    if not loc:
+        return result
+
+    source_keys = set()
+    japanese_keys = set()
+    source_files = 0
+    japanese_files = 0
+    for f in gather_yml_files(loc):
+        try:
+            lang, entries, _ = parse_localization_file(f)
+        except Exception:
+            continue
+        if lang == "japanese":
+            japanese_files += 1
+            japanese_keys.update(entries.keys())
+        elif lang in {preferred_source, "simp_chinese"}:
+            source_files += 1
+            source_keys.update(entries.keys())
+
+    candidates = scan_translation_gaps(loc, preferred_source=preferred_source)
+    result.update({
+        "source_files": source_files,
+        "japanese_files": japanese_files,
+        "source_keys": len(source_keys),
+        "japanese_keys": len(japanese_keys),
+        "gap_count": len(candidates),
+        "candidates": candidates,
+    })
+
+    if not source_keys:
+        result["status"] = "対象なし"
+        result["message"] = f"{name}には判定対象となる英語/中国語ローカライズが見つかりませんでした。"
+    elif japanese_files == 0 or not japanese_keys:
+        result["status"] = "翻訳なし"
+        result["message"] = f"{name}というModは日本語翻訳がありません。"
+    elif candidates:
+        result["status"] = "欠損あり"
+        result["message"] = f"{name}のModに翻訳の欠損箇所があります（{len(candidates)}件）。"
+    else:
+        result["status"] = "翻訳あり"
+        result["message"] = f"{name}のModは日本語翻訳が確認できました。"
+    return result
