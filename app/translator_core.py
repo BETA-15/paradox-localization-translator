@@ -1338,6 +1338,57 @@ def build_auto_glossary_candidates(pairs: Iterable[dict]) -> List[dict]:
             "variants": [{"text": v, "count": c} for v, c in variants],
             "conflict": len(variants) > 1,
             "keys": keys_by_source[src][:30],
+            "source_kind": "auto",
+        })
+    out.sort(key=lambda x: (not x["conflict"], -x["occurrences"], x["source"]))
+    return out
+
+
+def build_import_glossary_candidates(pairs: Iterable[dict], source_kind: str = "import") -> List[dict]:
+    """Build glossary candidates from aligned localization pairs, including one-off terms.
+
+    This is intended for importing terminology from official/base-game Japanese
+    localization or a specific Japanese localization file/Mod. Short source labels
+    are aligned by localization key and every usable pair is retained.
+    """
+    from collections import Counter, defaultdict
+    grouped = defaultdict(Counter)
+    langs = {}
+    keys_by_source = defaultdict(list)
+    for pair in pairs:
+        source = Path(pair.get("source", ""))
+        target = Path(pair.get("target", ""))
+        if not source.exists() or not target.exists():
+            continue
+        try:
+            source_lang, source_entries, _ = parse_localization_file(source)
+            _, target_entries, _ = parse_localization_file(target)
+        except Exception:
+            continue
+        if source_lang not in {"english", "simp_chinese"}:
+            continue
+        for key, src in source_entries.items():
+            dst = target_entries.get(key, "").strip()
+            src = (src or "").strip()
+            if not dst or not src or looks_untranslated(src, dst, source_lang):
+                continue
+            if not _is_auto_glossary_source_candidate(src, source_lang):
+                continue
+            grouped[src][dst] += 1
+            langs[src] = source_lang
+            keys_by_source[src].append(key)
+    out = []
+    for src, counts in grouped.items():
+        variants = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        if not variants:
+            continue
+        out.append({
+            "source": src, "source_lang": langs.get(src, "english"),
+            "preferred": variants[0][0], "occurrences": sum(counts.values()),
+            "variants": [{"text": v, "count": c} for v, c in variants],
+            "conflict": len(variants) > 1,
+            "keys": keys_by_source[src][:30],
+            "source_kind": source_kind,
         })
     out.sort(key=lambda x: (not x["conflict"], -x["occurrences"], x["source"]))
     return out
@@ -1396,11 +1447,18 @@ def save_auto_glossary_candidates(glossary_path: Path, candidates: List[dict], p
         preferred = str(c.get("preferred", "")).strip()
         if not src or not preferred:
             continue
-        if src not in glossary:
+        existed = src in glossary
+        was_generated = src in variants
+        if not existed:
             glossary[src] = preferred
             added += 1
         else:
             preferred = glossary[src]
+        # A manually registered term must remain a manual term. Automatic generation
+        # and imports may use it as the preferred wording, but must not move it to
+        # the generated/imported group merely by creating variant metadata.
+        if preserve_existing and existed and not was_generated:
+            continue
         if c.get("conflict"):
             conflicts += 1
         variants[src] = {
@@ -1409,6 +1467,7 @@ def save_auto_glossary_candidates(glossary_path: Path, candidates: List[dict], p
             "counts": {x.get("text", ""): int(x.get("count", 0)) for x in c.get("variants", []) if x.get("text")},
             "source_lang": c.get("source_lang", ""),
             "occurrences": int(c.get("occurrences", 0)),
+            "source_kind": c.get("source_kind", "auto"),
         }
     save_glossary(glossary_path, glossary)
     save_json(glossary_variants_path(glossary_path), variants)

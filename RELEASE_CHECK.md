@@ -73,3 +73,13 @@
 - Translation status buttons reorganized into two rows.
 
 - v0.10.2: 自動用語候補生成・複数訳集計・QA一括用語統一の回帰テスト: PASS
+
+
+## v0.11.0 additional checks
+- Python syntax: PASS
+- GUI startup / 11 tabs: PASS
+- Manual vs generated glossary split: PASS
+- Auto glossary buttons on normal/chinese/QA/diff: PASS
+- Single-occurrence glossary import candidate extraction: PASS
+- Japanese YAML pairing for import: PASS
+- Manual terms remain manual when auto/import candidates overlap: PASS
