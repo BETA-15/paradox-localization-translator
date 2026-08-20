@@ -40,3 +40,12 @@
 - Mod場所一覧の操作を「監視対象に設定」と「選択場所の全Modを一括調査」に明確化
 - Mod場所一覧に「すべて選択」「選択解除」を追加し、Ctrl+クリック複数選択も維持
 - Python構文チェック: PASS
+
+
+## v0.9.1 regression checks
+- Python syntax: PASS
+- GUI startup / 11 tabs: PASS
+- Normal queue mock completion -> status 完了, done event, session deleted: PASS
+- Session behavior: completed queue is not persisted on exit; unfinished queue is persisted for one restore prompt
+- Declining restore deletes the stale session
+- Chinese basis overwrite UI consolidated to one button
