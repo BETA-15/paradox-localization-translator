@@ -190,12 +190,13 @@ def escape_localization_value(value: str) -> str:
 
 def translation_cache_key(provider: str, model: str, preset: str, source_lang: str,
                           original: str, glossary: Optional[dict] = None,
-                          dual_source: bool = False, zh_ref: str = "") -> str:
+                          dual_source: bool = False, zh_ref: str = "",
+                          translation_mode: str = "standard") -> str:
     """Cache key including settings that materially change translation output."""
     glossary_blob = json.dumps(glossary or {}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     cfg_blob = "\n".join([
         normalize_provider(provider), model or "", preset or "", source_lang or "",
-        "dual=1" if dual_source else "dual=0", text_hash(glossary_blob),
+        "dual=1" if dual_source else "dual=0", f"mode={translation_mode}", text_hash(glossary_blob),
         text_hash(zh_ref or "") if dual_source else "no-zh",
     ])
     return f"v6:{text_hash(cfg_blob)}:{text_hash(original)}"
@@ -533,7 +534,8 @@ def benchmark_model(provider: str, url: str, model: str,
 
 
 def build_system_prompt(source_lang: str, glossary: Optional[dict] = None,
-                        preset: str = "General", dual_source: bool = False) -> str:
+                        preset: str = "General", dual_source: bool = False,
+                        chinese_basis: bool = False) -> str:
     lang_label = {"english": "英語", "simp_chinese": "簡体字中国語"}.get(source_lang, source_lang)
     preset_text = GAME_PRESETS.get(preset, GAME_PRESETS["General"])
     glossary_text = ""
@@ -543,6 +545,16 @@ def build_system_prompt(source_lang: str, glossary: Optional[dict] = None,
     dual_text = ""
     if dual_source:
         dual_text = f"\n各入力には英語本文の後ろに `{DUAL_SEP.strip()}` で簡体字中国語の参考訳が付く場合があります。日本語訳の意味判断には両方を参照し、英語をゲーム上の意味、中国語を制度語・固有語の参考として使ってください。参考訳中の [VAR] は出力しないでください。"
+    chinese_basis_text = ""
+    if chinese_basis:
+        chinese_basis_text = """
+この翻訳は「中国語基準翻訳」です。簡体字中国語原文の漢字語彙を訳語選定の第一基準にしてください。
+- 制度名・官職名・地名・文化語・軍事語・歴史用語は、中国語原文にある漢字の意味と語構成を優先する。
+- 中国語の漢字語が日本語でも自然に成立する場合は、その語を日本語の字体・表記へ整えて活用する。
+- 不必要な英語風カタカナ化や音写、原文の意味から離れた意訳を避ける。
+- ただし中国語の語順・助詞・文法をそのまま移さず、文章全体は自然な日本語にする。
+- 簡体字は必要に応じて日本語で一般的な字体へ直す。
+"""
     return f"""あなたはParadox Interactive社のゲームのローカライズ翻訳者です。
 {lang_label}のゲームテキストを自然で読みやすい日本語に翻訳してください。
 対象プリセット: {preset_text}
@@ -554,7 +566,7 @@ def build_system_prompt(source_lang: str, glossary: Optional[dict] = None,
 3. UIラベルは簡潔に、歴史制度語・軍事語・政治語は文脈に適した日本語にする。
 4. 原文のテンプレート構造や改行表現を維持する。
 5. 簡体字中国語をそのまま日本語として流用せず、日本語の字体・語法に直す。
-6. 原文をそのまま返さず、翻訳可能な自然言語は必ず日本語化する。{dual_text}{glossary_text}
+6. 原文をそのまま返さず、翻訳可能な自然言語は必ず日本語化する。{dual_text}{chinese_basis_text}{glossary_text}
 """
 
 
@@ -568,11 +580,12 @@ def translate_batch(url: str, model: str, jobs: list, source_lang: str,
                     glossary: Optional[dict] = None, preset: str = "General",
                     dual_source: bool = False,
                     controller: Optional[TranslationController] = None,
-                    provider: str = "Ollama", api_key: str = "") -> List[str]:
+                    provider: str = "Ollama", api_key: str = "",
+                    chinese_basis: bool = False) -> List[str]:
     if not jobs:
         return []
     selected_glossary = dict(glossary_for_prompt(glossary or {}, [j["value"] for j in jobs]))
-    prompt = build_system_prompt(source_lang, selected_glossary, preset, dual_source)
+    prompt = build_system_prompt(source_lang, selected_glossary, preset, dual_source, chinese_basis)
     lines = []
     for i, j in enumerate(jobs):
         text = j["protected"]
@@ -918,7 +931,7 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
                  glossary: Optional[dict] = None, preset: str = "General",
                  zh_refs: Optional[dict] = None, dual_source: bool = False,
                  cache_file: Optional[Path] = None, file_no: int = 0, file_total: int = 0,
-                 provider: str = "Ollama", api_key: str = ""):
+                 provider: str = "Ollama", api_key: str = "", chinese_basis: bool = False):
     raw = in_path.read_text(encoding="utf-8-sig")
     lines = raw.splitlines(keepends=False)
     source_lang = detect_source_lang(in_path, lines)
@@ -945,7 +958,8 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
             continue
         h = translation_cache_key(provider, model, preset, translation_source_lang, value,
                                   glossary=glossary, dual_source=dual_source,
-                                  zh_ref=(zh_refs or {}).get(m.group("key").strip(), ""))
+                                  zh_ref=(zh_refs or {}).get(m.group("key").strip(), ""),
+                                  translation_mode="chinese_basis" if chinese_basis else "standard")
         if h in cache and cache_entry_is_valid(value, cache[h], translation_source_lang):
             continue
         if h in cache:
@@ -1004,14 +1018,15 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
             for j in b:
                 j["hash"] = translation_cache_key(
                     cfg["provider"], cfg["model"], cfg["preset"], translation_source_lang, j["value"],
-                    glossary=cfg["glossary"], dual_source=cfg["dual_source"], zh_ref=j.get("zh_ref") or "")
+                    glossary=cfg["glossary"], dual_source=cfg["dual_source"], zh_ref=j.get("zh_ref") or "",
+                    translation_mode="chinese_basis" if chinese_basis else "standard")
             group.append(b)
 
         def run_one(b):
             try:
                 return b, translate_batch(cfg["url"], cfg["model"], b, translation_source_lang,
                                           cfg["glossary"], cfg["preset"], cfg["dual_source"],
-                                          controller, cfg["provider"], cfg["api_key"]), None
+                                          controller, cfg["provider"], cfg["api_key"], chinese_basis), None
             except StopRequested:
                 return b, None, "__STOP__"
             except Exception as e:
@@ -1053,11 +1068,12 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
             cfg = runtime_cfg()
             j["hash"] = translation_cache_key(
                 cfg["provider"], cfg["model"], cfg["preset"], translation_source_lang, j["value"],
-                glossary=cfg["glossary"], dual_source=cfg["dual_source"], zh_ref=j.get("zh_ref") or "")
+                glossary=cfg["glossary"], dual_source=cfg["dual_source"], zh_ref=j.get("zh_ref") or "",
+                translation_mode="chinese_basis" if chinese_basis else "standard")
             try:
                 tr = translate_batch(cfg["url"], cfg["model"], [j], translation_source_lang,
                                      cfg["glossary"], cfg["preset"], cfg["dual_source"],
-                                     controller, cfg["provider"], cfg["api_key"])
+                                     controller, cfg["provider"], cfg["api_key"], chinese_basis)
                 restored = restore_text(tr[0], j["tokens"])
                 if looks_untranslated(j["value"], restored, translation_source_lang):
                     cache.pop(j["hash"], None)
@@ -1083,7 +1099,8 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
         elif orig and not looks_untranslatable(orig):
             zh_ref = (zh_refs or {}).get(m.group("key").strip(), "") if translation_source_lang == "english" else ""
             h = translation_cache_key(provider, model, preset, translation_source_lang, orig,
-                                      glossary=glossary, dual_source=dual_source, zh_ref=zh_ref)
+                                      glossary=glossary, dual_source=dual_source, zh_ref=zh_ref,
+                                      translation_mode="chinese_basis" if chinese_basis else "standard")
             translated = cache.get(h, orig)
         else:
             translated = orig
@@ -1151,7 +1168,7 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
             print(f"[{i}/{len(files)}] {f.relative_to(base_dir) if input_path.is_dir() else f.name} -> {out}")
             stats = process_file(f, out, url, model, target_lang, cache, workers, verbose,
                                  batch_size, controller, glossary, preset, zh_refs, dual_source,
-                                 cache_file, i, len(files), provider, api_key)
+                                 cache_file, i, len(files), provider, api_key, False)
             processed += 1; total_jobs += stats["jobs"]; total_failed += stats["failed"]
             save_cache(cache_file, cache)
             if auto_qa and out.exists():
@@ -1282,6 +1299,71 @@ def compare_localization_entries(source_entries: Dict[str, str], target_entries:
             message = "対応あり"
         rows.append({"key": key, "status": status, "message": message, "source": src, "target": dst})
     return rows
+
+
+
+def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OLLAMA_URL,
+                                  target_lang=DEFAULT_TARGET_LANG, workers=1, batch_size=40,
+                                  cache_path=None, controller: Optional[TranslationController] = None,
+                                  glossary_path=None, preset="General", auto_qa=True,
+                                  provider="Ollama", api_key=""):
+    """Translate only Simplified Chinese localization using Chinese wording as the terminology basis."""
+    input_path = Path(input_path)
+    output_path = Path(output_path)
+    output_path.mkdir(parents=True, exist_ok=True)
+    cache_file = Path(cache_path) if cache_path else output_path / "chinese_basis_translate_cache.json"
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    cache = load_cache(cache_file) if cache_file.exists() else {}
+    glossary = load_glossary(Path(glossary_path)) if glossary_path else {}
+
+    if input_path.is_file():
+        files = [input_path]
+        base_dir = input_path.parent
+    else:
+        base_dir = input_path
+        files = gather_yml_files(input_path)
+    chinese_files = []
+    for f in files:
+        try:
+            lang = detect_source_lang(f, f.read_text(encoding="utf-8-sig").splitlines()[:5])
+        except Exception:
+            continue
+        if lang == "simp_chinese":
+            chinese_files.append(f)
+    if not chinese_files:
+        raise RuntimeError("簡体字中国語（l_simp_chinese）のYAMLファイルが見つかりませんでした。")
+
+    total_jobs = total_failed = processed = 0
+    planned = set()
+    try:
+        for i, f in enumerate(chinese_files, 1):
+            if controller:
+                controller.wait_if_paused()
+            rel = f.parent.relative_to(base_dir) if input_path.is_dir() else Path(".")
+            out = output_path / remap_rel_dir(rel, target_lang) / rename_for_target(f, target_lang, "simp_chinese")
+            out_key = str(out.resolve())
+            if out_key in planned:
+                continue
+            planned.add(out_key)
+            stats = process_file(
+                f, out, url, model, target_lang, cache, workers, True,
+                batch_size, controller, glossary, preset, None, False,
+                cache_file, i, len(chinese_files), provider, api_key, True,
+            )
+            processed += 1
+            total_jobs += stats["jobs"]
+            total_failed += stats["failed"]
+            save_cache(cache_file, cache)
+            if auto_qa and out.exists():
+                qa_file(out, f)
+            if controller:
+                controller.notify(kind="file_done", file=str(f), file_no=i, file_total=len(chinese_files))
+                if controller.stop_event.is_set():
+                    raise StopRequested()
+    except StopRequested:
+        save_cache(cache_file, cache)
+        return {"interrupted": True, "processed_files": processed, "jobs": total_jobs, "failed": total_failed, "cache": str(cache_file)}
+    return {"interrupted": False, "processed_files": processed, "jobs": total_jobs, "failed": total_failed, "cache": str(cache_file), "output": str(output_path)}
 
 
 def translate_single_text(url: str, model: str, text: str, source_lang: str = "english",
@@ -1552,6 +1634,8 @@ def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "engl
         "status": "不明",
         "message": f"{name}のlocalizationフォルダを確認できませんでした。",
         "source_files": 0,
+        "simp_chinese_files": 0,
+        "simp_chinese_keys": 0,
         "japanese_files": 0,
         "source_keys": 0,
         "japanese_keys": 0,
@@ -1570,6 +1654,8 @@ def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "engl
     source_keys = set()
     japanese_keys = set()
     source_files = 0
+    simp_chinese_files = 0
+    simp_chinese_keys = set()
     japanese_files = 0
     for f in gather_yml_files(loc):
         try:
@@ -1582,10 +1668,15 @@ def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "engl
         elif lang in {preferred_source, "simp_chinese"}:
             source_files += 1
             source_keys.update(entries.keys())
+            if lang == "simp_chinese":
+                simp_chinese_files += 1
+                simp_chinese_keys.update(entries.keys())
 
     candidates = scan_translation_gaps(loc, preferred_source=preferred_source)
     result.update({
         "source_files": source_files,
+        "simp_chinese_files": simp_chinese_files,
+        "simp_chinese_keys": len(simp_chinese_keys),
         "japanese_files": japanese_files,
         "source_keys": len(source_keys),
         "japanese_keys": len(japanese_keys),
