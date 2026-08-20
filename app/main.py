@@ -34,7 +34,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.4"
+APP_VERSION = "0.11.5"
 
 
 def _app_container_dir() -> Path:
@@ -302,7 +302,9 @@ class App(BaseTk):
         self.search_result_map = {}
 
         # Live untranslated-localization monitor
-        self.monitor_path_var = tk.StringVar(value="")
+        self.monitor_path_var = tk.StringVar(value="")  # legacy / first monitor target
+        self.monitor_target_paths = []
+        self.monitor_target_summary_var = tk.StringVar(value="監視対象: 翻訳状況タブでMod場所を選択して調査してください")
         self.monitor_interval_var = tk.IntVar(value=15)
         self.monitor_use_llm_var = tk.BooleanVar(value=True)
         self.monitor_check_translation_mods_var = tk.BooleanVar(value=True)
@@ -1826,25 +1828,25 @@ AI校正は現在の翻訳用LLM設定を使用します。設定変更後は［
 前回使用した翻訳用/探索用のプロバイダ・URL・モデルは次回起動時に自動復元します。APIキーは保存しません。
 
 【12. 未翻訳監視 タブ】
-ゲーム本体やModフォルダを読み取り専用で調査します。自動翻訳はしません。
+翻訳状況タブで登録したMod場所を読み取り専用で常時監視します。自動翻訳はしません。
 
-ゲーム/Mod場所を自動検出:
-Steamのlibraryfolders.vdf、追加Steamライブラリ、別SSD、外付けドライブ、Documents/Paradox Interactive等を探索します。
+監視対象:
+［翻訳状況］タブでゲーム/Mod場所を選択し、［選択した場所のModを調査］を実行すると、その場所が監視対象にも登録されます。
 
 探索専用LLM:
 通常翻訳とは別モデルを指定できます。3B～8B程度の軽量モデルを推奨します。
-［モデル再読み込み］はモデル一覧を再取得するだけです。設定変更後は［探索設定を適用］を押してください。
 
-［指定したModをバックグラウンド調査］:
-1つのModだけ調べます。
+［常時監視を開始］:
+監視開始後は同じボタンが［常時監視を停止］に変わり、状態欄に「● 常時監視中」と表示します。
 
-［全部のModを調べる］:
-指定した場所のModをまとめて調べます。
+［再調査］:
+登録済みの監視対象について、Mod翻訳状況をもう一度調査します。
 
-探索はファイルの更新時刻・サイズ確認を中心に行い、曖昧な候補だけ軽量LLMへ送ります。
+監視中はYAMLの更新時刻・サイズを確認し、変更があった対象だけ解析します。曖昧な候補だけ軽量LLMへ送ります。
 
 【13. 翻訳状況 タブ】
-調査済みModを一覧表示します。結果はキャッシュされ、次回起動時に復元します。変更があったModだけ再調査します。
+ゲーム/Mod場所の自動検出、調査対象の選択、Mod翻訳状況の調査をここへ集約しています。
+複数の場所を選択して［選択した場所のModを調査］を実行できます。結果はキャッシュされ、変更があったModだけ再調査します。
 
 表示例:
 ・翻訳なし
@@ -1986,7 +1988,7 @@ Mod更新後だけ追加翻訳:
     def _build_monitor_tab(self):
         t = self.tab_monitor
 
-        # 未翻訳監視は左右2ブロックを同幅にし、左ブロック全体は縦スクロール可能にする。
+        # 未翻訳監視は監視そのものに専念する。Mod場所の検出・調査は「翻訳状況」へ集約。
         body = ttk.Panedwindow(t, orient="horizontal")
         body.pack(fill="both", expand=True)
         left_outer, left, self.monitor_left_canvas, self.monitor_left_scrollbar = self._make_vertical_scroll_area(body)
@@ -1997,90 +1999,55 @@ Mod更新後だけ追加翻訳:
         def _balance_monitor_panes(event=None):
             try:
                 total = max(body.winfo_width(), 200)
-                # 左右ほぼ同幅。少しだけ右へ余裕を持たせる。
                 body.sashpos(0, max(320, total // 2))
             except Exception:
                 pass
-
         body.bind("<Configure>", _balance_monitor_panes, add="+")
         self.after_idle(_balance_monitor_panes)
 
-        discovery = ttk.LabelFrame(left, text="ゲーム / Mod場所の自動検出", padding=8)
-        discovery.pack(fill="x", pady=(0,8))
-        dbar1 = ttk.Frame(discovery); dbar1.pack(fill="x", pady=(0,5))
-        ttk.Button(dbar1, text="ゲーム/Mod場所を自動検出", command=self.discover_mod_locations).pack(side="left")
-        ttk.Button(dbar1, text="選択場所を監視対象に設定", command=self.use_selected_discovered_location).pack(side="left", padx=(6,0))
-        ttk.Label(dbar1, textvariable=self.mod_discovery_status_var).pack(side="right")
+        target = ttk.LabelFrame(left, text="監視対象", padding=8)
+        target.pack(fill="x", pady=(0,8))
+        ttk.Label(target, textvariable=self.monitor_target_summary_var, wraplength=470, justify="left").pack(anchor="w")
+        ttk.Label(target, text="対象の追加・変更とMod調査は［翻訳状況］タブで行います。", foreground="#666", wraplength=470, justify="left").pack(anchor="w", pady=(5,0))
+        ttk.Button(target, text="翻訳状況を開く", command=lambda:self.notebook.select(self.tab_status)).pack(anchor="w", pady=(7,0))
 
-        dbar2 = ttk.Frame(discovery); dbar2.pack(fill="x", pady=(0,5))
-        ttk.Button(dbar2, text="選択場所の全Modを一括調査", command=self.research_selected_discovered_location).pack(side="left")
-        ttk.Checkbutton(dbar2, text="複数選択モード", variable=self.discovery_multi_select_var).pack(side="left", padx=(8,0))
-        ttk.Button(dbar2, text="すべて選択", command=self.select_all_discovered_locations).pack(side="left", padx=(5,0))
-        ttk.Button(dbar2, text="選択解除", command=lambda:self.discovered_mod_tree.selection_remove(self.discovered_mod_tree.selection())).pack(side="left", padx=(5,0))
-
-        cols=("game","kind","mods","path")
-        treewrap = ttk.Frame(discovery); treewrap.pack(fill="both", expand=True)
-        self.discovered_mod_tree=ttk.Treeview(treewrap, columns=cols, show="headings", height=7, selectmode="extended")
-        self._enable_ctrl_multiselect(self.discovered_mod_tree)
-        self.discovered_mod_tree.bind("<Button-1>", self._on_discovery_tree_click, add="+")
-        for c,txt,w in (("game","ゲーム",210),("kind","種類",140),("mods","Mod数",75),("path","検出場所",820)):
-            self.discovered_mod_tree.heading(c,text=txt)
-            self.discovered_mod_tree.column(c,width=w,minwidth=w,stretch=False,anchor="w")
-        self._enable_tree_sort(self.discovered_mod_tree)
-        dsy=ttk.Scrollbar(treewrap,orient="vertical",command=self.discovered_mod_tree.yview)
-        dsx=ttk.Scrollbar(treewrap,orient="horizontal",command=self.discovered_mod_tree.xview)
-        self.discovered_mod_tree.configure(yscrollcommand=dsy.set,xscrollcommand=dsx.set)
-        self.discovered_mod_tree.grid(row=0,column=0,sticky="nsew")
-        dsy.grid(row=0,column=1,sticky="ns")
-        dsx.grid(row=1,column=0,sticky="ew")
-        treewrap.rowconfigure(0,weight=1); treewrap.columnconfigure(0,weight=1)
-        ttk.Label(discovery, text="Ctrl+クリック、または複数選択モードで複数場所を選べます。監視対象は1か所、全Mod調査は複数場所を対象にできます。", foreground="#666", wraplength=430, justify="left").pack(anchor="w", pady=(4,0))
-
-        cfg = ttk.LabelFrame(left, text="未翻訳調査・監視設定", padding=8)
+        cfg = ttk.LabelFrame(left, text="未翻訳監視設定", padding=8)
         cfg.pack(fill="x", pady=(0,8))
         cfg.columnconfigure(1, weight=1)
-        ttk.Label(cfg, text="調査対象").grid(row=0, column=0, sticky="w")
-        ttk.Entry(cfg, textvariable=self.monitor_path_var).grid(row=0, column=1, sticky="ew", padx=6)
-        ttk.Button(cfg, text="選択", command=self.pick_monitor_path).grid(row=0, column=2)
-        ttk.Label(cfg, text="間隔(秒)").grid(row=1, column=0, sticky="w", pady=(6,0))
-        ttk.Spinbox(cfg, from_=3, to=600, textvariable=self.monitor_interval_var, width=7).grid(row=1, column=1, sticky="w", padx=6, pady=(6,0))
+        ttk.Label(cfg, text="間隔(秒)").grid(row=0, column=0, sticky="w")
+        ttk.Spinbox(cfg, from_=3, to=600, textvariable=self.monitor_interval_var, width=7).grid(row=0, column=1, sticky="w", padx=6)
 
-        ttk.Separator(cfg, orient="horizontal").grid(row=2, column=0, columnspan=3, sticky="ew", pady=7)
-        ttk.Label(cfg, text="監視専用LLM", font=("", 10, "bold")).grid(row=3, column=0, columnspan=3, sticky="w")
-        ttk.Label(cfg, text="プロバイダ").grid(row=4, column=0, sticky="w", pady=(5,0))
+        ttk.Separator(cfg, orient="horizontal").grid(row=1, column=0, columnspan=3, sticky="ew", pady=7)
+        ttk.Label(cfg, text="監視専用LLM", font=("", 10, "bold")).grid(row=2, column=0, columnspan=3, sticky="w")
+        ttk.Label(cfg, text="プロバイダ").grid(row=3, column=0, sticky="w", pady=(5,0))
         self.monitor_provider_combo = ttk.Combobox(
             cfg, textvariable=self.monitor_provider_var,
             values=["Ollama","LM Studio","OpenAI","Anthropic","Gemini","OpenAI Compatible"],
             state="readonly", width=15)
-        self.monitor_provider_combo.grid(row=4, column=1, sticky="ew", padx=6, pady=(5,0))
+        self.monitor_provider_combo.grid(row=3, column=1, sticky="ew", padx=6, pady=(5,0))
         self.monitor_provider_combo.bind("<<ComboboxSelected>>", lambda e:self.on_monitor_provider_change())
-        ttk.Button(cfg, text="モデル再読込", command=self.refresh_monitor_models).grid(row=4, column=2, pady=(5,0))
-        ttk.Label(cfg, text="URL").grid(row=5, column=0, sticky="w", pady=(5,0))
-        ttk.Entry(cfg, textvariable=self.monitor_url_var).grid(row=5, column=1, columnspan=2, sticky="ew", padx=6, pady=(5,0))
-        ttk.Label(cfg, text="モデル").grid(row=6, column=0, sticky="w", pady=(5,0))
+        ttk.Button(cfg, text="モデル再読込", command=self.refresh_monitor_models).grid(row=3, column=2, pady=(5,0))
+        ttk.Label(cfg, text="URL").grid(row=4, column=0, sticky="w", pady=(5,0))
+        ttk.Entry(cfg, textvariable=self.monitor_url_var).grid(row=4, column=1, columnspan=2, sticky="ew", padx=6, pady=(5,0))
+        ttk.Label(cfg, text="モデル").grid(row=5, column=0, sticky="w", pady=(5,0))
         self.monitor_model_combo = ttk.Combobox(cfg, textvariable=self.monitor_model_var, state="normal")
-        self.monitor_model_combo.grid(row=6, column=1, columnspan=2, sticky="ew", padx=6, pady=(5,0))
-        ttk.Label(cfg, text="APIキー").grid(row=7, column=0, sticky="w", pady=(5,0))
-        ttk.Entry(cfg, textvariable=self.monitor_api_key_var, show="•").grid(row=7, column=1, columnspan=2, sticky="ew", padx=6, pady=(5,0))
-        ttk.Label(cfg, textvariable=self.monitor_connection_var, foreground="#555", wraplength=420, justify="left").grid(row=8, column=0, columnspan=3, sticky="w", pady=(5,0))
-        ttk.Checkbutton(cfg, text="軽量LLMで曖昧候補だけ精査", variable=self.monitor_use_llm_var).grid(row=9, column=0, columnspan=3, sticky="w", pady=(5,0))
-        ttk.Checkbutton(cfg, text="別Modの日本語化も検索する", variable=self.monitor_check_translation_mods_var).grid(row=10, column=0, columnspan=3, sticky="w", pady=(3,0))
-        ttk.Label(cfg, text="判定専用なので3B〜8B級など小さなモデルを推奨します。自動翻訳は行いません。", foreground="#8a4b00", wraplength=420, justify="left").grid(row=11, column=0, columnspan=3, sticky="w", pady=(5,0))
+        self.monitor_model_combo.grid(row=5, column=1, columnspan=2, sticky="ew", padx=6, pady=(5,0))
+        ttk.Label(cfg, text="APIキー").grid(row=6, column=0, sticky="w", pady=(5,0))
+        ttk.Entry(cfg, textvariable=self.monitor_api_key_var, show="•").grid(row=6, column=1, columnspan=2, sticky="ew", padx=6, pady=(5,0))
+        ttk.Label(cfg, textvariable=self.monitor_connection_var, foreground="#555", wraplength=460, justify="left").grid(row=7, column=0, columnspan=3, sticky="w", pady=(5,0))
+        ttk.Checkbutton(cfg, text="軽量LLMで曖昧候補だけ精査", variable=self.monitor_use_llm_var).grid(row=8, column=0, columnspan=3, sticky="w", pady=(5,0))
+        ttk.Checkbutton(cfg, text="別Modの日本語化も検索する", variable=self.monitor_check_translation_mods_var).grid(row=9, column=0, columnspan=3, sticky="w", pady=(3,0))
+        ttk.Label(cfg, text="判定専用なので3B〜8B級など小さなモデルを推奨します。自動翻訳は行いません。", foreground="#8a4b00", wraplength=460, justify="left").grid(row=10, column=0, columnspan=3, sticky="w", pady=(5,0))
 
-        controls = ttk.LabelFrame(left, text="調査 / 監視操作", padding=8)
+        controls = ttk.LabelFrame(left, text="監視操作", padding=8)
         controls.pack(fill="x")
         r1=ttk.Frame(controls); r1.pack(fill="x")
-        ttk.Button(r1, text="指定Modを調査", command=self.research_selected_mod_background).pack(side="left")
-        ttk.Button(r1, text="全部のModを調査", command=self.research_all_mods_background).pack(side="left", padx=(6,0))
+        self.monitor_toggle_btn = ttk.Button(r1, text="常時監視を開始", command=self.toggle_monitor)
+        self.monitor_toggle_btn.pack(side="left")
+        ttk.Button(r1, text="再調査", command=self.research_monitor_targets).pack(side="left", padx=(6,0))
         self.mod_research_stop_btn = ttk.Button(r1, text="調査停止", command=self.stop_mod_research, state="disabled")
         self.mod_research_stop_btn.pack(side="left", padx=(6,0))
-        r2=ttk.Frame(controls); r2.pack(fill="x", pady=(6,0))
-        self.monitor_start_btn = ttk.Button(r2, text="常時監視開始", command=self.start_monitor)
-        self.monitor_start_btn.pack(side="left")
-        self.monitor_stop_btn = ttk.Button(r2, text="常時監視停止", command=self.stop_monitor, state="disabled")
-        self.monitor_stop_btn.pack(side="left", padx=(6,0))
-        ttk.Button(r2, text="今すぐ再スキャン", command=self.monitor_scan_now).pack(side="left", padx=(6,0))
-        ttk.Label(controls, textvariable=self.monitor_status_var, wraplength=420, justify="left").pack(anchor="w", pady=(6,0))
+        ttk.Label(controls, textvariable=self.monitor_status_var, wraplength=460, justify="left").pack(anchor="w", pady=(6,0))
 
         result_top = ttk.Frame(right); result_top.pack(fill="x", pady=(0,6))
         ttk.Label(result_top, text="未翻訳候補", font=("", 12, "bold")).pack(side="left")
@@ -2103,7 +2070,7 @@ Mod更新後だけ追加翻訳:
         result_frame.rowconfigure(0,weight=1); result_frame.columnconfigure(0,weight=1)
 
         note = ttk.LabelFrame(right, text="仕組み", padding=6); note.pack(fill="x", pady=(6,0))
-        ttk.Label(note, text="待機中はYAMLの更新時刻とサイズだけを確認します。変更があった時だけ解析し、曖昧候補だけ監視専用LLMへ送ります。結果は翻訳状況タブにも反映できます。自動翻訳・ファイル書換えは行いません。", wraplength=800, justify="left").pack(anchor="w")
+        ttk.Label(note, text="待機中は監視対象のYAML更新時刻とサイズだけを確認します。変更があった対象だけ解析し、曖昧候補だけ監視専用LLMへ送ります。自動翻訳・ファイル書換えは行いません。", wraplength=650, justify="left").pack(anchor="w")
 
     def _build_status_tab(self):
         t = self.tab_status
@@ -2114,10 +2081,37 @@ Mod更新後だけ追加翻訳:
         # フルHDでも縦方向が苦しくなりにくいよう、左に設定系、右に結果系を置く。
         body = ttk.Panedwindow(t, orient="horizontal")
         body.pack(fill="both", expand=True)
-        left = ttk.Frame(body)
+        left_outer, left, self.status_left_canvas, self.status_left_scrollbar = self._make_vertical_scroll_area(body)
         right_outer, right, self.status_right_canvas, self.status_right_scrollbar = self._make_vertical_scroll_area(body)
-        body.add(left, weight=2)
+        body.add(left_outer, weight=2)
         body.add(right_outer, weight=5)
+
+        discovery = ttk.LabelFrame(left, text="ゲーム / Mod場所", padding=6); discovery.pack(fill="x", pady=(0,6))
+        dbar1 = ttk.Frame(discovery); dbar1.pack(fill="x", pady=(0,5))
+        ttk.Button(dbar1, text="ゲーム/Mod場所を自動検出", command=self.discover_mod_locations).pack(side="left")
+        ttk.Button(dbar1, text="選択した場所のModを調査", command=self.research_selected_discovered_location).pack(side="left", padx=(6,0))
+        ttk.Label(dbar1, textvariable=self.mod_discovery_status_var).pack(side="right")
+        dbar2 = ttk.Frame(discovery); dbar2.pack(fill="x", pady=(0,5))
+        ttk.Checkbutton(dbar2, text="複数選択モード", variable=self.discovery_multi_select_var).pack(side="left")
+        ttk.Button(dbar2, text="すべて選択", command=self.select_all_discovered_locations).pack(side="left", padx=(6,0))
+        ttk.Button(dbar2, text="選択解除", command=lambda:self.discovered_mod_tree.selection_remove(self.discovered_mod_tree.selection())).pack(side="left", padx=(6,0))
+        cols=("game","kind","mods","path")
+        treewrap = ttk.Frame(discovery); treewrap.pack(fill="both", expand=True)
+        self.discovered_mod_tree=ttk.Treeview(treewrap, columns=cols, show="headings", height=6, selectmode="extended")
+        self._enable_ctrl_multiselect(self.discovered_mod_tree)
+        self.discovered_mod_tree.bind("<Button-1>", self._on_discovery_tree_click, add="+")
+        for c,txt,w in (("game","ゲーム",180),("kind","種類",125),("mods","Mod数",70),("path","検出場所",650)):
+            self.discovered_mod_tree.heading(c,text=txt)
+            self.discovered_mod_tree.column(c,width=w,minwidth=w,stretch=False,anchor="w")
+        self._enable_tree_sort(self.discovered_mod_tree)
+        dsy=ttk.Scrollbar(treewrap,orient="vertical",command=self.discovered_mod_tree.yview)
+        dsx=ttk.Scrollbar(treewrap,orient="horizontal",command=self.discovered_mod_tree.xview)
+        self.discovered_mod_tree.configure(yscrollcommand=dsy.set,xscrollcommand=dsx.set)
+        self.discovered_mod_tree.grid(row=0,column=0,sticky="nsew")
+        dsy.grid(row=0,column=1,sticky="ns")
+        dsx.grid(row=1,column=0,sticky="ew")
+        treewrap.rowconfigure(0,weight=1); treewrap.columnconfigure(0,weight=1)
+        ttk.Label(discovery, text="Ctrl+クリックで複数場所を選択できます。［選択した場所のModを調査］を実行すると、その場所が未翻訳監視の対象にも登録されます。", foreground="#666", wraplength=330, justify="left").pack(anchor="w", pady=(4,0))
 
         search = ttk.LabelFrame(left, text="判定済みModを検索", padding=6); search.pack(fill="x", pady=(0,6))
         ttk.Label(search, text="Mod名").grid(row=0, column=0, sticky="w")
@@ -2384,50 +2378,86 @@ Mod更新後だけ追加翻訳:
         rows = self._selected_discovered_locations()
         return rows[0] if rows else None
 
+    def _set_monitor_targets(self, rows):
+        paths=[]
+        labels=[]
+        for row in rows or []:
+            raw=str(row.get("path", "")).strip()
+            if not raw:
+                continue
+            p=Path(raw)
+            if not p.exists():
+                continue
+            resolved=str(p.resolve())
+            if resolved not in paths:
+                paths.append(resolved)
+                labels.append(f"{row.get('game','')} / {row.get('kind','')}")
+        self.monitor_target_paths=paths
+        self.monitor_path_var.set(paths[0] if paths else "")
+        if paths:
+            label = "、".join(labels[:3])
+            if len(labels)>3:
+                label += f" ほか{len(labels)-3}か所"
+            self.monitor_target_summary_var.set(f"監視対象: {len(paths)}か所 — {label}")
+        else:
+            self.monitor_target_summary_var.set("監視対象: 翻訳状況タブでMod場所を選択して調査してください")
+
     def use_selected_discovered_location(self):
+        # 旧UI/内部呼び出しとの互換。選択場所を監視対象として登録する。
         rows = self._selected_discovered_locations()
         if not rows:
             return
-        row = rows[0]
-        self.monitor_path_var.set(row.get("path", ""))
-        if len(rows) > 1:
-            self.mod_discovery_status_var.set(
-                f"調査対象: {row.get('game','')} / {row.get('kind','')}（複数選択中の先頭1件を監視対象に設定）"
-            )
-        else:
-            self.mod_discovery_status_var.set(f"調査対象: {row.get('game','')} / {row.get('kind','')}")
+        self._set_monitor_targets(rows)
+        self.mod_discovery_status_var.set(f"監視対象に{len(self.monitor_target_paths)}か所登録")
+
+    def _collect_mod_roots_from_location_rows(self, rows):
+        all_roots=[]
+        missing=[]
+        for row in rows or []:
+            path=Path(row.get("path", ""))
+            if not path.exists():
+                missing.append(str(path)); continue
+            try:
+                roots=core.find_mod_roots(path)
+            except Exception as exc:
+                record_error("Mod場所調査", exc, str(path)); roots=[]
+            for root in roots:
+                rp=Path(root)
+                if rp not in all_roots:
+                    all_roots.append(rp)
+        return all_roots, missing
 
     def research_selected_discovered_location(self):
         rows = self._selected_discovered_locations()
         if not rows:
             return
-        all_roots = []
-        missing = []
-        for row in rows:
-            path = Path(row.get("path", ""))
-            if not path.exists():
-                missing.append(str(path))
-                continue
-            try:
-                roots = core.find_mod_roots(path)
-            except Exception:
-                roots = []
-            for root in roots:
-                if root not in all_roots:
-                    all_roots.append(root)
+        all_roots, missing = self._collect_mod_roots_from_location_rows(rows)
+        self._set_monitor_targets(rows)
         if not all_roots:
-            messagebox.showinfo(APP_NAME, "選択した場所からlocalizationを持つModを確認できませんでした。")
+            counts = ", ".join(f"{r.get('game','')} {r.get('kind','')}: {r.get('mod_count',0)}" for r in rows)
+            messagebox.showinfo(APP_NAME, "選択した場所からlocalizationを持つModを確認できませんでした。\n\n" + counts)
+            self.mod_discovery_status_var.set("調査対象のlocalizationを確認できませんでした")
             return
-        # 監視対象欄は先頭の場所を表示するが、調査自体は選択した全場所を対象にする。
-        self.monitor_path_var.set(str(rows[0].get("path", "")))
-        self.mod_discovery_status_var.set(f"{len(rows)}か所を一括調査 / {len(all_roots)} Mod検出")
-        self._start_mod_research(all_roots, replace=True)
-        try:
-            self.notebook.select(self.tab_status)
-        except Exception:
-            pass
+        self.mod_discovery_status_var.set(f"{len(rows)}か所 / {len(all_roots)} Modを調査中")
+        self._start_mod_research(all_roots, replace=True, translation_pool=all_roots)
         if missing:
             record_error("Mod場所一括調査", detail="存在しない検出場所: " + " | ".join(missing))
+
+    def research_monitor_targets(self):
+        paths=[Path(p) for p in self.monitor_target_paths if Path(p).exists()]
+        if not paths:
+            messagebox.showinfo(APP_NAME, "監視対象がありません。［翻訳状況］タブでゲーム/Mod場所を選択して［選択した場所のModを調査］を実行してください。")
+            return
+        rows=[]
+        for p in paths:
+            matched=next((r for r in self.detected_mod_locations if str(Path(r.get("path", "")))==str(p)), None)
+            rows.append(matched or {"path":str(p),"game":"","kind":""})
+        roots,_=self._collect_mod_roots_from_location_rows(rows)
+        if not roots:
+            messagebox.showinfo(APP_NAME, "監視対象からlocalizationを持つModを確認できませんでした。")
+            return
+        self._start_mod_research(roots, replace=True, translation_pool=roots)
+        self.monitor_status_var.set(f"再調査中 — {len(roots)} Mod")
 
     def on_monitor_provider_change(self):
         provider=self.monitor_provider_var.get()
@@ -2532,37 +2562,48 @@ Mod更新後だけ追加翻訳:
                 + ("\n実行中の通常翻訳は次のバッチから切り替わります。" if self.controller and self.worker and self.worker.is_alive() else ""))
         return True
 
+    def _current_monitor_roots(self):
+        roots=[]
+        for raw in self.monitor_target_paths:
+            p=Path(raw)
+            if p.exists():
+                roots.append(p)
+        return roots
+
+    def toggle_monitor(self):
+        if self.monitor_thread and self.monitor_thread.is_alive():
+            self.stop_monitor()
+        else:
+            self.start_monitor()
+
     def start_monitor(self):
         if self.monitor_thread and self.monitor_thread.is_alive():
             return
-        root=Path(self.monitor_path_var.get().strip())
-        if not root.exists():
-            messagebox.showinfo(APP_NAME,"監視するフォルダを選択してください。")
+        roots=self._current_monitor_roots()
+        if not roots:
+            messagebox.showinfo(APP_NAME,"監視対象がありません。［翻訳状況］タブでMod場所を選択して調査してください。")
             return
         self.monitor_stop_event.clear(); self.monitor_force_event.set(); self.monitor_snapshot={}
-        self.monitor_start_btn.config(state="disabled"); self.monitor_stop_btn.config(state="normal")
-        self.monitor_status_var.set("監視開始中…")
-        self._set_monitor_scan_status("● 未翻訳Mod監視中", "変更されたYAMLがないか確認しています")
+        self.monitor_toggle_btn.config(text="常時監視を停止")
+        self.monitor_status_var.set(f"● 常時監視中 — {len(roots)}か所 / 初回確認中…")
+        self._set_monitor_scan_status("● 未翻訳Mod監視中", f"{len(roots)}か所の変更されたYAMLを確認しています")
         self.monitor_thread=threading.Thread(target=self._monitor_worker,daemon=True)
         self.monitor_thread.start()
 
     def stop_monitor(self):
+        if not (self.monitor_thread and self.monitor_thread.is_alive()):
+            self.monitor_status_var.set("○ 監視停止中")
+            self.monitor_toggle_btn.config(text="常時監視を開始")
+            return
         self.monitor_stop_event.set(); self.monitor_force_event.set()
         if self.monitor_llm_controller:
             self.monitor_llm_controller.request_stop(save=False)
-        self.monitor_status_var.set("監視停止要求済み…")
+        self.monitor_status_var.set("監視停止処理中…")
+        self.monitor_toggle_btn.config(text="停止処理中…", state="disabled")
 
     def monitor_scan_now(self):
-        if self.monitor_thread and self.monitor_thread.is_alive():
-            self.monitor_force_event.set(); self.monitor_status_var.set("再スキャン要求済み")
-            return
-        root=Path(self.monitor_path_var.get().strip())
-        if not root.exists():
-            messagebox.showinfo(APP_NAME,"監視するフォルダを選択してください。")
-            return
-        self.monitor_stop_event.clear(); self.monitor_force_event.set(); self.monitor_snapshot={}
-        self.monitor_thread=threading.Thread(target=self._monitor_worker,args=(True,),daemon=True)
-        self.monitor_thread.start()
+        # 旧内部呼び出しとの互換。現在は「再調査」に統合。
+        self.research_monitor_targets()
 
     def _refine_candidates_with_monitor_llm(self, candidates):
         ambiguous=[(i,c) for i,c in enumerate(candidates) if c.get("needs_llm")]
@@ -2586,23 +2627,33 @@ Mod更新後だけ追加翻訳:
             self.monitor_llm_controller=None
 
     def _monitor_worker(self, one_shot=False):
-        root=Path(self.monitor_path_var.get().strip())
+        roots=self._current_monitor_roots()
         try:
             first=True
             while not self.monitor_stop_event.is_set():
                 forced=self.monitor_force_event.is_set(); self.monitor_force_event.clear()
-                stats=core.localization_file_stats(root)
-                changed = first or forced or stats != self.monitor_snapshot
+                combined_stats={}
+                for root in roots:
+                    stats=core.localization_file_stats(root)
+                    prefix=str(root)
+                    for rel,val in stats.items():
+                        combined_stats[f"{prefix}::{rel}"]=val
+                changed = first or forced or combined_stats != self.monitor_snapshot
                 if changed:
-                    self.events.put(("monitor_status","解析中…"))
-                    candidates=core.scan_translation_gaps(root)
+                    self.events.put(("monitor_status",f"● 常時監視中 — 解析中… ({len(roots)}か所)"))
+                    candidates=[]
+                    for root in roots:
+                        try:
+                            candidates.extend(core.scan_translation_gaps(root))
+                        except Exception as exc:
+                            self.events.put(("monitor_log",f"{root}: 解析をスキップ: {exc}"))
                     try:
                         candidates=self._refine_candidates_with_monitor_llm(candidates)
                     except core.StopRequested:
                         if self.monitor_stop_event.is_set(): break
                     except Exception as e:
                         self.events.put(("monitor_log",f"軽量LLM精査をスキップ: {e}"))
-                    self.monitor_candidates=candidates; self.monitor_snapshot=stats
+                    self.monitor_candidates=candidates; self.monitor_snapshot=combined_stats
                     self.events.put(("monitor_results",candidates))
                     first=False
                 if one_shot:
@@ -2734,34 +2785,12 @@ Mod更新後だけ追加翻訳:
             record_error("翻訳状況キャッシュ復元", e)
 
     def research_selected_mod_background(self):
-        root=Path(self.monitor_path_var.get().strip())
-        if not root.exists():
-            messagebox.showinfo(APP_NAME,"調査するModフォルダを選択してください。")
-            return
-        if self.mod_research_thread and self.mod_research_thread.is_alive():
-            messagebox.showinfo(APP_NAME,"すでに調査中です。")
-            return
-        # A localization directory itself is accepted; otherwise the selected folder is one mod.
-        mod_root = root.parent if root.name.lower()=="localization" else root
-        if not core.mod_localization_root(mod_root):
-            roots=core.find_mod_roots(root)
-            if len(roots)==1:
-                mod_root=roots[0]
-            elif len(roots)>1:
-                messagebox.showinfo(APP_NAME,"複数のModが見つかりました。全部を調べる場合は『全部のModを調べる』を使用してください。")
-                return
-        self._start_mod_research([mod_root], replace=True)
+        # 旧UI互換。調査機能は翻訳状況タブの選択場所調査へ統合済み。
+        self.research_monitor_targets()
 
     def research_all_mods_background(self):
-        root=Path(self.monitor_path_var.get().strip())
-        if not root.exists():
-            messagebox.showinfo(APP_NAME,"Modが入っている親フォルダを選択してください。")
-            return
-        roots=core.find_mod_roots(root)
-        if not roots:
-            messagebox.showinfo(APP_NAME,"調査できるModのlocalizationフォルダが見つかりませんでした。")
-            return
-        self._start_mod_research(roots, replace=True)
+        # 旧UI互換。調査機能は翻訳状況タブの選択場所調査へ統合済み。
+        self.research_monitor_targets()
 
     def _start_mod_research(self, roots, replace=True, translation_pool=None):
         if self.mod_research_thread and self.mod_research_thread.is_alive():
@@ -5173,8 +5202,10 @@ Mod更新後だけ追加翻訳:
                         self.discovered_mod_tree.insert("","end",iid=f"loc_{i}",values=(row.get("game",""),row.get("kind",""),row.get("mod_count",0),row.get("path","")))
                     if self.detected_mod_locations:
                         self.mod_discovery_status_var.set(f"{len(self.detected_mod_locations)}か所検出")
-                        first=self.discovered_mod_tree.get_children()[0]
-                        self.discovered_mod_tree.selection_set(first); self.discovered_mod_tree.focus(first)
+                        preferred_idx=next((i for i,row in enumerate(self.detected_mod_locations) if int(row.get("mod_count",0) or 0)>0),0)
+                        first=f"loc_{preferred_idx}"
+                        if self.discovered_mod_tree.exists(first):
+                            self.discovered_mod_tree.selection_set(first); self.discovered_mod_tree.focus(first); self.discovered_mod_tree.see(first)
                     else:
                         self.mod_discovery_status_var.set("自動検出できませんでした — 手動選択を使用してください")
                 elif kind=="mod_locations_error":
@@ -5198,16 +5229,18 @@ Mod更新後だけ追加翻訳:
                         self.monitor_tree.insert("","end",iid=str(i),values=(c.get("kind",""),c.get("confidence",""),Path(fp).name if fp else "",c.get("key",""),text[:500]))
                     summary=" / ".join(f"{k}: {v}" for k,v in counts.items())
                     self.monitor_summary_var.set(f"未翻訳候補: {len(payload)}"+(f"　({summary})" if summary else ""))
-                    self.monitor_status_var.set(f"監視中 — 最終確認 {datetime.now().strftime('%H:%M:%S')}")
+                    self.monitor_status_var.set(f"● 常時監視中 — 最終確認 {datetime.now().strftime('%H:%M:%S')}")
                 elif kind=="monitor_stopped":
-                    self.monitor_status_var.set("監視停止中")
-                    self.monitor_start_btn.config(state="normal"); self.monitor_stop_btn.config(state="disabled")
+                    self.monitor_status_var.set("○ 監視停止中")
+                    if hasattr(self,"monitor_toggle_btn"):
+                        self.monitor_toggle_btn.config(text="常時監視を開始", state="normal")
                     self.monitor_thread=None
                     self._set_monitor_llm_idle("探索用LLM 待機中","未翻訳監視を終了しました")
                 elif kind=="monitor_error":
                     record_error("未翻訳監視", detail=str(payload))
                     self.monitor_status_var.set("監視エラー")
-                    self.monitor_start_btn.config(state="normal"); self.monitor_stop_btn.config(state="disabled")
+                    if hasattr(self,"monitor_toggle_btn"):
+                        self.monitor_toggle_btn.config(text="常時監視を開始", state="normal")
                     self.monitor_thread=None
                     messagebox.showerror(APP_NAME,"未翻訳監視エラー: "+payload)
                 elif kind=="mod_status_results":
