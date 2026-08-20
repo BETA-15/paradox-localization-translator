@@ -34,7 +34,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.8.5"
+APP_VERSION = "0.8.6"
 
 
 def _app_container_dir() -> Path:
@@ -191,13 +191,14 @@ class App(BaseTk):
         # 画面のほぼ全域を初期サイズとして使う。以前の 940px 高さ上限は撤廃。
         screen_w = self.winfo_screenwidth()
         screen_h = self.winfo_screenheight()
-        initial_w = min(1540, max(1220, int(screen_w * 0.96)))
-        initial_h = min(1120, max(900, int(screen_h * 0.96)))
-        initial_w = min(initial_w, max(960, screen_w - 24))
-        initial_h = min(initial_h, max(760, screen_h - 48))
+        initial_w = min(1480, max(1180, int(screen_w * 0.94)))
+        # フルHDでも下部が欠けにくいよう、初期高さは少し控えめにする。
+        # 追加の高さが必要な場合は各ペインの仕切りバーとウィンドウ拡大で対応する。
+        initial_h = min(980, max(760, int(screen_h * 0.88)))
+        initial_w = min(initial_w, max(960, screen_w - 36))
+        initial_h = min(initial_h, max(700, screen_h - 96))
         self.geometry(f"{initial_w}x{initial_h}")
-        self.minsize(min(1080, max(920, screen_w - 80)),
-                     min(780, max(700, screen_h - 120)))
+        self.minsize(1040, 700)
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
         self.events = queue.Queue()
@@ -225,6 +226,8 @@ class App(BaseTk):
         self.monitor_llm_active_ids = set()
         self.monitor_current_mod = ""
         self.dnd_status_var = tk.StringVar(value="ドラッグ＆ドロップ: 初期化確認中")
+        self.dual_source_preview_var = tk.StringVar(value="英語＋簡体字中国語の併用がオフです")
+        self.dual_source_info_var = tk.StringVar(value="チェックを入れると、選択中キューの簡体字中国語ファイル候補をここに表示します。")
         self.translation_llm_last_response = ""
         self.monitor_llm_last_response = ""
         self.translation_llm_response_meta = "応答待機中"
@@ -311,6 +314,8 @@ class App(BaseTk):
             threading.excepthook = self._thread_excepthook
 
         self._build_ui()
+        self.dual_var.trace_add("write", lambda *_: self._update_dual_source_preview())
+        self.after(80, self._update_dual_source_preview)
         self.after(100, self._poll_events)
         self.after(300, self.refresh_models)
         self.after(450, self.refresh_monitor_models)
@@ -358,7 +363,7 @@ class App(BaseTk):
         ttk.Label(tr_head, textvariable=self.translation_response_meta_var, foreground="#555").pack(side="left")
         ttk.Button(tr_head, text="全文を開く", command=lambda:self._open_llm_response_window(False)).pack(side="right")
         ttk.Button(tr_head, text="クリア", command=lambda:self._clear_llm_response(False)).pack(side="right", padx=(0,5))
-        self.translation_response_text = tk.Text(tr_frame, height=4, wrap="word", state="disabled", font=("TkFixedFont", 9))
+        self.translation_response_text = tk.Text(tr_frame, height=3, wrap="word", state="disabled", font=("TkFixedFont", 9))
         self.translation_response_text.pack(fill="x", pady=(4,0))
 
         mon_frame = ttk.LabelFrame(response_row, text="探索用LLM 最新応答（読み取り専用）", padding=5)
@@ -368,7 +373,7 @@ class App(BaseTk):
         ttk.Label(mon_head, textvariable=self.monitor_response_meta_var, foreground="#555").pack(side="left")
         ttk.Button(mon_head, text="全文を開く", command=lambda:self._open_llm_response_window(True)).pack(side="right")
         ttk.Button(mon_head, text="クリア", command=lambda:self._clear_llm_response(True)).pack(side="right", padx=(0,5))
-        self.monitor_response_text = tk.Text(mon_frame, height=4, wrap="word", state="disabled", font=("TkFixedFont", 9))
+        self.monitor_response_text = tk.Text(mon_frame, height=3, wrap="word", state="disabled", font=("TkFixedFont", 9))
         self.monitor_response_text.pack(fill="x", pady=(4,0))
 
         nb = ttk.Notebook(self); nb.pack(fill="both", expand=True, padx=10, pady=8)
@@ -507,6 +512,97 @@ class App(BaseTk):
 
         widget.bind("<Control-Button-1>", on_ctrl_click, add="+")
 
+    def _get_first_selected_queue_item(self):
+        sel = []
+        try:
+            if hasattr(self, "queue_tree"):
+                sel = list(self.queue_tree.selection())
+        except Exception:
+            sel = []
+        if sel:
+            try:
+                idx = int(sel[0])
+                if 0 <= idx < len(self.queue_items):
+                    return self.queue_items[idx]
+            except Exception:
+                pass
+        if len(self.queue_items) == 1:
+            return self.queue_items[0]
+        return None
+
+    def _find_simp_chinese_candidates(self, input_path):
+        path = Path(input_path)
+        if not path.exists():
+            return []
+        candidates = []
+
+        def looks_like_chinese_file(p: Path) -> bool:
+            name = p.name.lower()
+            return "simp_chinese" in name or name.endswith("_l_simp_chinese.yml")
+
+        if path.is_file():
+            direct_names = [
+                path.name.replace("_l_english", "_l_simp_chinese"),
+                path.name.replace("english", "simp_chinese"),
+            ]
+            for nm in direct_names:
+                cand = path.with_name(nm)
+                if cand.exists() and cand not in candidates:
+                    candidates.append(cand)
+            search_root = path.parent
+        else:
+            search_root = core.mod_localization_root(path) or path
+
+        try:
+            for f in core.gather_yml_files(search_root):
+                try:
+                    if looks_like_chinese_file(f):
+                        candidates.append(f)
+                        continue
+                    lang, _, _ = core.parse_localization_file(f)
+                    if lang == "simp_chinese":
+                        candidates.append(f)
+                except Exception:
+                    continue
+        except Exception:
+            return []
+
+        uniq = []
+        seen = set()
+        for cand in candidates:
+            key = str(cand)
+            if key in seen:
+                continue
+            seen.add(key)
+            uniq.append(cand)
+        return uniq
+
+    def _update_dual_source_preview(self):
+        if not hasattr(self, "dual_source_preview_var"):
+            return
+        if not self.dual_var.get():
+            self.dual_source_preview_var.set("英語＋簡体字中国語の併用がオフです")
+            self.dual_source_info_var.set("チェックを入れると、選択中キューの簡体字中国語ファイル候補をここに表示します。")
+            return
+        item = self._get_first_selected_queue_item()
+        if not item:
+            self.dual_source_preview_var.set("キュー未選択")
+            self.dual_source_info_var.set("翻訳キューから1件選ぶと、その入力に対応する簡体字中国語ファイル候補を表示します。")
+            return
+        input_path = item.get("input", "")
+        candidates = self._find_simp_chinese_candidates(input_path)
+        if not candidates:
+            self.dual_source_preview_var.set("簡体字中国語参照なし")
+            self.dual_source_info_var.set(f"{input_path} に対応する simp_chinese ファイルを自動検出できませんでした。英語のみで翻訳を続行します。")
+            return
+        first = str(candidates[0])
+        extra = len(candidates) - 1
+        self.dual_source_preview_var.set(first)
+        if extra > 0:
+            self.dual_source_info_var.set(f"簡体字中国語ファイルを {len(candidates)} 件検出しました。上段に先頭候補を表示しています。キュー選択を変えると再検出します。")
+        else:
+            self.dual_source_info_var.set("簡体字中国語ファイルを1件検出しました。英語とあわせて参照します。")
+
     def _build_translate_tab(self):
         t = self.tab_translate
         settings = ttk.LabelFrame(t, text="LLM / 翻訳設定", padding=8); settings.pack(fill="x")
@@ -531,7 +627,7 @@ class App(BaseTk):
         ttk.Button(settings,text="現在設定を保存",command=self.save_current_profile).grid(row=1,column=6,sticky="e",pady=(8,0))
 
         ttk.Checkbutton(settings,text="既存日本語の未翻訳を修復",variable=self.repair_var).grid(row=2,column=0,columnspan=2,sticky="w",pady=(8,0))
-        ttk.Checkbutton(settings,text="英語＋簡体字中国語を併用",variable=self.dual_var).grid(row=2,column=2,columnspan=2,sticky="w",pady=(8,0))
+        ttk.Checkbutton(settings,text="英語＋簡体字中国語を併用",variable=self.dual_var,command=self._update_dual_source_preview).grid(row=2,column=2,columnspan=2,sticky="w",pady=(8,0))
         ttk.Checkbutton(settings,text="翻訳後に自動QA",variable=self.autoqa_var).grid(row=2,column=4,columnspan=2,sticky="w",pady=(8,0))
         ttk.Label(settings,text="APIキー").grid(row=3,column=0,sticky="w",pady=(8,0))
         ttk.Entry(settings,textvariable=self.api_key_var,show="•").grid(row=3,column=1,columnspan=3,sticky="ew",padx=(5,10),pady=(8,0))
@@ -556,7 +652,25 @@ class App(BaseTk):
         self.apply_current_translation_btn = ttk.Button(settings, text="現在の翻訳へ設定を適用", command=self.apply_settings_to_current_translation)
         self.apply_current_translation_btn.grid(row=6, column=0, columnspan=2, sticky="w", pady=(8,0))
         ttk.Label(settings, text="翻訳中は次の安全なバッチ境界から反映します。モデル変更時も以降のキャッシュを分離します。", foreground="#555").grid(row=6, column=2, columnspan=5, sticky="w", pady=(8,0))
-        qf = ttk.LabelFrame(t,text="複数翻訳キュー（上から順番に処理）",padding=8); qf.pack(fill="both",expand=True,pady=(10,0))
+
+        dual_box = ttk.LabelFrame(t, text="簡体字中国語参照（英語＋簡体字中国語を併用時）", padding=8)
+        dual_box.pack(fill="x", pady=(8,0))
+        dual_box.columnconfigure(1, weight=1)
+        ttk.Label(dual_box, text="参照候補").grid(row=0, column=0, sticky="w")
+        self.dual_source_entry = ttk.Entry(dual_box, textvariable=self.dual_source_preview_var, state="readonly")
+        self.dual_source_entry.grid(row=0, column=1, sticky="ew", padx=(8,8))
+        ttk.Button(dual_box, text="再検出", command=self._update_dual_source_preview).grid(row=0, column=2)
+        ttk.Label(dual_box, textvariable=self.dual_source_info_var, foreground="#555", wraplength=1000).grid(row=1, column=0, columnspan=3, sticky="w", pady=(6,0))
+
+        ttk.Label(t, text="下部が見切れる場合は、キューとログの間の仕切りバーを上下にドラッグして表示割合を調整できます。", foreground="#666").pack(fill="x", pady=(8,0))
+        work_pane = ttk.Panedwindow(t, orient="vertical")
+        work_pane.pack(fill="both", expand=True, pady=(10,0))
+        upper = ttk.Frame(work_pane)
+        lower = ttk.LabelFrame(work_pane, text="ログ", padding=6)
+        work_pane.add(upper, weight=4)
+        work_pane.add(lower, weight=2)
+
+        qf = ttk.LabelFrame(upper,text="複数翻訳キュー（上から順番に処理）",padding=8); qf.pack(fill="both",expand=True,pady=(0,0))
         toolbar=ttk.Frame(qf); toolbar.pack(fill="x",pady=(0,6))
         add_menu = tk.Menu(toolbar, tearoff=False)
         add_menu.add_command(label="YAMLファイルを追加", command=self.add_files)
@@ -577,7 +691,7 @@ class App(BaseTk):
         self.drop_hint.pack(fill="x", pady=(0,6))
 
         cols=("input","output","status")
-        self.queue_tree=ttk.Treeview(qf,columns=cols,show="headings",height=12)
+        self.queue_tree=ttk.Treeview(qf,columns=cols,show="headings",height=8)
         self.queue_tree.heading("input",text="入力")
         self.queue_tree.heading("output",text="出力")
         self.queue_tree.heading("status",text="状態")
@@ -585,6 +699,7 @@ class App(BaseTk):
         self._enable_tree_sort(self.queue_tree)
         ys=ttk.Scrollbar(qf,orient="vertical",command=self.queue_tree.yview); self.queue_tree.configure(yscrollcommand=ys.set)
         self.queue_tree.pack(side="left",fill="both",expand=True); ys.pack(side="right",fill="y")
+        self.queue_tree.bind("<<TreeviewSelect>>", lambda e: self._update_dual_source_preview())
         if DND_AVAILABLE:
             try:
                 self._register_dnd_widgets([self, qf, self.queue_tree, self.drop_hint], self.on_drop_paths)
@@ -595,19 +710,19 @@ class App(BaseTk):
         else:
             self.dnd_status_var.set("ドラッグ＆ドロップ無効 — TkDnDを読み込めません。『追加』ボタンは利用できます")
 
-        actions=ttk.Frame(t); actions.pack(fill="x",pady=(10,0))
+        actions=ttk.Frame(upper); actions.pack(fill="x",pady=(10,0))
         self.start_btn=ttk.Button(actions,text="翻訳開始",command=self.start_queue); self.start_btn.pack(side="left")
         self.pause_btn=ttk.Button(actions,text="一時停止",command=self.toggle_pause,state="disabled"); self.pause_btn.pack(side="left",padx=(7,0))
         self.stop_btn=ttk.Button(actions,text="セーブして中断",command=self.save_and_stop,state="disabled"); self.stop_btn.pack(side="left",padx=(7,0))
         ttk.Button(actions,text="出力を開く",command=self.open_selected_output).pack(side="left",padx=(7,0))
         ttk.Label(actions,textvariable=self.progress_text).pack(side="right")
-        self.progress=ttk.Progressbar(t,mode="determinate",maximum=100); self.progress.pack(fill="x",pady=(7,7))
+        self.progress=ttk.Progressbar(upper,mode="determinate",maximum=100); self.progress.pack(fill="x",pady=(7,7))
 
-        lf=ttk.LabelFrame(t,text="ログ",padding=6); lf.pack(fill="both",expand=False)
+        lf=lower
         lbar=ttk.Frame(lf); lbar.pack(fill="x", pady=(0,4))
         ttk.Button(lbar,text="エラーログを開く",command=lambda:self._open_path(LOG_ROOT)).pack(side="left")
         ttk.Button(lbar,text="診断ログを収集",command=self.collect_error_logs).pack(side="left",padx=(6,0))
-        self.log=tk.Text(lf,height=10,wrap="word",state="disabled")
+        self.log=tk.Text(lf,height=6,wrap="word",state="disabled")
         lsy=ttk.Scrollbar(lf,command=self.log.yview); self.log.configure(yscrollcommand=lsy.set)
         self.log.pack(side="left",fill="both",expand=True); lsy.pack(side="right",fill="y")
 
