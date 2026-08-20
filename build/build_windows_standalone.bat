@@ -17,6 +17,7 @@ py -3 -m PyInstaller ^
   --onefile ^
   --name "ParadoxLocalizationTranslator" ^
   --paths app ^
+  --collect-all tkinterdnd2 ^
   --hidden-import tkinter ^
   --hidden-import tkinter.ttk ^
   --hidden-import tkinter.filedialog ^

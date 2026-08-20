@@ -14,6 +14,7 @@ rm -rf pyinstaller-build dist
   --noconfirm --clean --windowed --onefile \
   --name "ParadoxLocalizationTranslator" \
   --paths app \
+  --collect-all tkinterdnd2 \
   --hidden-import tkinter --hidden-import tkinter.ttk \
   --hidden-import tkinter.filedialog --hidden-import tkinter.messagebox \
   --hidden-import tkinter.simpledialog \
