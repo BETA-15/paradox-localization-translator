@@ -34,7 +34,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.8.2"
+APP_VERSION = "0.8.5"
 
 
 def _app_container_dir() -> Path:
@@ -240,7 +240,6 @@ class App(BaseTk):
         close_prefs = self.app_preferences.get("window_close", {}) if isinstance(self.app_preferences.get("window_close", {}), dict) else {}
         # ×ボタン時の既定動作。confirm / minimize / quit の3種類。
         self.close_action_var = tk.StringVar(value={"confirm":"毎回確認","minimize":"最小化","quit":"終了"}.get(close_prefs.get("action"), close_prefs.get("action", "毎回確認")))
-        self.close_prompt_var = tk.BooleanVar(value=bool(close_prefs.get("show_prompt", True)))
 
         self.provider_var = tk.StringVar(value=last_translation.get("provider", "Ollama"))
         self.api_key_var = tk.StringVar(value="")
@@ -462,6 +461,52 @@ class App(BaseTk):
             except tk.TclError:
                 pass
 
+    def _enable_ctrl_multiselect(self, widget, max_items=None):
+        """複数選択操作を全OSで Ctrl+クリック に統一する。
+
+        Tkの標準extended選択はOSごとに修飾キーの慣習が異なるため、
+        Ctrl+クリックを明示的にトグル操作として登録する。通常クリックは
+        従来どおり単一選択として動作する。
+        """
+        def on_ctrl_click(event):
+            try:
+                if isinstance(widget, ttk.Treeview):
+                    iid = widget.identify_row(event.y)
+                    if not iid:
+                        return "break"
+                    selected = list(widget.selection())
+                    if iid in selected:
+                        widget.selection_remove(iid)
+                    else:
+                        if max_items is not None and len(selected) >= max_items:
+                            self.bell()
+                            return "break"
+                        widget.selection_add(iid)
+                    widget.focus(iid)
+                    widget.see(iid)
+                    widget.event_generate("<<TreeviewSelect>>")
+                    return "break"
+                if isinstance(widget, tk.Listbox):
+                    idx = widget.nearest(event.y)
+                    if idx < 0 or idx >= widget.size():
+                        return "break"
+                    selected = set(widget.curselection())
+                    if idx in selected:
+                        widget.selection_clear(idx)
+                    else:
+                        if max_items is not None and len(selected) >= max_items:
+                            self.bell()
+                            return "break"
+                        widget.selection_set(idx)
+                    widget.activate(idx)
+                    widget.event_generate("<<ListboxSelect>>")
+                    return "break"
+            except Exception as exc:
+                record_error("Ctrl複数選択", exc)
+            return None
+
+        widget.bind("<Control-Button-1>", on_ctrl_click, add="+")
+
     def _build_translate_tab(self):
         t = self.tab_translate
         settings = ttk.LabelFrame(t, text="LLM / 翻訳設定", padding=8); settings.pack(fill="x")
@@ -640,6 +685,7 @@ class App(BaseTk):
         paned = ttk.Panedwindow(t, orient="horizontal"); paned.pack(fill="both", expand=True)
         left = ttk.Frame(paned); right = ttk.Frame(paned); paned.add(left, weight=2); paned.add(right, weight=3)
         self.diff_tree = ttk.Treeview(left, columns=("key",), show="tree headings", selectmode="extended")
+        self._enable_ctrl_multiselect(self.diff_tree)
         self.diff_tree.heading("#0", text="状態"); self.diff_tree.column("#0", width=150)
         self.diff_tree.heading("key", text="キー"); self.diff_tree.column("key", width=360)
         self.diff_tree.tag_configure("missing", background="#fee2e2")
@@ -648,6 +694,8 @@ class App(BaseTk):
         self.diff_tree.bind("<<TreeviewSelect>>", self.on_diff_select)
         self._enable_tree_sort(self.diff_tree, recursive=True)
         ys = ttk.Scrollbar(left, command=self.diff_tree.yview); self.diff_tree.configure(yscrollcommand=ys.set)
+        hint = ttk.Label(left, text="Ctrlキーを押しながらクリックすると複数選択できます。", foreground="#666")
+        hint.pack(side="bottom", fill="x", pady=(3,0))
         self.diff_tree.pack(side="left", fill="both", expand=True); ys.pack(side="right", fill="y")
 
         compare = ttk.Panedwindow(right, orient="horizontal"); compare.pack(fill="both", expand=True)
@@ -726,14 +774,12 @@ class App(BaseTk):
                                    values=("毎回確認", "最小化", "終了"))
         close_combo.grid(row=0, column=1, sticky="w", padx=(8,12))
         ttk.Label(close_box, text="通常は『毎回確認』を推奨します。", foreground="#555").grid(row=0,column=2,sticky="w")
-        ttk.Checkbutton(close_box, text="×ボタンを押したとき『最小化しますか？終了しますか？』の確認を表示する",
-                        variable=self.close_prompt_var, command=self._save_llm_preferences).grid(row=1,column=0,columnspan=3,sticky="w",pady=(8,0))
         ttk.Button(close_box, text="この設定を保存", command=self.save_close_behavior_settings).grid(row=0,column=3,padx=(12,0))
         ttk.Label(close_box, text=(
-            "最小化: アプリを閉じず、翻訳・探索・LLM処理はそのまま続きます。\n"
-            "終了: 翻訳中ならセッションとキャッシュを保存して停止要求を出してからアプリを終了します。\n"
-            "確認を表示しない場合は上の既定動作を直接実行します。設定はいつでもここから戻せます。"
-        ), foreground="#555", wraplength=1100, justify="left").grid(row=2,column=0,columnspan=4,sticky="w",pady=(8,0))
+            "毎回確認: ×ボタンを押すたびに『最小化 / 終了 / キャンセル』を選びます。\n"
+            "最小化: 確認せずウィンドウだけを最小化し、翻訳・探索・LLM処理は続行します。\n"
+            "終了: 確認せず、翻訳中ならセッションとキャッシュを保存して停止要求を出してから終了します。"
+        ), foreground="#555", wraplength=1100, justify="left").grid(row=1,column=0,columnspan=4,sticky="w",pady=(8,0))
 
         structure = ttk.LabelFrame(t, text="フォルダ構成", padding=12)
         structure.pack(fill="both", expand=True, pady=(12,0))
@@ -806,35 +852,24 @@ class App(BaseTk):
             messagebox.showerror(APP_NAME, f"保存場所の変更に失敗しました。\n{e}")
 
     def save_close_behavior_settings(self, silent=False):
-        """Save × button behavior and prompt visibility."""
-        if self.close_action_var.get() == "毎回確認" and not self.close_prompt_var.get():
-            self.close_prompt_var.set(True)
-            if not silent:
-                messagebox.showinfo(
-                    APP_NAME,
-                    "『毎回確認』では確認画面を非表示にはできません。\n\n"
-                    "確認を表示しない場合は、既定動作を『最小化』または『終了』に変更してください。"
-                )
-            return False
+        """Save the single × button behavior setting."""
         self._save_llm_preferences()
         if not silent:
             messagebox.showinfo(
                 APP_NAME,
                 "×ボタンの動作設定を保存しました。\n\n"
-                f"既定動作: {self.close_action_var.get()}\n"
-                f"確認画面: {'表示する' if self.close_prompt_var.get() else '表示しない'}"
+                f"動作: {self.close_action_var.get()}"
             )
         return True
 
     def _show_close_choice_dialog(self):
-        """Return 'minimize', 'quit' or 'cancel'. Also updates the do-not-show-again preference."""
+        """Return 'minimize', 'quit' or 'cancel'."""
         dlg = tk.Toplevel(self)
         dlg.title("アプリを閉じますか？")
         dlg.transient(self)
         dlg.grab_set()
         dlg.resizable(False, False)
         result = {"action": "cancel"}
-        show_next = tk.BooleanVar(value=True)
         active_translation = bool(self.worker and self.worker.is_alive())
         active_monitor = bool(self.monitor_thread and self.monitor_thread.is_alive())
 
@@ -855,16 +890,10 @@ class App(BaseTk):
             if active_translation: running.append("翻訳")
             if active_monitor: running.append("Mod探索/監視")
             ttk.Label(frame, text="現在動作中: " + " / ".join(running), foreground="#a35a00").pack(anchor="w", pady=(0,8))
-        ttk.Checkbutton(frame, text="次回もこの確認を表示する", variable=show_next).pack(anchor="w", pady=(4,12))
-
         buttons = ttk.Frame(frame)
         buttons.pack(fill="x")
         def choose(action):
             result["action"] = action
-            if (not show_next.get()) and action in ("minimize", "quit"):
-                self.close_prompt_var.set(False)
-                self.close_action_var.set("最小化" if action == "minimize" else "終了")
-                self._save_llm_preferences()
             dlg.destroy()
         ttk.Button(buttons, text="最小化", command=lambda: choose("minimize")).pack(side="left")
         ttk.Button(buttons, text="終了", command=lambda: choose("quit")).pack(side="left", padx=(8,0))
@@ -1215,16 +1244,12 @@ OS、アプリバージョン、モデル情報、エラーログなどを診断
 ・LLM/翻訳処理へ安全停止要求を出します
 ・その後アプリを終了します
 
-確認画面には「次回もこの確認を表示する」のチェックがあります。
-チェックを外して最小化または終了を選ぶと、次回からその動作を直接実行します。
-
 後から変更したい場合:
 ［設定］→［ウィンドウの×ボタンを押したときの動作］で、
 ・毎回確認
 ・最小化
 ・終了
 を選択できます。
-「×ボタンを押したとき確認を表示する」もON/OFFできます。
 
 【17. 安全に使うための注意】
 ・元Modへ直接上書きする前に必ず警告内容を確認してください。
@@ -1278,12 +1303,14 @@ Mod更新後だけ追加翻訳:
         ttk.Button(dbar, text="選択ゲームの全Modを調べる", command=self.research_selected_discovered_location).pack(side="left", padx=(6,0))
         ttk.Label(dbar, textvariable=self.mod_discovery_status_var).pack(side="right")
         cols=("game","kind","mods","path")
-        self.discovered_mod_tree=ttk.Treeview(discovery, columns=cols, show="headings", height=4, selectmode="browse")
+        self.discovered_mod_tree=ttk.Treeview(discovery, columns=cols, show="headings", height=4, selectmode="extended")
+        self._enable_ctrl_multiselect(self.discovered_mod_tree)
         for c,txt,w in (("game","ゲーム",210),("kind","種類",130),("mods","Mod数",70),("path","検出場所",650)):
             self.discovered_mod_tree.heading(c,text=txt); self.discovered_mod_tree.column(c,width=w,anchor="w")
         self._enable_tree_sort(self.discovered_mod_tree)
         self.discovered_mod_tree.pack(fill="x")
-        ttk.Label(discovery, text="Steamの追加ライブラリ、別ドライブ・外付けSSD、Documents/Paradox Interactive のローカルModを自動探索します。見つかったSteamライブラリは次回の探索にも再利用します。見つからない場合は下の［選択］から手動指定できます。", foreground="#555").pack(anchor="w", pady=(5,0))
+        ttk.Label(discovery, text="Ctrlキーを押しながらクリックすると複数選択できます。", foreground="#666").pack(anchor="w", pady=(4,0))
+        ttk.Label(discovery, text="選択した複数のSteam Workshop / ローカルMod場所は［選択ゲームの全Modを調べる］でまとめて調査できます。Steamの追加ライブラリ、別ドライブ・外付けSSDも自動探索します。", foreground="#555").pack(anchor="w", pady=(1,0))
 
         cfg = ttk.LabelFrame(t, text="ゲーム本体 / Mod の未翻訳調査・監視", padding=8)
         cfg.pack(fill="x")
@@ -1393,11 +1420,13 @@ Mod更新後だけ追加翻訳:
 
         # Treeviewは必ず専用Frameの子として作る。旧実装の in_= 指定では
         # macOS/Tkで枠だけ広がり一覧本体が表示されない場合があった。
+        ttk.Label(t, text="Ctrlキーを押しながらクリックすると複数選択できます。", foreground="#666").pack(anchor="w", pady=(0,3))
         content = ttk.Panedwindow(t, orient="vertical"); content.pack(fill="both", expand=True)
         tree_frame=ttk.Frame(content); detail_frame=ttk.Frame(content)
         content.add(tree_frame, weight=5); content.add(detail_frame, weight=1)
         cols=("status","mod","gaps","jpmod","jpmod_gaps")
         self.mod_status_tree=ttk.Treeview(tree_frame, columns=cols, show="headings", height=14, selectmode="extended")
+        self._enable_ctrl_multiselect(self.mod_status_tree)
         for c,txt,w in (("status","状態",145),("mod","Mod",300),("gaps","欠損",75),("jpmod","日本語化Mod",300),("jpmod_gaps","日本語化Mod欠損",125)):
             self.mod_status_tree.heading(c,text=txt); self.mod_status_tree.column(c,width=w,anchor="w")
         sy=ttk.Scrollbar(tree_frame,orient="vertical",command=self.mod_status_tree.yview)
@@ -1558,40 +1587,70 @@ Mod更新後だけ追加翻訳:
                 self.events.put(("mod_locations_error",str(e)))
         threading.Thread(target=work,daemon=True).start()
 
-    def _selected_discovered_location(self):
+    def _selected_discovered_locations(self):
         if not hasattr(self, "discovered_mod_tree"):
-            return None
-        sel=self.discovered_mod_tree.selection()
+            return []
+        sel = self.discovered_mod_tree.selection()
         if not sel:
-            messagebox.showinfo(APP_NAME,"自動検出されたゲーム/Mod場所を1つ選択してください。")
-            return None
-        try:
-            idx=int(sel[0].split("_",1)[1])
-            return self.detected_mod_locations[idx]
-        except Exception:
-            return None
+            messagebox.showinfo(APP_NAME, "自動検出されたゲーム/Mod場所を選択してください。Ctrlキーを押しながらクリックすると複数選択できます。")
+            return []
+        rows = []
+        for iid in sel:
+            try:
+                idx = int(iid.split("_", 1)[1])
+                rows.append(self.detected_mod_locations[idx])
+            except Exception:
+                continue
+        return rows
+
+    def _selected_discovered_location(self):
+        rows = self._selected_discovered_locations()
+        return rows[0] if rows else None
 
     def use_selected_discovered_location(self):
-        row=self._selected_discovered_location()
-        if not row: return
-        self.monitor_path_var.set(row.get("path",""))
-        self.mod_discovery_status_var.set(f"調査対象: {row.get('game','')} / {row.get('kind','')}")
+        rows = self._selected_discovered_locations()
+        if not rows:
+            return
+        row = rows[0]
+        self.monitor_path_var.set(row.get("path", ""))
+        if len(rows) > 1:
+            self.mod_discovery_status_var.set(
+                f"調査対象: {row.get('game','')} / {row.get('kind','')}（複数選択中の先頭1件を監視対象に設定）"
+            )
+        else:
+            self.mod_discovery_status_var.set(f"調査対象: {row.get('game','')} / {row.get('kind','')}")
 
     def research_selected_discovered_location(self):
-        row=self._selected_discovered_location()
-        if not row: return
-        path=Path(row.get("path",""))
-        if not path.exists():
-            messagebox.showerror(APP_NAME,"検出したMod場所が現在存在しません。再検出してください。")
+        rows = self._selected_discovered_locations()
+        if not rows:
             return
-        self.monitor_path_var.set(str(path))
-        roots=core.find_mod_roots(path)
-        if not roots:
-            messagebox.showinfo(APP_NAME,"この場所からlocalizationを持つModを確認できませんでした。")
+        all_roots = []
+        missing = []
+        for row in rows:
+            path = Path(row.get("path", ""))
+            if not path.exists():
+                missing.append(str(path))
+                continue
+            try:
+                roots = core.find_mod_roots(path)
+            except Exception:
+                roots = []
+            for root in roots:
+                if root not in all_roots:
+                    all_roots.append(root)
+        if not all_roots:
+            messagebox.showinfo(APP_NAME, "選択した場所からlocalizationを持つModを確認できませんでした。")
             return
-        self._start_mod_research(roots, replace=True)
-        try: self.notebook.select(self.tab_status)
-        except Exception: pass
+        # 監視対象欄は先頭の場所を表示するが、調査自体は選択した全場所を対象にする。
+        self.monitor_path_var.set(str(rows[0].get("path", "")))
+        self.mod_discovery_status_var.set(f"{len(rows)}か所を一括調査 / {len(all_roots)} Mod検出")
+        self._start_mod_research(all_roots, replace=True)
+        try:
+            self.notebook.select(self.tab_status)
+        except Exception:
+            pass
+        if missing:
+            record_error("Mod場所一括調査", detail="存在しない検出場所: " + " | ".join(missing))
 
     def on_monitor_provider_change(self):
         provider=self.monitor_provider_var.get()
@@ -1640,7 +1699,6 @@ Mod更新後だけ追加翻訳:
                 },
                 "window_close": {
                     "action": {"毎回確認":"confirm","最小化":"minimize","終了":"quit"}.get(self.close_action_var.get(), "confirm"),
-                    "show_prompt": bool(self.close_prompt_var.get()),
                 },
             })
             core.save_json(APP_PREFS_PATH, data)
@@ -2129,7 +2187,7 @@ Mod更新後だけ追加翻訳:
             return
         selected = self._selected_mod_status_results()
         if not selected:
-            messagebox.showinfo(APP_NAME, "除外するModを1つ以上選択してください。\nCtrlキーを押しながら複数選択できます。")
+            messagebox.showinfo(APP_NAME, "除外するModを1つ以上選択してください。\nCtrlキーを押しながらクリックすると複数選択できます。")
             return
         excluded = {str(Path(r.get("path", ""))) for r in selected}
         targets = []
@@ -2454,8 +2512,9 @@ Mod更新後だけ追加翻訳:
 
         select_box=ttk.LabelFrame(bench,text="比較するモデルを選択（最大5モデル）",padding=6)
         select_box.pack(fill="x",pady=(0,8))
-        ttk.Label(select_box,text="Ctrlキーを押しながら複数選択できます。最大5モデルまで選択できます。",foreground="#666").pack(anchor="w",pady=(0,4))
+        ttk.Label(select_box,text="Ctrlキーを押しながらクリックすると複数選択できます。最大5モデルまで選択できます。",foreground="#666").pack(anchor="w",pady=(0,4))
         self.benchmark_model_list=tk.Listbox(select_box,selectmode=tk.EXTENDED,exportselection=False,height=5)
+        self._enable_ctrl_multiselect(self.benchmark_model_list, max_items=5)
         self.benchmark_model_list.pack(fill="x")
         self.benchmark_model_list.bind("<<ListboxSelect>>",self._limit_benchmark_selection)
         cols=("provider","model","requests","avg","tps","fail")
@@ -3834,9 +3893,8 @@ Mod更新後だけ追加翻訳:
         """Handle the window × button according to the user's preference."""
         self._save_llm_preferences()
         setting = self.close_action_var.get()
-        show_prompt = bool(self.close_prompt_var.get())
 
-        if setting == "毎回確認" or show_prompt:
+        if setting == "毎回確認":
             action = self._show_close_choice_dialog()
         elif setting == "最小化":
             action = "minimize"
