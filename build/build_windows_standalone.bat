@@ -16,6 +16,7 @@ py -3 -m PyInstaller ^
   --windowed ^
   --onefile ^
   --name "ParadoxLocalizationTranslator" ^
+  --additional-hooks-dir=. ^
   --paths app ^
   --collect-all tkinterdnd2 ^
   --hidden-import tkinter ^

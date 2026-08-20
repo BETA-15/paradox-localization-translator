@@ -13,6 +13,7 @@ rm -rf pyinstaller-build dist
 "$PYTHON_BIN" -m PyInstaller \
   --noconfirm --clean --windowed --onefile \
   --name "ParadoxLocalizationTranslator" \
+  --additional-hooks-dir=. \
   --paths app \
   --collect-all tkinterdnd2 \
   --hidden-import tkinter --hidden-import tkinter.ttk \
