@@ -1172,7 +1172,7 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
             processed += 1; total_jobs += stats["jobs"]; total_failed += stats["failed"]
             save_cache(cache_file, cache)
             if auto_qa and out.exists():
-                issues = qa_file(out, f if source_lang != target_lang else None)
+                issues = qa_file(out, f if source_lang != target_lang else None, source_lang=source_lang, glossary=glossary)
                 severe = sum(1 for x in issues if x["severity"] == "error")
                 warn = sum(1 for x in issues if x["severity"] == "warning")
                 print(f"  QA: error {severe} / warning {warn}")
@@ -1214,20 +1214,47 @@ def typo_checks(text: str) -> List[dict]:
     return issues
 
 
-def qa_entries(target_entries: Dict[str,str], source_entries: Optional[Dict[str,str]] = None) -> List[dict]:
+def qa_entries(target_entries: Dict[str,str], source_entries: Optional[Dict[str,str]] = None,
+               source_lang: str = "english", glossary: Optional[dict] = None) -> List[dict]:
+    """QA Japanese localization against an optional source localization.
+
+    ``source_lang`` may be ``english`` or ``simp_chinese``.  Chinese-source QA is
+    deliberately conservative: it flags an exact unchanged Chinese source string,
+    missing keys, protected-token mismatches and glossary terminology mismatches.
+    It does not treat all Han characters as untranslated because normal Japanese
+    localization also contains kanji.
+    """
     issues = []
+    glossary = glossary or {}
     for key, value in target_entries.items():
-        if looks_foreign_in_target(value, "japanese"):
+        # English residues can be detected without a source file.  When a source
+        # entry is present, looks_untranslated() below performs the source-aware
+        # check so the same issue is not reported twice.
+        if (not source_entries or key not in source_entries) and looks_foreign_in_target(value, "japanese"):
             issues.append({"key": key, "severity": "error", "type": "untranslated", "message": "英語の未翻訳候補", "value": value})
         for item in typo_checks(value):
             issues.append({"key": key, "value": value, **item})
         if '@@' in value:
             issues.append({"key": key, "severity": "error", "type": "placeholder", "message": "内部プレースホルダ @@N@@ が残っています", "value": value})
         if source_entries and key in source_entries:
-            src_tokens = extract_protected_tokens(source_entries[key])
+            src = source_entries[key]
+            if looks_untranslated(src, value, source_lang):
+                msg = "簡体字中国語の原文が未翻訳のままです" if source_lang == "simp_chinese" else "原文が未翻訳のままです"
+                issues.append({"key": key, "severity": "error", "type": "untranslated", "message": msg, "value": value})
+            src_tokens = extract_protected_tokens(src)
             dst_tokens = extract_protected_tokens(value)
             if src_tokens != dst_tokens:
                 issues.append({"key": key, "severity": "error", "type": "syntax", "message": "ゲーム変数/タグが原文と一致しません", "value": value})
+            # Translation-term QA: if a registered source term is present, require
+            # its fixed Japanese term in the target.  This is especially useful for
+            # Chinese historical/institutional terminology.
+            for src_term, dst_term in glossary.items():
+                if src_term and dst_term and src_term in src and dst_term not in value:
+                    issues.append({
+                        "key": key, "severity": "warning", "type": "term_mismatch",
+                        "message": f"用語集指定『{src_term} → {dst_term}』が訳文に反映されていません",
+                        "value": value,
+                    })
     if source_entries:
         missing = set(source_entries) - set(target_entries)
         extra = set(target_entries) - set(source_entries)
@@ -1238,12 +1265,16 @@ def qa_entries(target_entries: Dict[str,str], source_entries: Optional[Dict[str,
     return issues
 
 
-def qa_file(target_path: Path, source_path: Optional[Path] = None) -> List[dict]:
+def qa_file(target_path: Path, source_path: Optional[Path] = None, source_lang: Optional[str] = None,
+            glossary: Optional[dict] = None) -> List[dict]:
     _, target_entries, _ = parse_localization_file(Path(target_path))
     source_entries = None
+    detected_lang = source_lang or "english"
     if source_path and Path(source_path).exists():
-        _, source_entries, _ = parse_localization_file(Path(source_path))
-    return qa_entries(target_entries, source_entries)
+        detected_lang, source_entries, _ = parse_localization_file(Path(source_path))
+        if source_lang:
+            detected_lang = source_lang
+    return qa_entries(target_entries, source_entries, detected_lang, glossary)
 
 
 def proofread_text(url: str, model: str, text: str, source_text: str = "",
@@ -1334,6 +1365,8 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
         raise RuntimeError("簡体字中国語（l_simp_chinese）のYAMLファイルが見つかりませんでした。")
 
     total_jobs = total_failed = processed = 0
+    qa_errors = qa_warnings = 0
+    qa_report = []
     planned = set()
     try:
         for i, f in enumerate(chinese_files, 1):
@@ -1355,26 +1388,80 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
             total_failed += stats["failed"]
             save_cache(cache_file, cache)
             if auto_qa and out.exists():
-                qa_file(out, f)
+                issues = qa_file(out, f, source_lang="simp_chinese", glossary=glossary)
+                severe = sum(1 for x in issues if x["severity"] == "error")
+                warn = sum(1 for x in issues if x["severity"] == "warning")
+                qa_errors += severe
+                qa_warnings += warn
+                for issue in issues:
+                    qa_report.append({"source_file": str(f), "target_file": str(out), **issue})
+                print(f"  中国語翻訳語QA: error {severe} / warning {warn}")
             if controller:
                 controller.notify(kind="file_done", file=str(f), file_no=i, file_total=len(chinese_files))
                 if controller.stop_event.is_set():
                     raise StopRequested()
     except StopRequested:
         save_cache(cache_file, cache)
-        return {"interrupted": True, "processed_files": processed, "jobs": total_jobs, "failed": total_failed, "cache": str(cache_file)}
-    return {"interrupted": False, "processed_files": processed, "jobs": total_jobs, "failed": total_failed, "cache": str(cache_file), "output": str(output_path)}
+        return {"interrupted": True, "processed_files": processed, "jobs": total_jobs, "failed": total_failed, "cache": str(cache_file),
+                "qa_errors": qa_errors, "qa_warnings": qa_warnings}
+    qa_report_path = output_path / "chinese_basis_qa_report.json"
+    if auto_qa:
+        save_json(qa_report_path, {"source_language": "simp_chinese", "errors": qa_errors, "warnings": qa_warnings, "issues": qa_report})
+    return {"interrupted": False, "processed_files": processed, "jobs": total_jobs, "failed": total_failed, "cache": str(cache_file), "output": str(output_path),
+            "qa_errors": qa_errors, "qa_warnings": qa_warnings, "qa_report": str(qa_report_path) if auto_qa else ""}
+
+
+def qa_chinese_basis_translation(input_path: Path, output_path: Path, glossary_path=None) -> dict:
+    """Run Chinese-source-aware QA against an existing Chinese-basis translation output."""
+    input_path = Path(input_path)
+    output_path = Path(output_path)
+    glossary = load_glossary(Path(glossary_path)) if glossary_path else {}
+    if input_path.is_file():
+        files = [input_path]
+        base_dir = input_path.parent
+    else:
+        files = gather_yml_files(input_path)
+        base_dir = input_path
+    issues_all = []
+    checked = 0
+    missing_outputs = 0
+    for f in files:
+        try:
+            lang = detect_source_lang(f, f.read_text(encoding="utf-8-sig").splitlines()[:5])
+        except Exception:
+            continue
+        if lang != "simp_chinese":
+            continue
+        rel = f.parent.relative_to(base_dir) if input_path.is_dir() else Path(".")
+        out = output_path / remap_rel_dir(rel, DEFAULT_TARGET_LANG) / rename_for_target(f, DEFAULT_TARGET_LANG, "simp_chinese")
+        if not out.exists():
+            missing_outputs += 1
+            try:
+                _, src_entries, _ = parse_localization_file(f)
+            except Exception:
+                src_entries = {}
+            for key in src_entries:
+                issues_all.append({"source_file": str(f), "target_file": str(out), "key": key, "severity": "error", "type": "missing_output", "message": "対応する日本語出力ファイルがありません", "value": ""})
+            continue
+        checked += 1
+        for issue in qa_file(out, f, source_lang="simp_chinese", glossary=glossary):
+            issues_all.append({"source_file": str(f), "target_file": str(out), **issue})
+    errors = sum(1 for x in issues_all if x.get("severity") == "error")
+    warnings = sum(1 for x in issues_all if x.get("severity") == "warning")
+    return {"checked_files": checked, "missing_outputs": missing_outputs, "errors": errors, "warnings": warnings, "issues": issues_all}
 
 
 def translate_single_text(url: str, model: str, text: str, source_lang: str = "english",
                           glossary: Optional[dict] = None, preset: str = "General",
                           provider: str = "Ollama", api_key: str = "",
-                          controller: Optional[TranslationController] = None) -> str:
+                          controller: Optional[TranslationController] = None,
+                          chinese_basis: bool = False) -> str:
     """Translate one localization value while preserving Paradox tokens."""
     protected, tokens = protect_text(text)
     job = {"value": text, "protected": protected, "tokens": tokens}
     out = translate_batch(url, model, [job], source_lang, glossary=glossary, preset=preset,
-                          dual_source=False, controller=controller, provider=provider, api_key=api_key)[0]
+                          dual_source=False, controller=controller, provider=provider, api_key=api_key,
+                          chinese_basis=chinese_basis)[0]
     return restore_text(out, tokens)
 
 
