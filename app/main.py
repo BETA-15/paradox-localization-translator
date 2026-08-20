@@ -34,7 +34,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.7.9"
+APP_VERSION = "0.8.0"
 
 
 def _app_container_dir() -> Path:
@@ -399,6 +399,63 @@ class App(BaseTk):
         self._build_settings_tab()
         self._build_help_tab()
 
+    def _tree_sort_value(self, value):
+        """Treeview並び替え用。数字は数値、それ以外は文字列として比較する。"""
+        text = "" if value is None else str(value).strip()
+        m = re.match(r"^[\s]*([+-]?(?:\d+(?:,\d{3})*|\d*)(?:\.\d+)?)", text)
+        if m and m.group(1) not in ("", "+", "-", "."):
+            try:
+                return (0, float(m.group(1).replace(",", "")), text.casefold())
+            except ValueError:
+                pass
+        return (1, text.casefold())
+
+    def _enable_tree_sort(self, tree, columns=None, recursive=False):
+        """列見出しクリックで昇順/降順ソートを有効化する。"""
+        if not hasattr(self, "_tree_sort_states"):
+            self._tree_sort_states = {}
+        if not hasattr(self, "_tree_heading_labels"):
+            self._tree_heading_labels = {}
+        if columns is None:
+            columns = list(tree.cget("columns"))
+        columns = list(columns)
+        if tree.cget("show") in ("tree", "tree headings") and "#0" not in columns:
+            columns = ["#0"] + columns
+        for col in columns:
+            try:
+                label = tree.heading(col, "text")
+            except tk.TclError:
+                continue
+            self._tree_heading_labels[(str(tree), col)] = label
+            tree.heading(col, command=lambda c=col, tr=tree, rec=recursive: self._sort_treeview(tr, c, rec))
+
+    def _sort_treeview(self, tree, column, recursive=False):
+        key = (str(tree), column)
+        # 最初のクリックは昇順、2回目は降順。
+        descending = self._tree_sort_states.get(key, False)
+        self._tree_sort_states[key] = not descending
+
+        def cell(iid):
+            return tree.item(iid, "text") if column == "#0" else tree.set(iid, column)
+
+        def sort_children(parent=""):
+            items = list(tree.get_children(parent))
+            items.sort(key=lambda iid: self._tree_sort_value(cell(iid)), reverse=descending)
+            for index, iid in enumerate(items):
+                tree.move(iid, parent, index)
+                if recursive:
+                    sort_children(iid)
+
+        sort_children("")
+        for (tree_id, col), label in list(self._tree_heading_labels.items()):
+            if tree_id != str(tree):
+                continue
+            marker = " ▼" if (col == column and descending) else (" ▲" if col == column else "")
+            try:
+                tree.heading(col, text=label + marker)
+            except tk.TclError:
+                pass
+
     def _build_translate_tab(self):
         t = self.tab_translate
         settings = ttk.LabelFrame(t, text="LLM / 翻訳設定", padding=8); settings.pack(fill="x")
@@ -474,6 +531,7 @@ class App(BaseTk):
         self.queue_tree.heading("output",text="出力")
         self.queue_tree.heading("status",text="状態")
         self.queue_tree.column("input",width=430); self.queue_tree.column("output",width=430); self.queue_tree.column("status",width=130,anchor="center")
+        self._enable_tree_sort(self.queue_tree)
         ys=ttk.Scrollbar(qf,orient="vertical",command=self.queue_tree.yview); self.queue_tree.configure(yscrollcommand=ys.set)
         self.queue_tree.pack(side="left",fill="both",expand=True); ys.pack(side="right",fill="y")
         if DND_AVAILABLE:
@@ -533,6 +591,7 @@ class App(BaseTk):
         self.review_tree.heading("type",text="種別"); self.review_tree.column("type",width=130)
         self.review_tree.heading("key",text="キー"); self.review_tree.column("key",width=300)
         self.review_tree.bind("<<TreeviewSelect>>",self.on_review_select)
+        self._enable_tree_sort(self.review_tree, recursive=True)
         rys=ttk.Scrollbar(left,command=self.review_tree.yview); self.review_tree.configure(yscrollcommand=rys.set)
         self.review_tree.pack(side="left",fill="both",expand=True); rys.pack(side="right",fill="y")
 
@@ -581,6 +640,7 @@ class App(BaseTk):
         self.diff_tree.tag_configure("untranslated", background="#fef3c7")
         self.diff_tree.tag_configure("extra", background="#e0e7ff")
         self.diff_tree.bind("<<TreeviewSelect>>", self.on_diff_select)
+        self._enable_tree_sort(self.diff_tree, recursive=True)
         ys = ttk.Scrollbar(left, command=self.diff_tree.yview); self.diff_tree.configure(yscrollcommand=ys.set)
         self.diff_tree.pack(side="left", fill="both", expand=True); ys.pack(side="right", fill="y")
 
@@ -613,6 +673,7 @@ class App(BaseTk):
         for c, txt, w in (("file","ファイル",190),("key","キー",260),("value","日本語訳",350)):
             self.search_tree.heading(c, text=txt); self.search_tree.column(c, width=w)
         self.search_tree.bind("<<TreeviewSelect>>", self.on_search_select)
+        self._enable_tree_sort(self.search_tree)
         ys = ttk.Scrollbar(left, command=self.search_tree.yview); self.search_tree.configure(yscrollcommand=ys.set)
         self.search_tree.pack(side="left", fill="both", expand=True); ys.pack(side="right", fill="y")
         self.search_selected_var = tk.StringVar(value="検索結果を選択してください")
@@ -633,6 +694,7 @@ class App(BaseTk):
         ttk.Label(bar,text="英語/中国語の語句 → 固定したい日本語訳。該当バッチのプロンプトへ自動挿入します。",foreground="#666").pack(side="left",padx=12)
         self.glossary_tree=ttk.Treeview(t,columns=("src","dst"),show="headings")
         self.glossary_tree.heading("src",text="原語"); self.glossary_tree.heading("dst",text="日本語")
+        self._enable_tree_sort(self.glossary_tree)
         self.glossary_tree.column("src",width=400); self.glossary_tree.column("dst",width=500)
         self.glossary_tree.pack(fill="both",expand=True)
         self.glossary_tree.bind("<Double-1>",lambda e:self.edit_glossary_term())
@@ -896,6 +958,7 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
         self.discovered_mod_tree=ttk.Treeview(discovery, columns=cols, show="headings", height=4, selectmode="browse")
         for c,txt,w in (("game","ゲーム",210),("kind","種類",130),("mods","Mod数",70),("path","検出場所",650)):
             self.discovered_mod_tree.heading(c,text=txt); self.discovered_mod_tree.column(c,width=w,anchor="w")
+        self._enable_tree_sort(self.discovered_mod_tree)
         self.discovered_mod_tree.pack(fill="x")
         ttk.Label(discovery, text="Steamの追加ライブラリ、別ドライブ・外付けSSD、Documents/Paradox Interactive のローカルModを自動探索します。見つかったSteamライブラリは次回の探索にも再利用します。見つからない場合は下の［選択］から手動指定できます。", foreground="#555").pack(anchor="w", pady=(5,0))
 
@@ -963,6 +1026,7 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
             self.monitor_tree.heading(c,text=txt); self.monitor_tree.column(c,width=w,anchor="w")
         sy=ttk.Scrollbar(t,orient="vertical",command=self.monitor_tree.yview)
         sx=ttk.Scrollbar(t,orient="horizontal",command=self.monitor_tree.xview)
+        self._enable_tree_sort(self.monitor_tree)
         self.monitor_tree.configure(yscrollcommand=sy.set,xscrollcommand=sx.set)
         self.monitor_tree.pack(fill="both",expand=True,side="top")
         sx.pack(fill="x")
@@ -1008,6 +1072,7 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
         self.mod_status_tree.pack(side="left",fill="both",expand=True)
         sy.pack(side="right",fill="y")
         self.mod_status_tree.bind("<<TreeviewSelect>>", self._on_mod_status_selection_changed)
+        self._enable_tree_sort(self.mod_status_tree)
 
         detail = ttk.LabelFrame(detail_frame, text="選択項目の詳細", padding=6); detail.pack(fill="both",expand=True,pady=(6,0))
         self.mod_status_detail = tk.Text(detail, height=5, wrap="word", relief="flat", background=self.cget("background"))
@@ -1994,6 +2059,7 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
         self.stats_tree=ttk.Treeview(bench,columns=cols,show="headings",height=9)
         for c,txt,w in (("provider","プロバイダ",100),("model","モデル",330),("requests","回数",70),("avg","平均秒",90),("tps","tokens/s",100),("fail","失敗率",90)):
             self.stats_tree.heading(c,text=txt); self.stats_tree.column(c,width=w,anchor="center" if c not in ("model",) else "w")
+        self._enable_tree_sort(self.stats_tree)
         self.stats_tree.pack(fill="both",expand=True)
 
         pf=ttk.LabelFrame(t,text="モデルプロファイル",padding=8); pf.pack(fill="both",expand=True,pady=(10,0))
@@ -2004,6 +2070,7 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
         self.profile_tree=ttk.Treeview(pf,columns=("name","label","provider","model","batch","workers"),show="headings",height=7)
         for c,txt,w in (("name","名前",180),("label","用途",160),("provider","方式",90),("model","モデル",300),("batch","バッチ",70),("workers","並列",60)):
             self.profile_tree.heading(c,text=txt); self.profile_tree.column(c,width=w)
+        self._enable_tree_sort(self.profile_tree)
         self.profile_tree.pack(fill="both",expand=True)
         self.profile_tree.bind("<Double-1>",lambda e:self.apply_profile_from_tree())
         self.refresh_model_stats_ui(); self.refresh_profiles_ui()
