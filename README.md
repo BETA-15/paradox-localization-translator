@@ -1,4 +1,4 @@
-# Paradox Localization Translator v0.5.0
+# Paradox Localization Translator v0.5.1
 
 Paradox Interactive系ゲームのローカライズYAMLを、ローカルLLMまたはクラウドLLM APIで日本語化・修復・QAするGUIアプリです。
 
@@ -30,7 +30,7 @@ GUIの「プロバイダ」から切り替えられます。
 - Gemini: `GEMINI_API_KEY` または `GOOGLE_API_KEY`
 - OpenAI Compatible: `PLT_API_KEY`（未設定時は `OPENAI_API_KEY` も参照）
 
-## v0.5.0 の追加機能
+## v0.5.1 の追加機能
 
 - **OpenAI API対応** — Responses APIを使用
 - **Anthropic API対応** — Messages APIを使用
@@ -86,3 +86,11 @@ APIキーは保存されません。
 
 GitHub Actions の **Build standalone apps** を実行すると、macOS / Windows / Linux のスタンドアロン成果物を生成します。
 Pythonを利用者側へインストールする必要はありません。
+
+## v0.5.1 出力先と内蔵説明書
+
+- 翻訳結果・セッション・用語集・モデル統計などの自動生成ファイルは、原則としてアプリ/実行ファイルの隣に `ParadoxLocalizationTranslator_Data` を作って保存します。
+- アプリの隣へ書き込めない場合（例: macOSの `/Applications`）は、`Documents/Paradox Localization Translator` を自動利用します。
+- 翻訳結果はその中の `翻訳結果`、設定類は `設定` に分けて保存します。
+- 「選択項目の出力先変更」は、キュー内の対象行を選んでから使う個別変更ボタンです。未選択時には案内を表示します。
+- GUI内に「使い方」タブを追加し、基本操作・出力先・中断再開・QA・各LLM接続方法をアプリ単体で確認できます。
