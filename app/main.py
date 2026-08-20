@@ -29,7 +29,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.6.2"
+APP_VERSION = "0.6.5"
 
 
 def _app_container_dir() -> Path:
@@ -74,6 +74,7 @@ PROFILES_PATH = APP_HOME / "model_profiles.json"
 CACHE_ROOT = DATA_ROOT / "キャッシュ"
 CACHE_REGISTRY_PATH = CACHE_ROOT / "cache_registry.json"
 BACKUP_ROOT = DATA_ROOT / "バックアップ"
+SAVED_STEAM_ROOTS_PATH = APP_HOME / "steam_library_roots.json"
 
 
 def _automatic_output_root() -> Path:
@@ -153,12 +154,15 @@ class App(BaseTk):
         self.monitor_llm_controller: core.TranslationController | None = None
         self.monitor_candidates = []
         self.monitor_snapshot = {}
+        self.detected_mod_locations = []
+        self.mod_discovery_status_var = tk.StringVar(value="ゲーム/Mod場所: 未検出")
 
         self._build_ui()
         self.after(100, self._poll_events)
         self.after(300, self.refresh_models)
         self.after(450, self.refresh_monitor_models)
         self.after(500, self._offer_restore_session)
+        self.after(700, self.discover_mod_locations)
 
     # ---------------- UI ----------------
     def _build_ui(self):
@@ -428,6 +432,9 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
 「未翻訳監視」タブでは、通常翻訳とは別のプロバイダ・URL・モデルを監視専用LLMとして指定できます。
 曖昧候補の判定だけに使うため、3B～8B級など小さなモデルを推奨します。監視機能から自動翻訳やファイル書換えは行いません。
 
+［ゲーム/Mod場所を自動検出］: Steam WorkshopやParadoxのローカルMod保存場所を自動で探します。
+［選択場所を調査対象に設定］: 自動検出一覧で選んだ場所を監視・調査対象に設定します。
+［選択ゲームの全Modを調べる］: 選んだSteam Workshop/ローカルMod場所をまとめて調査します。
 ［指定したModをバックグラウンド調査］: 選択した1つのModをバックグラウンドで調べます。
 ［全部のModを調べる］: 選択した親フォルダ直下のModをまとめて調べます。
 結果は新しい「翻訳状況」タブに、
@@ -449,6 +456,21 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
 
     def _build_monitor_tab(self):
         t = self.tab_monitor
+
+        discovery = ttk.LabelFrame(t, text="ゲーム / Mod場所の自動検出", padding=8)
+        discovery.pack(fill="x", pady=(0,8))
+        dbar = ttk.Frame(discovery); dbar.pack(fill="x", pady=(0,5))
+        ttk.Button(dbar, text="ゲーム/Mod場所を自動検出", command=self.discover_mod_locations).pack(side="left")
+        ttk.Button(dbar, text="選択場所を調査対象に設定", command=self.use_selected_discovered_location).pack(side="left", padx=(6,0))
+        ttk.Button(dbar, text="選択ゲームの全Modを調べる", command=self.research_selected_discovered_location).pack(side="left", padx=(6,0))
+        ttk.Label(dbar, textvariable=self.mod_discovery_status_var).pack(side="right")
+        cols=("game","kind","mods","path")
+        self.discovered_mod_tree=ttk.Treeview(discovery, columns=cols, show="headings", height=4, selectmode="browse")
+        for c,txt,w in (("game","ゲーム",210),("kind","種類",130),("mods","Mod数",70),("path","検出場所",650)):
+            self.discovered_mod_tree.heading(c,text=txt); self.discovered_mod_tree.column(c,width=w,anchor="w")
+        self.discovered_mod_tree.pack(fill="x")
+        ttk.Label(discovery, text="Steamの追加ライブラリ、別ドライブ・外付けSSD、Documents/Paradox Interactive のローカルModを自動探索します。見つかったSteamライブラリは次回の探索にも再利用します。見つからない場合は下の［選択］から手動指定できます。", foreground="#555").pack(anchor="w", pady=(5,0))
+
         cfg = ttk.LabelFrame(t, text="ゲーム本体 / Mod の未翻訳調査・監視", padding=8)
         cfg.pack(fill="x")
         cfg.columnconfigure(1, weight=1)
@@ -549,6 +571,67 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
     def pick_monitor_path(self):
         p=filedialog.askdirectory(title="調査するMod、localization、またはMod親フォルダを選択")
         if p: self.monitor_path_var.set(p)
+
+    def discover_mod_locations(self):
+        """Find Steam Workshop / Paradox user-mod folders without blocking the GUI.
+
+        Previously discovered Steam library roots are reused, and the core also performs
+        a shallow scan of other mounted drives/volumes so installations on another SSD
+        or external drive can be found without a whole-disk recursive search.
+        """
+        if not hasattr(self, "discovered_mod_tree"):
+            return
+        self.mod_discovery_status_var.set("自動検出中…（別ドライブ・外付けSSDも確認）")
+        def work():
+            try:
+                saved=core.load_json(SAVED_STEAM_ROOTS_PATH, [])
+                extra=[]
+                for raw in saved if isinstance(saved,list) else []:
+                    try:
+                        p=Path(raw)
+                        if p.exists(): extra.append(p)
+                    except Exception:
+                        pass
+                rows=core.discover_paradox_mod_locations(extra_steam_roots=extra)
+                self.events.put(("mod_locations_discovered",rows))
+            except Exception as e:
+                self.events.put(("mod_locations_error",str(e)))
+        threading.Thread(target=work,daemon=True).start()
+
+    def _selected_discovered_location(self):
+        if not hasattr(self, "discovered_mod_tree"):
+            return None
+        sel=self.discovered_mod_tree.selection()
+        if not sel:
+            messagebox.showinfo(APP_NAME,"自動検出されたゲーム/Mod場所を1つ選択してください。")
+            return None
+        try:
+            idx=int(sel[0].split("_",1)[1])
+            return self.detected_mod_locations[idx]
+        except Exception:
+            return None
+
+    def use_selected_discovered_location(self):
+        row=self._selected_discovered_location()
+        if not row: return
+        self.monitor_path_var.set(row.get("path",""))
+        self.mod_discovery_status_var.set(f"調査対象: {row.get('game','')} / {row.get('kind','')}")
+
+    def research_selected_discovered_location(self):
+        row=self._selected_discovered_location()
+        if not row: return
+        path=Path(row.get("path",""))
+        if not path.exists():
+            messagebox.showerror(APP_NAME,"検出したMod場所が現在存在しません。再検出してください。")
+            return
+        self.monitor_path_var.set(str(path))
+        roots=core.find_mod_roots(path)
+        if not roots:
+            messagebox.showinfo(APP_NAME,"この場所からlocalizationを持つModを確認できませんでした。")
+            return
+        self._start_mod_research(roots, replace=True)
+        try: self.notebook.select(self.tab_status)
+        except Exception: pass
 
     def on_monitor_provider_change(self):
         provider=self.monitor_provider_var.get()
@@ -1783,6 +1866,40 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
                     self.benchmark_status_var.set("速度テスト完了"); self.benchmark_stop_btn.config(state="disabled"); self.benchmark_controller=None; self._set_llm_idle("LLM 待機中","速度テストが完了しました")
                 elif kind=="benchmark_stopped":
                     self.benchmark_status_var.set("速度テストを停止しました"); self.benchmark_stop_btn.config(state="disabled"); self.benchmark_controller=None; self._set_llm_idle("LLM 待機中","速度テストを停止しました")
+                elif kind=="mod_locations_discovered":
+                    self.detected_mod_locations=list(payload or [])
+                    # Remember Steam library roots so a custom/secondary drive does not
+                    # have to be rediscovered from scratch on every launch.
+                    remembered=[]
+                    for row in self.detected_mod_locations:
+                        if row.get("kind") != "Steam Workshop":
+                            continue
+                        try:
+                            wp=Path(row.get("path",""))
+                            lib=wp.parents[3]  # <library>/steamapps/workshop/content/<appid>
+                            val=str(lib)
+                            if val not in remembered: remembered.append(val)
+                        except Exception:
+                            pass
+                    old_roots=core.load_json(SAVED_STEAM_ROOTS_PATH, [])
+                    if isinstance(old_roots,list):
+                        for val in old_roots:
+                            try:
+                                if Path(val).exists() and val not in remembered: remembered.append(val)
+                            except Exception: pass
+                    core.save_json(SAVED_STEAM_ROOTS_PATH, remembered)
+                    for x in self.discovered_mod_tree.get_children(): self.discovered_mod_tree.delete(x)
+                    for i,row in enumerate(self.detected_mod_locations):
+                        self.discovered_mod_tree.insert("","end",iid=f"loc_{i}",values=(row.get("game",""),row.get("kind",""),row.get("mod_count",0),row.get("path","")))
+                    if self.detected_mod_locations:
+                        self.mod_discovery_status_var.set(f"{len(self.detected_mod_locations)}か所検出")
+                        first=self.discovered_mod_tree.get_children()[0]
+                        self.discovered_mod_tree.selection_set(first); self.discovered_mod_tree.focus(first)
+                    else:
+                        self.mod_discovery_status_var.set("自動検出できませんでした — 手動選択を使用してください")
+                elif kind=="mod_locations_error":
+                    self.mod_discovery_status_var.set("自動検出エラー")
+                    self._append_log("[Mod場所自動検出] "+str(payload))
                 elif kind=="monitor_progress":
                     if payload.get("kind")=="llm_activity": self._handle_llm_activity(payload,"未翻訳監視")
                     elif payload.get("kind")=="llm_metric": self._record_metric(payload.get("metric"))

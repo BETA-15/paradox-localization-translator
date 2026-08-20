@@ -1,4 +1,4 @@
-# Paradox Localization Translator v0.6.2
+# Paradox Localization Translator v0.6.3
 
 Paradox Interactive系ゲームのローカライズYAMLを、ローカルLLMまたはクラウドLLM APIで日本語化・修復・QAするGUIアプリです。
 
@@ -187,6 +187,20 @@ Pythonを利用者側へインストールする必要はありません。
 
 検出結果は「種類 / 判定 / ファイル / キー / 内容」で一覧表示され、CSVへ保存できます。英訳しかないゲームでは日本語ファイル欠落として大量のキーを一括リスト化できます。
 
+
+## v0.6.3: ゲーム / Mod場所の自動検出
+
+「未翻訳監視」タブ上部に **ゲーム/Mod場所を自動検出** を追加しました。
+
+- macOS / Windows / Linux の標準Steam保存場所を探索
+- Steamの `libraryfolders.vdf` を読み、追加Steamライブラリも探索
+- CK3 / Victoria 3 / HoI4 / Stellaris / EU5 のSteam Workshopを候補表示
+- `Documents/Paradox Interactive/<ゲーム>/mod` のローカルModも候補表示
+- 検出結果から「選択場所を調査対象に設定」または「選択ゲームの全Modを調べる」を実行可能
+- 自動検出できない環境では従来どおり手動フォルダ選択を利用可能
+
+アプリ起動後にも一度自動検出を行うため、通常はユーザーがWorkshopのAppIDフォルダを探す必要はありません。
+
 ## v0.6.2
 
 ### 未翻訳調査を自動翻訳から完全分離
@@ -213,3 +227,26 @@ Pythonを利用者側へインストールする必要はありません。
 - 翻訳完了後、「完成した日本語化をModへ上書き」で生成済み日本語YAMLを元Modへコピーできます。
 - 直接上書きは二重確認を行い、既存ファイルは `ParadoxLocalizationTranslator_Data/バックアップ/` へ自動バックアップしてから置き換えます。
 - Steam Workshop等によるMod更新で直接上書き内容が失われる場合があるため、警告を表示します。
+
+### 自動検出対象ゲーム
+
+日本語ローカライズの調査・補完対象として、自動検出するゲームは次の5タイトルに限定しています。
+
+- Crusader Kings III
+- Victoria 3
+- Hearts of Iron IV
+- Stellaris
+- Europa Universalis V
+
+Europa Universalis IV と Imperator: Rome は日本語非対応タイトルのため、自動検出対象には含めません。
+
+## v0.6.5: 別ドライブ・外付けSSDのSteamライブラリ検出
+
+ゲームやSteamライブラリがOSの標準ドライブ以外にある場合にもMod場所を自動検出できるようにしました。
+
+- Windows: C: 以外の利用可能なドライブも浅く探索し、`Steam` / `SteamLibrary` / `Games/Steam` などと、直下に `steamapps` を持つカスタム名のライブラリを検出します。
+- macOS: `/Volumes` 配下の別ボリューム・外付けSSDを浅く探索します。
+- Linux: `/mnt` / `/media` / `/run/media` のマウント先を浅く探索します。
+- Steamの `libraryfolders.vdf` から登録済み追加ライブラリを引き続き取得します。
+- 一度検出したSteamライブラリは `設定/steam_library_roots.json` に記録し、次回の自動探索でも再利用します。
+- 全ドライブを再帰的に総当たりする方式ではなく、Steamライブラリらしい場所だけを浅く確認するため、大容量SSDでも探索負荷を抑えています。
