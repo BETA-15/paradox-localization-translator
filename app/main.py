@@ -33,7 +33,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.7.1"
+APP_VERSION = "0.7.2"
 
 
 def _app_container_dir() -> Path:
@@ -185,8 +185,18 @@ class App(BaseTk):
         CACHE_ROOT.mkdir(parents=True, exist_ok=True)
         BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
         self.title(f"{APP_NAME} {APP_VERSION}")
-        self.geometry("1180x820")
-        self.minsize(980, 700)
+        # v0.7.2: LLM応答欄などを追加した後も、起動直後から下部UIまで
+        # 見やすいように初期ウィンドウを画面サイズに応じて大きめにする。
+        # ただし小さな画面では画面外にはみ出さないよう上限を設ける。
+        screen_w = self.winfo_screenwidth()
+        screen_h = self.winfo_screenheight()
+        initial_w = min(1360, max(1180, int(screen_w * 0.90)))
+        initial_h = min(940, max(840, int(screen_h * 0.90)))
+        initial_w = min(initial_w, max(900, screen_w - 40))
+        initial_h = min(initial_h, max(700, screen_h - 80))
+        self.geometry(f"{initial_w}x{initial_h}")
+        self.minsize(min(1080, max(900, screen_w - 40)),
+                     min(780, max(700, screen_h - 80)))
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
         self.events = queue.Queue()
