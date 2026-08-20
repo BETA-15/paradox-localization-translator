@@ -366,9 +366,11 @@ def call_llm_raw(provider: str, url: str, model: str, user_content: str, system_
     base = (url or default_url_for_provider(provider)).rstrip('/')
     last_err = None
     overall_start = time.perf_counter()
+    activity_id = f"{threading.get_ident()}-{time.time_ns()}"
     for attempt in range(retries):
         if controller:
             controller.wait_if_paused()
+            controller.notify(kind="llm_activity", state="start", activity_id=activity_id, provider=provider_display_name(provider), model=model, attempt=attempt + 1, retries=retries)
         try:
             started = time.perf_counter()
             headers = _headers_for_provider(provider, api_key)
@@ -450,12 +452,15 @@ def call_llm_raw(provider: str, url: str, model: str, user_content: str, system_
                 raise RuntimeError("LLMから空の応答が返されました")
             if controller:
                 controller.notify(kind="llm_metric", metric=_metric(provider, model, elapsed, True, completion_tokens, provider_tps))
+                controller.notify(kind="llm_activity", state="end", activity_id=activity_id, provider=provider_display_name(provider), model=model, success=True)
             return content
         except StopRequested:
             raise
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError,
                 json.JSONDecodeError, ConnectionError, OSError, RuntimeError, KeyError, IndexError) as e:
             last_err = e
+            if controller:
+                controller.notify(kind="llm_activity", state="retry" if attempt + 1 < retries else "end", activity_id=activity_id, provider=provider_display_name(provider), model=model, success=False, error=str(e), attempt=attempt + 1, retries=retries)
             if attempt + 1 < retries:
                 for _ in range(min(5 * (attempt + 1), 30) * 5):
                     if controller and controller.stop_event.is_set():
@@ -908,7 +913,8 @@ def qa_file(target_path: Path, source_path: Optional[Path] = None) -> List[dict]
 
 def proofread_text(url: str, model: str, text: str, source_text: str = "",
                    glossary: Optional[dict] = None, preset: str = "General",
-                   provider: str = "Ollama", api_key: str = "") -> str:
+                   provider: str = "Ollama", api_key: str = "",
+                   controller: Optional[TranslationController] = None) -> str:
     protected, tokens = protect_text(text)
     glossary_text = "\n".join(f"{k}=>{v}" for k,v in (glossary or {}).items())
     system = f"""あなたはParadoxゲーム日本語ローカライズの校正者です。誤字、脱字、助詞、重複、不自然な日本語だけを修正してください。
@@ -916,7 +922,7 @@ def proofread_text(url: str, model: str, text: str, source_text: str = "",
 プリセット: {GAME_PRESETS.get(preset, GAME_PRESETS['General'])}
 用語集:\n{glossary_text}"""
     user = f"原文参考: {PROTECT_RE.sub('[VAR]', source_text)}\n日本語: {protected}" if source_text else protected
-    raw = call_llm_raw(provider, url, model, user, system, api_key=api_key)
+    raw = call_llm_raw(provider, url, model, user, system, api_key=api_key, controller=controller)
     return restore_text(raw.strip().strip('`').strip(), tokens)
 
 

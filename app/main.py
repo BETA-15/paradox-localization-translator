@@ -16,7 +16,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 import translator_core as core
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.5.1"
+APP_VERSION = "0.5.2"
 
 
 def _app_container_dir() -> Path:
@@ -86,6 +86,14 @@ class App(tk.Tk):
         self.request_durations = []
         self.model_stats = core.load_json(STATS_PATH, {})
         self.model_profiles = core.load_json(PROFILES_PATH, {})
+        self.benchmark_controller: core.TranslationController | None = None
+        self.proofread_controller: core.TranslationController | None = None
+        self.llm_busy_count = 0
+        self.llm_active_ids = set()
+        self.llm_busy_since = None
+        self.llm_operation = ""
+        self.llm_status_var = tk.StringVar(value="LLM 待機中")
+        self.llm_detail_var = tk.StringVar(value="LLM処理が始まるとここに常時表示されます")
 
         self.provider_var = tk.StringVar(value="Ollama")
         self.api_key_var = tk.StringVar(value="")
@@ -121,6 +129,15 @@ class App(tk.Tk):
         ttk.Label(top, text=APP_NAME, font=("", 20, "bold")).pack(side="left")
         ttk.Label(top, text=f"v{APP_VERSION}").pack(side="left", padx=(8, 0), pady=(8, 0))
         ttk.Label(top, textvariable=self.connection_var).pack(side="right")
+
+        self.llm_banner = tk.Frame(self, bg="#e5e7eb", padx=12, pady=7)
+        self.llm_banner.pack(fill="x", padx=10, pady=(2, 2))
+        self.llm_status_label = tk.Label(self.llm_banner, textvariable=self.llm_status_var, bg="#e5e7eb", fg="#222222", font=("", 12, "bold"))
+        self.llm_status_label.pack(side="left")
+        self.llm_detail_label = tk.Label(self.llm_banner, textvariable=self.llm_detail_var, bg="#e5e7eb", fg="#444444")
+        self.llm_detail_label.pack(side="left", padx=(14, 0))
+        self.llm_stop_btn = ttk.Button(self.llm_banner, text="現在のLLM処理を停止", command=self.stop_current_llm, state="disabled")
+        self.llm_stop_btn.pack(side="right")
 
         nb = ttk.Notebook(self); nb.pack(fill="both", expand=True, padx=10, pady=8)
         self.tab_translate = ttk.Frame(nb, padding=10)
@@ -290,6 +307,14 @@ class App(tk.Tk):
 出力先を個別に変更したい場合は、キューの対象行をクリックして選択してから［出力先変更］を押してください。
 未選択の場合は案内が表示されます。
 
+【LLM動作表示と停止】
+
+アプリ上部には常にLLM状態バーがあります。翻訳・速度テスト・AI校正などでLLMが推論中になると、
+「● LLM 動作中」とプロバイダ、モデル、経過時間を表示します。
+上部の［現在のLLM処理を停止］から、その時実行中の処理を安全に停止できます。
+速度テストには専用の［速度テスト停止］ボタンもあります。
+通信中のAPIリクエストそのものは途中で破棄せず、応答が返った安全な地点で停止します。
+
 【中断と再開】
 
 ・［一時停止］: 現在のリクエスト/バッチが終わった安全な地点で停止します。
@@ -345,6 +370,8 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
         bar=ttk.Frame(bench); bar.pack(fill="x",pady=(0,6))
         ttk.Button(bar,text="現在モデルを速度テスト",command=self.benchmark_selected_model).pack(side="left")
         ttk.Button(bar,text="表示中の全モデルを速度テスト",command=self.benchmark_all_models).pack(side="left",padx=(6,0))
+        self.benchmark_stop_btn=ttk.Button(bar,text="速度テスト停止",command=self.stop_benchmark,state="disabled")
+        self.benchmark_stop_btn.pack(side="left",padx=(6,0))
         ttk.Button(bar,text="統計を消去",command=self.clear_model_stats).pack(side="left",padx=(6,0))
         self.benchmark_status_var=tk.StringVar(value="")
         ttk.Label(bar,textvariable=self.benchmark_status_var).pack(side="right")
@@ -411,20 +438,41 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
 
     def _start_benchmark(self,models):
         if getattr(self,"benchmark_worker",None) and self.benchmark_worker.is_alive(): return
-        self.benchmark_status_var.set(f"速度テスト中 0/{len(models)}")
+        self.benchmark_status_var.set(f"速度テスト中 0/{len(models)} — LLM応答待ち")
+        self.llm_operation = "モデル速度テスト"
+        self.benchmark_stop_btn.config(state="normal")
         provider=self.provider_var.get(); url=self.url_var.get().strip()
+        self.benchmark_controller=core.TranslationController(progress_callback=lambda p:self.events.put(("benchmark_progress",p)))
         def work():
+            stopped=False
             for i,m in enumerate(models,1):
+                if self.benchmark_controller.stop_event.is_set():
+                    stopped=True; break
                 try:
                     captured=[]
-                    ctrl=core.TranslationController(progress_callback=lambda p: captured.append(p.get("metric")) if p.get("kind")=="llm_metric" else None)
-                    core.benchmark_model(provider,url,m,ctrl,self.api_key_var.get().strip())
+                    original_cb=self.benchmark_controller.progress_callback
+                    def cb(payload):
+                        if payload.get("kind")=="llm_metric": captured.append(payload.get("metric"))
+                        if original_cb: original_cb(payload)
+                    self.benchmark_controller.progress_callback=cb
+                    core.benchmark_model(provider,url,m,self.benchmark_controller,self.api_key_var.get().strip())
                     metric=next((x for x in reversed(captured) if x),None)
                     self.events.put(("benchmark_metric",(i,len(models),metric)))
+                except core.StopRequested:
+                    stopped=True; break
                 except Exception as e:
+                    if self.benchmark_controller.stop_event.is_set():
+                        stopped=True; break
                     self.events.put(("benchmark_error",(i,len(models),m,str(e))))
-            self.events.put(("benchmark_done",None))
+            self.events.put(("benchmark_stopped" if stopped else "benchmark_done",None))
         self.benchmark_worker=threading.Thread(target=work,daemon=True); self.benchmark_worker.start()
+
+    def stop_benchmark(self):
+        if self.benchmark_controller and not self.benchmark_controller.stop_event.is_set():
+            self.benchmark_controller.request_stop(save=False)
+            self.benchmark_status_var.set("速度テスト停止要求済み — 現在のLLM応答完了を待っています")
+            self.benchmark_stop_btn.config(state="disabled")
+            self.llm_detail_var.set("停止要求済み — 現在のAPI/LLM応答が返り次第停止します")
 
     def clear_model_stats(self):
         if messagebox.askyesno(APP_NAME,"モデル速度統計をすべて消去しますか？"):
@@ -517,6 +565,7 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
         if not self.queue_items:
             messagebox.showinfo(APP_NAME,"翻訳キューにフォルダまたはファイルを追加してください。"); return
         self._clear_log(); self.progress["value"]=0; self.request_durations=[]; self.eta_var.set("残り時間: 計測中…")
+        self.llm_operation = "翻訳"
         self.controller=core.TranslationController(progress_callback=lambda x:self.events.put(("progress",x)), checkpoint_callback=self._checkpoint)
         self.start_btn.config(state="disabled"); self.pause_btn.config(state="normal",text="一時停止"); self.stop_btn.config(state="normal")
         self.worker=threading.Thread(target=self._queue_worker,daemon=True); self.worker.start()
@@ -678,12 +727,16 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
         sel=self.review_tree.selection()
         if not sel: return
         key=sel[0]; text=self.dst_text.get("1.0","end-1c"); src=self.review_source_entries.get(key,"")
-        self.issue_text.set("AI校正中…")
+        self.issue_text.set("AI校正中…（上部のLLM動作表示から停止できます）")
+        self.llm_operation = "AI誤字脱字校正"
+        self.proofread_controller=core.TranslationController(progress_callback=lambda p:self.events.put(("proofread_progress",p)))
         def work():
             try:
                 glossary=core.load_glossary(Path(self.glossary_path_var.get())) if self.glossary_path_var.get() else {}
-                out=core.proofread_text(self.url_var.get(),self.model_var.get(),text,src,glossary,self.preset_var.get(),self.provider_var.get(),self.api_key_var.get().strip())
+                out=core.proofread_text(self.url_var.get(),self.model_var.get(),text,src,glossary,self.preset_var.get(),self.provider_var.get(),self.api_key_var.get().strip(),controller=self.proofread_controller)
                 self.events.put(("proofread",out))
+            except core.StopRequested:
+                self.events.put(("proofread_stopped",None))
             except Exception as e: self.events.put(("proofread_error",str(e)))
         threading.Thread(target=work,daemon=True).start()
 
@@ -726,6 +779,64 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
         for x in self.glossary_tree.selection(): self.glossary_tree.delete(x)
         self.save_glossary_ui()
 
+    # ---------------- global LLM activity ----------------
+    def _handle_llm_activity(self, payload, operation=None):
+        state=payload.get("state")
+        provider=payload.get("provider",self.provider_var.get())
+        model=payload.get("model",self.model_var.get())
+        if operation:
+            self.llm_operation=operation
+        activity_id=payload.get("activity_id") or f"legacy-{provider}-{model}"
+        if state=="start":
+            self.llm_active_ids.add(activity_id)
+            self.llm_busy_count = len(self.llm_active_ids)
+            if self.llm_busy_since is None:
+                import time
+                self.llm_busy_since=time.time()
+            self.llm_banner.config(bg="#d97706")
+            self.llm_status_label.config(bg="#d97706",fg="white")
+            self.llm_detail_label.config(bg="#d97706",fg="white")
+            op=self.llm_operation or "LLM処理"
+            self.llm_status_var.set(f"● LLM 動作中 — {op}")
+            self.llm_detail_var.set(f"{provider} / {model} — 応答を待っています")
+            self.llm_stop_btn.config(state="normal")
+            self.after(250,self._update_llm_elapsed)
+        elif state=="retry":
+            self.llm_status_var.set(f"● LLM 再試行中 — {self.llm_operation or 'LLM処理'}")
+            self.llm_detail_var.set(f"{provider} / {model} — 再試行 {payload.get('attempt',0)}/{payload.get('retries',0)}")
+        elif state=="end":
+            self.llm_active_ids.discard(activity_id)
+            self.llm_busy_count=len(self.llm_active_ids)
+            if self.llm_busy_count==0:
+                self._set_llm_idle("LLM 待機中", "直前のLLM処理が終了しました")
+
+    def _update_llm_elapsed(self):
+        if self.llm_busy_count<=0 or self.llm_busy_since is None: return
+        import time
+        secs=max(0,int(time.time()-self.llm_busy_since))
+        base=self.llm_detail_var.get().split(" / 経過 ")[0]
+        self.llm_detail_var.set(f"{base} / 経過 {secs}秒")
+        self.after(1000,self._update_llm_elapsed)
+
+    def _set_llm_idle(self,status="LLM 待機中",detail="LLM処理は実行されていません"):
+        self.llm_busy_count=0; self.llm_active_ids.clear(); self.llm_busy_since=None
+        self.llm_status_var.set(status); self.llm_detail_var.set(detail)
+        self.llm_banner.config(bg="#e5e7eb")
+        self.llm_status_label.config(bg="#e5e7eb",fg="#222222")
+        self.llm_detail_label.config(bg="#e5e7eb",fg="#444444")
+        self.llm_stop_btn.config(state="disabled")
+
+    def stop_current_llm(self):
+        # 翻訳中は既存の安全な「セーブして中断」と同じ動作
+        if self.controller and self.worker and self.worker.is_alive():
+            self.save_and_stop(); return
+        if self.benchmark_controller and getattr(self,"benchmark_worker",None) and self.benchmark_worker.is_alive():
+            self.stop_benchmark(); return
+        if self.proofread_controller:
+            self.proofread_controller.request_stop(save=False)
+            self.issue_text.set("AI校正の停止を要求しました。現在のLLM応答完了後に停止します。")
+            self.llm_detail_var.set("停止要求済み — 現在のAPI/LLM応答完了を待っています")
+
     # ---------------- misc ----------------
     def open_selected_output(self):
         sel=self.queue_tree.selection(); path=None
@@ -760,7 +871,9 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
                     elif p in {"OpenAI","Anthropic","Gemini"}: self.connection_var.set(f"{p} APIに接続できません。APIキー・モデル・利用権限を確認してください")
                     else: self.connection_var.set("OpenAI互換APIに接続できません。URL/APIキーを確認してください")
                 elif kind=="progress":
-                    if payload.get("kind")=="llm_metric":
+                    if payload.get("kind")=="llm_activity":
+                        self._handle_llm_activity(payload,"翻訳")
+                    elif payload.get("kind")=="llm_metric":
                         self._record_metric(payload.get("metric"))
                     elif payload.get("kind")=="batch":
                         done,total=payload.get("done",0),max(1,payload.get("total",1)); self.progress["value"]=done/total*100
@@ -775,20 +888,32 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
                             self.eta_var.set(f"現在ファイル残り: {eta}")
                         elif done>=total: self.eta_var.set("現在ファイル残り: ほぼ完了")
                     elif payload.get("kind")=="file_done": self.progress["value"]=100
+                elif kind=="benchmark_progress":
+                    if payload.get("kind")=="llm_activity": self._handle_llm_activity(payload,"モデル速度テスト")
+                    elif payload.get("kind")=="llm_metric": self._record_metric(payload.get("metric"))
                 elif kind=="benchmark_metric":
                     i,total,metric=payload
-                    if metric: self._record_metric(metric)
-                    self.benchmark_status_var.set(f"速度テスト中 {i}/{total}")
+                    self.benchmark_status_var.set(f"速度テスト中 {i}/{total} — 次のモデルを準備")
                 elif kind=="benchmark_error":
                     i,total,model,err=payload; self.benchmark_status_var.set(f"{model} 失敗 ({i}/{total})")
                     self._append_log(f"[速度テスト失敗] {model}: {err}")
-                elif kind=="benchmark_done": self.benchmark_status_var.set("速度テスト完了")
+                elif kind=="benchmark_done":
+                    self.benchmark_status_var.set("速度テスト完了"); self.benchmark_stop_btn.config(state="disabled"); self.benchmark_controller=None; self._set_llm_idle("LLM 待機中","速度テストが完了しました")
+                elif kind=="benchmark_stopped":
+                    self.benchmark_status_var.set("速度テストを停止しました"); self.benchmark_stop_btn.config(state="disabled"); self.benchmark_controller=None; self._set_llm_idle("LLM 待機中","速度テストを停止しました")
                 elif kind=="queue_refresh": self._refresh_queue_tree()
                 elif kind=="done":
-                    self._finish_controls(); self.progress["value"]=100; self.progress_text.set("すべての翻訳が完了しました"); self.eta_var.set("残り時間: 0分"); self._refresh_queue_tree(); messagebox.showinfo(APP_NAME,"翻訳キューが完了しました。")
-                elif kind=="fatal": self._finish_controls(); messagebox.showerror(APP_NAME,payload)
-                elif kind=="proofread": self.dst_text.delete("1.0","end"); self.dst_text.insert("1.0",payload); self.issue_text.set("AI校正結果を表示しました。内容を確認して保存してください。")
-                elif kind=="proofread_error": self.issue_text.set("AI校正エラー: "+payload)
+                    self._finish_controls(); self._set_llm_idle("LLM 待機中","翻訳が完了しました"); self.progress["value"]=100; self.progress_text.set("すべての翻訳が完了しました"); self.eta_var.set("残り時間: 0分"); self._refresh_queue_tree(); messagebox.showinfo(APP_NAME,"翻訳キューが完了しました。")
+                elif kind=="fatal": self._finish_controls(); self._set_llm_idle("LLM 待機中","翻訳処理でエラーが発生しました"); messagebox.showerror(APP_NAME,payload)
+                elif kind=="proofread_progress":
+                    if payload.get("kind")=="llm_activity": self._handle_llm_activity(payload,"AI誤字脱字校正")
+                    elif payload.get("kind")=="llm_metric": self._record_metric(payload.get("metric"))
+                elif kind=="proofread":
+                    self.dst_text.delete("1.0","end"); self.dst_text.insert("1.0",payload); self.issue_text.set("AI校正結果を表示しました。内容を確認して保存してください。"); self.proofread_controller=None; self._set_llm_idle("LLM 待機中","AI校正が完了しました")
+                elif kind=="proofread_stopped":
+                    self.issue_text.set("AI校正を停止しました。"); self.proofread_controller=None; self._set_llm_idle("LLM 待機中","AI校正を停止しました")
+                elif kind=="proofread_error":
+                    self.issue_text.set("AI校正エラー: "+payload); self.proofread_controller=None; self._set_llm_idle("LLM 待機中","AI校正でエラーが発生しました")
         except queue.Empty: pass
         self.after(100,self._poll_events)
 
