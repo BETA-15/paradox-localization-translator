@@ -1,0 +1,76 @@
+name: Build standalone apps
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Build macOS app
+        run: bash build/build_macos_standalone.sh
+      - name: Package macOS app
+        run: |
+          cd dist
+          ditto -c -k --sequesterRsrc --keepParent "Paradox Localization Translator.app" "ParadoxLocalizationTranslator-macOS.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ParadoxLocalizationTranslator-macOS
+          path: dist/ParadoxLocalizationTranslator-macOS.zip
+
+  windows:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Build Windows EXE
+        shell: cmd
+        run: build\build_windows_standalone.bat
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ParadoxLocalizationTranslator-Windows
+          path: dist/ParadoxLocalizationTranslator.exe
+
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Tk
+        run: sudo apt-get update && sudo apt-get install -y python3-tk
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Build Linux binary
+        run: bash build/build_linux_standalone.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ParadoxLocalizationTranslator-Linux
+          path: dist/ParadoxLocalizationTranslator
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [macos, windows, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/ParadoxLocalizationTranslator-macOS/ParadoxLocalizationTranslator-macOS.zip
+            artifacts/ParadoxLocalizationTranslator-Windows/ParadoxLocalizationTranslator.exe
+            artifacts/ParadoxLocalizationTranslator-Linux/ParadoxLocalizationTranslator
