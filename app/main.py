@@ -29,7 +29,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.6.5"
+APP_VERSION = "0.6.6"
 
 
 def _app_container_dir() -> Path:
@@ -55,26 +55,88 @@ def _is_writable_dir(path: Path) -> bool:
         return False
 
 
+PREF_DOMAIN = "com.beta15.ParadoxLocalizationTranslator"
+DATA_FOLDER_NAME = "Paradox Localization Translator"
+
+
+def _default_data_root() -> Path:
+    return Path.home() / "Documents" / DATA_FOLDER_NAME
+
+
+def _load_saved_data_root() -> Path | None:
+    """Read the chosen data-root location without placing normal app data outside DATA_ROOT."""
+    try:
+        if os.name == "nt":
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\BETA-15\ParadoxLocalizationTranslator") as key:
+                value, _ = winreg.QueryValueEx(key, "DataRoot")
+                if value:
+                    return Path(value).expanduser()
+        elif sys.platform == "darwin":
+            cp = subprocess.run(["defaults", "read", PREF_DOMAIN, "DataRoot"], capture_output=True, text=True, timeout=2)
+            value = cp.stdout.strip() if cp.returncode == 0 else ""
+            if value:
+                return Path(value).expanduser()
+        else:
+            locator = Path.home() / ".config" / "paradox-localization-translator" / "location.json"
+            if locator.exists():
+                data = json.loads(locator.read_text(encoding="utf-8"))
+                if data.get("data_root"):
+                    return Path(data["data_root"]).expanduser()
+    except Exception:
+        pass
+    return None
+
+
+def _save_data_root_preference(path: Path):
+    path = path.expanduser().resolve()
+    try:
+        if os.name == "nt":
+            import winreg
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\BETA-15\ParadoxLocalizationTranslator")
+            with key:
+                winreg.SetValueEx(key, "DataRoot", 0, winreg.REG_SZ, str(path))
+        elif sys.platform == "darwin":
+            subprocess.run(["defaults", "write", PREF_DOMAIN, "DataRoot", str(path)], check=False, capture_output=True)
+        else:
+            locator = Path.home() / ".config" / "paradox-localization-translator" / "location.json"
+            locator.parent.mkdir(parents=True, exist_ok=True)
+            locator.write_text(json.dumps({"data_root": str(path)}, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
 def _automatic_data_root() -> Path:
-    beside = _app_container_dir() / "ParadoxLocalizationTranslator_Data"
-    if _is_writable_dir(beside):
-        return beside
-    docs = Path.home() / "Documents" / "Paradox Localization Translator"
-    docs.mkdir(parents=True, exist_ok=True)
-    return docs
+    saved = _load_saved_data_root()
+    if saved is not None and _is_writable_dir(saved):
+        return saved
+    root = _default_data_root()
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _configure_data_root(root: Path):
+    """Update all generated-file locations after the user changes the storage root."""
+    global DATA_ROOT, APP_HOME, OUTPUT_ROOT, SESSION_PATH, DEFAULT_GLOSSARY
+    global STATS_PATH, PROFILES_PATH, CACHE_ROOT, CACHE_REGISTRY_PATH, BACKUP_ROOT
+    global SAVED_STEAM_ROOTS_PATH
+    DATA_ROOT = root.expanduser().resolve()
+    APP_HOME = DATA_ROOT / "設定"
+    OUTPUT_ROOT = DATA_ROOT / "翻訳結果"
+    SESSION_PATH = APP_HOME / "session.json"
+    DEFAULT_GLOSSARY = APP_HOME / "glossary.json"
+    STATS_PATH = APP_HOME / "model_stats.json"
+    PROFILES_PATH = APP_HOME / "model_profiles.json"
+    CACHE_ROOT = DATA_ROOT / "キャッシュ"
+    CACHE_REGISTRY_PATH = CACHE_ROOT / "cache_registry.json"
+    BACKUP_ROOT = DATA_ROOT / "バックアップ"
+    SAVED_STEAM_ROOTS_PATH = APP_HOME / "steam_library_roots.json"
+    for d in (DATA_ROOT, APP_HOME, OUTPUT_ROOT, CACHE_ROOT, BACKUP_ROOT):
+        d.mkdir(parents=True, exist_ok=True)
 
 
 DATA_ROOT = _automatic_data_root()
-APP_HOME = DATA_ROOT / "設定"
-OUTPUT_ROOT = DATA_ROOT / "翻訳結果"
-SESSION_PATH = APP_HOME / "session.json"
-DEFAULT_GLOSSARY = APP_HOME / "glossary.json"
-STATS_PATH = APP_HOME / "model_stats.json"
-PROFILES_PATH = APP_HOME / "model_profiles.json"
-CACHE_ROOT = DATA_ROOT / "キャッシュ"
-CACHE_REGISTRY_PATH = CACHE_ROOT / "cache_registry.json"
-BACKUP_ROOT = DATA_ROOT / "バックアップ"
-SAVED_STEAM_ROOTS_PATH = APP_HOME / "steam_library_roots.json"
+_configure_data_root(DATA_ROOT)
 
 
 def _automatic_output_root() -> Path:
@@ -128,6 +190,7 @@ class App(BaseTk):
         self.connection_var = tk.StringVar(value="LLM接続確認中…")
         self.eta_var = tk.StringVar(value="残り時間: --")
         self.profile_var = tk.StringVar(value="")
+        self.data_root_var = tk.StringVar(value=str(DATA_ROOT))
         self.progress_text = tk.StringVar(value="待機中")
         self.review_src_var = tk.StringVar()
         self.review_dst_var = tk.StringVar()
@@ -192,6 +255,7 @@ class App(BaseTk):
         self.tab_models = ttk.Frame(nb, padding=10)
         self.tab_monitor = ttk.Frame(nb, padding=10)
         self.tab_status = ttk.Frame(nb, padding=10)
+        self.tab_settings = ttk.Frame(nb, padding=10)
         self.tab_help = ttk.Frame(nb, padding=10)
         nb.add(self.tab_translate, text="翻訳 / キュー")
         nb.add(self.tab_review, text="QA / 比較編集")
@@ -199,6 +263,7 @@ class App(BaseTk):
         nb.add(self.tab_models, text="モデル / 接続")
         nb.add(self.tab_monitor, text="未翻訳監視")
         nb.add(self.tab_status, text="翻訳状況")
+        nb.add(self.tab_settings, text="設定")
         nb.add(self.tab_help, text="使い方")
         self._build_translate_tab()
         self._build_review_tab()
@@ -206,6 +271,7 @@ class App(BaseTk):
         self._build_models_tab()
         self._build_monitor_tab()
         self._build_status_tab()
+        self._build_settings_tab()
         self._build_help_tab()
 
     def _build_translate_tab(self):
@@ -347,6 +413,79 @@ class App(BaseTk):
         self.glossary_tree.bind("<Double-1>",lambda e:self.edit_glossary_term())
         self.load_glossary_ui(silent=True)
 
+    def _build_settings_tab(self):
+        t = self.tab_settings
+        box = ttk.LabelFrame(t, text="自動生成ファイルの保存場所", padding=12)
+        box.pack(fill="x")
+        box.columnconfigure(1, weight=1)
+        ttk.Label(box, text="保存フォルダ").grid(row=0, column=0, sticky="w")
+        ttk.Entry(box, textvariable=self.data_root_var, state="readonly").grid(row=0, column=1, sticky="ew", padx=(8,8))
+        ttk.Button(box, text="保存場所を変更", command=self.change_data_root).grid(row=0, column=2)
+        ttk.Button(box, text="フォルダを開く", command=lambda:self._open_path(DATA_ROOT)).grid(row=0, column=3, padx=(6,0))
+        ttk.Label(box, text="翻訳結果・キャッシュ・バックアップ・設定・セッション・モデル統計など、アプリが自動生成するデータはすべてこの『Paradox Localization Translator』フォルダ内にまとめます。", wraplength=920, foreground="#555").grid(row=1, column=0, columnspan=4, sticky="w", pady=(10,0))
+
+        structure = ttk.LabelFrame(t, text="フォルダ構成", padding=12)
+        structure.pack(fill="both", expand=True, pady=(12,0))
+        text = tk.Text(structure, height=16, wrap="none")
+        text.pack(fill="both", expand=True)
+        text.insert("1.0",
+            "Paradox Localization Translator/\n"
+            "├── 翻訳結果/\n"
+            "├── キャッシュ/\n"
+            "├── バックアップ/\n"
+            "└── 設定/\n"
+            "    ├── session.json\n"
+            "    ├── glossary.json\n"
+            "    ├── model_stats.json\n"
+            "    ├── model_profiles.json\n"
+            "    └── steam_library_roots.json\n\n"
+            "既定位置: 書類/Documents/Paradox Localization Translator\n"
+            "［保存場所を変更］から、別ドライブ・外付けSSD・任意のフォルダへ移動できます。")
+        text.config(state="disabled")
+
+    def change_data_root(self):
+        old_root = DATA_ROOT
+        chosen = filedialog.askdirectory(title="Paradox Localization Translator フォルダの保存先を選択", initialdir=str(old_root.parent if old_root.exists() else Path.home()))
+        if not chosen:
+            return
+        selected = Path(chosen).expanduser()
+        new_root = selected if selected.name == DATA_FOLDER_NAME else selected / DATA_FOLDER_NAME
+        try:
+            if new_root.resolve() == old_root.resolve():
+                messagebox.showinfo(APP_NAME, "現在と同じ保存場所です。")
+                return
+        except Exception:
+            pass
+        if not _is_writable_dir(new_root):
+            messagebox.showerror(APP_NAME, f"選択した場所へ書き込めません。\n{new_root}")
+            return
+        ans = messagebox.askyesnocancel(
+            APP_NAME,
+            "自動生成ファイルの保存場所を変更します。\n\n"
+            f"現在: {old_root}\n"
+            f"変更後: {new_root}\n\n"
+            "［はい］: 現在のデータを新しい場所へコピーしてから切り替える\n"
+            "［いいえ］: データは移動せず、今後の生成先だけ変更する\n"
+            "［キャンセル］: 変更しない")
+        if ans is None:
+            return
+        try:
+            if ans and old_root.exists():
+                shutil.copytree(old_root, new_root, dirs_exist_ok=True)
+            _save_data_root_preference(new_root)
+            _configure_data_root(new_root)
+            self.data_root_var.set(str(DATA_ROOT))
+            self.glossary_path_var.set(str(DEFAULT_GLOSSARY))
+            self.model_stats = core.load_json(STATS_PATH, {})
+            self.model_profiles = core.load_json(PROFILES_PATH, {})
+            self.refresh_profiles_ui()
+            messagebox.showinfo(APP_NAME,
+                "保存場所を変更しました。\n\n"
+                f"{DATA_ROOT}\n\n"
+                + ("既存データもコピーしました。" if ans else "今後作成するデータから新しい場所を使用します。"))
+        except Exception as e:
+            messagebox.showerror(APP_NAME, f"保存場所の変更に失敗しました。\n{e}")
+
     def _build_help_tab(self):
         t = self.tab_help
         title = ttk.Label(t, text="Paradox Localization Translator 使い方", font=("", 18, "bold"))
@@ -364,11 +503,7 @@ class App(BaseTk):
 
 出力先は自動で決まります。
 ・アプリ/実行ファイルの隣に書き込める場合:
-  ParadoxLocalizationTranslator_Data/翻訳結果 フォルダ
-  ParadoxLocalizationTranslator_Data/キャッシュ フォルダ
 ・アプリの隣へ書き込めない場合（例: macOSの /Applications）:
-  書類/Documents/Paradox Localization Translator/翻訳結果 フォルダ
-  書類/Documents/Paradox Localization Translator/キャッシュ フォルダ
 
 セッション、用語集、モデル統計などは「設定」、翻訳キャッシュは「キャッシュ」に分けて保存します。
 各翻訳項目は「翻訳結果」の中に「元ファイル名_japanese」または「元フォルダ名_japanese」で作成されます。
@@ -449,7 +584,7 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
 ・Ollama/LM Studioが起動しているか確認
 ・モデルがロード/インストール済みか確認
 ・ログ欄の最後のエラーを確認
-・出力先へ書き込めない場合はDocuments側が自動利用されます
+・自動生成データはすべて「Paradox Localization Translator」フォルダにまとまり、［設定］から保存場所を自由に変更できます
 """
         box.insert("1.0", guide)
         box.config(state="disabled")
@@ -1477,7 +1612,7 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
     def change_output(self):
         sel=self.queue_tree.selection()
         if not sel:
-            messagebox.showinfo(APP_NAME, "出力先を変更する項目を、キュー一覧から先に選択してください。\n\n通常は変更不要です。出力先は自動で『アプリの隣』、書き込めない場合は『書類/Documents』になります。")
+            messagebox.showinfo(APP_NAME, "出力先を変更する項目を、キュー一覧から先に選択してください。\n\n通常は変更不要です。既定では『Paradox Localization Translator/翻訳結果』へ出力されます。全体の保存場所は［設定］タブから変更できます。")
             return
         current = self.queue_items[int(sel[0])].get("output", "")
         initial = str(Path(current).parent) if current else str(_automatic_output_root())
