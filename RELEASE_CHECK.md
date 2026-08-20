@@ -1,23 +1,31 @@
-# v0.8.5 Release Check
+# Release Check — v0.8.9
 
-リリース前総合チェック結果: PASS
+## 主な変更
 
-確認済み:
-- Python構文チェック (`app/main.py`, `app/translator_core.py`)
-- GUI起動スモークテスト（全10タブ生成、初期ウィンドウ生成）
-- Paradox YAML解析・引用符エスケープ・値更新・欠落キー追記
-- QA: 未翻訳 / 欠落キー検出
-- 差分比較: missing / untranslated 判定
-- プレースホルダ保護・復元
-- 用語集 / 英中併用を含むキャッシュキー分離
-- Ollama / LM Studio / OpenAI / Anthropic / Gemini / OpenAI互換 API形式をローカルモックで確認
-- Ollamaモックによる翻訳 → 日本語YAML出力 → キャッシュ再利用
-- macOS / Linux ビルドスクリプトのShell構文チェック
-- GitHub Actions定義と必要ファイル存在確認
-- README / 内蔵使い方の旧設定説明を修正
+- 通常翻訳タブを左右2ブロックへ再設計
+  - 左: LLM / 翻訳設定（縦スクロール対応）
+  - 右: 翻訳キュー / 進捗 / ログ
+- 翻訳LLM / 探索LLM状態表示を上部左右配置へ変更
+- 中国語基準翻訳タブを左右2ブロックへ再設計
+- 中国語基準翻訳に複数項目キューを追加
+- 翻訳状況一覧へ「中国語」列を追加
+- 簡体字中国語 localization が存在するModのみ「中国語基準キューへ追加」可能
+- 旧翻訳状況キャッシュでも実ファイルを再確認して中国語有無を判定
 
-実機での最終確認が必要:
-- GitHub Actionsで macOS / Windows / Linux の3ジョブが成功すること
-- 生成されたmacOS .app / Windows .exeを各OSで1回起動すること
-- スタンドアロン版でTkDnDドラッグ＆ドロップを実機確認すること
+## 確認済み
 
+- `python -m py_compile app/main.py app/translator_core.py`: PASS
+- 1920x1080仮想画面でGUI起動: PASS
+- 全11タブ生成: PASS
+- 中国語基準キューUI生成: PASS
+- 翻訳状況→中国語基準キュー追加: PASS
+- `l_simp_chinese` 検出件数/キー数: PASS
+- 中国語なしModでは追加ボタンを無効化する処理: 実装済み
+
+## 実機で確認推奨
+
+- macOS / WindowsのフルHD表示で左右ペイン・スクロールバー操作
+- GitHub Actions 3OSビルド
+- スタンドアロン版でドラッグ＆ドロップ
+
+- バッチサイズ・並列数の app_preferences.json 保存/次回起動復元を確認。
