@@ -34,7 +34,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.9.0"
+APP_VERSION = "0.9.3"
 
 
 def _app_container_dir() -> Path:
@@ -620,7 +620,8 @@ class App(BaseTk):
         ttk.Button(toolbar,text="差分再検出",command=self.detect_diff_for_selected).pack(side="left",padx=(5,0))
 
         toolbar2=ttk.Frame(qf); toolbar2.pack(fill="x",pady=(0,5))
-        ttk.Button(toolbar2,text="完成した日本語化をModへ上書き",command=self.overwrite_selected_translation_to_mod).pack(side="left")
+        ttk.Button(toolbar2,text="上書き",command=self.overwrite_selected_translation_to_mod).pack(side="left")
+        ttk.Label(toolbar2,text="日本語化Modがある場合は上書き先を確認します。",foreground="#8a5a00").pack(side="left",padx=(8,0))
         ttk.Button(toolbar2,text="キャッシュを追加",command=self.import_cache_to_selected).pack(side="left",padx=(5,0))
         ttk.Button(toolbar2,text="セッション保存",command=self.save_session).pack(side="right")
         ttk.Button(toolbar2,text="セッション読込",command=self.restore_session).pack(side="right",padx=(0,5))
@@ -699,15 +700,13 @@ class App(BaseTk):
         ttk.Button(qbar,text="選択削除",command=self.remove_chinese_queue_selected).pack(side="left")
         ttk.Button(qbar,text="全消去",command=self.clear_chinese_queue).pack(side="left",padx=(5,0))
         ttk.Button(qbar,text="出力先変更",command=self.change_chinese_output_for_selected).pack(side="left",padx=(10,0))
-        ttk.Button(qbar,text="出力を開く",command=self.open_selected_chinese_output).pack(side="left",padx=(5,0))
         ttk.Button(qbar,text="キャッシュを見る",command=self.view_selected_chinese_cache).pack(side="left",padx=(5,0))
         ttk.Button(qbar,text="キャッシュを追加",command=self.import_cache_to_selected_chinese).pack(side="left",padx=(5,0))
         ttk.Label(qbar,text="翻訳状況タブから中国語のあるModだけ追加できます",foreground="#666").pack(side="right")
 
         qbar2=ttk.Frame(qbox); qbar2.pack(fill="x",pady=(0,5))
-        ttk.Button(qbar2,text="日本語化Modへ差分上書き",command=lambda:self.overwrite_selected_chinese_translation(True)).pack(side="left")
-        ttk.Button(qbar2,text="元Modへ上書き",command=lambda:self.overwrite_selected_chinese_translation(False)).pack(side="left",padx=(5,0))
-        ttk.Label(qbar2,text="上書き前にバックアップと最終確認を行います",foreground="#8a5a00").pack(side="left",padx=(10,0))
+        ttk.Button(qbar2,text="上書き",command=self.overwrite_selected_chinese_translation).pack(side="left")
+        ttk.Label(qbar2,text="日本語化Modがある場合は上書き先を確認します。上書き前にバックアップを作成します。",foreground="#8a5a00").pack(side="left",padx=(10,0))
         cols=("mod","input","output","status")
         self.chinese_queue_tree=ttk.Treeview(qbox,columns=cols,show="headings",height=10,selectmode="extended")
         for c,txt,w in (("mod","Mod / 項目",190),("input","中国語localization",330),("output","出力",300),("status","状態",90)):
@@ -719,8 +718,10 @@ class App(BaseTk):
         self.chinese_queue_tree.pack(fill="both",expand=True); sx.pack(fill="x")
 
         actions=ttk.Frame(right); actions.pack(fill="x",pady=(7,0))
-        self.chinese_start_btn=ttk.Button(actions,text="中国語基準キューを翻訳開始",command=self.start_chinese_basis_translation); self.chinese_start_btn.pack(side="left")
-        self.chinese_stop_btn=ttk.Button(actions,text="停止",command=self.stop_chinese_basis_translation,state="disabled"); self.chinese_stop_btn.pack(side="left",padx=(6,0))
+        self.chinese_start_btn=ttk.Button(actions,text="翻訳開始",command=self.start_chinese_basis_translation); self.chinese_start_btn.pack(side="left")
+        self.chinese_pause_btn=ttk.Button(actions,text="一時停止",command=self.toggle_chinese_pause,state="disabled"); self.chinese_pause_btn.pack(side="left",padx=(6,0))
+        self.chinese_stop_btn=ttk.Button(actions,text="セーブして中断",command=self.save_and_stop_chinese_translation,state="disabled"); self.chinese_stop_btn.pack(side="left",padx=(6,0))
+        ttk.Button(actions,text="出力を開く",command=self.open_selected_chinese_output).pack(side="left",padx=(6,0))
         ttk.Label(actions,textvariable=self.chinese_progress_var).pack(side="right")
         self.chinese_progress=ttk.Progressbar(right,mode="determinate",maximum=100); self.chinese_progress.pack(fill="x",pady=(6,7))
 
@@ -855,20 +856,41 @@ class App(BaseTk):
             record_error("中国語基準キャッシュ追加",exc,str(src))
             messagebox.showerror(APP_NAME,f"キャッシュを追加できませんでした。\n{exc}")
 
-    def overwrite_selected_chinese_translation(self, prefer_external=True):
+    def overwrite_selected_chinese_translation(self):
+        """中国語基準翻訳の上書き先を1つの操作に統一する。
+
+        別の日本語化Modが関連付いている場合は、ユーザーに
+        「はい=日本語化Mod」「いいえ=元Mod」「キャンセル=中止」
+        を選んでもらう。日本語化Modが無い場合は通常どおり元Modへ上書きする。
+        """
         item=self._selected_chinese_queue_item()
         if not item: return
         if item.get("status","").startswith("翻訳中"):
             messagebox.showinfo(APP_NAME,"翻訳中の項目は上書きできません。")
             return
-        if prefer_external:
-            if not item.get("external_translation_path"):
-                messagebox.showinfo(APP_NAME,"この項目には別の日本語化Modが関連付けられていません。元Modへ上書きを使用してください。")
+
+        ext_path=item.get("external_translation_path","")
+        ext_name=item.get("external_translation_mod","") or (Path(ext_path).name if ext_path else "")
+        if ext_path:
+            choice=messagebox.askyesnocancel(
+                "上書き先の確認",
+                f"日本語化Mod『{ext_name}』が見つかっています。\n\n"
+                "この日本語化Modへ不足分を差分上書きしますか？\n\n"
+                "はい: 日本語化Modへ差分上書き\n"
+                "いいえ: 元Modへ上書き\n"
+                "キャンセル: 何もしない",
+                icon="question")
+            if choice is None:
                 return
-            if self._merge_translation_gaps_into_external_mod(item):
+            if choice:
+                if item.get("external_gap_keys"):
+                    if self._merge_translation_gaps_into_external_mod(item):
+                        return
+                messagebox.showinfo(APP_NAME,"日本語化Modへ反映できる不足分の差分情報がありません。")
                 return
-            messagebox.showinfo(APP_NAME,"日本語化Modへ反映できる差分情報がありません。")
+            self.overwrite_selected_translation_to_mod(item_override=item, prefer_external=False)
             return
+
         self.overwrite_selected_translation_to_mod(item_override=item, prefer_external=False)
 
     def pick_chinese_file(self):
@@ -910,7 +932,7 @@ class App(BaseTk):
         self.chinese_log.config(state="normal"); self.chinese_log.delete("1.0","end"); self.chinese_log.config(state="disabled")
         self.chinese_progress["value"]=0; self.chinese_progress_var.set("キュー翻訳準備中…"); self.llm_operation="中国語基準翻訳"
         self.chinese_controller=core.TranslationController(progress_callback=lambda x:self.events.put(("chinese_progress",x)))
-        self.chinese_start_btn.config(state="disabled"); self.chinese_stop_btn.config(state="normal")
+        self.chinese_start_btn.config(state="disabled"); self.chinese_pause_btn.config(state="normal", text="一時停止"); self.chinese_stop_btn.config(state="normal")
         settings={"provider":self.provider_var.get(),"url":self.url_var.get().strip(),"model":self.model_var.get().strip(),"api_key":self.api_key_var.get().strip(),"preset":self.preset_var.get(),"batch":max(1,self.batch_var.get()),"workers":max(1,self.workers_var.get()),"glossary":self.glossary_path_var.get().strip() or None,"autoqa":self.autoqa_var.get()}
         snapshot=[dict(x) for x in self.chinese_queue_items]
         def worker():
@@ -934,9 +956,28 @@ class App(BaseTk):
             except Exception as exc: self.events.put(("chinese_error",str(exc)))
         self.chinese_worker=threading.Thread(target=worker,daemon=True); self.chinese_worker.start()
 
-    def stop_chinese_basis_translation(self):
+    def toggle_chinese_pause(self):
+        if not self.chinese_controller:
+            return
+        if self.chinese_controller.pause_event.is_set():
+            self.chinese_controller.resume()
+            self.chinese_pause_btn.config(text="一時停止")
+            self.chinese_progress_var.set("再開しました")
+        else:
+            self.chinese_controller.pause()
+            self.chinese_pause_btn.config(text="再開")
+            self.chinese_progress_var.set("一時停止中 — 現在のLLM応答完了後に停止します")
+
+    def save_and_stop_chinese_translation(self):
         if self.chinese_controller:
-            self.chinese_controller.request_stop(save=True); self.chinese_progress_var.set("停止要求済み — 現在のLLM応答完了を待っています"); self.chinese_stop_btn.config(state="disabled")
+            self.chinese_controller.request_stop(save=True)
+            self.chinese_progress_var.set("セーブして中断中 — 現在のLLM応答完了を待っています")
+            self.chinese_stop_btn.config(state="disabled")
+            self.chinese_pause_btn.config(state="disabled", text="一時停止")
+
+    def stop_chinese_basis_translation(self):
+        # 旧内部呼び出しとの互換用。中国語基準翻訳は常にキャッシュを保存して安全に中断する。
+        self.save_and_stop_chinese_translation()
 
     def _build_review_tab(self):
         t=self.tab_review
@@ -1237,16 +1278,27 @@ class App(BaseTk):
         return result["action"]
 
     def _perform_app_exit(self):
-        """Persist resumable state, request safe stops, then close the UI."""
+        """終了時の保存規則を一箇所に固定してからUIを閉じる。"""
         self._save_llm_preferences()
         if self.monitor_thread and self.monitor_thread.is_alive():
             self.monitor_stop_event.set()
             if self.monitor_llm_controller:
                 self.monitor_llm_controller.request_stop(save=False)
-        if self.worker and self.worker.is_alive():
-            self.save_session(active=True)
+
+        running=bool(self.worker and self.worker.is_alive())
+        unfinished=any(not str(item.get("status", "")).startswith("完了") for item in self.queue_items)
+        if running:
+            # 翻訳中の終了は必ず復元可能状態として保存する。
+            self._write_session_file(active=True,restore_on_launch=True)
             if self.controller:
                 self.controller.request_stop(save=True)
+        elif self.queue_items and unfinished:
+            # 待機中/中断済みの未完了キューだけを終了時保存する。
+            self._write_session_file(active=False,restore_on_launch=True)
+        else:
+            # 空キュー、または全項目完了済みなら古いセッションを残さない。
+            self._delete_session()
+
         if self.chinese_worker and self.chinese_worker.is_alive() and self.chinese_controller:
             self.chinese_controller.request_stop(save=True)
         self.destroy()
@@ -1351,9 +1403,9 @@ YAMLファイルまたはlocalization/Modフォルダを追加します。ドラ
 ［現在の翻訳へ設定を適用］:
 翻訳途中でモデル、プロバイダ、URL、バッチ、並列、用語集、英中併用設定などを変更した後、このボタンを押すと次のバッチから新設定を使います。
 
-［完成した日本語化をModへ上書き］:
+［上書き］:
 完成した翻訳を元Modまたは検出済み日本語化Modへ反映します。
-既存日本語化Modがある場合は、そちらを優先して差分上書きします。上書き前に対象を明示し、バックアップを作成します。
+既存日本語化Modがある場合は、押した時に「日本語化Modへ差分上書き / 元Modへ上書き / キャンセル」を選べます。上書き前に対象を明示し、バックアップを作成します。
 
 【4. バッチ / 並列のおすすめ設定】
 おすすめ設定から3種類を選べます。
@@ -1569,9 +1621,10 @@ OS、アプリバージョン、モデル情報、エラーログなどを診断
 ・翻訳、探索、LLM処理は止まりません
 
 終了:
-・翻訳中ならセッションとキャッシュを保存します
-・LLM/翻訳処理へ安全停止要求を出します
-・その後アプリを終了します
+・未完了の翻訳キューがあればセッションを保存します
+・正常完了済みのキューは復元セッションとして残しません
+・次回起動時に復元を拒否したセッションは破棄され、再表示されません
+・LLM/翻訳処理へ安全停止要求を出してからアプリを終了します
 
 後から変更したい場合:
 ［設定］→［ウィンドウの×ボタンを押したときの動作］で、
@@ -1602,7 +1655,9 @@ OS、アプリバージョン、モデル情報、エラーログなどを診断
 1. 全Mod調査
 2. 翻訳状況で「別Mod翻訳・欠損」を確認
 3. 対象Modを翻訳
-4. 日本語化Modへ差分上書き
+4. 翻訳中は［一時停止］または［セーブして中断］を利用可能
+5. ［出力を開く］で完成ファイルを確認
+6. ［上書き］を押し、日本語化Modが見つかっている場合は確認画面から上書き先を選択
 
 Mod更新後だけ追加翻訳:
 1. 更新済みModを再度追加
@@ -1723,59 +1778,71 @@ Mod更新後だけ追加翻訳:
         ttk.Label(top, text="Modごとの日本語翻訳状況", font=("", 13, "bold")).pack(side="left")
         ttk.Label(top, textvariable=self.mod_status_summary_var).pack(side="right")
 
-        search = ttk.LabelFrame(t, text="判定済みModを検索", padding=6); search.pack(fill="x", pady=(0,6))
-        ttk.Label(search, text="Mod名").pack(side="left")
-        search_entry = ttk.Entry(search, textvariable=self.mod_status_search_var, width=42)
-        search_entry.pack(side="left", fill="x", expand=True, padx=(6,6))
+        # フルHDでも縦方向が苦しくなりにくいよう、左に設定系、右に結果系を置く。
+        body = ttk.Panedwindow(t, orient="horizontal")
+        body.pack(fill="both", expand=True)
+        left = ttk.Frame(body)
+        right = ttk.Frame(body)
+        body.add(left, weight=2)
+        body.add(right, weight=5)
+
+        search = ttk.LabelFrame(left, text="判定済みModを検索", padding=6); search.pack(fill="x", pady=(0,6))
+        ttk.Label(search, text="Mod名").grid(row=0, column=0, sticky="w")
+        search_entry = ttk.Entry(search, textvariable=self.mod_status_search_var, width=28)
+        search_entry.grid(row=0, column=1, sticky="ew", padx=(6,6))
         search_entry.bind("<Return>", lambda e:self.search_mod_status())
         search_entry.bind("<KeyRelease>", lambda e:self.search_mod_status(live=True))
-        ttk.Button(search, text="検索", command=self.search_mod_status).pack(side="left")
-        ttk.Button(search, text="解除", command=self.clear_mod_status_search).pack(side="left", padx=(6,0))
-        ttk.Label(search, textvariable=self.mod_status_search_result_var, foreground="#555").pack(side="left", padx=(12,0))
+        ttk.Button(search, text="検索", command=self.search_mod_status).grid(row=0, column=2)
+        ttk.Button(search, text="解除", command=self.clear_mod_status_search).grid(row=0, column=3, padx=(6,0))
+        ttk.Label(search, textvariable=self.mod_status_search_result_var, foreground="#555", wraplength=300, justify="left").grid(row=1, column=0, columnspan=4, sticky="w", pady=(6,0))
+        search.columnconfigure(1, weight=1)
 
         # 翻訳状況タブから探索専用LLMをそのまま変更・適用できる。
-        moncfg = ttk.LabelFrame(t, text="探索用LLM設定", padding=6); moncfg.pack(fill="x", pady=(0,6))
+        moncfg = ttk.LabelFrame(left, text="探索用LLM設定", padding=6); moncfg.pack(fill="x", pady=(0,6))
         ttk.Label(moncfg, text="プロバイダ").grid(row=0,column=0,sticky="w")
-        cmb=ttk.Combobox(moncfg,textvariable=self.monitor_provider_var,values=["Ollama","LM Studio","OpenAI","Anthropic","Gemini","OpenAI Compatible"],state="readonly",width=13)
-        cmb.grid(row=0,column=1,padx=(5,10)); cmb.bind("<<ComboboxSelected>>",lambda e:self.on_monitor_provider_change())
-        ttk.Label(moncfg,text="URL").grid(row=0,column=2,sticky="w")
-        ttk.Entry(moncfg,textvariable=self.monitor_url_var,width=35).grid(row=0,column=3,sticky="ew",padx=(5,10))
-        ttk.Label(moncfg,text="モデル").grid(row=0,column=4,sticky="w")
-        self.status_monitor_model_combo=ttk.Combobox(moncfg,textvariable=self.monitor_model_var,state="normal",width=30)
-        self.status_monitor_model_combo.grid(row=0,column=5,sticky="ew",padx=(5,8))
-        ttk.Button(moncfg,text="モデル一覧を再読込",command=self.refresh_monitor_models).grid(row=0,column=6,padx=(0,6))
-        ttk.Button(moncfg,text="探索設定を適用",command=self.apply_monitor_settings).grid(row=0,column=7)
-        moncfg.columnconfigure(3,weight=1); moncfg.columnconfigure(5,weight=1)
-        ttk.Label(moncfg,text="※ 再読込はモデル一覧の取得だけです。変更を確定するには［探索設定を適用］を押してください。小型3B～8B級を推奨。",foreground="#a35a00").grid(row=1,column=0,columnspan=8,sticky="w",pady=(4,0))
+        cmb=ttk.Combobox(moncfg,textvariable=self.monitor_provider_var,values=["Ollama","LM Studio","OpenAI","Anthropic","Gemini","OpenAI Compatible"],state="readonly",width=12)
+        cmb.grid(row=0,column=1,padx=(5,8),sticky="ew"); cmb.bind("<<ComboboxSelected>>",lambda e:self.on_monitor_provider_change())
+        ttk.Label(moncfg,text="URL").grid(row=1,column=0,sticky="w", pady=(6,0))
+        ttk.Entry(moncfg,textvariable=self.monitor_url_var,width=26).grid(row=1,column=1,columnspan=2,sticky="ew",padx=(5,8), pady=(6,0))
+        ttk.Label(moncfg,text="モデル").grid(row=2,column=0,sticky="w", pady=(6,0))
+        self.status_monitor_model_combo=ttk.Combobox(moncfg,textvariable=self.monitor_model_var,state="normal",width=24)
+        self.status_monitor_model_combo.grid(row=2,column=1,columnspan=2,sticky="ew",padx=(5,8), pady=(6,0))
+        btnrow = ttk.Frame(moncfg); btnrow.grid(row=3,column=0,columnspan=3,sticky="ew", pady=(8,0))
+        ttk.Button(btnrow,text="モデル一覧を再読込",command=self.refresh_monitor_models).pack(side="left")
+        ttk.Button(btnrow,text="探索設定を適用",command=self.apply_monitor_settings).pack(side="left", padx=(6,0))
+        moncfg.columnconfigure(1,weight=1); moncfg.columnconfigure(2,weight=1)
+        ttk.Label(moncfg,text="再読込はモデル一覧の取得だけです。変更を確定するには［探索設定を適用］を押してください。小型3B〜8B級を推奨。",foreground="#a35a00",wraplength=320,justify="left").grid(row=4,column=0,columnspan=3,sticky="w",pady=(6,0))
 
-        info = ttk.LabelFrame(t, text="判定内容", padding=6); info.pack(fill="x", pady=(0,6))
-        ttk.Label(info,text="元Modと別日本語化Modを確認し、完全翻訳・欠落を判定します。調査だけでは自動翻訳しません。行を選ぶと下に詳細を表示します。",justify="left",wraplength=1250).pack(anchor="w")
+        info = ttk.LabelFrame(left, text="判定内容", padding=6); info.pack(fill="x", pady=(0,6))
+        ttk.Label(info,text="元Modと別日本語化Modを確認し、完全翻訳・欠落を判定します。調査だけでは自動翻訳しません。行を選ぶと右下に詳細を表示します。",justify="left",wraplength=320).pack(anchor="w")
 
-        # Treeviewは必ず専用Frameの子として作る。旧実装の in_= 指定では
-        # macOS/Tkで枠だけ広がり一覧本体が表示されない場合があった。
-        ttk.Label(t, text="Ctrlキーを押しながらクリックすると複数選択できます。", foreground="#666").pack(anchor="w", pady=(0,3))
-        content = ttk.Panedwindow(t, orient="vertical"); content.pack(fill="both", expand=True)
+        guide = ttk.LabelFrame(left, text="選択と操作", padding=6); guide.pack(fill="both", expand=True)
+        ttk.Label(guide, text="小さく：Ctrlキーを押しながら複数選択できます。\n\n一覧では、選択したModだけの再調査、翻訳、除外翻訳、翻訳キュー追加、中国語基準キュー追加、上書きができます。", foreground="#666", justify="left", wraplength=320).pack(anchor="w")
+
+        content = ttk.Panedwindow(right, orient="vertical"); content.pack(fill="both", expand=True)
         tree_frame=ttk.Frame(content); detail_frame=ttk.Frame(content)
-        content.add(tree_frame, weight=5); content.add(detail_frame, weight=1)
+        content.add(tree_frame, weight=6); content.add(detail_frame, weight=2)
         cols=("status","mod","gaps","chinese","jpmod","jpmod_gaps")
-        self.mod_status_tree=ttk.Treeview(tree_frame, columns=cols, show="headings", height=14, selectmode="extended")
+        self.mod_status_tree=ttk.Treeview(tree_frame, columns=cols, show="headings", height=16, selectmode="extended")
         self._enable_ctrl_multiselect(self.mod_status_tree)
-        for c,txt,w in (("status","状態",135),("mod","Mod",260),("gaps","欠損",65),("chinese","中国語",70),("jpmod","日本語化Mod",250),("jpmod_gaps","日本語化Mod欠損",115)):
+        for c,txt,w in (("status","状態",135),("mod","Mod",300),("gaps","欠損",65),("chinese","中国語",70),("jpmod","日本語化Mod",290),("jpmod_gaps","日本語化Mod欠損",125)):
             self.mod_status_tree.heading(c,text=txt); self.mod_status_tree.column(c,width=w,anchor="w")
         sy=ttk.Scrollbar(tree_frame,orient="vertical",command=self.mod_status_tree.yview)
-        self.mod_status_tree.configure(yscrollcommand=sy.set)
-        self.mod_status_tree.pack(side="left",fill="both",expand=True)
+        sx=ttk.Scrollbar(tree_frame,orient="horizontal",command=self.mod_status_tree.xview)
+        self.mod_status_tree.configure(yscrollcommand=sy.set, xscrollcommand=sx.set)
+        self.mod_status_tree.pack(side="top",fill="both",expand=True)
+        sx.pack(side="bottom", fill="x")
         sy.pack(side="right",fill="y")
         self.mod_status_tree.bind("<<TreeviewSelect>>", self._on_mod_status_selection_changed)
         self._enable_tree_sort(self.mod_status_tree)
 
         detail = ttk.LabelFrame(detail_frame, text="選択項目の詳細", padding=6); detail.pack(fill="both",expand=True,pady=(4,0))
-        self.mod_status_detail = tk.Text(detail, height=5, wrap="word", relief="flat", background=self.cget("background"))
+        self.mod_status_detail = tk.Text(detail, height=7, wrap="word", relief="flat", background=self.cget("background"))
         self.mod_status_detail.pack(fill="both", expand=True)
         self.mod_status_detail.insert("1.0", "一覧からModを選択すると、ここに調査結果・日本語化Mod・上書き先・場所を段落で表示します。")
         self.mod_status_detail.configure(state="disabled")
 
-        bottom=ttk.Frame(t); bottom.pack(fill="x", pady=(4,0))
+        bottom=ttk.Frame(right); bottom.pack(fill="x", pady=(4,0))
         ttk.Button(bottom,text="選択Modだけ再調査",command=self.research_selected_status_mods).pack(side="left")
         ttk.Separator(bottom,orient="vertical").pack(side="left",fill="y",padx=8)
         ttk.Button(bottom,text="選択したModを翻訳",command=self.translate_selected_mod_from_status).pack(side="left")
@@ -2811,9 +2878,26 @@ Mod更新後だけ追加翻訳:
         if item.get("status", "").startswith("翻訳中"):
             messagebox.showinfo(APP_NAME, "翻訳中の項目は上書きできません。翻訳完了後に実行してください。")
             return
-        if prefer_external and item.get("external_translation_path") and item.get("external_gap_keys"):
-            if self._merge_translation_gaps_into_external_mod(item):
+        if prefer_external and item.get("external_translation_path"):
+            ext_path=item.get("external_translation_path","")
+            ext_name=item.get("external_translation_mod","") or Path(ext_path).name
+            choice=messagebox.askyesnocancel(
+                "上書き先の確認",
+                f"日本語化Mod『{ext_name}』が見つかっています。\n\n"
+                "この日本語化Modへ翻訳差分を上書きしますか？\n\n"
+                "はい: 日本語化Modへ差分上書き\n"
+                "いいえ: 元Modへ上書き\n"
+                "キャンセル: 何もしない",
+                icon="question")
+            if choice is None:
                 return
+            if choice:
+                if item.get("external_gap_keys"):
+                    if self._merge_translation_gaps_into_external_mod(item):
+                        return
+                messagebox.showinfo(APP_NAME,"日本語化Modへ反映できる不足分の差分情報がありません。")
+                return
+            # いいえの場合はこのまま元Modへの上書き処理へ進む。
         loc_root, mod_root = self._infer_mod_target_for_item(item)
         if not loc_root:
             messagebox.showerror(APP_NAME, "元のModのlocalizationフォルダを特定できません。\n翻訳状況タブからModを追加した場合は自動特定できます。")
@@ -3431,10 +3515,14 @@ Mod更新後だけ追加翻訳:
         for i in sels:
             if 0<=i<len(self.queue_items): self.queue_items.pop(i)
         self._refresh_queue_tree()
+        if not self.queue_items and not (self.worker and self.worker.is_alive()):
+            self._delete_session()
+        elif not (self.worker and self.worker.is_alive()):
+            self._write_session_file(active=False,restore_on_launch=False)
 
     def clear_queue(self):
         if self.worker and self.worker.is_alive(): return
-        self.queue_items.clear(); self._refresh_queue_tree()
+        self.queue_items.clear(); self._refresh_queue_tree(); self._delete_session()
 
     def _selected_queue_item(self):
         sel = self.queue_tree.selection()
@@ -3542,7 +3630,7 @@ Mod更新後だけ追加翻訳:
         try:
             for i,item in enumerate(self.queue_items):
                 self.current_queue_index=i
-                if item.get("status") == "完了": continue
+                if str(item.get("status", "")).startswith("完了"): continue
                 item["status"]="翻訳中"; self.events.put(("queue_refresh",None))
                 self._checkpoint({"queue_index":i})
                 out=Path(item["output"]); cache_file=Path(self._ensure_item_cache(item))
@@ -3557,9 +3645,15 @@ Mod更新後だけ追加翻訳:
                 self._register_cache_job(item)
                 if result.get("interrupted"):
                     item["status"]="中断（再開可）"; self.events.put(("queue_refresh",None)); self.save_session(active=True); break
-                item["status"]="完了（差分更新）" if item.get("diff_mode") else "完了"; self.events.put(("queue_refresh",None)); self.save_session(active=True)
+                item["status"]="完了（差分更新）" if item.get("diff_mode") else "完了"; self.events.put(("queue_refresh",None))
+                # 次の項目がある間だけ復元可能な実行中セッションとして保存する。
+                if i < len(self.queue_items)-1:
+                    self._write_session_file(active=True,restore_on_launch=True)
             else:
-                self.events.put(("done",None)); self._delete_session()
+                # 全項目正常完了。古いセッションが再び復活しないよう、完了状態を確定してから削除する。
+                self._write_session_file(active=False,restore_on_launch=False)
+                self._delete_session()
+                self.events.put(("done",None))
         except Exception as e:
             self.events.put(("fatal",str(e))); self.save_session(active=True)
 
@@ -3583,15 +3677,33 @@ Mod更新後だけ追加翻訳:
                 "batch":self.batch_var.get(),"workers":self.workers_var.get(),"repair":self.repair_var.get(),
                 "dual":self.dual_var.get(),"autoqa":self.autoqa_var.get(),"glossary":self.glossary_path_var.get()}
 
-    def save_session(self,active=False):
-        data={"version":APP_VERSION,"active":active,"queue":self.queue_items,"queue_index":self.current_queue_index,"settings":self._settings_dict()}
+    def _write_session_file(self, active=False, restore_on_launch=False, checkpoint=None):
+        """Tk表示を触らずにセッションファイルだけを書き込む。
+
+        worker threadからも安全に呼べるよう、UI更新はここでは行わない。
+        """
+        data={
+            "version":APP_VERSION,
+            "active":bool(active),
+            "restore_on_launch":bool(restore_on_launch),
+            "queue":self.queue_items,
+            "queue_index":self.current_queue_index,
+            "settings":self._settings_dict(),
+        }
+        if checkpoint is not None:
+            data["checkpoint"]=checkpoint
         core.save_json(SESSION_PATH,data)
-        if not active: self.progress_text.set(f"セッション保存: {SESSION_PATH}")
+
+    def save_session(self,active=False,restore_on_launch=None):
+        # 手動保存は次回起動時の強制復元対象にはしない。終了時保存だけ明示的にTrueを渡す。
+        if restore_on_launch is None:
+            restore_on_launch=bool(active)
+        self._write_session_file(active=active,restore_on_launch=restore_on_launch)
+        if not active:
+            self.progress_text.set(f"セッション保存: {SESSION_PATH}")
 
     def _checkpoint(self,payload):
-        data=core.load_json(SESSION_PATH,{})
-        data.update({"version":APP_VERSION,"active":True,"queue":self.queue_items,"queue_index":self.current_queue_index,"settings":self._settings_dict(),"checkpoint":payload})
-        core.save_json(SESSION_PATH,data)
+        self._write_session_file(active=True,restore_on_launch=True,checkpoint=payload)
 
     def restore_session(self):
         data=core.load_json(SESSION_PATH,{})
@@ -3604,13 +3716,20 @@ Mod更新後だけ追加翻訳:
         for item in self.queue_items:
             self._ensure_item_cache(item)
             if item.get("status") == "翻訳中": item["status"]="中断（再開可）"
+        # 復元した時点で古いactiveフラグを解除する。再度翻訳開始/終了したときに新しい状態で保存される。
+        self._write_session_file(active=False,restore_on_launch=False)
         self._refresh_queue_tree(); self.progress_text.set("セッションを復元しました。翻訳開始で続きから再開します。")
 
     def _offer_restore_session(self):
         data=core.load_json(SESSION_PATH,{})
-        if data.get("active") and data.get("queue"):
-            if messagebox.askyesno(APP_NAME,"前回の翻訳セッションが残っています。復元しますか？"):
-                self.restore_session()
+        should_offer=bool(data.get("queue")) and bool(data.get("active") or data.get("restore_on_launch"))
+        if not should_offer:
+            return
+        if messagebox.askyesno(APP_NAME,"前回終了時の翻訳セッションが残っています。復元しますか？"):
+            self.restore_session()
+        else:
+            # 「いいえ」を選んだセッションが毎回復活しないよう、その場で破棄する。
+            self._delete_session()
 
     def _delete_session(self):
         try: SESSION_PATH.unlink(missing_ok=True)
@@ -4218,7 +4337,7 @@ Mod更新後だけ追加翻訳:
                         self._append_chinese_log(f"完了: {Path(payload.get('file','')).name}")
                 elif kind=="chinese_done":
                     self.chinese_worker=None; self.chinese_controller=None
-                    self.chinese_start_btn.config(state="normal"); self.chinese_stop_btn.config(state="disabled")
+                    self.chinese_start_btn.config(state="normal"); self.chinese_pause_btn.config(state="disabled", text="一時停止"); self.chinese_stop_btn.config(state="disabled")
                     if payload.get("interrupted"):
                         self.chinese_progress_var.set("中断しました（キャッシュ保存済み）")
                         self._set_llm_idle("LLM 待機中","中国語基準翻訳を中断しました")
@@ -4230,7 +4349,7 @@ Mod更新後だけ追加翻訳:
                         messagebox.showinfo(APP_NAME,"中国語基準翻訳が完了しました。")
                 elif kind=="chinese_error":
                     record_error("中国語基準翻訳", detail=str(payload)); self.chinese_worker=None; self.chinese_controller=None
-                    self.chinese_start_btn.config(state="normal"); self.chinese_stop_btn.config(state="disabled")
+                    self.chinese_start_btn.config(state="normal"); self.chinese_pause_btn.config(state="disabled", text="一時停止"); self.chinese_stop_btn.config(state="disabled")
                     self.chinese_progress_var.set("エラー")
                     self._append_chinese_log("エラー: "+str(payload)); self._set_llm_idle("LLM 待機中","中国語基準翻訳でエラーが発生しました")
                     messagebox.showerror(APP_NAME,"中国語基準翻訳エラー: "+str(payload))
@@ -4350,8 +4469,12 @@ Mod更新後だけ追加翻訳:
                     messagebox.showerror(APP_NAME,"Mod翻訳状況の調査エラー: "+payload)
                 elif kind=="queue_refresh": self._refresh_queue_tree()
                 elif kind=="done":
+                    self.worker=None
+                    self._delete_session()
                     self._finish_controls(); self._set_llm_idle("LLM 待機中","翻訳が完了しました"); self.progress["value"]=100; self.progress_text.set("すべての翻訳が完了しました"); self._refresh_queue_tree(); messagebox.showinfo(APP_NAME,"翻訳キューが完了しました。")
-                elif kind=="fatal": record_error("翻訳処理 fatal", detail=str(payload)); self._finish_controls(); self._set_llm_idle("LLM 待機中","翻訳処理でエラーが発生しました"); messagebox.showerror(APP_NAME,payload)
+                elif kind=="fatal":
+                    self.worker=None
+                    record_error("翻訳処理 fatal", detail=str(payload)); self._finish_controls(); self._set_llm_idle("LLM 待機中","翻訳処理でエラーが発生しました"); messagebox.showerror(APP_NAME,payload)
                 elif kind=="diff_translate_progress":
                     if payload.get("kind")=="llm_activity": self._handle_llm_activity(payload,"差分翻訳")
                     elif payload.get("kind")=="llm_response": self._show_llm_response(payload, monitor=False)
