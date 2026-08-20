@@ -71,3 +71,5 @@
 - English output pair detection for QA/diff: PASS
 - Simplified Chinese output pair detection for QA/diff: PASS
 - Translation status buttons reorganized into two rows.
+
+- v0.10.2: 自動用語候補生成・複数訳集計・QA一括用語統一の回帰テスト: PASS
