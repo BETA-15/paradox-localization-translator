@@ -33,7 +33,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.7.2"
+APP_VERSION = "0.7.6"
 
 
 def _app_container_dir() -> Path:
@@ -185,18 +185,17 @@ class App(BaseTk):
         CACHE_ROOT.mkdir(parents=True, exist_ok=True)
         BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
         self.title(f"{APP_NAME} {APP_VERSION}")
-        # v0.7.2: LLM応答欄などを追加した後も、起動直後から下部UIまで
-        # 見やすいように初期ウィンドウを画面サイズに応じて大きめにする。
-        # ただし小さな画面では画面外にはみ出さないよう上限を設ける。
+        # v0.7.3: 機能増加後も起動直後から下部操作まで見えるよう、
+        # 画面のほぼ全域を初期サイズとして使う。以前の 940px 高さ上限は撤廃。
         screen_w = self.winfo_screenwidth()
         screen_h = self.winfo_screenheight()
-        initial_w = min(1360, max(1180, int(screen_w * 0.90)))
-        initial_h = min(940, max(840, int(screen_h * 0.90)))
-        initial_w = min(initial_w, max(900, screen_w - 40))
-        initial_h = min(initial_h, max(700, screen_h - 80))
+        initial_w = min(1540, max(1220, int(screen_w * 0.96)))
+        initial_h = min(1120, max(900, int(screen_h * 0.96)))
+        initial_w = min(initial_w, max(960, screen_w - 24))
+        initial_h = min(initial_h, max(760, screen_h - 48))
         self.geometry(f"{initial_w}x{initial_h}")
-        self.minsize(min(1080, max(900, screen_w - 40)),
-                     min(780, max(700, screen_h - 80)))
+        self.minsize(min(1080, max(920, screen_w - 80)),
+                     min(780, max(700, screen_h - 120)))
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
         self.events = queue.Queue()
@@ -208,7 +207,6 @@ class App(BaseTk):
         self.review_target_entries = {}
         self.review_issues = []
         self.review_issue_by_key = {}
-        self.request_durations = []
         self.model_stats = core.load_json(STATS_PATH, {})
         self.model_profiles = core.load_json(PROFILES_PATH, {})
         self.benchmark_controller: core.TranslationController | None = None
@@ -236,12 +234,12 @@ class App(BaseTk):
         self.preset_var = tk.StringVar(value="CK3")
         self.batch_var = tk.IntVar(value=40)
         self.workers_var = tk.IntVar(value=1)
+        self.performance_preset_var = tk.StringVar(value="標準（40 / 1）")
         self.repair_var = tk.BooleanVar(value=True)
         self.dual_var = tk.BooleanVar(value=False)
         self.autoqa_var = tk.BooleanVar(value=True)
         self.glossary_path_var = tk.StringVar(value=str(DEFAULT_GLOSSARY))
         self.connection_var = tk.StringVar(value="LLM接続確認中…")
-        self.eta_var = tk.StringVar(value="残り時間: --")
         self.profile_var = tk.StringVar(value="")
         self.data_root_var = tk.StringVar(value=str(DATA_ROOT))
         self.progress_text = tk.StringVar(value="待機中")
@@ -422,13 +420,29 @@ class App(BaseTk):
         ttk.Spinbox(settings,from_=1,to=500,textvariable=self.batch_var,width=7).grid(row=4,column=1,sticky="w",pady=(8,0))
         ttk.Label(settings,text="並列").grid(row=4,column=2,sticky="w",pady=(8,0))
         ttk.Spinbox(settings,from_=1,to=8,textvariable=self.workers_var,width=7).grid(row=4,column=3,sticky="w",pady=(8,0))
-        ttk.Label(settings,text="用語集").grid(row=4,column=4,sticky="e",pady=(8,0))
-        ttk.Entry(settings,textvariable=self.glossary_path_var).grid(row=4,column=5,sticky="ew",padx=(5,4),pady=(8,0))
-        ttk.Button(settings,text="選択",command=self.pick_glossary).grid(row=4,column=6,pady=(8,0))
+        ttk.Label(settings,text="おすすめ設定").grid(row=4,column=4,sticky="e",pady=(8,0))
+        perf_combo = ttk.Combobox(settings,textvariable=self.performance_preset_var,
+                                  values=["安定重視（20 / 1）","標準（40 / 1）","高速（60 / 2）"],
+                                  state="readonly",width=18)
+        perf_combo.grid(row=4,column=5,sticky="w",padx=(5,4),pady=(8,0))
+        ttk.Button(settings,text="適用",command=self.apply_performance_preset).grid(row=4,column=6,pady=(8,0))
+
+        ttk.Label(settings,text="用語集").grid(row=5,column=0,sticky="w",pady=(8,0))
+        ttk.Entry(settings,textvariable=self.glossary_path_var).grid(row=5,column=1,columnspan=3,sticky="ew",padx=(5,10),pady=(8,0))
+        ttk.Button(settings,text="選択",command=self.pick_glossary).grid(row=5,column=4,sticky="w",pady=(8,0))
+        ttk.Label(settings,
+                  text="目安: バッチ20–60 / 並列1–2を推奨。バッチ80超は注意、120超は非推奨。ローカルLLMの並列3以上は不安定になりやすいです。",
+                  foreground="#8a5a00").grid(row=5,column=5,columnspan=2,sticky="w",pady=(8,0))
+        self.apply_current_translation_btn = ttk.Button(settings, text="現在の翻訳へ設定を適用", command=self.apply_settings_to_current_translation)
+        self.apply_current_translation_btn.grid(row=6, column=0, columnspan=2, sticky="w", pady=(8,0))
+        ttk.Label(settings, text="翻訳中は次の安全なバッチ境界から反映します。モデル変更時も以降のキャッシュを分離します。", foreground="#555").grid(row=6, column=2, columnspan=5, sticky="w", pady=(8,0))
         qf = ttk.LabelFrame(t,text="複数翻訳キュー（上から順番に処理）",padding=8); qf.pack(fill="both",expand=True,pady=(10,0))
         toolbar=ttk.Frame(qf); toolbar.pack(fill="x",pady=(0,6))
-        ttk.Button(toolbar,text="フォルダ追加",command=self.add_folder).pack(side="left")
-        ttk.Button(toolbar,text="ファイル追加",command=self.add_files).pack(side="left",padx=(6,0))
+        add_menu = tk.Menu(toolbar, tearoff=False)
+        add_menu.add_command(label="YAMLファイルを追加", command=self.add_files)
+        add_menu.add_command(label="Mod / localizationフォルダを追加", command=self.add_folder)
+        self.add_menu_button = ttk.Menubutton(toolbar, text="追加", menu=add_menu)
+        self.add_menu_button.pack(side="left")
         ttk.Button(toolbar,text="選択削除",command=self.remove_queue).pack(side="left",padx=(6,0))
         ttk.Button(toolbar,text="全消去",command=self.clear_queue).pack(side="left",padx=(6,0))
         ttk.Button(toolbar,text="完成した日本語化をModへ上書き",command=self.overwrite_selected_translation_to_mod).pack(side="left",padx=(12,0))
@@ -464,7 +478,6 @@ class App(BaseTk):
         self.pause_btn=ttk.Button(actions,text="一時停止",command=self.toggle_pause,state="disabled"); self.pause_btn.pack(side="left",padx=(7,0))
         self.stop_btn=ttk.Button(actions,text="セーブして中断",command=self.save_and_stop,state="disabled"); self.stop_btn.pack(side="left",padx=(7,0))
         ttk.Button(actions,text="出力を開く",command=self.open_selected_output).pack(side="left",padx=(7,0))
-        ttk.Label(actions,textvariable=self.eta_var).pack(side="right",padx=(12,0))
         ttk.Label(actions,textvariable=self.progress_text).pack(side="right")
         self.progress=ttk.Progressbar(t,mode="determinate",maximum=100); self.progress.pack(fill="x",pady=(7,7))
 
@@ -679,6 +692,40 @@ class App(BaseTk):
         except Exception as e:
             messagebox.showerror(APP_NAME, f"保存場所の変更に失敗しました。\n{e}")
 
+    def apply_performance_preset(self):
+        """バッチサイズと並列数の安全側プリセットを適用する。
+
+        Paradox localization は1行の長さが一定ではないため、数値は絶対的な
+        上限ではなく実用上の目安。特にローカルLLMではサーバー側の並列設定と
+        メモリ容量に左右される。
+        """
+        name = self.performance_preset_var.get()
+        presets = {
+            "安定重視（20 / 1）": (20, 1),
+            "標準（40 / 1）": (40, 1),
+            "高速（60 / 2）": (60, 2),
+        }
+        batch, workers = presets.get(name, (40, 1))
+        self.batch_var.set(batch)
+        self.workers_var.set(workers)
+        note = {
+            "安定重視（20 / 1）": "長文が多いMod、初回利用、メモリに余裕がない環境向けです。",
+            "標準（40 / 1）": "通常はこちらを推奨します。速度と安定性のバランスを優先します。",
+            "高速（60 / 2）": "同時2リクエストを処理できる環境向けです。Ollama/LM Studio側の並列処理と十分なメモリが必要です。",
+        }.get(name, "")
+        messagebox.showinfo(
+            "おすすめ設定",
+            f"{name} を適用しました。\n\nバッチ: {batch}\n並列: {workers}\n\n{note}\n\n"
+            "安定性の目安\n"
+            "・バッチ 1–60: 通常範囲\n"
+            "・バッチ 80超: 長文では応答欠落・タイムアウトに注意\n"
+            "・バッチ 120超: 非推奨\n"
+            "・並列 1: 最も安定\n"
+            "・並列 2: サーバー側が同時処理できる場合のみ推奨\n"
+            "・並列 3以上: ローカルLLMではVRAM/RAM圧迫、待ち行列、タイムアウトが増えやすい\n\n"
+            "クラウドAPIでは並列数を上げられる場合がありますが、API側のレート制限を優先してください。"
+        )
+
     def _build_help_tab(self):
         t = self.tab_help
         title = ttk.Label(t, text="Paradox Localization Translator 使い方", font=("", 18, "bold"))
@@ -688,9 +735,33 @@ class App(BaseTk):
         guide = """【基本的な使い方】
 
 1. Ollama / LM Studio / クラウドAPIのいずれかを準備します。
-2. 「翻訳 / キュー」タブへYAML/フォルダをドラッグ＆ドロップするか、［フォルダ追加］［ファイル追加］を押します。
+2. 「翻訳 / キュー」タブへYAML/フォルダをドラッグ＆ドロップするか、［追加］からファイルまたはフォルダを選びます。
 3. 必要ならモデル・バッチサイズ・用語集などを設定します。
 4. ［翻訳開始］を押します。
+
+【バッチ / 並列のおすすめ設定】
+
+翻訳 / キュー画面の「おすすめ設定」から3種類を選択して［適用］できます。
+
+・安定重視: バッチ20 / 並列1
+  長文が多いMod、初回利用、メモリに余裕がない環境向け。
+
+・標準: バッチ40 / 並列1
+  通常はこちらを推奨。速度と安定性のバランスが良い設定です。
+
+・高速: バッチ60 / 並列2
+  Ollama / LM Studio側が同時2リクエストを処理でき、十分なRAM/VRAMがある場合向け。
+
+安定性の目安:
+・バッチ1～60: 通常範囲
+・バッチ80超: 長文が多いファイルでは応答欠落・タイムアウトが増えやすい
+・バッチ120超: 非推奨
+・並列1: 最も安定
+・並列2: サーバー側の並列処理が有効な場合のみ推奨
+・並列3以上: ローカルLLMではVRAM/RAM圧迫、待ち行列、タイムアウトが増えやすいため非推奨
+
+※これは固定上限ではありません。モデルの大きさ、コンテキスト長、1行の長さ、RAM/VRAM、Ollama/LM Studio側の設定で変わります。
+※クラウドAPIはサービス側のレート制限を優先してください。
 
 【出力先】
 
@@ -878,27 +949,78 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
         ttk.Label(top, textvariable=self.mod_status_summary_var).pack(side="right")
 
         info = ttk.LabelFrame(t, text="判定内容", padding=8); info.pack(fill="x", pady=(0,8))
-        ttk.Label(info, text="このタブは調査結果の一覧です。元Mod内の日本語化だけでなく、別の日本語化Modも確認し、完全翻訳か欠損ありかを表示します。調査だけでは自動翻訳しません。", wraplength=1050).pack(anchor="w")
+        ttk.Label(
+            info,
+            text=(
+                "元Mod内の日本語だけでなく、別の日本語化Modも確認します。\n"
+                "完全翻訳か、欠落があるかを判定します。調査だけでは自動翻訳しません。\n"
+                "一覧で行を選択すると、下の『選択項目の詳細』に結果と保存場所を段落表示します。"
+            ),
+            justify="left", wraplength=1200
+        ).pack(anchor="w")
 
-        cols=("status","mod","gaps","jpmod","jpmod_gaps","message","path")
-        self.mod_status_tree=ttk.Treeview(t, columns=cols, show="headings", height=20)
-        for c,txt,w in (("status","状態",130),("mod","Mod",220),("gaps","欠損",65),("jpmod","日本語化Mod",220),("jpmod_gaps","日本語化Mod欠損",110),("message","結果",500),("path","場所",330)):
+        cols=("status","mod","gaps","jpmod","jpmod_gaps")
+        self.mod_status_tree=ttk.Treeview(t, columns=cols, show="headings", height=13, selectmode="extended")
+        for c,txt,w in (("status","状態",145),("mod","Mod",300),("gaps","欠損",75),("jpmod","日本語化Mod",300),("jpmod_gaps","日本語化Mod欠損",125)):
             self.mod_status_tree.heading(c,text=txt); self.mod_status_tree.column(c,width=w,anchor="w")
         sy=ttk.Scrollbar(t,orient="vertical",command=self.mod_status_tree.yview)
-        sx=ttk.Scrollbar(t,orient="horizontal",command=self.mod_status_tree.xview)
-        self.mod_status_tree.configure(yscrollcommand=sy.set,xscrollcommand=sx.set)
-        self.mod_status_tree.pack(fill="both",expand=True)
-        sx.pack(fill="x")
+        self.mod_status_tree.configure(yscrollcommand=sy.set)
+        tree_frame=ttk.Frame(t); tree_frame.pack(fill="both",expand=True)
+        self.mod_status_tree.pack(in_=tree_frame,side="left",fill="both",expand=True)
+        sy.pack(in_=tree_frame,side="right",fill="y")
+        self.mod_status_tree.bind("<<TreeviewSelect>>", self._on_mod_status_selection_changed)
+
+        detail = ttk.LabelFrame(t, text="選択項目の詳細", padding=8); detail.pack(fill="x", pady=(8,0))
+        self.mod_status_detail = tk.Text(detail, height=6, wrap="word", relief="flat", background=self.cget("background"))
+        self.mod_status_detail.pack(fill="x", expand=False)
+        self.mod_status_detail.insert("1.0", "一覧からModを選択すると、ここに調査結果・日本語化Mod・上書き先・場所を段落で表示します。")
+        self.mod_status_detail.configure(state="disabled")
+
         bottom=ttk.Frame(t); bottom.pack(fill="x", pady=(8,0))
         ttk.Button(bottom,text="選択したModを翻訳",command=self.translate_selected_mod_from_status).pack(side="left")
         ttk.Button(bottom,text="選択Modを除外して翻訳",command=self.translate_all_except_selected_mods).pack(side="left",padx=(6,0))
         ttk.Button(bottom,text="選択Modを翻訳キューへ追加",command=lambda:self.queue_selected_mod_from_status(start_now=False)).pack(side="left",padx=(6,0))
-        ttk.Button(bottom,text="完成した日本語化をModへ上書き",command=self.overwrite_selected_status_mod).pack(side="left",padx=(6,0))
+        self.status_overwrite_btn = ttk.Button(bottom,text="完成した日本語化をModへ上書き",command=self.overwrite_selected_status_mod)
+        self.status_overwrite_btn.pack(side="left",padx=(6,0))
         ttk.Separator(bottom,orient="vertical").pack(side="left",fill="y",padx=10)
         ttk.Button(bottom,text="結果を消去",command=self.clear_mod_status_results).pack(side="left")
         ttk.Button(bottom,text="キャッシュ再読込",command=self._restore_cached_mod_status).pack(side="left",padx=(6,0))
         ttk.Button(bottom,text="CSV保存",command=self.export_mod_status_csv).pack(side="left",padx=(6,0))
-        ttk.Label(bottom,text="※ 上書き時は既存ファイルを自動バックアップし、二重確認します。",foreground="#a35a00").pack(side="right")
+        ttk.Label(bottom,text="※ 上書き前に対象先を明示し、バックアップ＋二重確認します。",foreground="#a35a00").pack(side="right")
+
+    def _set_mod_status_detail_text(self, text):
+        if not hasattr(self, "mod_status_detail"):
+            return
+        self.mod_status_detail.configure(state="normal")
+        self.mod_status_detail.delete("1.0", "end")
+        self.mod_status_detail.insert("1.0", text)
+        self.mod_status_detail.configure(state="disabled")
+
+    def _on_mod_status_selection_changed(self, _event=None):
+        selected = self._selected_mod_status_results() if hasattr(self, "mod_status_tree") else []
+        if not selected:
+            self._set_mod_status_detail_text("一覧からModを選択すると、ここに調査結果・日本語化Mod・上書き先・場所を段落で表示します。")
+            if hasattr(self, "status_overwrite_btn"):
+                self.status_overwrite_btn.config(text="完成した日本語化をModへ上書き")
+            return
+        r = selected[0]
+        mod_name = r.get("mod", "Mod")
+        jpmod = r.get("external_translation_mod", "")
+        jp_path = r.get("external_translation_path", "")
+        lines = [f"Mod: {mod_name}", f"状態: {r.get('status','')}　欠損: {r.get('gap_count',0)}件", "", r.get("message", "")]
+        if jpmod:
+            lines += ["", f"日本語化Mod: {jpmod}", f"日本語化Mod側の欠損: {r.get('external_translation_gap_count',0)}件", f"上書き先: 日本語化Mod『{jpmod}』", f"日本語化Mod場所: {jp_path}"]
+            if hasattr(self, "status_overwrite_btn"):
+                label = f"日本語化Mod『{jpmod}』へ差分上書き"
+                if len(label) > 34:
+                    label = "日本語化Modへ差分上書き"
+                self.status_overwrite_btn.config(text=label)
+        else:
+            lines += ["", "上書き先: 元Mod内の日本語localization"]
+            if hasattr(self, "status_overwrite_btn"):
+                self.status_overwrite_btn.config(text="完成した日本語化を元Modへ上書き")
+        lines += ["", f"元Mod場所: {r.get('path','')}"]
+        self._set_mod_status_detail_text("\n".join(lines))
 
     def pick_monitor_path(self):
         p=filedialog.askdirectory(title="調査するMod、localization、またはMod親フォルダを選択")
@@ -1191,7 +1313,7 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
                 msg = r.get("message", "")
                 if msg and not msg.endswith("（キャッシュ）"):
                     msg += "（キャッシュ）"
-                self.mod_status_tree.insert("", "end", iid=f"mod_{i}", values=(r.get("status",""),r.get("mod",""),r.get("gap_count",0),r.get("external_translation_mod",""),r.get("external_translation_gap_count",0) if r.get("external_translation_mod") else "",msg,r.get("path","")))
+                self.mod_status_tree.insert("", "end", iid=f"mod_{i}", values=(r.get("status",""),r.get("mod",""),r.get("gap_count",0),r.get("external_translation_mod",""),r.get("external_translation_gap_count",0) if r.get("external_translation_mod") else ""))
             counts={}
             for r in rows: counts[r.get("status","")] = counts.get(r.get("status",""),0)+1
             summary=" / ".join(f"{k}: {v}" for k,v in counts.items())
@@ -1334,9 +1456,9 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
             except Exception:
                 pass
         values = self.mod_status_tree.item(iid, "values")
-        path = values[6] if len(values) >= 7 else ""
+        mod_name = values[1] if len(values) >= 2 else ""
         for r in self.mod_research_results:
-            if r.get("path") == path:
+            if r.get("mod") == mod_name:
                 return r
         return None
 
@@ -1358,10 +1480,6 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
         item["mod_localization"] = str(loc)
         item["mod_name"] = result.get("mod", mod_root.name)
         item["direct_from_status"] = True
-        item["external_translation_mod"] = result.get("external_translation_mod", "")
-        item["external_translation_path"] = result.get("external_translation_path", "")
-        item["external_translation_localization"] = result.get("external_translation_localization", "")
-        item["external_gap_keys"] = [c.get("key") for c in result.get("external_translation_gaps", []) if c.get("key")]
         item["external_translation_mod"] = result.get("external_translation_mod", "")
         item["external_translation_path"] = result.get("external_translation_path", "")
         item["external_translation_localization"] = result.get("external_translation_localization", "")
@@ -1401,9 +1519,9 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
                     pass
             if result is None:
                 values = self.mod_status_tree.item(iid, "values")
-                path = values[6] if len(values) >= 7 else ""
+                mod_name = values[1] if len(values) >= 2 else ""
                 for candidate in self.mod_research_results:
-                    if candidate.get("path") == path:
+                    if candidate.get("mod") == mod_name:
                         result = candidate
                         break
             if result is not None:
@@ -1425,6 +1543,10 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
         item["mod_localization"] = str(loc)
         item["mod_name"] = result.get("mod", mod_root.name)
         item["direct_from_status"] = True
+        item["external_translation_mod"] = result.get("external_translation_mod", "")
+        item["external_translation_path"] = result.get("external_translation_path", "")
+        item["external_translation_localization"] = result.get("external_translation_localization", "")
+        item["external_gap_keys"] = [c.get("key") for c in result.get("external_translation_gaps", []) if c.get("key")]
         return item
 
     def translate_all_except_selected_mods(self):
@@ -1537,6 +1659,7 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
             f"⚠ 別の日本語化Modへ不足分だけを書き込みます。\n\n"
             f"元Mod: {src_name}\n"
             f"日本語化Mod: {ext_name}\n"
+            f"★ 今回の上書き先: 日本語化Mod『{ext_name}』\n"
             f"対象: {ext_root}\n"
             f"差分キー: {len(patch_values)}件\n\n"
             "既存の日本語訳は維持し、欠損・未翻訳と判定されたキーだけ更新/追加します。\n"
@@ -1807,8 +1930,6 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
             if tokens>0 and elapsed>0:
                 st["total_tokens"]=int(st.get("total_tokens",0))+tokens; st["token_seconds"]=float(st.get("token_seconds",0))+elapsed
             st["last_tps"]=float(metric.get("tokens_per_second",0) or st.get("last_tps",0) or 0)
-            if elapsed>0:
-                self.request_durations.append(elapsed); self.request_durations=self.request_durations[-30:]
         core.save_json(STATS_PATH,self.model_stats); self.refresh_model_stats_ui()
 
     def benchmark_selected_model(self):
@@ -1912,8 +2033,14 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
 
     def delete_profile(self):
         sel=self.profile_tree.selection()
-        if not sel: return
-        for name in sel: self.model_profiles.pop(name,None)
+        if not sel:
+            messagebox.showinfo(APP_NAME, "削除するモデルプロファイルを選択してください。")
+            return
+        names=list(sel)
+        if not messagebox.askyesno(APP_NAME, "次のモデルプロファイルを削除しますか？\n\n" + "\n".join(names)):
+            return
+        for name in names: self.model_profiles.pop(name,None)
+        if self.profile_var.get() in names: self.profile_var.set("")
         core.save_json(PROFILES_PATH,self.model_profiles); self.refresh_profiles_ui()
 
     # ---------------- queue ----------------
@@ -2185,11 +2312,45 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
             self._refresh_queue_tree()
             self.save_session(active=bool(self.worker and self.worker.is_alive()))
 
+    def apply_settings_to_current_translation(self):
+        """Apply current GUI translation settings to the active job at the next batch boundary."""
+        if not self.controller or not self.worker or not self.worker.is_alive():
+            messagebox.showinfo(APP_NAME, "現在実行中の翻訳はありません。\n変更した設定は次回の翻訳開始時に使用されます。")
+            return
+        try:
+            glossary_path = self.glossary_path_var.get().strip()
+            glossary = core.load_glossary(Path(glossary_path)) if glossary_path else {}
+            self.controller.update_runtime_settings(
+                provider=self.provider_var.get(),
+                url=self.url_var.get().strip(),
+                model=self.model_var.get().strip(),
+                api_key=self.api_key_var.get().strip(),
+                preset=self.preset_var.get(),
+                batch_size=max(1, self.batch_var.get()),
+                workers=max(1, self.workers_var.get()),
+                glossary_path=glossary_path,
+                dual_source=self.dual_var.get(),
+            )
+            self.progress_text.set(
+                f"設定変更を予約しました。次のバッチから適用: {self.provider_var.get()} / {self.model_var.get()} / "
+                f"バッチ{self.batch_var.get()} / 並列{self.workers_var.get()}"
+            )
+            self.save_session(active=True)
+            messagebox.showinfo(
+                APP_NAME,
+                "現在の翻訳へ設定変更を予約しました。\n\n"
+                "現在処理中のLLM応答はそのまま完了させ、次のバッチ境界から新設定を使用します。\n"
+                "モデル・プロバイダを変えた場合、以降の翻訳キャッシュも新設定用のキーとして保存されます。"
+            )
+        except Exception as e:
+            record_error("現在翻訳への設定適用", e)
+            messagebox.showerror(APP_NAME, f"設定の適用に失敗しました。\n{e}")
+
     def start_queue(self):
         if self.worker and self.worker.is_alive(): return
         if not self.queue_items:
             messagebox.showinfo(APP_NAME,"翻訳キューにフォルダまたはファイルを追加してください。"); return
-        self._clear_log(); self.progress["value"]=0; self.request_durations=[]; self.eta_var.set("残り時間: 計測中…")
+        self._clear_log(); self.progress["value"]=0
         self.llm_operation = "翻訳"
         self.controller=core.TranslationController(progress_callback=lambda x:self.events.put(("progress",x)), checkpoint_callback=self._checkpoint)
         self.start_btn.config(state="disabled"); self.pause_btn.config(state="normal",text="一時停止"); self.stop_btn.config(state="normal")
@@ -2796,15 +2957,6 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
                     elif payload.get("kind")=="batch":
                         done,total=payload.get("done",0),max(1,payload.get("total",1)); self.progress["value"]=done/total*100
                         self.progress_text.set(f"キュー {self.current_queue_index+1}/{len(self.queue_items)} / ファイル {payload.get('file_no',0)}/{payload.get('file_total',0)} / {done}/{total}行")
-                        if self.request_durations and done < total:
-                            import math
-                            avg=sum(self.request_durations)/len(self.request_durations); remaining=max(0,total-done)
-                            batches=math.ceil(remaining/max(1,self.batch_var.get())); waves=math.ceil(batches/max(1,self.workers_var.get())); secs=max(0,int(avg*waves))
-                            if secs<60: eta=f"約{secs}秒"
-                            elif secs<3600: eta=f"約{math.ceil(secs/60)}分"
-                            else: eta=f"約{secs//3600}時間{math.ceil((secs%3600)/60)}分"
-                            self.eta_var.set(f"現在ファイル残り: {eta}")
-                        elif done>=total: self.eta_var.set("現在ファイル残り: ほぼ完了")
                     elif payload.get("kind")=="file_done": self.progress["value"]=100
                 elif kind=="benchmark_progress":
                     if payload.get("kind")=="llm_activity": self._handle_llm_activity(payload,"モデル速度テスト")
@@ -2895,7 +3047,7 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
                 elif kind=="mod_status_append":
                     self.mod_research_results.append(payload)
                     i=len(self.mod_research_results)-1
-                    self.mod_status_tree.insert("","end",iid=f"mod_{i}",values=(payload.get("status",""),payload.get("mod",""),payload.get("gap_count",0),payload.get("external_translation_mod",""),payload.get("external_translation_gap_count",0) if payload.get("external_translation_mod") else "",payload.get("message",""),payload.get("path","")))
+                    self.mod_status_tree.insert("","end",iid=f"mod_{i}",values=(payload.get("status",""),payload.get("mod",""),payload.get("gap_count",0),payload.get("external_translation_mod",""),payload.get("external_translation_gap_count",0) if payload.get("external_translation_mod") else ""))
                     counts={}
                     for r in self.mod_research_results: counts[r.get("status","")]=counts.get(r.get("status",""),0)+1
                     summary=" / ".join(f"{k}: {v}" for k,v in counts.items())
@@ -2923,7 +3075,7 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
                     messagebox.showerror(APP_NAME,"Mod翻訳状況の調査エラー: "+payload)
                 elif kind=="queue_refresh": self._refresh_queue_tree()
                 elif kind=="done":
-                    self._finish_controls(); self._set_llm_idle("LLM 待機中","翻訳が完了しました"); self.progress["value"]=100; self.progress_text.set("すべての翻訳が完了しました"); self.eta_var.set("残り時間: 0分"); self._refresh_queue_tree(); messagebox.showinfo(APP_NAME,"翻訳キューが完了しました。")
+                    self._finish_controls(); self._set_llm_idle("LLM 待機中","翻訳が完了しました"); self.progress["value"]=100; self.progress_text.set("すべての翻訳が完了しました"); self._refresh_queue_tree(); messagebox.showinfo(APP_NAME,"翻訳キューが完了しました。")
                 elif kind=="fatal": record_error("翻訳処理 fatal", detail=str(payload)); self._finish_controls(); self._set_llm_idle("LLM 待機中","翻訳処理でエラーが発生しました"); messagebox.showerror(APP_NAME,payload)
                 elif kind=="diff_translate_progress":
                     if payload.get("kind")=="llm_activity": self._handle_llm_activity(payload,"差分翻訳")
