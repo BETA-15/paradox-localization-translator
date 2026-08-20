@@ -9,14 +9,14 @@ print("Tk:", tkinter.TkVersion)
 PY
 "$PYTHON_BIN" -m pip install --upgrade pip
 "$PYTHON_BIN" -m pip install -r requirements-build.txt
-rm -rf build dist
+rm -rf pyinstaller-build dist
 "$PYTHON_BIN" -m PyInstaller \
   --noconfirm --clean --windowed --onefile \
   --name "ParadoxLocalizationTranslator" \
   --paths app \
-  --hidden-import tkinter \
-  --hidden-import tkinter.ttk \
-  --hidden-import tkinter.filedialog \
-  --hidden-import tkinter.messagebox \
+  --hidden-import tkinter --hidden-import tkinter.ttk \
+  --hidden-import tkinter.filedialog --hidden-import tkinter.messagebox \
+  --hidden-import tkinter.simpledialog \
+  --workpath pyinstaller-build/work --specpath pyinstaller-build/spec \
   app/main.py
 echo "完成: dist/ParadoxLocalizationTranslator"

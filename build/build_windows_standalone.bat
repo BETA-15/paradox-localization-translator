@@ -21,6 +21,7 @@ py -3 -m PyInstaller ^
   --hidden-import tkinter.ttk ^
   --hidden-import tkinter.filedialog ^
   --hidden-import tkinter.messagebox ^
+  --hidden-import tkinter.simpledialog ^
   --workpath pyinstaller-build\work ^
   --specpath pyinstaller-build\spec ^
   app\main.py || exit /b 1
