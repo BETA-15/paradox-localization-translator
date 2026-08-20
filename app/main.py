@@ -34,7 +34,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.7.7"
+APP_VERSION = "0.7.9"
 
 
 def _app_container_dir() -> Path:
@@ -124,7 +124,7 @@ def _configure_data_root(root: Path):
     """Update all generated-file locations after the user changes the storage root."""
     global DATA_ROOT, APP_HOME, OUTPUT_ROOT, SESSION_PATH, DEFAULT_GLOSSARY
     global STATS_PATH, PROFILES_PATH, CACHE_ROOT, CACHE_REGISTRY_PATH, BACKUP_ROOT
-    global SAVED_STEAM_ROOTS_PATH, LOG_ROOT, MOD_STATUS_CACHE_PATH
+    global SAVED_STEAM_ROOTS_PATH, LOG_ROOT, MOD_STATUS_CACHE_PATH, APP_PREFS_PATH
     DATA_ROOT = root.expanduser().resolve()
     APP_HOME = DATA_ROOT / "設定"
     OUTPUT_ROOT = DATA_ROOT / "翻訳結果"
@@ -138,6 +138,7 @@ def _configure_data_root(root: Path):
     LOG_ROOT = DATA_ROOT / "ログ"
     SAVED_STEAM_ROOTS_PATH = APP_HOME / "steam_library_roots.json"
     MOD_STATUS_CACHE_PATH = APP_HOME / "mod_translation_status_cache.json"
+    APP_PREFS_PATH = APP_HOME / "app_preferences.json"
     for d in (DATA_ROOT, APP_HOME, OUTPUT_ROOT, CACHE_ROOT, BACKUP_ROOT, LOG_ROOT):
         d.mkdir(parents=True, exist_ok=True)
 
@@ -229,10 +230,18 @@ class App(BaseTk):
         self.translation_llm_response_meta = "応答待機中"
         self.monitor_llm_response_meta = "応答待機中"
 
-        self.provider_var = tk.StringVar(value="Ollama")
+        # 前回使用したLLM設定は通常セッションとは別に常時保存する。
+        # APIキーだけは保存しない。
+        self.app_preferences = core.load_json(APP_PREFS_PATH, {})
+        if not isinstance(self.app_preferences, dict):
+            self.app_preferences = {}
+        last_translation = self.app_preferences.get("translation_llm", {})
+        last_monitor = self.app_preferences.get("monitor_llm", {})
+
+        self.provider_var = tk.StringVar(value=last_translation.get("provider", "Ollama"))
         self.api_key_var = tk.StringVar(value="")
-        self.url_var = tk.StringVar(value=core.DEFAULT_OLLAMA_URL)
-        self.model_var = tk.StringVar(value=core.DEFAULT_MODEL)
+        self.url_var = tk.StringVar(value=last_translation.get("url") or core.default_url_for_provider(last_translation.get("provider", "Ollama")))
+        self.model_var = tk.StringVar(value=last_translation.get("model") or core.DEFAULT_MODEL)
         self.preset_var = tk.StringVar(value="CK3")
         self.batch_var = tk.IntVar(value=40)
         self.workers_var = tk.IntVar(value=1)
@@ -268,10 +277,10 @@ class App(BaseTk):
         self.monitor_interval_var = tk.IntVar(value=15)
         self.monitor_use_llm_var = tk.BooleanVar(value=True)
         self.monitor_check_translation_mods_var = tk.BooleanVar(value=True)
-        self.monitor_provider_var = tk.StringVar(value="Ollama")
-        self.monitor_url_var = tk.StringVar(value=core.DEFAULT_OLLAMA_URL)
+        self.monitor_provider_var = tk.StringVar(value=last_monitor.get("provider", "Ollama"))
+        self.monitor_url_var = tk.StringVar(value=last_monitor.get("url") or core.default_url_for_provider(last_monitor.get("provider", "Ollama")))
         self.monitor_api_key_var = tk.StringVar(value="")
-        self.monitor_model_var = tk.StringVar(value="")
+        self.monitor_model_var = tk.StringVar(value=last_monitor.get("model", ""))
         self.monitor_connection_var = tk.StringVar(value="監視用LLM: 未確認")
         self.monitor_status_var = tk.StringVar(value="監視停止中")
         self.monitor_summary_var = tk.StringVar(value="未翻訳候補: --")
@@ -513,7 +522,8 @@ class App(BaseTk):
         ttk.Button(qa,text="QA再実行",command=self.run_review_qa).pack(side="left")
         ttk.Button(qa,text="警告だけ表示",command=lambda:self.populate_review(True)).pack(side="left",padx=(6,0))
         ttk.Button(qa,text="全キー表示",command=lambda:self.populate_review(False)).pack(side="left",padx=(6,0))
-        ttk.Label(qa,text="一覧は 重要度 → 問題種別 → キー の階層で自動整理されます",foreground="#666").pack(side="left",padx=(12,0))
+        ttk.Button(qa,text="現在の翻訳設定を適用",command=self.apply_translation_settings_everywhere).pack(side="left",padx=(10,0))
+        ttk.Label(qa,text="AI校正は現在の翻訳モデル設定を使用 / 一覧は重要度→問題種別→キーで整理",foreground="#666").pack(side="left",padx=(12,0))
         ttk.Label(qa,textvariable=self.qa_summary_var).pack(side="right")
 
         paned=ttk.Panedwindow(t,orient="horizontal"); paned.pack(fill="both",expand=True)
@@ -558,7 +568,8 @@ class App(BaseTk):
         ttk.Button(bar, text="選択項目を翻訳", command=lambda:self.translate_diff_items(False)).pack(side="left")
         ttk.Button(bar, text="欠落・未翻訳をまとめて翻訳", command=lambda:self.translate_diff_items(True)).pack(side="left", padx=(6,0))
         ttk.Button(bar, text="選択訳を保存", command=self.save_diff_value).pack(side="left", padx=(6,0))
-        ttk.Label(bar,text="一覧は 状態 → キー の階層で自動整理されます",foreground="#666").pack(side="left",padx=(12,0))
+        ttk.Button(bar,text="現在の翻訳設定を適用",command=self.apply_translation_settings_everywhere).pack(side="left",padx=(10,0))
+        ttk.Label(bar,text="差分翻訳は現在の翻訳モデル設定を使用 / 一覧は状態→キーで整理",foreground="#666").pack(side="left",padx=(12,0))
         ttk.Label(bar, textvariable=self.diff_summary_var).pack(side="right")
 
         paned = ttk.Panedwindow(t, orient="horizontal"); paned.pack(fill="both", expand=True)
@@ -961,49 +972,59 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
 
     def _build_status_tab(self):
         t = self.tab_status
-        top = ttk.Frame(t); top.pack(fill="x", pady=(0,8))
+        top = ttk.Frame(t); top.pack(fill="x", pady=(0,6))
         ttk.Label(top, text="Modごとの日本語翻訳状況", font=("", 13, "bold")).pack(side="left")
         ttk.Label(top, textvariable=self.mod_status_summary_var).pack(side="right")
 
-        info = ttk.LabelFrame(t, text="判定内容", padding=8); info.pack(fill="x", pady=(0,8))
-        ttk.Label(
-            info,
-            text=(
-                "元Mod内の日本語だけでなく、別の日本語化Modも確認します。\n"
-                "完全翻訳か、欠落があるかを判定します。調査だけでは自動翻訳しません。\n"
-                "一覧で行を選択すると、下の『選択項目の詳細』に結果と保存場所を段落表示します。"
-            ),
-            justify="left", wraplength=1200
-        ).pack(anchor="w")
+        # 翻訳状況タブから探索専用LLMをそのまま変更・適用できる。
+        moncfg = ttk.LabelFrame(t, text="探索用LLM設定", padding=6); moncfg.pack(fill="x", pady=(0,6))
+        ttk.Label(moncfg, text="プロバイダ").grid(row=0,column=0,sticky="w")
+        cmb=ttk.Combobox(moncfg,textvariable=self.monitor_provider_var,values=["Ollama","LM Studio","OpenAI","Anthropic","Gemini","OpenAI Compatible"],state="readonly",width=13)
+        cmb.grid(row=0,column=1,padx=(5,10)); cmb.bind("<<ComboboxSelected>>",lambda e:self.on_monitor_provider_change())
+        ttk.Label(moncfg,text="URL").grid(row=0,column=2,sticky="w")
+        ttk.Entry(moncfg,textvariable=self.monitor_url_var,width=35).grid(row=0,column=3,sticky="ew",padx=(5,10))
+        ttk.Label(moncfg,text="モデル").grid(row=0,column=4,sticky="w")
+        self.status_monitor_model_combo=ttk.Combobox(moncfg,textvariable=self.monitor_model_var,state="normal",width=30)
+        self.status_monitor_model_combo.grid(row=0,column=5,sticky="ew",padx=(5,8))
+        ttk.Button(moncfg,text="モデル一覧を再読込",command=self.refresh_monitor_models).grid(row=0,column=6,padx=(0,6))
+        ttk.Button(moncfg,text="探索設定を適用",command=self.apply_monitor_settings).grid(row=0,column=7)
+        moncfg.columnconfigure(3,weight=1); moncfg.columnconfigure(5,weight=1)
+        ttk.Label(moncfg,text="※ 再読込はモデル一覧の取得だけです。変更を確定するには［探索設定を適用］を押してください。小型3B～8B級を推奨。",foreground="#a35a00").grid(row=1,column=0,columnspan=8,sticky="w",pady=(4,0))
 
+        info = ttk.LabelFrame(t, text="判定内容", padding=6); info.pack(fill="x", pady=(0,6))
+        ttk.Label(info,text="元Modと別日本語化Modを確認し、完全翻訳・欠落を判定します。調査だけでは自動翻訳しません。行を選ぶと下に詳細を表示します。",justify="left",wraplength=1250).pack(anchor="w")
+
+        # Treeviewは必ず専用Frameの子として作る。旧実装の in_= 指定では
+        # macOS/Tkで枠だけ広がり一覧本体が表示されない場合があった。
+        content = ttk.Panedwindow(t, orient="vertical"); content.pack(fill="both", expand=True)
+        tree_frame=ttk.Frame(content); detail_frame=ttk.Frame(content)
+        content.add(tree_frame, weight=5); content.add(detail_frame, weight=1)
         cols=("status","mod","gaps","jpmod","jpmod_gaps")
-        self.mod_status_tree=ttk.Treeview(t, columns=cols, show="headings", height=13, selectmode="extended")
+        self.mod_status_tree=ttk.Treeview(tree_frame, columns=cols, show="headings", height=14, selectmode="extended")
         for c,txt,w in (("status","状態",145),("mod","Mod",300),("gaps","欠損",75),("jpmod","日本語化Mod",300),("jpmod_gaps","日本語化Mod欠損",125)):
             self.mod_status_tree.heading(c,text=txt); self.mod_status_tree.column(c,width=w,anchor="w")
-        sy=ttk.Scrollbar(t,orient="vertical",command=self.mod_status_tree.yview)
+        sy=ttk.Scrollbar(tree_frame,orient="vertical",command=self.mod_status_tree.yview)
         self.mod_status_tree.configure(yscrollcommand=sy.set)
-        tree_frame=ttk.Frame(t); tree_frame.pack(fill="both",expand=True)
-        self.mod_status_tree.pack(in_=tree_frame,side="left",fill="both",expand=True)
-        sy.pack(in_=tree_frame,side="right",fill="y")
+        self.mod_status_tree.pack(side="left",fill="both",expand=True)
+        sy.pack(side="right",fill="y")
         self.mod_status_tree.bind("<<TreeviewSelect>>", self._on_mod_status_selection_changed)
 
-        detail = ttk.LabelFrame(t, text="選択項目の詳細", padding=8); detail.pack(fill="x", pady=(8,0))
-        self.mod_status_detail = tk.Text(detail, height=6, wrap="word", relief="flat", background=self.cget("background"))
-        self.mod_status_detail.pack(fill="x", expand=False)
+        detail = ttk.LabelFrame(detail_frame, text="選択項目の詳細", padding=6); detail.pack(fill="both",expand=True,pady=(6,0))
+        self.mod_status_detail = tk.Text(detail, height=5, wrap="word", relief="flat", background=self.cget("background"))
+        self.mod_status_detail.pack(fill="both", expand=True)
         self.mod_status_detail.insert("1.0", "一覧からModを選択すると、ここに調査結果・日本語化Mod・上書き先・場所を段落で表示します。")
         self.mod_status_detail.configure(state="disabled")
 
-        bottom=ttk.Frame(t); bottom.pack(fill="x", pady=(8,0))
+        bottom=ttk.Frame(t); bottom.pack(fill="x", pady=(6,0))
         ttk.Button(bottom,text="選択したModを翻訳",command=self.translate_selected_mod_from_status).pack(side="left")
         ttk.Button(bottom,text="選択Modを除外して翻訳",command=self.translate_all_except_selected_mods).pack(side="left",padx=(6,0))
         ttk.Button(bottom,text="選択Modを翻訳キューへ追加",command=lambda:self.queue_selected_mod_from_status(start_now=False)).pack(side="left",padx=(6,0))
         self.status_overwrite_btn = ttk.Button(bottom,text="完成した日本語化をModへ上書き",command=self.overwrite_selected_status_mod)
         self.status_overwrite_btn.pack(side="left",padx=(6,0))
-        ttk.Separator(bottom,orient="vertical").pack(side="left",fill="y",padx=10)
+        ttk.Separator(bottom,orient="vertical").pack(side="left",fill="y",padx=8)
         ttk.Button(bottom,text="結果を消去",command=self.clear_mod_status_results).pack(side="left")
         ttk.Button(bottom,text="キャッシュ再読込",command=self._restore_cached_mod_status).pack(side="left",padx=(6,0))
         ttk.Button(bottom,text="CSV保存",command=self.export_mod_status_csv).pack(side="left",padx=(6,0))
-        ttk.Label(bottom,text="※ 上書き前に対象先を明示し、バックアップ＋二重確認します。",foreground="#a35a00").pack(side="right")
 
     def _set_mod_status_detail_text(self, text):
         if not hasattr(self, "mod_status_detail"):
@@ -1109,6 +1130,7 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
         self.monitor_url_var.set(core.default_url_for_provider(provider))
         self.monitor_model_var.set("")
         self.monitor_connection_var.set("監視用LLM: 未確認")
+        self._save_llm_preferences()
         self.refresh_monitor_models()
 
     def refresh_monitor_models(self):
@@ -1131,6 +1153,72 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
             self.monitor_model_var.get().strip(),
             self.monitor_api_key_var.get().strip(),
         )
+
+    def _save_llm_preferences(self):
+        """Persist last-used provider/URL/model only. API keys are intentionally excluded."""
+        try:
+            data = {
+                "version": 1,
+                "translation_llm": {
+                    "provider": self.provider_var.get(),
+                    "url": self.url_var.get().strip(),
+                    "model": self.model_var.get().strip(),
+                },
+                "monitor_llm": {
+                    "provider": self.monitor_provider_var.get(),
+                    "url": self.monitor_url_var.get().strip(),
+                    "model": self.monitor_model_var.get().strip(),
+                },
+            }
+            core.save_json(APP_PREFS_PATH, data)
+            self.app_preferences = data
+        except Exception as e:
+            record_error("LLM設定保存", e)
+
+    def apply_monitor_settings(self, silent=False):
+        """Apply monitor/research LLM settings. Current in-flight request is not interrupted."""
+        provider=self.monitor_provider_var.get()
+        url=self.monitor_url_var.get().strip() or core.default_url_for_provider(provider)
+        model=self.monitor_model_var.get().strip()
+        self.monitor_url_var.set(url)
+        if not model:
+            if not silent:
+                messagebox.showinfo(APP_NAME,"探索用LLMのモデルを選択してください。")
+            return False
+        self._save_llm_preferences()
+        self.monitor_connection_var.set(f"監視用LLM設定: {provider} / {model}")
+        self.monitor_llm_detail_var.set(f"次の探索LLM呼び出しから適用: {provider} / {model}")
+        if not silent:
+            messagebox.showinfo(APP_NAME,"探索用LLM設定を適用しました。\n\n現在応答待ちの呼び出しはそのまま完了し、次の探索LLM呼び出しから新設定を使用します。")
+        return True
+
+    def apply_translation_settings_everywhere(self, silent=False):
+        """Persist UI translation settings and apply to active queue; QA/diff always read these UI values."""
+        self._save_llm_preferences()
+        if self.controller and self.worker and self.worker.is_alive():
+            # Reuse the active-job runtime switching logic without a duplicate dialog.
+            try:
+                glossary_path=self.glossary_path_var.get().strip()
+                self.controller.update_runtime_settings(
+                    provider=self.provider_var.get(), url=self.url_var.get().strip(), model=self.model_var.get().strip(),
+                    api_key=self.api_key_var.get().strip(), preset=self.preset_var.get(),
+                    batch_size=max(1,self.batch_var.get()), workers=max(1,self.workers_var.get()),
+                    glossary_path=glossary_path, dual_source=self.dual_var.get())
+                self.translation_start_settings={**getattr(self,"translation_start_settings",{}),
+                    "provider":self.provider_var.get(),"url":self.url_var.get().strip(),"model":self.model_var.get().strip(),
+                    "api_key":self.api_key_var.get().strip(),"preset":self.preset_var.get(),
+                    "batch":max(1,self.batch_var.get()),"workers":max(1,self.workers_var.get()),
+                    "glossary":glossary_path or None,"dual":self.dual_var.get()}
+                self.save_session(active=True)
+            except Exception as e:
+                record_error("翻訳設定全体適用", e)
+                if not silent: messagebox.showerror(APP_NAME,f"設定の適用に失敗しました。\n{e}")
+                return False
+        if not silent:
+            messagebox.showinfo(APP_NAME,
+                "現在の翻訳設定を適用しました。\n\nQAのAI校正と差分翻訳は、この画面で現在選択されているプロバイダ・URL・モデル・用語集を使用します。"
+                + ("\n実行中の通常翻訳は次のバッチから切り替わります。" if self.controller and self.worker and self.worker.is_alive() else ""))
+        return True
 
     def start_monitor(self):
         if self.monitor_thread and self.monitor_thread.is_alive():
@@ -1726,7 +1814,8 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
                 else:
                     text="l_japanese:\n"
                 for key,value in missing:
-                    text += f' {key}: "{value}"\n'
+                    escaped_value = core.escape_localization_value(value)
+                    text += f' {key}: "{escaped_value}"\n'
                     added += 1
                 patch_file.write_text("\ufeff"+text.lstrip("\ufeff"),encoding="utf-8")
             messagebox.showinfo(APP_NAME,
@@ -2312,10 +2401,11 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
         src,dst=self._classify_drop_pair(files)
         if src: self.review_src_var.set(str(src))
         if dst: self.review_dst_var.set(str(dst))
-        if dst:
+        if src and dst:
             self.load_review()
         elif files:
-            self.qa_summary_var.set("原文を受け取りました。日本語YAMLもドロップしてください。")
+            side = "日本語YAML" if src else "英語/原文YAML"
+            self.qa_summary_var.set(f"片方を受け取りました。{side}もドロップしてください。")
         else:
             messagebox.showinfo(APP_NAME,"QAにはYAMLファイル、またはYAMLを含むフォルダをドロップしてください。")
         return event.action if hasattr(event,"action") else None
@@ -2442,38 +2532,8 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
             self.save_session(active=bool(self.worker and self.worker.is_alive()))
 
     def apply_settings_to_current_translation(self):
-        """Apply current GUI translation settings to the active job at the next batch boundary."""
-        if not self.controller or not self.worker or not self.worker.is_alive():
-            messagebox.showinfo(APP_NAME, "現在実行中の翻訳はありません。\n変更した設定は次回の翻訳開始時に使用されます。")
-            return
-        try:
-            glossary_path = self.glossary_path_var.get().strip()
-            glossary = core.load_glossary(Path(glossary_path)) if glossary_path else {}
-            self.controller.update_runtime_settings(
-                provider=self.provider_var.get(),
-                url=self.url_var.get().strip(),
-                model=self.model_var.get().strip(),
-                api_key=self.api_key_var.get().strip(),
-                preset=self.preset_var.get(),
-                batch_size=max(1, self.batch_var.get()),
-                workers=max(1, self.workers_var.get()),
-                glossary_path=glossary_path,
-                dual_source=self.dual_var.get(),
-            )
-            self.progress_text.set(
-                f"設定変更を予約しました。次のバッチから適用: {self.provider_var.get()} / {self.model_var.get()} / "
-                f"バッチ{self.batch_var.get()} / 並列{self.workers_var.get()}"
-            )
-            self.save_session(active=True)
-            messagebox.showinfo(
-                APP_NAME,
-                "現在の翻訳へ設定変更を予約しました。\n\n"
-                "現在処理中のLLM応答はそのまま完了させ、次のバッチ境界から新設定を使用します。\n"
-                "モデル・プロバイダを変えた場合、以降の翻訳キャッシュも新設定用のキーとして保存されます。"
-            )
-        except Exception as e:
-            record_error("現在翻訳への設定適用", e)
-            messagebox.showerror(APP_NAME, f"設定の適用に失敗しました。\n{e}")
+        """Compatibility button: apply current UI settings everywhere and to active translation."""
+        return self.apply_translation_settings_everywhere(silent=False)
 
     def start_queue(self):
         if self.worker and self.worker.is_alive(): return
@@ -3128,11 +3188,14 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
                     elif p in {"OpenAI","Anthropic","Gemini"}: self.connection_var.set(f"{p} APIに接続できません。APIキー・モデル・利用権限を確認してください")
                     else: self.connection_var.set("OpenAI互換APIに接続できません。URL/APIキーを確認してください")
                 elif kind=="monitor_models":
-                    if hasattr(self,"monitor_model_combo"):
-                        self.monitor_model_combo["values"]=payload
-                        if payload and self.monitor_model_var.get() not in payload:
-                            self.monitor_model_var.set(payload[0])
+                    for combo_name in ("monitor_model_combo", "status_monitor_model_combo"):
+                        combo=getattr(self,combo_name,None)
+                        if combo is not None:
+                            combo["values"]=payload
+                    if payload and self.monitor_model_var.get() not in payload:
+                        self.monitor_model_var.set(payload[0])
                     self.monitor_connection_var.set(f"監視用LLM: {self.monitor_provider_var.get()} 接続済み / {len(payload)}モデル")
+                    self._save_llm_preferences()
                 elif kind=="monitor_model_error":
                     p=self.monitor_provider_var.get()
                     if p=="Ollama": msg="Ollamaが起動していません"
@@ -3299,6 +3362,7 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
         self.start_btn.config(state="normal"); self.pause_btn.config(state="disabled",text="一時停止"); self.stop_btn.config(state="disabled"); self.controller=None
 
     def on_close(self):
+        self._save_llm_preferences()
         if self.monitor_thread and self.monitor_thread.is_alive():
             self.monitor_stop_event.set()
             if self.monitor_llm_controller: self.monitor_llm_controller.request_stop(save=False)

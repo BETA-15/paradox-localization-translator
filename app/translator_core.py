@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Core engine for Paradox Localization Translator v0.6.0.
+"""Core engine for Paradox Localization Translator v0.7.8.
 
 Features:
 - Batch translation via Ollama, LM Studio, OpenAI, Anthropic, Gemini, or OpenAI-compatible APIs
@@ -171,6 +171,34 @@ def save_glossary(path: Path, glossary: dict):
 
 def text_hash(s: str) -> str:
     return hashlib.sha256(s.encode("utf-8")).hexdigest()[:16]
+
+
+def escape_localization_value(value: str) -> str:
+    """Escape literal quotes for a quoted Paradox localization value."""
+    out = []
+    i = 0
+    while i < len(value):
+        ch = value[i]
+        if ch == "\\" and i + 1 < len(value):
+            out.extend((ch, value[i + 1]))
+            i += 2
+            continue
+        out.append('\\"' if ch == '"' else ch)
+        i += 1
+    return "".join(out)
+
+
+def translation_cache_key(provider: str, model: str, preset: str, source_lang: str,
+                          original: str, glossary: Optional[dict] = None,
+                          dual_source: bool = False, zh_ref: str = "") -> str:
+    """Cache key including settings that materially change translation output."""
+    glossary_blob = json.dumps(glossary or {}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    cfg_blob = "\n".join([
+        normalize_provider(provider), model or "", preset or "", source_lang or "",
+        "dual=1" if dual_source else "dual=0", text_hash(glossary_blob),
+        text_hash(zh_ref or "") if dual_source else "no-zh",
+    ])
+    return f"v6:{text_hash(cfg_blob)}:{text_hash(original)}"
 
 
 def protect_text(value: str):
@@ -915,7 +943,9 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
             continue
         if repair_target_file and not looks_foreign_in_target(value, target_lang):
             continue
-        h = f"v5:{normalize_provider(provider)}:{model}:{preset}:{translation_source_lang}:{text_hash(value)}"
+        h = translation_cache_key(provider, model, preset, translation_source_lang, value,
+                                  glossary=glossary, dual_source=dual_source,
+                                  zh_ref=(zh_refs or {}).get(m.group("key").strip(), ""))
         if h in cache and cache_entry_is_valid(value, cache[h], translation_source_lang):
             continue
         if h in cache:
@@ -972,10 +1002,9 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
             b = jobs[cursor:cursor + cfg["batch_size"]]
             cursor += len(b)
             for j in b:
-                j["hash"] = (
-                    f"v5:{normalize_provider(cfg['provider'])}:{cfg['model']}:{cfg['preset']}:"
-                    f"{translation_source_lang}:{text_hash(j['value'])}"
-                )
+                j["hash"] = translation_cache_key(
+                    cfg["provider"], cfg["model"], cfg["preset"], translation_source_lang, j["value"],
+                    glossary=cfg["glossary"], dual_source=cfg["dual_source"], zh_ref=j.get("zh_ref") or "")
             group.append(b)
 
         def run_one(b):
@@ -1022,10 +1051,9 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
             if controller:
                 controller.wait_if_paused()
             cfg = runtime_cfg()
-            j["hash"] = (
-                f"v5:{normalize_provider(cfg['provider'])}:{cfg['model']}:{cfg['preset']}:"
-                f"{translation_source_lang}:{text_hash(j['value'])}"
-            )
+            j["hash"] = translation_cache_key(
+                cfg["provider"], cfg["model"], cfg["preset"], translation_source_lang, j["value"],
+                glossary=cfg["glossary"], dual_source=cfg["dual_source"], zh_ref=j.get("zh_ref") or "")
             try:
                 tr = translate_batch(cfg["url"], cfg["model"], [j], translation_source_lang,
                                      cfg["glossary"], cfg["preset"], cfg["dual_source"],
@@ -1053,11 +1081,14 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
         if idx in results:
             translated = results[idx]
         elif orig and not looks_untranslatable(orig):
-            h = f"v5:{normalize_provider(provider)}:{model}:{preset}:{translation_source_lang}:{text_hash(orig)}"
+            zh_ref = (zh_refs or {}).get(m.group("key").strip(), "") if translation_source_lang == "english" else ""
+            h = translation_cache_key(provider, model, preset, translation_source_lang, orig,
+                                      glossary=glossary, dual_source=dual_source, zh_ref=zh_ref)
             translated = cache.get(h, orig)
         else:
             translated = orig
-        out_lines.append(f'{m.group("indent")}{m.group("key")}: {m.group("version") or ""}"{translated}"{m.group("trailing") or ""}')
+        escaped_translated = escape_localization_value(translated)
+        out_lines.append(f'{m.group("indent")}{m.group("key")}: {m.group("version") or ""}"{escaped_translated}"{m.group("trailing") or ""}')
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text("\ufeff" + "\n".join(out_lines) + "\n", encoding="utf-8")
     return {"jobs": len(jobs), "failed": len(failed), "keys": total_keys}
@@ -1221,7 +1252,7 @@ def update_localization_value(path: Path, key: str, new_value: str) -> bool:
     for line in lines:
         m = parse_line(line)
         if m and m.group("key").strip() == key and not changed:
-            escaped = new_value.replace('"', '\\"') if '\\"' not in new_value else new_value
+            escaped = escape_localization_value(new_value)
             out.append(f'{m.group("indent")}{m.group("key")}: {m.group("version") or ""}"{escaped}"{m.group("trailing") or ""}')
             changed = True
         else:
@@ -1285,7 +1316,7 @@ def upsert_localization_values(path: Path, values: Dict[str, str], target_lang: 
             key = m.group("key").strip()
             if key in pending:
                 val = pending.pop(key)
-                escaped = val.replace('"', '\\"') if '\\"' not in val else val
+                escaped = escape_localization_value(val)
                 out.append(f'{m.group("indent")}{m.group("key")}: {m.group("version") or ""}"{escaped}"{m.group("trailing") or ""}')
                 changed += 1
                 continue
@@ -1294,7 +1325,7 @@ def upsert_localization_values(path: Path, values: Dict[str, str], target_lang: 
         if not out:
             out.append(f"l_{target_lang}:")
         for key, val in pending.items():
-            escaped = val.replace('"', '\\"') if '\\"' not in val else val
+            escaped = escape_localization_value(val)
             out.append(f' {key}: "{escaped}"')
             changed += 1
     path.write_text("\ufeff" + "\n".join(out) + "\n", encoding="utf-8")
