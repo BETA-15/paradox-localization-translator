@@ -1253,7 +1253,7 @@ def qa_entries(target_entries: Dict[str,str], source_entries: Optional[Dict[str,
                     issues.append({
                         "key": key, "severity": "warning", "type": "term_mismatch",
                         "message": f"用語集指定『{src_term} → {dst_term}』が訳文に反映されていません",
-                        "value": value,
+                        "value": value, "source_term": src_term, "expected_term": dst_term,
                     })
     if source_entries:
         missing = set(source_entries) - set(target_entries)
@@ -1276,6 +1276,186 @@ def qa_file(target_path: Path, source_path: Optional[Path] = None, source_lang: 
             detected_lang = source_lang
     return qa_entries(target_entries, source_entries, detected_lang, glossary)
 
+
+
+
+def _is_auto_glossary_source_candidate(text: str, source_lang: str) -> bool:
+    plain = PROTECT_RE.sub('', text or '').strip()
+    if not plain or len(plain) > 80:
+        return False
+    if source_lang == "english":
+        words = re.findall(r"[A-Za-z][A-Za-z'\-]*", plain)
+        return 1 <= len(words) <= 8 and not re.search(r"[.!?]\s", plain)
+    if source_lang == "simp_chinese":
+        han = re.findall(r"[\u4e00-\u9fff]", plain)
+        return 1 <= len(han) <= 28 and plain.count('。') == 0 and plain.count('！') == 0 and plain.count('？') == 0
+    return len(plain) <= 60
+
+
+def build_auto_glossary_candidates(pairs: Iterable[dict]) -> List[dict]:
+    """Build terminology candidates from aligned source/Japanese localization files.
+
+    Repeated short source labels/terms are grouped by their exact source wording.
+    If existing Japanese localization uses more than one wording, all variants and
+    occurrence counts are retained so the UI can unify them later.
+    """
+    from collections import Counter, defaultdict
+    grouped = defaultdict(Counter)
+    langs = {}
+    keys_by_source = defaultdict(list)
+    for pair in pairs:
+        source = Path(pair.get("source", ""))
+        target = Path(pair.get("target", ""))
+        if not source.exists() or not target.exists():
+            continue
+        try:
+            source_lang, source_entries, _ = parse_localization_file(source)
+            _, target_entries, _ = parse_localization_file(target)
+        except Exception:
+            continue
+        if source_lang not in {"english", "simp_chinese"}:
+            continue
+        for key, src in source_entries.items():
+            dst = target_entries.get(key, "").strip()
+            src = (src or "").strip()
+            if not dst or not src or looks_untranslated(src, dst, source_lang):
+                continue
+            if not _is_auto_glossary_source_candidate(src, source_lang):
+                continue
+            grouped[src][dst] += 1
+            langs[src] = source_lang
+            keys_by_source[src].append(key)
+    out = []
+    for src, counts in grouped.items():
+        total = sum(counts.values())
+        if total < 2:
+            continue
+        variants = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        preferred = variants[0][0]
+        out.append({
+            "source": src, "source_lang": langs.get(src, "english"),
+            "preferred": preferred, "occurrences": total,
+            "variants": [{"text": v, "count": c} for v, c in variants],
+            "conflict": len(variants) > 1,
+            "keys": keys_by_source[src][:30],
+        })
+    out.sort(key=lambda x: (not x["conflict"], -x["occurrences"], x["source"]))
+    return out
+
+
+def resolve_auto_glossary_conflicts(provider: str, url: str, model: str, candidates: List[dict],
+                                      preset: str = "General", api_key: str = "",
+                                      controller: Optional[TranslationController] = None) -> List[dict]:
+    """Ask the configured LLM for one preferred Japanese wording per conflicting term.
+
+    Failure is non-fatal: the frequency-based preferred wording remains in place.
+    """
+    conflicts = [c for c in candidates if c.get("conflict")][:80]
+    if not conflicts or not model:
+        return candidates
+    payload = [{
+        "source": c["source"], "source_lang": c.get("source_lang", "english"),
+        "variants": c.get("variants", [])
+    } for c in conflicts]
+    system = """あなたはParadoxゲーム日本語ローカライズの用語統一担当です。
+同じ原語に複数の日本語訳が使われています。各原語について、既存候補から最も自然で一貫した訳語を1つ選ぶか、明らかに改善できる場合だけ短い新しい訳語を提案してください。
+文全体ではなく用語・短いラベルとして扱い、ゲーム変数や記号は変更しません。
+出力はJSON配列のみ。各要素は {"source":"...","preferred":"..."} としてください。"""
+    user = json.dumps({"preset": preset, "items": payload}, ensure_ascii=False)
+    try:
+        raw = call_llm_raw(provider, url, model, user, system, controller=controller, temperature=0.1, api_key=api_key)
+        m = re.search(r'\[.*\]', raw, re.S)
+        data = json.loads(m.group(0) if m else raw)
+        resolved = {str(x.get("source")): str(x.get("preferred", "")).strip() for x in data if isinstance(x, dict)}
+        for c in candidates:
+            val = resolved.get(c.get("source", ""))
+            if val:
+                c["preferred"] = val
+                c["llm_resolved"] = True
+    except Exception:
+        pass
+    return candidates
+
+
+def glossary_variants_path(glossary_path: Path) -> Path:
+    glossary_path = Path(glossary_path)
+    return glossary_path.with_name(glossary_path.stem + "_variants.json")
+
+
+def save_auto_glossary_candidates(glossary_path: Path, candidates: List[dict], preserve_existing: bool = True) -> dict:
+    """Merge generated terminology into the normal glossary and save variant metadata."""
+    glossary_path = Path(glossary_path)
+    glossary = load_glossary(glossary_path) if preserve_existing else {}
+    variants = load_json(glossary_variants_path(glossary_path), {})
+    if not isinstance(variants, dict):
+        variants = {}
+    added = 0
+    conflicts = 0
+    for c in candidates:
+        src = str(c.get("source", "")).strip()
+        preferred = str(c.get("preferred", "")).strip()
+        if not src or not preferred:
+            continue
+        if src not in glossary:
+            glossary[src] = preferred
+            added += 1
+        else:
+            preferred = glossary[src]
+        if c.get("conflict"):
+            conflicts += 1
+        variants[src] = {
+            "preferred": preferred,
+            "variants": [x.get("text", "") for x in c.get("variants", []) if x.get("text")],
+            "counts": {x.get("text", ""): int(x.get("count", 0)) for x in c.get("variants", []) if x.get("text")},
+            "source_lang": c.get("source_lang", ""),
+            "occurrences": int(c.get("occurrences", 0)),
+        }
+    save_glossary(glossary_path, glossary)
+    save_json(glossary_variants_path(glossary_path), variants)
+    return {"added": added, "total": len(candidates), "conflicts": conflicts, "glossary_size": len(glossary)}
+
+
+def bulk_unify_qa_terms(target_path: Path, source_path: Path, glossary_path: Path) -> dict:
+    """Replace known inconsistent Japanese variants with glossary-preferred wording.
+
+    Exact-source candidates are replaced as a whole value. For ordinary glossary
+    substring rules, known variant substrings are replaced conservatively.
+    """
+    target_path = Path(target_path); source_path = Path(source_path); glossary_path = Path(glossary_path)
+    source_lang, source_entries, _ = parse_localization_file(source_path)
+    _, target_entries, _ = parse_localization_file(target_path)
+    glossary = load_glossary(glossary_path)
+    meta = load_json(glossary_variants_path(glossary_path), {})
+    if not isinstance(meta, dict): meta = {}
+    changed = {}
+    skipped = 0
+    for key, src in source_entries.items():
+        if key not in target_entries:
+            continue
+        value = target_entries[key]
+        new_value = value
+        for src_term, preferred in glossary.items():
+            if not src_term or not preferred or src_term not in src:
+                continue
+            if preferred in new_value:
+                continue
+            info = meta.get(src_term, {}) if isinstance(meta.get(src_term, {}), dict) else {}
+            variants = [v for v in info.get("variants", []) if v and v != preferred]
+            if src.strip() == src_term.strip() and variants and new_value in variants:
+                new_value = preferred
+                continue
+            replaced = False
+            for variant in sorted(variants, key=len, reverse=True):
+                if variant in new_value:
+                    new_value = new_value.replace(variant, preferred)
+                    replaced = True
+            if not replaced and preferred not in new_value:
+                skipped += 1
+        if new_value != value:
+            changed[key] = new_value
+    if changed:
+        upsert_localization_values(target_path, changed)
+    return {"changed": len(changed), "skipped": skipped, "source_lang": source_lang}
 
 def proofread_text(url: str, model: str, text: str, source_text: str = "",
                    glossary: Optional[dict] = None, preset: str = "General",

@@ -34,7 +34,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.10.1"
+APP_VERSION = "0.10.6"
 
 
 def _app_container_dir() -> Path:
@@ -255,6 +255,8 @@ class App(BaseTk):
         self.autoqa_var = tk.BooleanVar(value=True)
         self.chinese_autoqa_var = tk.BooleanVar(value=bool(last_translation.get("chinese_autoqa", True)))
         self.glossary_path_var = tk.StringVar(value=str(DEFAULT_GLOSSARY))
+        self.auto_glossary_status_var = tk.StringVar(value="自動用語作成: 待機中")
+        self.auto_glossary_controller = None
         self.connection_var = tk.StringVar(value="LLM接続確認中…")
         self.profile_var = tk.StringVar(value="")
         self.data_root_var = tk.StringVar(value=str(DATA_ROOT))
@@ -629,9 +631,13 @@ class App(BaseTk):
         ttk.Label(src,text="中国語YAML / フォルダ").grid(row=0,column=0,sticky="w")
         self.chinese_input_entry=ttk.Entry(src,textvariable=self.chinese_input_var); self.chinese_input_entry.grid(row=1,column=0,sticky="ew",pady=(3,0))
         pickbar=ttk.Frame(src); pickbar.grid(row=2,column=0,sticky="ew",pady=(5,0))
-        ttk.Button(pickbar,text="YAML",command=self.pick_chinese_file).pack(side="left")
-        ttk.Button(pickbar,text="フォルダ",command=self.pick_chinese_folder).pack(side="left",padx=(5,0))
-        ttk.Button(pickbar,text="現在の入力をキューへ追加",command=self.add_current_chinese_input_to_queue).pack(side="left",padx=(5,0))
+        chinese_add_menu=tk.Menu(pickbar,tearoff=False)
+        chinese_add_menu.add_command(label="中国語YAMLファイルを選択",command=self.pick_chinese_file)
+        chinese_add_menu.add_command(label="中国語localizationフォルダを選択",command=self.pick_chinese_folder)
+        chinese_add_menu.add_command(label="現在の入力を追加",command=self.add_current_chinese_input_to_queue)
+        self.chinese_add_menu_button=ttk.Menubutton(pickbar,text="追加",menu=chinese_add_menu)
+        self.chinese_add_menu_button.pack(side="left")
+        ttk.Label(pickbar,text="中国語YAML / localizationフォルダを追加できます",foreground="#666").pack(side="left",padx=(8,0))
         ttk.Label(src,textvariable=self.chinese_status_var,foreground="#555",wraplength=430,justify="left").grid(row=3,column=0,sticky="w",pady=(4,0))
         ttk.Separator(src,orient="horizontal").grid(row=4,column=0,sticky="ew",pady=5)
         ttk.Label(src,text="出力先ルート").grid(row=5,column=0,sticky="w")
@@ -640,8 +646,8 @@ class App(BaseTk):
         ttk.Button(outbar,text="選択",command=self.pick_chinese_output).pack(side="left")
         ttk.Button(outbar,text="開く",command=lambda:self._open_path(Path(self.chinese_output_var.get()))).pack(side="left",padx=(5,0))
 
-        settings=ttk.LabelFrame(left,text="中国語基準翻訳 / QA",padding=9); settings.pack(fill="x",pady=(5,0))
-        ttk.Label(settings,text="プロバイダ / URL / モデル / APIキー / バッチ / 並列 / プリセット / 用語集は［モデル / 接続］タブの共通設定を使用します。",wraplength=430,justify="left").pack(anchor="w")
+        settings=ttk.LabelFrame(left,text="モデル / 接続（共通設定）",padding=9); settings.pack(fill="x",pady=(5,0))
+        ttk.Label(settings,text="中国語基準翻訳でも、プロバイダ / URL / モデル / APIキー / バッチ / 並列 / プリセット / 用語集は［モデル / 接続］タブの共通設定を使用します。",wraplength=430,justify="left").pack(anchor="w")
         ttk.Button(settings,text="モデル / 接続を開く",command=lambda:self.notebook.select(self.tab_models)).pack(anchor="w",pady=(6,0))
         ttk.Label(settings,text="中国語の漢字語彙を優先し、不要な英語風カタカナ化を避けます。",foreground="#7a4b00",wraplength=430).pack(anchor="w",pady=(6,0))
         ttk.Checkbutton(settings,text="翻訳後に中国語翻訳語自動QA",variable=self.chinese_autoqa_var,command=self._save_llm_preferences).pack(anchor="w",pady=(7,0))
@@ -1205,6 +1211,7 @@ class App(BaseTk):
         ttk.Button(qa,text="QA再実行",command=self.run_review_qa).pack(side="left")
         ttk.Button(qa,text="警告だけ表示",command=lambda:self.populate_review(True)).pack(side="left",padx=(6,0))
         ttk.Button(qa,text="全キー表示",command=lambda:self.populate_review(False)).pack(side="left",padx=(6,0))
+        ttk.Button(qa,text="用語不一致を一括統一",command=self.bulk_unify_review_terms).pack(side="left",padx=(8,0))
         ttk.Button(qa,text="現在の翻訳設定を適用",command=self.apply_translation_settings_everywhere).pack(side="left",padx=(10,0))
         ttk.Label(qa,text="AI校正は現在の翻訳モデル設定を使用 / 一覧は重要度→問題種別→キーで整理",foreground="#666").pack(side="left",padx=(12,0))
         ttk.Label(qa,textvariable=self.qa_summary_var).pack(side="right")
@@ -1324,10 +1331,19 @@ class App(BaseTk):
         ttk.Entry(top,textvariable=self.glossary_path_var).pack(side="left",fill="x",expand=True,padx=6)
         ttk.Button(top,text="読込",command=self.load_glossary_ui).pack(side="left")
         ttk.Button(top,text="保存",command=self.save_glossary_ui).pack(side="left",padx=(6,0))
+
+        auto=ttk.LabelFrame(t,text="自動用語作成 / 表記統一",padding=8); auto.pack(fill="x",pady=(8,5))
+        row=ttk.Frame(auto); row.pack(fill="x")
+        ttk.Button(row,text="通常翻訳から自動作成",command=lambda:self.start_auto_glossary_generation("normal")).pack(side="left")
+        ttk.Button(row,text="中国語基準翻訳から自動作成",command=lambda:self.start_auto_glossary_generation("chinese")).pack(side="left",padx=(6,0))
+        ttk.Button(row,text="QA中の翻訳から自動作成",command=lambda:self.start_auto_glossary_generation("review")).pack(side="left",padx=(6,0))
+        ttk.Label(row,textvariable=self.auto_glossary_status_var,foreground="#555").pack(side="right")
+        ttk.Label(auto,text="同じ短い原語が複数箇所で使われている場合、既存の日本語訳を集計します。複数訳があるものは現在のLLMに統一案を選ばせ、用語集へ追加します。手動登録済みの訳語は上書きしません。",foreground="#666",wraplength=1100,justify="left").pack(anchor="w",pady=(6,0))
+
         bar=ttk.Frame(t); bar.pack(fill="x",pady=5)
         ttk.Button(bar,text="用語追加",command=self.add_glossary_term).pack(side="left")
         ttk.Button(bar,text="選択削除",command=self.delete_glossary_term).pack(side="left",padx=(6,0))
-        ttk.Label(bar,text="英語/中国語の語句 → 固定したい日本語訳。該当バッチのプロンプトへ自動挿入します。",foreground="#666").pack(side="left",padx=12)
+        ttk.Label(bar,text="英語/中国語の語句 → 固定したい日本語訳。QAでは不一致を検出し、一括統一できます。",foreground="#666").pack(side="left",padx=12)
         self.glossary_tree=ttk.Treeview(t,columns=("src","dst"),show="headings")
         self.glossary_tree.heading("src",text="原語"); self.glossary_tree.heading("dst",text="日本語")
         self._enable_tree_sort(self.glossary_tree)
@@ -3326,7 +3342,7 @@ Mod更新後だけ追加翻訳:
         ttk.Button(pb,text="選択を適用",command=self.apply_profile_from_tree).pack(side="left",padx=(6,0))
         ttk.Button(pb,text="選択を削除",command=self.delete_profile).pack(side="left",padx=(6,0))
         self.profile_tree=ttk.Treeview(pf,columns=("name","label","provider","model","batch","workers"),show="headings",height=7)
-        for c,txt,w in (("name","名前",160),("label","用途",130),("provider","方式",80),("model","モデル",250),("batch","バッチ",70),("workers","並列",60)):
+        for c,txt,w in (("name","名前",55),("label","用途",75),("provider","方式",85),("model","モデル",190),("batch","バッチ",55),("workers","並列",55)):
             self.profile_tree.heading(c,text=txt); self.profile_tree.column(c,width=w)
         self._enable_tree_sort(self.profile_tree)
         pscroll_x=ttk.Scrollbar(pf,orient="horizontal",command=self.profile_tree.xview)
@@ -4388,6 +4404,87 @@ Mod更新後だけ追加翻訳:
             except Exception as e: self.events.put(("proofread_error",str(e)))
         threading.Thread(target=work,daemon=True).start()
 
+    def bulk_unify_review_terms(self):
+        src = Path(self.review_src_var.get()) if self.review_src_var.get() else None
+        dst = Path(self.review_dst_var.get()) if self.review_dst_var.get() else None
+        if not src or not src.exists() or not dst or not dst.exists():
+            messagebox.showinfo(APP_NAME, "先にQA / 比較編集で原文と日本語訳を読み込んでください。")
+            return
+        term_issues=[x for x in self.review_issues if x.get("type")=="term_mismatch"]
+        if not term_issues:
+            messagebox.showinfo(APP_NAME, "現在のQA結果に用語不一致はありません。")
+            return
+        if not messagebox.askyesno(APP_NAME, f"用語集の自動用語候補を使って、用語不一致 {len(term_issues)}件を一括統一しますか？\n\n既知の表記揺れだけを安全に置換します。判定できない箇所は変更しません。"):
+            return
+        try:
+            result=core.bulk_unify_qa_terms(dst, src, Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY))
+            self.load_review()
+            messagebox.showinfo(APP_NAME, f"用語統一が完了しました。\n変更: {result.get('changed',0)}件\n自動置換できなかった候補: {result.get('skipped',0)}件")
+        except Exception as exc:
+            record_error("QA用語一括統一", exc)
+            messagebox.showerror(APP_NAME, str(exc))
+
+    def _auto_glossary_pairs_from_origin(self, origin):
+        pairs=[]
+        if origin == "review":
+            src=Path(self.review_src_var.get()) if self.review_src_var.get() else None
+            dst=Path(self.review_dst_var.get()) if self.review_dst_var.get() else None
+            if src and dst and src.exists() and dst.exists():
+                try:
+                    lang=core.parse_localization_file(src)[0]
+                except Exception:
+                    lang="english"
+                return [{"source":src,"target":dst,"lang":lang}]
+            return []
+        if origin == "normal":
+            sels=list(self.queue_tree.selection()) if hasattr(self,"queue_tree") else []
+            if not sels:
+                return []
+            for iid in sels:
+                try: item=self.queue_items[int(iid)]
+                except Exception: continue
+                pairs.extend(self._collect_qa_diff_pairs(Path(item.get("input","")), Path(item.get("output",""))))
+            return pairs
+        if origin == "chinese":
+            sels=list(self.chinese_queue_tree.selection()) if hasattr(self,"chinese_queue_tree") else []
+            if not sels:
+                return []
+            for iid in sels:
+                try: item=self.chinese_queue_items[int(str(iid).replace("zh_",""))]
+                except Exception: continue
+                pairs.extend(self._collect_qa_diff_pairs(Path(item.get("input","")), Path(item.get("output","")), source_langs=("simp_chinese",)))
+            return pairs
+        return []
+
+    def start_auto_glossary_generation(self, origin):
+        if self.auto_glossary_controller is not None:
+            messagebox.showinfo(APP_NAME, "自動用語作成はすでに実行中です。")
+            return
+        pairs=self._auto_glossary_pairs_from_origin(origin)
+        if not pairs:
+            if origin == "review":
+                msg="QA / 比較編集で原文と日本語訳を読み込んでください。"
+            else:
+                msg="対象キューから翻訳済み項目を選択してください。"
+            messagebox.showinfo(APP_NAME,msg); return
+        self.auto_glossary_status_var.set(f"自動用語作成中: {len(pairs)}ファイル組")
+        self.llm_operation="自動用語作成"
+        self.auto_glossary_controller=core.TranslationController(progress_callback=lambda p:self.events.put(("auto_glossary_progress",p)))
+        settings={"provider":self.provider_var.get(),"url":self.url_var.get().strip(),"model":self.model_var.get().strip(),"preset":self.preset_var.get(),"api_key":self.api_key_var.get().strip()}
+        glossary_path=Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY)
+        def work():
+            try:
+                candidates=core.build_auto_glossary_candidates(pairs)
+                if candidates:
+                    candidates=core.resolve_auto_glossary_conflicts(settings["provider"],settings["url"],settings["model"],candidates,settings["preset"],settings["api_key"],self.auto_glossary_controller)
+                result=core.save_auto_glossary_candidates(glossary_path,candidates,preserve_existing=True)
+                self.events.put(("auto_glossary_done",result))
+            except core.StopRequested:
+                self.events.put(("auto_glossary_error","停止しました"))
+            except Exception as exc:
+                self.events.put(("auto_glossary_error",str(exc)))
+        threading.Thread(target=work,daemon=True).start()
+
     # ---------------- glossary ----------------
     def pick_glossary(self):
         p=filedialog.askopenfilename(filetypes=[("JSON","*.json"),("All","*")])
@@ -4861,6 +4958,21 @@ Mod更新後だけ追加翻訳:
                     self.diff_controller=None; self._set_llm_idle("LLM 待機中","差分翻訳を停止しました"); self.diff_message_var.set("差分翻訳を停止しました")
                 elif kind=="diff_translate_error":
                     record_error("差分翻訳", detail=str(payload)); self.diff_controller=None; self._set_llm_idle("LLM 待機中","差分翻訳でエラーが発生しました"); self.diff_message_var.set("差分翻訳エラー: "+str(payload)); messagebox.showerror(APP_NAME,"差分翻訳エラー: "+str(payload))
+                elif kind=="auto_glossary_progress":
+                    if payload.get("kind")=="llm_activity": self._handle_llm_activity(payload,"自動用語作成")
+                    elif payload.get("kind")=="llm_response": self._show_llm_response(payload, monitor=False)
+                    elif payload.get("kind")=="llm_metric": self._record_metric(payload.get("metric"))
+                elif kind=="auto_glossary_done":
+                    self.auto_glossary_controller=None
+                    self._set_llm_idle("LLM 待機中","自動用語作成が完了しました")
+                    self.load_glossary_ui(silent=True)
+                    self.auto_glossary_status_var.set(f"追加 {payload.get('added',0)} / 候補 {payload.get('total',0)} / 表記揺れ {payload.get('conflicts',0)}")
+                    messagebox.showinfo(APP_NAME, f"自動用語作成が完了しました。\n候補: {payload.get('total',0)}件\n新規追加: {payload.get('added',0)}件\n複数訳を統一: {payload.get('conflicts',0)}件")
+                elif kind=="auto_glossary_error":
+                    self.auto_glossary_controller=None
+                    self._set_llm_idle("LLM 待機中","自動用語作成を終了しました")
+                    self.auto_glossary_status_var.set("自動用語作成: "+str(payload))
+                    if str(payload)!="停止しました": messagebox.showerror(APP_NAME,"自動用語作成エラー: "+str(payload))
                 elif kind=="proofread_progress":
                     if payload.get("kind")=="llm_activity": self._handle_llm_activity(payload,"AI誤字脱字校正")
                     elif payload.get("kind")=="llm_response": self._show_llm_response(payload, monitor=False)
