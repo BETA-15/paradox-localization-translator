@@ -34,7 +34,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.10.6"
+APP_VERSION = "0.10.8"
 
 
 def _app_container_dir() -> Path:
@@ -267,6 +267,11 @@ class App(BaseTk):
         self.review_dst_display_var = tk.StringVar()
         self.qa_summary_var = tk.StringVar(value="QA未実行")
         self.review_source_lang = "english"
+
+        # Normal translation input/output display
+        self.normal_input_var = tk.StringVar(value="")
+        self.normal_output_var = tk.StringVar(value=str(OUTPUT_ROOT))
+        self.normal_status_var = tk.StringVar(value="YAML / localizationフォルダを追加してください")
 
         # Simplified Chinese basis translation
         self.chinese_input_var = tk.StringVar(value="")
@@ -540,57 +545,71 @@ class App(BaseTk):
     def _build_translate_tab(self):
         t = self.tab_translate
 
-        # v0.9.9: 翻訳タブは「キューと実行」に専念する。
-        # LLM/翻訳共通設定はすべて「モデル / 接続」タブへ統合。
-        work = ttk.Panedwindow(t, orient="vertical")
-        work.pack(fill="both", expand=True)
-        upper = ttk.Frame(work)
-        lower = ttk.LabelFrame(work, text="ログ", padding=6)
-        work.add(upper, weight=5)
-        work.add(lower, weight=2)
+        # 通常翻訳も中国語基準翻訳と同じ左右2ブロック構成に統一する。
+        main=ttk.Panedwindow(t,orient="horizontal"); main.pack(fill="both",expand=True)
+        left=ttk.Frame(main,padding=(0,0,6,0)); right=ttk.Frame(main,padding=(6,0,0,0))
+        main.add(left,weight=2); main.add(right,weight=3)
 
-        head=ttk.Frame(upper); head.pack(fill="x",pady=(0,6))
-        ttk.Label(head,text="通常翻訳キュー",font=("",12,"bold")).pack(side="left")
-        ttk.Label(head,text="LLM・バッチ・並列・用語集・自動QAは［モデル / 接続］タブで設定します。",foreground="#666").pack(side="left",padx=(12,0))
-        ttk.Button(head,text="モデル / 接続を開く",command=lambda:self.notebook.select(self.tab_models)).pack(side="right")
+        intro=ttk.LabelFrame(left,text="通常翻訳",padding=9); intro.pack(fill="x")
+        ttk.Label(intro,text=("英語などのParadox localizationを日本語化します。YAMLまたはMod / localizationフォルダを追加すると、直接翻訳キューへ登録します。\n"
+                              "LLM・バッチ・並列・プリセット・用語集などは［モデル / 接続］タブの共通設定を使用します。"),
+                  wraplength=430,foreground="#333",justify="left").pack(fill="x")
 
-        qf=ttk.LabelFrame(upper,text="複数翻訳キュー（上から順番に処理）",padding=8)
-        qf.pack(fill="both",expand=True)
-        toolbar=ttk.Frame(qf); toolbar.pack(fill="x",pady=(0,6))
-        add_menu=tk.Menu(toolbar,tearoff=False)
-        add_menu.add_command(label="YAMLファイルを追加",command=self.add_files)
-        add_menu.add_command(label="Mod / localizationフォルダを追加",command=self.add_folder)
-        self.add_menu_button=ttk.Menubutton(toolbar,text="追加",menu=add_menu); self.add_menu_button.pack(side="left")
-        ttk.Button(toolbar,text="選択削除",command=self.remove_queue).pack(side="left",padx=(5,0))
-        ttk.Button(toolbar,text="全消去",command=self.clear_queue).pack(side="left",padx=(5,0))
-        ttk.Button(toolbar,text="出力先変更",command=self.change_output).pack(side="left",padx=(8,0))
-        ttk.Button(toolbar,text="キャッシュ",command=self.view_selected_cache).pack(side="left",padx=(5,0))
-        ttk.Button(toolbar,text="差分再検出",command=self.detect_diff_for_selected).pack(side="left",padx=(5,0))
-        ttk.Button(toolbar,text="キャッシュを追加",command=self.import_cache_to_selected).pack(side="left",padx=(5,0))
-        ttk.Button(toolbar,text="セッション保存",command=self.save_session).pack(side="right")
-        ttk.Button(toolbar,text="セッション読込",command=self.restore_session).pack(side="right",padx=(0,5))
+        src=ttk.LabelFrame(left,text="入力 / 出力",padding=9); src.pack(fill="x",pady=(5,0)); src.columnconfigure(0,weight=1)
+        ttk.Label(src,text="YAML / Mod / localizationフォルダ").grid(row=0,column=0,sticky="w")
+        self.normal_input_entry=ttk.Entry(src,textvariable=self.normal_input_var,state="readonly")
+        self.normal_input_entry.grid(row=1,column=0,sticky="ew",pady=(3,0))
+        pickbar=ttk.Frame(src); pickbar.grid(row=2,column=0,sticky="ew",pady=(5,0))
+        normal_add_menu=tk.Menu(pickbar,tearoff=False)
+        normal_add_menu.add_command(label="YAMLファイルを追加",command=self.add_files)
+        normal_add_menu.add_command(label="Mod / localizationフォルダを追加",command=self.add_folder)
+        self.add_menu_button=ttk.Menubutton(pickbar,text="追加",menu=normal_add_menu)
+        self.add_menu_button.pack(side="left")
+        ttk.Label(pickbar,text="選択するとそのまま翻訳キューへ追加します",foreground="#666").pack(side="left",padx=(8,0))
+        ttk.Label(src,textvariable=self.normal_status_var,foreground="#555",wraplength=430,justify="left").grid(row=3,column=0,sticky="w",pady=(4,0))
+        ttk.Separator(src,orient="horizontal").grid(row=4,column=0,sticky="ew",pady=5)
+        ttk.Label(src,text="出力先ルート").grid(row=5,column=0,sticky="w")
+        ttk.Entry(src,textvariable=self.normal_output_var).grid(row=6,column=0,sticky="ew",pady=(3,0))
+        outbar=ttk.Frame(src); outbar.grid(row=7,column=0,sticky="ew",pady=(5,0))
+        ttk.Button(outbar,text="選択",command=self.pick_normal_output).pack(side="left")
+        ttk.Button(outbar,text="開く",command=lambda:self._open_path(Path(self.normal_output_var.get()))).pack(side="left",padx=(5,0))
 
-        toolbar2=ttk.Frame(qf); toolbar2.pack(fill="x",pady=(0,5))
-        ttk.Button(toolbar2,text="上書き",command=self.overwrite_selected_translation_to_mod).pack(side="left")
-        ttk.Button(toolbar2,text="選択項目の翻訳語QAを実行",command=self.run_selected_translation_qa).pack(side="left",padx=(6,0))
-        ttk.Button(toolbar2,text="QA / 比較編集へ",command=lambda:self._send_pair_to_qa_or_diff("normal","review")).pack(side="left",padx=(6,0))
-        ttk.Button(toolbar2,text="差分調査へ",command=lambda:self._send_pair_to_qa_or_diff("normal","diff")).pack(side="left",padx=(6,0))
-        ttk.Label(toolbar2,text="日本語化Modがある場合は上書き先を確認します。",foreground="#8a5a00").pack(side="left",padx=(8,0))
+        settings=ttk.LabelFrame(left,text="モデル / 接続（共通設定）",padding=9); settings.pack(fill="x",pady=(5,0))
+        ttk.Label(settings,text="プロバイダ / URL / モデル / APIキー / バッチ / 並列 / プリセット / 用語集は［モデル / 接続］タブの共通設定を使用します。",wraplength=430,justify="left").pack(anchor="w")
+        ttk.Button(settings,text="モデル / 接続を開く",command=lambda:self.notebook.select(self.tab_models)).pack(anchor="w",pady=(6,0))
+        ttk.Checkbutton(settings,text="翻訳後に自動QA",variable=self.autoqa_var,command=self._save_llm_preferences).pack(anchor="w",pady=(7,0))
+        ttk.Label(settings,text="QAでは未翻訳原文、キー欠落、ゲーム変数/タグ、誤字脱字、用語集の固定訳を確認します。",foreground="#555",wraplength=430,justify="left").pack(anchor="w",pady=(5,0))
 
-        self.drop_hint=ttk.Label(qf,textvariable=self.dnd_status_var,foreground="#666")
+        qbox=ttk.LabelFrame(right,text="通常翻訳キュー",padding=8); qbox.pack(fill="both",expand=True)
+        qbar=ttk.Frame(qbox); qbar.pack(fill="x",pady=(0,5))
+        ttk.Button(qbar,text="選択削除",command=self.remove_queue).pack(side="left")
+        ttk.Button(qbar,text="全消去",command=self.clear_queue).pack(side="left",padx=(5,0))
+        ttk.Button(qbar,text="出力先変更",command=self.change_output).pack(side="left",padx=(10,0))
+        ttk.Button(qbar,text="キャッシュを見る",command=self.view_selected_cache).pack(side="left",padx=(5,0))
+        ttk.Button(qbar,text="キャッシュを追加",command=self.import_cache_to_selected).pack(side="left",padx=(5,0))
+
+        qbar2=ttk.Frame(qbox); qbar2.pack(fill="x",pady=(0,5))
+        ttk.Button(qbar2,text="上書き",command=self.overwrite_selected_translation_to_mod).pack(side="left")
+        ttk.Button(qbar2,text="選択項目の翻訳語QAを実行",command=self.run_selected_translation_qa).pack(side="left",padx=(6,0))
+        ttk.Button(qbar2,text="QA / 比較編集へ",command=lambda:self._send_pair_to_qa_or_diff("normal","review")).pack(side="left",padx=(6,0))
+        ttk.Button(qbar2,text="差分調査へ",command=lambda:self._send_pair_to_qa_or_diff("normal","diff")).pack(side="left",padx=(6,0))
+        ttk.Label(qbar2,text="日本語化Modがある場合は上書き先を確認します。上書き前にバックアップを作成します。",foreground="#8a5a00").pack(side="left",padx=(10,0))
+
+        self.drop_hint=ttk.Label(qbox,textvariable=self.dnd_status_var,foreground="#666")
         self.drop_hint.pack(fill="x",pady=(0,5))
-        cols=("input","output","status")
-        self.queue_tree=ttk.Treeview(qf,columns=cols,show="headings",height=12)
-        for c,txt,w in (("input","入力",440),("output","出力",440),("status","状態",110)):
+        cols=("mod","input","output","status")
+        self.queue_tree=ttk.Treeview(qbox,columns=cols,show="headings",height=10,selectmode="extended")
+        for c,txt,w in (("mod","Mod / 項目",190),("input","原文localization",330),("output","出力",300),("status","状態",90)):
             self.queue_tree.heading(c,text=txt); self.queue_tree.column(c,width=w,anchor="center" if c=="status" else "w")
+        self._enable_ctrl_multiselect(self.queue_tree)
         self._enable_tree_sort(self.queue_tree)
-        ys=ttk.Scrollbar(qf,orient="vertical",command=self.queue_tree.yview); sx=ttk.Scrollbar(qf,orient="horizontal",command=self.queue_tree.xview)
-        self.queue_tree.configure(yscrollcommand=ys.set,xscrollcommand=sx.set)
+        sy=ttk.Scrollbar(qbox,orient="vertical",command=self.queue_tree.yview); sx=ttk.Scrollbar(qbox,orient="horizontal",command=self.queue_tree.xview)
+        self.queue_tree.configure(yscrollcommand=sy.set,xscrollcommand=sx.set)
         self.queue_tree.pack(fill="both",expand=True); sx.pack(fill="x")
 
         if DND_AVAILABLE:
             try:
-                self._register_dnd_widgets([self,qf,self.queue_tree,self.drop_hint],self.on_drop_paths)
+                self._register_dnd_widgets([t,src,self.normal_input_entry,qbox,self.queue_tree],self.on_drop_paths)
                 self.dnd_status_var.set("ドラッグ＆ドロップ有効 — YAML / localizationフォルダ")
             except Exception as e:
                 self.dnd_status_var.set(f"ドラッグ＆ドロップ初期化失敗: {e}")
@@ -598,26 +617,26 @@ class App(BaseTk):
         else:
             self.dnd_status_var.set("ドラッグ＆ドロップ無効 — 『追加』ボタンは利用できます")
 
-        actions=ttk.Frame(upper); actions.pack(fill="x",pady=(7,0))
+        actions=ttk.Frame(right); actions.pack(fill="x",pady=(7,0))
         self.start_btn=ttk.Button(actions,text="翻訳開始",command=self.start_queue); self.start_btn.pack(side="left")
         self.pause_btn=ttk.Button(actions,text="一時停止",command=self.toggle_pause,state="disabled"); self.pause_btn.pack(side="left",padx=(6,0))
         self.stop_btn=ttk.Button(actions,text="セーブして中断",command=self.save_and_stop,state="disabled"); self.stop_btn.pack(side="left",padx=(6,0))
         ttk.Button(actions,text="出力を開く",command=self.open_selected_output).pack(side="left",padx=(6,0))
         ttk.Label(actions,textvariable=self.progress_text).pack(side="right")
-        self.progress=ttk.Progressbar(upper,mode="determinate",maximum=100); self.progress.pack(fill="x",pady=(4,0))
+        self.progress=ttk.Progressbar(right,mode="determinate",maximum=100); self.progress.pack(fill="x",pady=(6,7))
 
-        lbar=ttk.Frame(lower); lbar.pack(fill="x",pady=(0,4))
+        logbox=ttk.LabelFrame(right,text="通常翻訳ログ",padding=6); logbox.pack(fill="both",expand=True)
+        lbar=ttk.Frame(logbox); lbar.pack(fill="x",pady=(0,4))
         ttk.Button(lbar,text="エラーログを開く",command=lambda:self._open_path(LOG_ROOT)).pack(side="left")
         ttk.Button(lbar,text="診断ログを収集",command=self.collect_error_logs).pack(side="left",padx=(5,0))
-        ttk.Label(lbar,text="仕切りバーを上下にドラッグ可能",foreground="#666").pack(side="right")
-        self.log=tk.Text(lower,height=7,wrap="word",state="disabled")
-        lsy=ttk.Scrollbar(lower,command=self.log.yview); self.log.configure(yscrollcommand=lsy.set)
+        self.log=tk.Text(logbox,height=6,wrap="word",state="disabled")
+        lsy=ttk.Scrollbar(logbox,command=self.log.yview); self.log.configure(yscrollcommand=lsy.set)
         self.log.pack(side="left",fill="both",expand=True); lsy.pack(side="right",fill="y")
 
     def _build_chinese_tab(self):
         t = self.tab_chinese
 
-        # v0.8.8: 中国語基準翻訳も左右2ブロック。左=入力/説明、右=キュー/進捗/ログ。
+        # 中国語基準翻訳は基準デザインとして維持し、入力追加だけ単純化する。
         main=ttk.Panedwindow(t,orient="horizontal"); main.pack(fill="both",expand=True)
         left=ttk.Frame(main,padding=(0,0,6,0)); right=ttk.Frame(main,padding=(6,0,0,0))
         main.add(left,weight=2); main.add(right,weight=3)
@@ -629,15 +648,14 @@ class App(BaseTk):
 
         src=ttk.LabelFrame(left,text="入力 / 出力",padding=9); src.pack(fill="x",pady=(5,0)); src.columnconfigure(0,weight=1)
         ttk.Label(src,text="中国語YAML / フォルダ").grid(row=0,column=0,sticky="w")
-        self.chinese_input_entry=ttk.Entry(src,textvariable=self.chinese_input_var); self.chinese_input_entry.grid(row=1,column=0,sticky="ew",pady=(3,0))
+        self.chinese_input_entry=ttk.Entry(src,textvariable=self.chinese_input_var,state="readonly"); self.chinese_input_entry.grid(row=1,column=0,sticky="ew",pady=(3,0))
         pickbar=ttk.Frame(src); pickbar.grid(row=2,column=0,sticky="ew",pady=(5,0))
         chinese_add_menu=tk.Menu(pickbar,tearoff=False)
-        chinese_add_menu.add_command(label="中国語YAMLファイルを選択",command=self.pick_chinese_file)
-        chinese_add_menu.add_command(label="中国語localizationフォルダを選択",command=self.pick_chinese_folder)
-        chinese_add_menu.add_command(label="現在の入力を追加",command=self.add_current_chinese_input_to_queue)
+        chinese_add_menu.add_command(label="中国語YAMLファイルを追加",command=self.pick_chinese_file)
+        chinese_add_menu.add_command(label="中国語localizationフォルダを追加",command=self.pick_chinese_folder)
         self.chinese_add_menu_button=ttk.Menubutton(pickbar,text="追加",menu=chinese_add_menu)
         self.chinese_add_menu_button.pack(side="left")
-        ttk.Label(pickbar,text="中国語YAML / localizationフォルダを追加できます",foreground="#666").pack(side="left",padx=(8,0))
+        ttk.Label(pickbar,text="選択するとそのまま中国語基準翻訳キューへ追加します",foreground="#666").pack(side="left",padx=(8,0))
         ttk.Label(src,textvariable=self.chinese_status_var,foreground="#555",wraplength=430,justify="left").grid(row=3,column=0,sticky="w",pady=(4,0))
         ttk.Separator(src,orient="horizontal").grid(row=4,column=0,sticky="ew",pady=5)
         ttk.Label(src,text="出力先ルート").grid(row=5,column=0,sticky="w")
@@ -660,7 +678,6 @@ class App(BaseTk):
         ttk.Button(qbar,text="出力先変更",command=self.change_chinese_output_for_selected).pack(side="left",padx=(10,0))
         ttk.Button(qbar,text="キャッシュを見る",command=self.view_selected_chinese_cache).pack(side="left",padx=(5,0))
         ttk.Button(qbar,text="キャッシュを追加",command=self.import_cache_to_selected_chinese).pack(side="left",padx=(5,0))
-        ttk.Label(qbar,text="翻訳状況タブから中国語のあるModだけ追加できます",foreground="#666").pack(side="right")
 
         qbar2=ttk.Frame(qbox); qbar2.pack(fill="x",pady=(0,5))
         ttk.Button(qbar2,text="上書き",command=self.overwrite_selected_chinese_translation).pack(side="left")
@@ -687,6 +704,9 @@ class App(BaseTk):
         self.chinese_progress=ttk.Progressbar(right,mode="determinate",maximum=100); self.chinese_progress.pack(fill="x",pady=(6,7))
 
         logbox=ttk.LabelFrame(right,text="中国語基準翻訳ログ",padding=6); logbox.pack(fill="both",expand=True)
+        lbar=ttk.Frame(logbox); lbar.pack(fill="x",pady=(0,4))
+        ttk.Button(lbar,text="エラーログを開く",command=lambda:self._open_path(LOG_ROOT)).pack(side="left")
+        ttk.Button(lbar,text="診断ログを収集",command=self.collect_error_logs).pack(side="left",padx=(5,0))
         self.chinese_log=tk.Text(logbox,height=6,wrap="word",state="disabled")
         y=ttk.Scrollbar(logbox,command=self.chinese_log.yview); self.chinese_log.configure(yscrollcommand=y.set)
         self.chinese_log.pack(side="left",fill="both",expand=True); y.pack(side="right",fill="y")
@@ -744,13 +764,6 @@ class App(BaseTk):
             item["mod_root"]=str(path); item["mod_localization"]=str(path/"localization")
         self.chinese_queue_items.append(item); self._refresh_chinese_queue_tree()
         return item,msg
-
-    def add_current_chinese_input_to_queue(self):
-        raw=self.chinese_input_var.get().strip()
-        if not raw: messagebox.showinfo(APP_NAME,"簡体字中国語YAMLまたはフォルダを選択してください。"); return
-        item,msg=self._append_chinese_queue(Path(raw))
-        self.chinese_status_var.set(msg)
-        if not item: messagebox.showwarning(APP_NAME,msg)
 
     def remove_chinese_queue_selected(self):
         if not hasattr(self,"chinese_queue_tree"): return
@@ -880,16 +893,22 @@ class App(BaseTk):
             messagebox.showerror(APP_NAME,str(exc))
 
     def pick_chinese_file(self):
-        raw=filedialog.askopenfilename(title="簡体字中国語YAMLを選択",filetypes=[("Paradox YAML","*.yml *.yaml"),("All files","*")])
+        raw=filedialog.askopenfilename(title="簡体字中国語YAMLを追加",filetypes=[("Paradox YAML","*.yml *.yaml"),("All files","*")])
         if not raw:return
-        path=Path(raw); ok,msg=self._validate_chinese_input(path); self.chinese_input_var.set(str(path)); self.chinese_status_var.set(msg)
-        if not ok: messagebox.showwarning(APP_NAME,msg)
+        path=Path(raw)
+        self.chinese_input_var.set(str(path))
+        item,msg=self._append_chinese_queue(path)
+        self.chinese_status_var.set(msg)
+        if not item: messagebox.showwarning(APP_NAME,msg)
 
     def pick_chinese_folder(self):
-        raw=filedialog.askdirectory(title="簡体字中国語localizationを含むフォルダを選択")
+        raw=filedialog.askdirectory(title="簡体字中国語localizationを含むフォルダを追加")
         if not raw:return
-        path=Path(raw); ok,msg=self._validate_chinese_input(path); self.chinese_input_var.set(str(path)); self.chinese_status_var.set(msg)
-        if not ok: messagebox.showwarning(APP_NAME,msg)
+        path=Path(raw)
+        self.chinese_input_var.set(str(path))
+        item,msg=self._append_chinese_queue(path)
+        self.chinese_status_var.set(msg)
+        if not item: messagebox.showwarning(APP_NAME,msg)
 
     def pick_chinese_output(self):
         raw=filedialog.askdirectory(title="中国語基準翻訳の出力先")
@@ -3342,8 +3361,11 @@ Mod更新後だけ追加翻訳:
         ttk.Button(pb,text="選択を適用",command=self.apply_profile_from_tree).pack(side="left",padx=(6,0))
         ttk.Button(pb,text="選択を削除",command=self.delete_profile).pack(side="left",padx=(6,0))
         self.profile_tree=ttk.Treeview(pf,columns=("name","label","provider","model","batch","workers"),show="headings",height=7)
-        for c,txt,w in (("name","名前",55),("label","用途",75),("provider","方式",85),("model","モデル",190),("batch","バッチ",55),("workers","並列",55)):
-            self.profile_tree.heading(c,text=txt); self.profile_tree.column(c,width=w)
+        # 列幅は表示領域に合わせて縮ませず固定する。必要幅を超えた分は
+        # 下部の横スクロールバーで確認する。
+        for c,txt,w in (("name","名前",140),("label","用途",160),("provider","方式",150),("model","モデル",420),("batch","バッチ",80),("workers","並列",80)):
+            self.profile_tree.heading(c,text=txt)
+            self.profile_tree.column(c,width=w,minwidth=w,stretch=False)
         self._enable_tree_sort(self.profile_tree)
         pscroll_x=ttk.Scrollbar(pf,orient="horizontal",command=self.profile_tree.xview)
         self.profile_tree.configure(xscrollcommand=pscroll_x.set)
@@ -3528,17 +3550,35 @@ Mod更新後だけ追加翻訳:
 
     # ---------------- queue ----------------
     def _default_output(self,p:Path):
-        root = _automatic_output_root()
+        raw = self.normal_output_var.get().strip() if hasattr(self, "normal_output_var") else ""
+        root = Path(raw) if raw else _automatic_output_root()
+        root.mkdir(parents=True, exist_ok=True)
         name = p.stem + "_japanese" if p.is_file() else p.name + "_japanese"
         return root / name
 
+    def pick_normal_output(self):
+        raw=filedialog.askdirectory(title="通常翻訳の出力先ルートを選択")
+        if raw:
+            self.normal_output_var.set(raw)
+
     def add_folder(self):
         p=filedialog.askdirectory(title="翻訳するMod/localizationフォルダを選択")
-        if p: self._append_queue(Path(p))
+        if p:
+            path=Path(p)
+            self.normal_input_var.set(str(path))
+            self.normal_status_var.set(f"キューへ追加しました: {path.name}")
+            self._append_queue(path)
 
     def add_files(self):
         paths=filedialog.askopenfilenames(title="翻訳するYAMLを複数選択",filetypes=[("Paradox YAML","*.yml"),("All","*")])
-        for p in paths: self._append_queue(Path(p))
+        added=0
+        for raw in paths:
+            path=Path(raw)
+            self._append_queue(path)
+            added += 1
+        if paths:
+            self.normal_input_var.set(str(Path(paths[-1])))
+            self.normal_status_var.set(f"YAMLを {added} 件キューへ追加しました。")
 
     def _safe_job_name(self, p: Path) -> str:
         base = p.stem if p.is_file() else p.name
@@ -3808,7 +3848,10 @@ Mod更新後だけ追加翻訳:
     def _refresh_queue_tree(self):
         for x in self.queue_tree.get_children(): self.queue_tree.delete(x)
         for i,item in enumerate(self.queue_items):
+            inp=Path(item.get("input", ""))
+            label=item.get("mod_name") or (inp.stem if inp.is_file() else inp.name) or "項目"
             self.queue_tree.insert("", "end", iid=str(i), values=(
+                label,
                 self._queue_display_path(item.get("input", "")),
                 self._queue_display_path(item.get("output", "")),
                 item.get("status", "")
