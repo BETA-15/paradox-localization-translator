@@ -378,7 +378,7 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
 
         select_box=ttk.LabelFrame(bench,text="比較するモデルを選択（最大5モデル）",padding=6)
         select_box.pack(fill="x",pady=(0,8))
-        ttk.Label(select_box,text="Ctrl / ⌘ を押しながら複数選択できます。5モデルを超える選択は自動的に5件へ制限されます。",foreground="#666").pack(anchor="w",pady=(0,4))
+        ttk.Label(select_box,text="Ctrlキーを押しながら複数選択できます。最大5モデルまで選択できます。",foreground="#666").pack(anchor="w",pady=(0,4))
         self.benchmark_model_list=tk.Listbox(select_box,selectmode=tk.EXTENDED,exportselection=False,height=5)
         self.benchmark_model_list.pack(fill="x")
         self.benchmark_model_list.bind("<<ListboxSelect>>",self._limit_benchmark_selection)
