@@ -1,319 +1,694 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+from __future__ import annotations
 
-import contextlib
-import io
 import json
 import os
 import queue
-import re
+import subprocess
 import sys
 import threading
-import urllib.error
 import urllib.request
 from pathlib import Path
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
-import translator_core
+import translator_core as core
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.2.0"
-DEFAULT_URL = "http://localhost:11434"
-DEFAULT_MODEL = "qwen3.6:latest"
+APP_VERSION = "0.5.0"
+APP_HOME = Path.home() / ".paradox_localization_translator"
+SESSION_PATH = APP_HOME / "session.json"
+DEFAULT_GLOSSARY = APP_HOME / "glossary.json"
+STATS_PATH = APP_HOME / "model_stats.json"
+PROFILES_PATH = APP_HOME / "model_profiles.json"
 
 
-class QueueWriter(io.TextIOBase):
-    def __init__(self, q: queue.Queue, kind: str = "log"):
-        self.q = q
-        self.kind = kind
-        self._buf = ""
-
-    def write(self, s):
-        if not s:
-            return 0
-        self._buf += str(s)
-        while "\n" in self._buf:
-            line, self._buf = self._buf.split("\n", 1)
-            self.q.put((self.kind, line))
-        return len(s)
-
-    def flush(self):
-        if self._buf:
-            self.q.put((self.kind, self._buf))
-            self._buf = ""
-
-
-class TranslatorApp(tk.Tk):
+class App(tk.Tk):
     def __init__(self):
         super().__init__()
+        APP_HOME.mkdir(parents=True, exist_ok=True)
         self.title(f"{APP_NAME} {APP_VERSION}")
-        self.geometry("930x720")
-        self.minsize(820, 620)
+        self.geometry("1180x820")
+        self.minsize(980, 700)
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
 
         self.events = queue.Queue()
         self.worker = None
+        self.controller: core.TranslationController | None = None
+        self.queue_items = []
+        self.current_queue_index = -1
+        self.review_source_entries = {}
+        self.review_target_entries = {}
+        self.review_issues = []
+        self.review_issue_by_key = {}
+        self.request_durations = []
+        self.model_stats = core.load_json(STATS_PATH, {})
+        self.model_profiles = core.load_json(PROFILES_PATH, {})
 
-        self.input_var = tk.StringVar()
-        self.output_var = tk.StringVar()
-        self.cache_var = tk.StringVar()
-        self.url_var = tk.StringVar(value=DEFAULT_URL)
-        self.model_var = tk.StringVar(value=DEFAULT_MODEL)
+        self.provider_var = tk.StringVar(value="Ollama")
+        self.api_key_var = tk.StringVar(value="")
+        self.url_var = tk.StringVar(value=core.DEFAULT_OLLAMA_URL)
+        self.model_var = tk.StringVar(value=core.DEFAULT_MODEL)
+        self.preset_var = tk.StringVar(value="CK3")
         self.batch_var = tk.IntVar(value=40)
         self.workers_var = tk.IntVar(value=1)
         self.repair_var = tk.BooleanVar(value=True)
-        self.resume_var = tk.BooleanVar(value=True)
-        self.status_var = tk.StringVar(value="Ollama接続を確認してください")
-        self.progress_text_var = tk.StringVar(value="待機中")
+        self.dual_var = tk.BooleanVar(value=False)
+        self.autoqa_var = tk.BooleanVar(value=True)
+        self.glossary_path_var = tk.StringVar(value=str(DEFAULT_GLOSSARY))
+        self.connection_var = tk.StringVar(value="LLM接続確認中…")
+        self.eta_var = tk.StringVar(value="残り時間: --")
+        self.profile_var = tk.StringVar(value="")
+        self.progress_text = tk.StringVar(value="待機中")
+        self.review_src_var = tk.StringVar()
+        self.review_dst_var = tk.StringVar()
+        self.qa_summary_var = tk.StringVar(value="QA未実行")
 
         self._build_ui()
         self.after(100, self._poll_events)
-        self.after(250, self.refresh_models)
+        self.after(300, self.refresh_models)
+        self.after(500, self._offer_restore_session)
 
+    # ---------------- UI ----------------
     def _build_ui(self):
         style = ttk.Style(self)
+        try: style.theme_use("clam")
+        except tk.TclError: pass
+
+        top = ttk.Frame(self, padding=(12, 10, 12, 4)); top.pack(fill="x")
+        ttk.Label(top, text=APP_NAME, font=("", 20, "bold")).pack(side="left")
+        ttk.Label(top, text=f"v{APP_VERSION}").pack(side="left", padx=(8, 0), pady=(8, 0))
+        ttk.Label(top, textvariable=self.connection_var).pack(side="right")
+
+        nb = ttk.Notebook(self); nb.pack(fill="both", expand=True, padx=10, pady=8)
+        self.tab_translate = ttk.Frame(nb, padding=10)
+        self.tab_review = ttk.Frame(nb, padding=10)
+        self.tab_glossary = ttk.Frame(nb, padding=10)
+        self.tab_models = ttk.Frame(nb, padding=10)
+        nb.add(self.tab_translate, text="翻訳 / キュー")
+        nb.add(self.tab_review, text="QA / 比較編集")
+        nb.add(self.tab_glossary, text="用語集")
+        nb.add(self.tab_models, text="モデル / 接続")
+        self._build_translate_tab()
+        self._build_review_tab()
+        self._build_glossary_tab()
+        self._build_models_tab()
+
+    def _build_translate_tab(self):
+        t = self.tab_translate
+        settings = ttk.LabelFrame(t, text="LLM / 翻訳設定", padding=8); settings.pack(fill="x")
+        for c in (1,3,5): settings.columnconfigure(c, weight=1)
+        ttk.Label(settings, text="プロバイダ").grid(row=0,column=0,sticky="w")
+        provider_combo=ttk.Combobox(settings,textvariable=self.provider_var,values=["Ollama","LM Studio","OpenAI","Anthropic","Gemini","OpenAI Compatible"],state="readonly",width=12)
+        provider_combo.grid(row=0,column=1,sticky="w",padx=(5,10)); provider_combo.bind("<<ComboboxSelected>>",lambda e:self.on_provider_change())
+        ttk.Label(settings, text="URL").grid(row=0,column=2,sticky="e")
+        ttk.Entry(settings,textvariable=self.url_var).grid(row=0,column=3,sticky="ew",padx=(5,10))
+        ttk.Button(settings,text="接続確認",command=self.refresh_models).grid(row=0,column=4,padx=(0,12))
+        ttk.Label(settings,text="モデル").grid(row=0,column=5,sticky="e")
+        self.model_combo=ttk.Combobox(settings,textvariable=self.model_var,state="normal")
+        self.model_combo.grid(row=0,column=6,sticky="ew",padx=(5,0))
+
+        ttk.Label(settings,text="プリセット").grid(row=1,column=0,sticky="w",pady=(8,0))
+        ttk.Combobox(settings,textvariable=self.preset_var,values=list(core.GAME_PRESETS),state="readonly",width=14).grid(row=1,column=1,sticky="w",padx=(5,10),pady=(8,0))
+        ttk.Label(settings,text="モデルプロファイル").grid(row=1,column=2,sticky="e",pady=(8,0))
+        self.profile_combo=ttk.Combobox(settings,textvariable=self.profile_var,state="readonly")
+        self.profile_combo.grid(row=1,column=3,sticky="ew",padx=(5,5),pady=(8,0))
+        ttk.Button(settings,text="適用",command=self.apply_selected_profile).grid(row=1,column=4,pady=(8,0))
+        ttk.Button(settings,text="現在設定を保存",command=self.save_current_profile).grid(row=1,column=5,columnspan=2,sticky="e",pady=(8,0))
+
+        ttk.Checkbutton(settings,text="既存日本語の未翻訳を修復",variable=self.repair_var).grid(row=2,column=0,columnspan=2,sticky="w",pady=(8,0))
+        ttk.Checkbutton(settings,text="英語＋簡体字中国語を併用",variable=self.dual_var).grid(row=2,column=2,columnspan=2,sticky="w",pady=(8,0))
+        ttk.Checkbutton(settings,text="翻訳後に自動QA",variable=self.autoqa_var).grid(row=2,column=4,columnspan=2,sticky="w",pady=(8,0))
+        ttk.Label(settings,text="APIキー").grid(row=3,column=0,sticky="w",pady=(8,0))
+        ttk.Entry(settings,textvariable=self.api_key_var,show="•").grid(row=3,column=1,columnspan=3,sticky="ew",padx=(5,10),pady=(8,0))
+        ttk.Label(settings,text="クラウドAPIのみ。保存されません / 環境変数も利用可",foreground="#666").grid(row=3,column=4,columnspan=3,sticky="w",pady=(8,0))
+        ttk.Label(settings,text="バッチ").grid(row=4,column=0,sticky="w",pady=(8,0))
+        ttk.Spinbox(settings,from_=1,to=500,textvariable=self.batch_var,width=7).grid(row=4,column=1,sticky="w",pady=(8,0))
+        ttk.Label(settings,text="並列").grid(row=4,column=2,sticky="w",pady=(8,0))
+        ttk.Spinbox(settings,from_=1,to=8,textvariable=self.workers_var,width=7).grid(row=4,column=3,sticky="w",pady=(8,0))
+        ttk.Label(settings,text="用語集").grid(row=4,column=4,sticky="e",pady=(8,0))
+        ttk.Entry(settings,textvariable=self.glossary_path_var).grid(row=4,column=5,sticky="ew",padx=(5,4),pady=(8,0))
+        ttk.Button(settings,text="選択",command=self.pick_glossary).grid(row=4,column=6,pady=(8,0))
+        qf = ttk.LabelFrame(t,text="複数翻訳キュー（上から順番に処理）",padding=8); qf.pack(fill="both",expand=True,pady=(10,0))
+        toolbar=ttk.Frame(qf); toolbar.pack(fill="x",pady=(0,6))
+        ttk.Button(toolbar,text="フォルダ追加",command=self.add_folder).pack(side="left")
+        ttk.Button(toolbar,text="ファイル追加",command=self.add_files).pack(side="left",padx=(6,0))
+        ttk.Button(toolbar,text="選択削除",command=self.remove_queue).pack(side="left",padx=(6,0))
+        ttk.Button(toolbar,text="全消去",command=self.clear_queue).pack(side="left",padx=(6,0))
+        ttk.Button(toolbar,text="出力先変更",command=self.change_output).pack(side="left",padx=(14,0))
+        ttk.Button(toolbar,text="セッション読込",command=self.restore_session).pack(side="right")
+        ttk.Button(toolbar,text="セッション保存",command=self.save_session).pack(side="right",padx=(0,6))
+
+        cols=("input","output","status")
+        self.queue_tree=ttk.Treeview(qf,columns=cols,show="headings",height=12)
+        self.queue_tree.heading("input",text="入力")
+        self.queue_tree.heading("output",text="出力")
+        self.queue_tree.heading("status",text="状態")
+        self.queue_tree.column("input",width=430); self.queue_tree.column("output",width=430); self.queue_tree.column("status",width=130,anchor="center")
+        ys=ttk.Scrollbar(qf,orient="vertical",command=self.queue_tree.yview); self.queue_tree.configure(yscrollcommand=ys.set)
+        self.queue_tree.pack(side="left",fill="both",expand=True); ys.pack(side="right",fill="y")
+
+        actions=ttk.Frame(t); actions.pack(fill="x",pady=(10,0))
+        self.start_btn=ttk.Button(actions,text="翻訳開始",command=self.start_queue); self.start_btn.pack(side="left")
+        self.pause_btn=ttk.Button(actions,text="一時停止",command=self.toggle_pause,state="disabled"); self.pause_btn.pack(side="left",padx=(7,0))
+        self.stop_btn=ttk.Button(actions,text="セーブして中断",command=self.save_and_stop,state="disabled"); self.stop_btn.pack(side="left",padx=(7,0))
+        ttk.Button(actions,text="出力を開く",command=self.open_selected_output).pack(side="left",padx=(7,0))
+        ttk.Label(actions,textvariable=self.eta_var).pack(side="right",padx=(12,0))
+        ttk.Label(actions,textvariable=self.progress_text).pack(side="right")
+        self.progress=ttk.Progressbar(t,mode="determinate",maximum=100); self.progress.pack(fill="x",pady=(7,7))
+
+        lf=ttk.LabelFrame(t,text="ログ",padding=6); lf.pack(fill="both",expand=False)
+        self.log=tk.Text(lf,height=10,wrap="word",state="disabled")
+        lsy=ttk.Scrollbar(lf,command=self.log.yview); self.log.configure(yscrollcommand=lsy.set)
+        self.log.pack(side="left",fill="both",expand=True); lsy.pack(side="right",fill="y")
+
+    def _build_review_tab(self):
+        t=self.tab_review
+        pf=ttk.LabelFrame(t,text="原文 / 訳文",padding=8); pf.pack(fill="x")
+        pf.columnconfigure(1,weight=1)
+        ttk.Label(pf,text="原文").grid(row=0,column=0,sticky="w")
+        ttk.Entry(pf,textvariable=self.review_src_var).grid(row=0,column=1,sticky="ew",padx=6)
+        ttk.Button(pf,text="選択",command=lambda:self.pick_review_file(self.review_src_var)).grid(row=0,column=2)
+        ttk.Label(pf,text="訳文").grid(row=1,column=0,sticky="w",pady=(5,0))
+        ttk.Entry(pf,textvariable=self.review_dst_var).grid(row=1,column=1,sticky="ew",padx=6,pady=(5,0))
+        ttk.Button(pf,text="選択",command=lambda:self.pick_review_file(self.review_dst_var)).grid(row=1,column=2,pady=(5,0))
+        ttk.Button(pf,text="比較を読み込む",command=self.load_review).grid(row=0,column=3,rowspan=2,padx=(8,0))
+
+        qa=ttk.Frame(t); qa.pack(fill="x",pady=(8,5))
+        ttk.Button(qa,text="QA再実行",command=self.run_review_qa).pack(side="left")
+        ttk.Button(qa,text="警告だけ表示",command=lambda:self.populate_review(True)).pack(side="left",padx=(6,0))
+        ttk.Button(qa,text="全キー表示",command=lambda:self.populate_review(False)).pack(side="left",padx=(6,0))
+        ttk.Label(qa,textvariable=self.qa_summary_var).pack(side="right")
+
+        paned=ttk.Panedwindow(t,orient="horizontal"); paned.pack(fill="both",expand=True)
+        left=ttk.Frame(paned); right=ttk.Frame(paned); paned.add(left,weight=2); paned.add(right,weight=3)
+        self.review_tree=ttk.Treeview(left,columns=("level","type","key"),show="headings")
+        for c,txt,w in (("level","重要度",65),("type","種別",100),("key","キー",330)):
+            self.review_tree.heading(c,text=txt); self.review_tree.column(c,width=w)
+        self.review_tree.bind("<<TreeviewSelect>>",self.on_review_select)
+        rys=ttk.Scrollbar(left,command=self.review_tree.yview); self.review_tree.configure(yscrollcommand=rys.set)
+        self.review_tree.pack(side="left",fill="both",expand=True); rys.pack(side="right",fill="y")
+
+        ttk.Label(right,text="原文").pack(anchor="w")
+        self.src_text=tk.Text(right,height=7,wrap="word"); self.src_text.pack(fill="x",pady=(2,8))
+        ttk.Label(right,text="訳文（編集可）").pack(anchor="w")
+        self.dst_text=tk.Text(right,height=10,wrap="word"); self.dst_text.pack(fill="both",expand=True,pady=(2,6))
+        self.issue_text=tk.StringVar(value="")
+        ttk.Label(right,textvariable=self.issue_text,wraplength=550).pack(fill="x",pady=(0,6))
+        eb=ttk.Frame(right); eb.pack(fill="x")
+        ttk.Button(eb,text="この訳を保存",command=self.save_review_value).pack(side="left")
+        ttk.Button(eb,text="AIで誤字脱字校正",command=self.ai_proofread_selected).pack(side="left",padx=(6,0))
+        ttk.Button(eb,text="原文に戻す",command=self.restore_source_to_target).pack(side="left",padx=(6,0))
+
+    def _build_glossary_tab(self):
+        t=self.tab_glossary
+        top=ttk.Frame(t); top.pack(fill="x")
+        ttk.Label(top,text="用語集ファイル").pack(side="left")
+        ttk.Entry(top,textvariable=self.glossary_path_var).pack(side="left",fill="x",expand=True,padx=6)
+        ttk.Button(top,text="読込",command=self.load_glossary_ui).pack(side="left")
+        ttk.Button(top,text="保存",command=self.save_glossary_ui).pack(side="left",padx=(6,0))
+        bar=ttk.Frame(t); bar.pack(fill="x",pady=8)
+        ttk.Button(bar,text="用語追加",command=self.add_glossary_term).pack(side="left")
+        ttk.Button(bar,text="選択削除",command=self.delete_glossary_term).pack(side="left",padx=(6,0))
+        ttk.Label(bar,text="英語/中国語の語句 → 固定したい日本語訳。該当バッチのプロンプトへ自動挿入します。",foreground="#666").pack(side="left",padx=12)
+        self.glossary_tree=ttk.Treeview(t,columns=("src","dst"),show="headings")
+        self.glossary_tree.heading("src",text="原語"); self.glossary_tree.heading("dst",text="日本語")
+        self.glossary_tree.column("src",width=400); self.glossary_tree.column("dst",width=500)
+        self.glossary_tree.pack(fill="both",expand=True)
+        self.glossary_tree.bind("<Double-1>",lambda e:self.edit_glossary_term())
+        self.load_glossary_ui(silent=True)
+
+    def _build_models_tab(self):
+        t=self.tab_models
+        conn=ttk.LabelFrame(t,text="接続",padding=8); conn.pack(fill="x")
+        ttk.Label(conn,text="プロバイダ").grid(row=0,column=0,sticky="w")
+        pc=ttk.Combobox(conn,textvariable=self.provider_var,values=["Ollama","LM Studio","OpenAI","Anthropic","Gemini","OpenAI Compatible"],state="readonly",width=14)
+        pc.grid(row=0,column=1,padx=6); pc.bind("<<ComboboxSelected>>",lambda e:self.on_provider_change())
+        ttk.Label(conn,text="API URL").grid(row=0,column=2,sticky="e")
+        conn.columnconfigure(3,weight=1)
+        ttk.Entry(conn,textvariable=self.url_var).grid(row=0,column=3,sticky="ew",padx=6)
+        ttk.Button(conn,text="接続確認 / モデル再読込",command=self.refresh_models).grid(row=0,column=4)
+        ttk.Label(conn,textvariable=self.connection_var).grid(row=1,column=0,columnspan=5,sticky="w",pady=(7,0))
+        ttk.Label(conn,text="APIキー").grid(row=2,column=0,sticky="w",pady=(6,0))
+        ttk.Entry(conn,textvariable=self.api_key_var,show="•").grid(row=2,column=1,columnspan=3,sticky="ew",padx=6,pady=(6,0))
+        ttk.Label(conn,text="キーは保存しません",foreground="#666").grid(row=2,column=4,sticky="w",pady=(6,0))
+        ttk.Label(conn,text="ローカル: Ollama / LM Studio　クラウド: OpenAI / Anthropic / Gemini / OpenAI互換API",foreground="#666").grid(row=3,column=0,columnspan=5,sticky="w",pady=(4,0))
+
+        bench=ttk.LabelFrame(t,text="モデル速度比較（実翻訳時の統計も自動記録）",padding=8); bench.pack(fill="both",expand=True,pady=(10,0))
+        bar=ttk.Frame(bench); bar.pack(fill="x",pady=(0,6))
+        ttk.Button(bar,text="現在モデルを速度テスト",command=self.benchmark_selected_model).pack(side="left")
+        ttk.Button(bar,text="表示中の全モデルを速度テスト",command=self.benchmark_all_models).pack(side="left",padx=(6,0))
+        ttk.Button(bar,text="統計を消去",command=self.clear_model_stats).pack(side="left",padx=(6,0))
+        self.benchmark_status_var=tk.StringVar(value="")
+        ttk.Label(bar,textvariable=self.benchmark_status_var).pack(side="right")
+        cols=("provider","model","requests","avg","tps","fail")
+        self.stats_tree=ttk.Treeview(bench,columns=cols,show="headings",height=9)
+        for c,txt,w in (("provider","プロバイダ",100),("model","モデル",330),("requests","回数",70),("avg","平均秒",90),("tps","tokens/s",100),("fail","失敗率",90)):
+            self.stats_tree.heading(c,text=txt); self.stats_tree.column(c,width=w,anchor="center" if c not in ("model",) else "w")
+        self.stats_tree.pack(fill="both",expand=True)
+
+        pf=ttk.LabelFrame(t,text="モデルプロファイル",padding=8); pf.pack(fill="both",expand=True,pady=(10,0))
+        pb=ttk.Frame(pf); pb.pack(fill="x",pady=(0,6))
+        ttk.Button(pb,text="現在設定をプロファイル保存",command=self.save_current_profile).pack(side="left")
+        ttk.Button(pb,text="選択を適用",command=self.apply_profile_from_tree).pack(side="left",padx=(6,0))
+        ttk.Button(pb,text="選択を削除",command=self.delete_profile).pack(side="left",padx=(6,0))
+        self.profile_tree=ttk.Treeview(pf,columns=("name","label","provider","model","batch","workers"),show="headings",height=7)
+        for c,txt,w in (("name","名前",180),("label","用途",160),("provider","方式",90),("model","モデル",300),("batch","バッチ",70),("workers","並列",60)):
+            self.profile_tree.heading(c,text=txt); self.profile_tree.column(c,width=w)
+        self.profile_tree.pack(fill="both",expand=True)
+        self.profile_tree.bind("<Double-1>",lambda e:self.apply_profile_from_tree())
+        self.refresh_model_stats_ui(); self.refresh_profiles_ui()
+
+    def on_provider_change(self):
+        self.url_var.set(core.default_url_for_provider(self.provider_var.get()))
+        self.model_var.set("")
+        self.refresh_models()
+
+    def refresh_model_stats_ui(self):
+        if not hasattr(self,"stats_tree"): return
+        for x in self.stats_tree.get_children(): self.stats_tree.delete(x)
+        for key,st in sorted(self.model_stats.items(),key=lambda kv:(kv[1].get("provider",""),kv[1].get("model",""))):
+            req=int(st.get("requests",0)); fail=int(st.get("failures",0)); succ=max(0,req-fail)
+            avg=(float(st.get("total_seconds",0))/succ) if succ else 0
+            toks=float(st.get("total_tokens",0)); toksec=float(st.get("token_seconds",0)); tps=(toks/toksec) if toksec else float(st.get("last_tps",0) or 0)
+            fr=(fail/req*100) if req else 0
+            self.stats_tree.insert("","end",iid=key,values=(st.get("provider",""),st.get("model",""),req,f"{avg:.2f}",f"{tps:.1f}" if tps else "--",f"{fr:.1f}%"))
+
+    def _record_metric(self,metric):
+        if not metric: return
+        key=f"{metric.get('provider','')}::{metric.get('model','')}"
+        st=self.model_stats.setdefault(key,{"provider":metric.get("provider",""),"model":metric.get("model",""),"requests":0,"failures":0,"total_seconds":0.0,"total_tokens":0,"token_seconds":0.0,"last_tps":0.0})
+        st["requests"]=int(st.get("requests",0))+1
+        if not metric.get("success"):
+            st["failures"]=int(st.get("failures",0))+1
+        else:
+            elapsed=float(metric.get("elapsed",0) or 0); st["total_seconds"]=float(st.get("total_seconds",0))+elapsed
+            tokens=int(metric.get("completion_tokens",0) or 0)
+            if tokens>0 and elapsed>0:
+                st["total_tokens"]=int(st.get("total_tokens",0))+tokens; st["token_seconds"]=float(st.get("token_seconds",0))+elapsed
+            st["last_tps"]=float(metric.get("tokens_per_second",0) or st.get("last_tps",0) or 0)
+            if elapsed>0:
+                self.request_durations.append(elapsed); self.request_durations=self.request_durations[-30:]
+        core.save_json(STATS_PATH,self.model_stats); self.refresh_model_stats_ui()
+
+    def benchmark_selected_model(self):
+        model=self.model_var.get().strip()
+        if not model: messagebox.showinfo(APP_NAME,"モデルを選択してください。"); return
+        self._start_benchmark([model])
+
+    def benchmark_all_models(self):
+        models=list(self.model_combo["values"])
+        if not models: messagebox.showinfo(APP_NAME,"先に接続確認を実行してください。"); return
+        if len(models)>12 and not messagebox.askyesno(APP_NAME,f"{len(models)}モデルを順番に速度テストします。時間がかかる場合があります。続行しますか？"): return
+        self._start_benchmark(models)
+
+    def _start_benchmark(self,models):
+        if getattr(self,"benchmark_worker",None) and self.benchmark_worker.is_alive(): return
+        self.benchmark_status_var.set(f"速度テスト中 0/{len(models)}")
+        provider=self.provider_var.get(); url=self.url_var.get().strip()
+        def work():
+            for i,m in enumerate(models,1):
+                try:
+                    captured=[]
+                    ctrl=core.TranslationController(progress_callback=lambda p: captured.append(p.get("metric")) if p.get("kind")=="llm_metric" else None)
+                    core.benchmark_model(provider,url,m,ctrl,self.api_key_var.get().strip())
+                    metric=next((x for x in reversed(captured) if x),None)
+                    self.events.put(("benchmark_metric",(i,len(models),metric)))
+                except Exception as e:
+                    self.events.put(("benchmark_error",(i,len(models),m,str(e))))
+            self.events.put(("benchmark_done",None))
+        self.benchmark_worker=threading.Thread(target=work,daemon=True); self.benchmark_worker.start()
+
+    def clear_model_stats(self):
+        if messagebox.askyesno(APP_NAME,"モデル速度統計をすべて消去しますか？"):
+            self.model_stats={}; core.save_json(STATS_PATH,self.model_stats); self.refresh_model_stats_ui()
+
+    def refresh_profiles_ui(self):
+        names=sorted(self.model_profiles)
+        if hasattr(self,"profile_combo"): self.profile_combo["values"]=names
+        if hasattr(self,"profile_tree"):
+            for x in self.profile_tree.get_children(): self.profile_tree.delete(x)
+            for name in names:
+                p=self.model_profiles[name]
+                self.profile_tree.insert("","end",iid=name,values=(name,p.get("label",""),p.get("provider",""),p.get("model",""),p.get("batch",40),p.get("workers",1)))
+
+    def save_current_profile(self):
+        name=simpledialog.askstring("モデルプロファイル","プロファイル名（例: Qwen 30B 品質重視）")
+        if not name: return
+        label=simpledialog.askstring("モデルプロファイル","用途メモ（例: 品質重視 / 高速）",initialvalue=self.model_profiles.get(name,{}).get("label","")) or ""
+        self.model_profiles[name]={"label":label,"provider":self.provider_var.get(),"url":self.url_var.get(),"model":self.model_var.get(),"batch":self.batch_var.get(),"workers":self.workers_var.get(),"preset":self.preset_var.get()}
+        core.save_json(PROFILES_PATH,self.model_profiles); self.profile_var.set(name); self.refresh_profiles_ui()
+
+    def _apply_profile(self,name):
+        p=self.model_profiles.get(name)
+        if not p: return
+        self.provider_var.set(p.get("provider","Ollama")); self.url_var.set(p.get("url",core.default_url_for_provider(self.provider_var.get())))
+        self.model_var.set(p.get("model","")); self.batch_var.set(p.get("batch",40)); self.workers_var.set(p.get("workers",1)); self.preset_var.set(p.get("preset","CK3")); self.profile_var.set(name)
+        self.refresh_models()
+
+    def apply_selected_profile(self): self._apply_profile(self.profile_var.get())
+
+    def apply_profile_from_tree(self):
+        sel=self.profile_tree.selection()
+        if sel: self._apply_profile(sel[0])
+
+    def delete_profile(self):
+        sel=self.profile_tree.selection()
+        if not sel: return
+        for name in sel: self.model_profiles.pop(name,None)
+        core.save_json(PROFILES_PATH,self.model_profiles); self.refresh_profiles_ui()
+
+    # ---------------- queue ----------------
+    def _default_output(self,p:Path):
+        return p.parent / (p.stem + "_japanese" if p.is_file() else p.name + "_japanese")
+
+    def add_folder(self):
+        p=filedialog.askdirectory(title="翻訳するMod/localizationフォルダを選択")
+        if p: self._append_queue(Path(p))
+
+    def add_files(self):
+        paths=filedialog.askopenfilenames(title="翻訳するYAMLを複数選択",filetypes=[("Paradox YAML","*.yml"),("All","*")])
+        for p in paths: self._append_queue(Path(p))
+
+    def _append_queue(self,p:Path,out:Path|None=None,status="待機"):
+        out=out or self._default_output(p)
+        item={"input":str(p),"output":str(out),"status":status}
+        self.queue_items.append(item); self._refresh_queue_tree()
+
+    def _refresh_queue_tree(self):
+        for x in self.queue_tree.get_children(): self.queue_tree.delete(x)
+        for i,item in enumerate(self.queue_items):
+            self.queue_tree.insert("", "end", iid=str(i), values=(item["input"],item["output"],item["status"]))
+
+    def remove_queue(self):
+        sels=sorted((int(x) for x in self.queue_tree.selection()),reverse=True)
+        for i in sels:
+            if 0<=i<len(self.queue_items): self.queue_items.pop(i)
+        self._refresh_queue_tree()
+
+    def clear_queue(self):
+        if self.worker and self.worker.is_alive(): return
+        self.queue_items.clear(); self._refresh_queue_tree()
+
+    def change_output(self):
+        sel=self.queue_tree.selection()
+        if not sel: return
+        p=filedialog.askdirectory(title="選択項目の出力先")
+        if p:
+            self.queue_items[int(sel[0])]["output"]=p; self._refresh_queue_tree()
+
+    def start_queue(self):
+        if self.worker and self.worker.is_alive(): return
+        if not self.queue_items:
+            messagebox.showinfo(APP_NAME,"翻訳キューにフォルダまたはファイルを追加してください。"); return
+        self._clear_log(); self.progress["value"]=0; self.request_durations=[]; self.eta_var.set("残り時間: 計測中…")
+        self.controller=core.TranslationController(progress_callback=lambda x:self.events.put(("progress",x)), checkpoint_callback=self._checkpoint)
+        self.start_btn.config(state="disabled"); self.pause_btn.config(state="normal",text="一時停止"); self.stop_btn.config(state="normal")
+        self.worker=threading.Thread(target=self._queue_worker,daemon=True); self.worker.start()
+        self.save_session(active=True)
+
+    def _queue_worker(self):
         try:
-            style.theme_use("clam")
-        except tk.TclError:
-            pass
+            for i,item in enumerate(self.queue_items):
+                self.current_queue_index=i
+                if item.get("status") == "完了": continue
+                item["status"]="翻訳中"; self.events.put(("queue_refresh",None))
+                self._checkpoint({"queue_index":i})
+                out=Path(item["output"]); cache=out/".cache"
+                result=core.run_translation(
+                    item["input"], item["output"], model=self.model_var.get().strip(), url=self.url_var.get().strip(),
+                    workers=max(1,self.workers_var.get()), batch_size=max(1,self.batch_var.get()), cache_dir=cache,
+                    resume=True, verbose=True, include_target_files=self.repair_var.get(), controller=self.controller,
+                    glossary_path=self.glossary_path_var.get().strip() or None, preset=self.preset_var.get(),
+                    dual_source=self.dual_var.get(), auto_qa=self.autoqa_var.get(), provider=self.provider_var.get(), api_key=self.api_key_var.get().strip())
+                if result.get("interrupted"):
+                    item["status"]="中断（再開可）"; self.events.put(("queue_refresh",None)); self.save_session(active=True); break
+                item["status"]="完了"; self.events.put(("queue_refresh",None)); self.save_session(active=True)
+            else:
+                self.events.put(("done",None)); self._delete_session()
+        except Exception as e:
+            self.events.put(("fatal",str(e))); self.save_session(active=True)
 
-        root = ttk.Frame(self, padding=14)
-        root.pack(fill="both", expand=True)
+    def toggle_pause(self):
+        if not self.controller: return
+        if self.controller.pause_event.is_set():
+            self.controller.resume(); self.pause_btn.config(text="一時停止"); self.progress_text.set("再開しました")
+        else:
+            self.controller.pause(); self.pause_btn.config(text="再開"); self.progress_text.set("一時停止中（現在のLLM応答完了後に停止）")
+        self.save_session(active=True)
 
-        title = ttk.Label(root, text="Paradox Localization Translator", font=("", 20, "bold"))
-        title.pack(anchor="w")
-        ttk.Label(root, text="Paradox系ゲームのローカライズYAMLを、OllamaのローカルLLMで日本語化・修復します。")\
-            .pack(anchor="w", pady=(2, 14))
+    def save_and_stop(self):
+        if self.controller:
+            self.save_session(active=True); self.controller.request_stop(save=True)
+            self.progress_text.set("保存して中断中… 現在のリクエスト完了を待っています")
+            self.stop_btn.config(state="disabled")
 
-        paths = ttk.LabelFrame(root, text="ファイル / フォルダ", padding=10)
-        paths.pack(fill="x")
-        paths.columnconfigure(1, weight=1)
+    # ---------------- session ----------------
+    def _settings_dict(self):
+        return {"provider":self.provider_var.get(),"url":self.url_var.get(),"model":self.model_var.get(),"preset":self.preset_var.get(),
+                "batch":self.batch_var.get(),"workers":self.workers_var.get(),"repair":self.repair_var.get(),
+                "dual":self.dual_var.get(),"autoqa":self.autoqa_var.get(),"glossary":self.glossary_path_var.get()}
 
-        ttk.Label(paths, text="入力").grid(row=0, column=0, sticky="w", padx=(0, 8), pady=4)
-        ttk.Entry(paths, textvariable=self.input_var).grid(row=0, column=1, sticky="ew", pady=4)
-        ttk.Button(paths, text="フォルダ選択", command=self.pick_input_dir).grid(row=0, column=2, padx=(8, 0), pady=4)
-        ttk.Button(paths, text="ファイル選択", command=self.pick_input_file).grid(row=0, column=3, padx=(6, 0), pady=4)
+    def save_session(self,active=False):
+        data={"version":APP_VERSION,"active":active,"queue":self.queue_items,"queue_index":self.current_queue_index,"settings":self._settings_dict()}
+        core.save_json(SESSION_PATH,data)
+        if not active: self.progress_text.set(f"セッション保存: {SESSION_PATH}")
 
-        ttk.Label(paths, text="出力").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=4)
-        ttk.Entry(paths, textvariable=self.output_var).grid(row=1, column=1, sticky="ew", pady=4)
-        ttk.Button(paths, text="選択", command=self.pick_output_dir).grid(row=1, column=2, padx=(8, 0), pady=4)
+    def _checkpoint(self,payload):
+        data=core.load_json(SESSION_PATH,{})
+        data.update({"version":APP_VERSION,"active":True,"queue":self.queue_items,"queue_index":self.current_queue_index,"settings":self._settings_dict(),"checkpoint":payload})
+        core.save_json(SESSION_PATH,data)
 
-        ttk.Label(paths, text="キャッシュ").grid(row=2, column=0, sticky="w", padx=(0, 8), pady=4)
-        ttk.Entry(paths, textvariable=self.cache_var).grid(row=2, column=1, sticky="ew", pady=4)
-        ttk.Button(paths, text="選択", command=self.pick_cache_dir).grid(row=2, column=2, padx=(8, 0), pady=4)
+    def restore_session(self):
+        data=core.load_json(SESSION_PATH,{})
+        if not data:
+            messagebox.showinfo(APP_NAME,"保存されたセッションはありません。"); return
+        self.queue_items=data.get("queue",[])
+        s=data.get("settings",{})
+        self.provider_var.set(s.get("provider",self.provider_var.get())); self.url_var.set(s.get("url",self.url_var.get())); self.model_var.set(s.get("model",self.model_var.get())); self.preset_var.set(s.get("preset",self.preset_var.get()))
+        self.batch_var.set(s.get("batch",40)); self.workers_var.set(s.get("workers",1)); self.repair_var.set(s.get("repair",True)); self.dual_var.set(s.get("dual",False)); self.autoqa_var.set(s.get("autoqa",True)); self.glossary_path_var.set(s.get("glossary",str(DEFAULT_GLOSSARY)))
+        for item in self.queue_items:
+            if item.get("status") == "翻訳中": item["status"]="中断（再開可）"
+        self._refresh_queue_tree(); self.progress_text.set("セッションを復元しました。翻訳開始で続きから再開します。")
 
-        ollama = ttk.LabelFrame(root, text="Ollama", padding=10)
-        ollama.pack(fill="x", pady=(10, 0))
-        ollama.columnconfigure(1, weight=1)
+    def _offer_restore_session(self):
+        data=core.load_json(SESSION_PATH,{})
+        if data.get("active") and data.get("queue"):
+            if messagebox.askyesno(APP_NAME,"前回の翻訳セッションが残っています。復元しますか？"):
+                self.restore_session()
 
-        ttk.Label(ollama, text="URL").grid(row=0, column=0, sticky="w", padx=(0, 8), pady=4)
-        ttk.Entry(ollama, textvariable=self.url_var).grid(row=0, column=1, sticky="ew", pady=4)
-        ttk.Button(ollama, text="接続確認", command=self.refresh_models).grid(row=0, column=2, padx=(8, 0), pady=4)
+    def _delete_session(self):
+        try: SESSION_PATH.unlink(missing_ok=True)
+        except Exception: pass
 
-        ttk.Label(ollama, text="モデル").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=4)
-        self.model_combo = ttk.Combobox(ollama, textvariable=self.model_var, state="normal")
-        self.model_combo.grid(row=1, column=1, sticky="ew", pady=4)
-        self.connection_label = ttk.Label(ollama, textvariable=self.status_var)
-        self.connection_label.grid(row=1, column=2, padx=(8, 0), sticky="e")
-
-        opts = ttk.LabelFrame(root, text="翻訳設定", padding=10)
-        opts.pack(fill="x", pady=(10, 0))
-
-        ttk.Checkbutton(opts, text="既存の日本語ファイルも走査し、英語の未翻訳箇所だけ修復する",
-                        variable=self.repair_var).grid(row=0, column=0, columnspan=4, sticky="w", pady=3)
-        ttk.Checkbutton(opts, text="キャッシュを使用して差分翻訳 / 再開する",
-                        variable=self.resume_var).grid(row=1, column=0, columnspan=4, sticky="w", pady=3)
-
-        ttk.Label(opts, text="バッチサイズ").grid(row=2, column=0, sticky="w", pady=(8, 3))
-        ttk.Spinbox(opts, from_=1, to=500, textvariable=self.batch_var, width=8).grid(row=2, column=1, sticky="w", padx=(6, 20), pady=(8, 3))
-        ttk.Label(opts, text="並列数").grid(row=2, column=2, sticky="w", pady=(8, 3))
-        ttk.Spinbox(opts, from_=1, to=16, textvariable=self.workers_var, width=8).grid(row=2, column=3, sticky="w", padx=(6, 0), pady=(8, 3))
-        ttk.Label(opts, text="※ Ollama既定設定では並列数1を推奨").grid(row=2, column=4, sticky="w", padx=(12, 0), pady=(8, 3))
-
-        action = ttk.Frame(root)
-        action.pack(fill="x", pady=(12, 0))
-        self.start_btn = ttk.Button(action, text="翻訳開始", command=self.start_translation)
-        self.start_btn.pack(side="left")
-        ttk.Button(action, text="出力フォルダを開く", command=self.open_output).pack(side="left", padx=(8, 0))
-        ttk.Label(action, textvariable=self.progress_text_var).pack(side="right")
-
-        self.progress = ttk.Progressbar(root, mode="determinate", maximum=100)
-        self.progress.pack(fill="x", pady=(8, 10))
-
-        logframe = ttk.LabelFrame(root, text="ログ", padding=8)
-        logframe.pack(fill="both", expand=True)
-        self.log = tk.Text(logframe, wrap="word", height=16, state="disabled")
-        scroll = ttk.Scrollbar(logframe, command=self.log.yview)
-        self.log.configure(yscrollcommand=scroll.set)
-        self.log.pack(side="left", fill="both", expand=True)
-        scroll.pack(side="right", fill="y")
-
-    def pick_input_dir(self):
-        p = filedialog.askdirectory(title="入力フォルダを選択")
-        if p:
-            self.input_var.set(p)
-            if not self.output_var.get():
-                self.output_var.set(str(Path(p).parent / "翻訳後"))
-            if not self.cache_var.get():
-                self.cache_var.set(str(Path(p).parent / "キャッシュ"))
-
-    def pick_input_file(self):
-        p = filedialog.askopenfilename(title="YAMLファイルを選択", filetypes=[("YAML", "*.yml"), ("すべて", "*")])
-        if p:
-            self.input_var.set(p)
-            if not self.output_var.get():
-                self.output_var.set(str(Path(p).parent / "翻訳後"))
-            if not self.cache_var.get():
-                self.cache_var.set(str(Path(p).parent / "キャッシュ"))
-
-    def pick_output_dir(self):
-        p = filedialog.askdirectory(title="出力フォルダを選択")
-        if p:
-            self.output_var.set(p)
-
-    def pick_cache_dir(self):
-        p = filedialog.askdirectory(title="キャッシュフォルダを選択")
-        if p:
-            self.cache_var.set(p)
-
+    # ---------------- models ----------------
     def refresh_models(self):
-        self.status_var.set("確認中…")
-        threading.Thread(target=self._fetch_models, daemon=True).start()
+        label=self.provider_var.get()
+        key = self.api_key_var.get().strip() or core.env_api_key_for_provider(label)
+        if core.normalize_provider(label) in {"openai","anthropic","gemini","openai_compat"} and not key:
+            self.connection_var.set(f"{label}: APIキーが未設定です")
+        else:
+            self.connection_var.set(f"{label} 接続確認中…")
+        threading.Thread(target=self._fetch_models,daemon=True).start()
 
     def _fetch_models(self):
-        url = self.url_var.get().strip().rstrip("/") + "/api/tags"
         try:
-            req = urllib.request.Request(url, headers={"Accept": "application/json"})
-            with urllib.request.urlopen(req, timeout=4) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-            models = [m.get("name") for m in data.get("models", []) if m.get("name")]
-            self.events.put(("models", models))
+            models=core.list_models(self.provider_var.get(),self.url_var.get().strip(),timeout=8,api_key=self.api_key_var.get().strip())
+            self.events.put(("models",models))
         except Exception as e:
-            self.events.put(("model_error", str(e)))
+            self.events.put(("model_error",str(e)))
 
-    def start_translation(self):
-        if self.worker and self.worker.is_alive():
-            return
+    # ---------------- QA/editor ----------------
+    def pick_review_file(self,var):
+        p=filedialog.askopenfilename(filetypes=[("Paradox YAML","*.yml"),("All","*")])
+        if p: var.set(p)
 
-        in_path = Path(self.input_var.get().strip())
-        if not in_path.exists():
-            messagebox.showerror(APP_NAME, "入力ファイルまたはフォルダが見つかりません。")
-            return
-        if not self.output_var.get().strip():
-            messagebox.showerror(APP_NAME, "出力フォルダを指定してください。")
-            return
-        if not self.model_var.get().strip():
-            messagebox.showerror(APP_NAME, "Ollamaモデルを指定してください。")
-            return
-
-        out = Path(self.output_var.get().strip())
-        cache = Path(self.cache_var.get().strip()) if self.cache_var.get().strip() else (out / "キャッシュ")
-        out.mkdir(parents=True, exist_ok=True)
-        cache.mkdir(parents=True, exist_ok=True)
-
-        self._clear_log()
-        self.start_btn.configure(state="disabled")
-        self.progress.configure(value=0, mode="indeterminate")
-        self.progress.start(10)
-        self.progress_text_var.set("翻訳中…")
-
-        args = {
-            "input_path": str(in_path),
-            "output_path": str(out),
-            "model": self.model_var.get().strip(),
-            "url": self.url_var.get().strip(),
-            "target_lang": "japanese",
-            "workers": max(1, int(self.workers_var.get())),
-            "batch_size": max(1, int(self.batch_var.get())),
-            "cache_dir": str(cache),
-            "resume": bool(self.resume_var.get()),
-            "verbose": True,
-            "include_target_files": bool(self.repair_var.get()),
-        }
-        self.worker = threading.Thread(target=self._run_worker, args=(args,), daemon=True)
-        self.worker.start()
-
-    def _run_worker(self, args):
-        out_writer = QueueWriter(self.events, "log")
-        err_writer = QueueWriter(self.events, "log")
+    def load_review(self):
+        dst=Path(self.review_dst_var.get())
+        if not dst.exists(): messagebox.showerror(APP_NAME,"訳文ファイルを選択してください。"); return
         try:
-            with contextlib.redirect_stdout(out_writer), contextlib.redirect_stderr(err_writer):
-                processed = translator_core.run_translation(**args)
-            out_writer.flush(); err_writer.flush()
-            self.events.put(("done", processed))
-        except Exception as e:
-            out_writer.flush(); err_writer.flush()
-            self.events.put(("fatal", str(e)))
+            _,self.review_target_entries,_=core.parse_localization_file(dst)
+            src=Path(self.review_src_var.get()) if self.review_src_var.get() else None
+            self.review_source_entries=core.parse_localization_file(src)[1] if src and src.exists() else {}
+            self.run_review_qa()
+        except Exception as e: messagebox.showerror(APP_NAME,str(e))
+
+    def run_review_qa(self):
+        if not self.review_target_entries and self.review_dst_var.get():
+            try: _,self.review_target_entries,_=core.parse_localization_file(Path(self.review_dst_var.get()))
+            except Exception as e: messagebox.showerror(APP_NAME,str(e)); return
+        self.review_issues=core.qa_entries(self.review_target_entries,self.review_source_entries or None)
+        self.review_issue_by_key={}
+        for issue in self.review_issues: self.review_issue_by_key.setdefault(issue["key"],[]).append(issue)
+        errs=sum(x["severity"]=="error" for x in self.review_issues); warns=sum(x["severity"]=="warning" for x in self.review_issues)
+        self.qa_summary_var.set(f"QA: エラー {errs} / 警告 {warns} / キー {len(self.review_target_entries)}")
+        self.populate_review(True)
+
+    def populate_review(self,warnings_only):
+        for x in self.review_tree.get_children(): self.review_tree.delete(x)
+        keys=sorted(self.review_target_entries)
+        if self.review_source_entries:
+            keys=sorted(set(keys)|set(self.review_source_entries))
+        for key in keys:
+            issues=self.review_issue_by_key.get(key,[])
+            if warnings_only and not issues: continue
+            level=""; typ=""
+            if issues:
+                level="ERROR" if any(i["severity"]=="error" for i in issues) else "WARN"
+                typ=",".join(sorted(set(i["type"] for i in issues)))
+            self.review_tree.insert("","end",iid=key,values=(level,typ,key))
+
+    def on_review_select(self,_=None):
+        sel=self.review_tree.selection()
+        if not sel: return
+        key=sel[0]
+        self.src_text.delete("1.0","end"); self.src_text.insert("1.0",self.review_source_entries.get(key,""))
+        self.dst_text.delete("1.0","end"); self.dst_text.insert("1.0",self.review_target_entries.get(key,""))
+        self.issue_text.set(" / ".join(i["message"] for i in self.review_issue_by_key.get(key,[])))
+
+    def save_review_value(self):
+        sel=self.review_tree.selection()
+        if not sel: return
+        key=sel[0]; value=self.dst_text.get("1.0","end-1c")
+        if core.update_localization_value(Path(self.review_dst_var.get()),key,value):
+            self.review_target_entries[key]=value; self.run_review_qa();
+            if self.review_tree.exists(key): self.review_tree.selection_set(key)
+
+    def restore_source_to_target(self):
+        sel=self.review_tree.selection()
+        if sel:
+            self.dst_text.delete("1.0","end"); self.dst_text.insert("1.0",self.review_source_entries.get(sel[0],""))
+
+    def ai_proofread_selected(self):
+        sel=self.review_tree.selection()
+        if not sel: return
+        key=sel[0]; text=self.dst_text.get("1.0","end-1c"); src=self.review_source_entries.get(key,"")
+        self.issue_text.set("AI校正中…")
+        def work():
+            try:
+                glossary=core.load_glossary(Path(self.glossary_path_var.get())) if self.glossary_path_var.get() else {}
+                out=core.proofread_text(self.url_var.get(),self.model_var.get(),text,src,glossary,self.preset_var.get(),self.provider_var.get(),self.api_key_var.get().strip())
+                self.events.put(("proofread",out))
+            except Exception as e: self.events.put(("proofread_error",str(e)))
+        threading.Thread(target=work,daemon=True).start()
+
+    # ---------------- glossary ----------------
+    def pick_glossary(self):
+        p=filedialog.askopenfilename(filetypes=[("JSON","*.json"),("All","*")])
+        if p: self.glossary_path_var.set(p); self.load_glossary_ui(silent=True)
+
+    def load_glossary_ui(self,silent=False):
+        p=Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY)
+        gl=core.load_glossary(p)
+        for x in getattr(self,"glossary_tree",ttk.Treeview()).get_children(): self.glossary_tree.delete(x)
+        if hasattr(self,"glossary_tree"):
+            for src,dst in sorted(gl.items()): self.glossary_tree.insert("","end",values=(src,dst))
+        if not silent: self.progress_text.set(f"用語集 {len(gl)}件を読み込みました")
+
+    def save_glossary_ui(self):
+        p=Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY)
+        gl={}
+        for iid in self.glossary_tree.get_children():
+            src,dst=self.glossary_tree.item(iid,"values"); gl[src]=dst
+        core.save_glossary(p,gl); self.glossary_path_var.set(str(p)); self.progress_text.set(f"用語集保存: {p}")
+
+    def add_glossary_term(self):
+        src=simpledialog.askstring("用語追加","原語（英語/中国語）")
+        if not src: return
+        dst=simpledialog.askstring("用語追加",f"「{src}」の固定日本語訳")
+        if dst: self.glossary_tree.insert("","end",values=(src,dst)); self.save_glossary_ui()
+
+    def edit_glossary_term(self):
+        sel=self.glossary_tree.selection()
+        if not sel: return
+        src,dst=self.glossary_tree.item(sel[0],"values")
+        nsrc=simpledialog.askstring("用語編集","原語",initialvalue=src)
+        if not nsrc: return
+        ndst=simpledialog.askstring("用語編集","日本語",initialvalue=dst)
+        if ndst is not None: self.glossary_tree.item(sel[0],values=(nsrc,ndst)); self.save_glossary_ui()
+
+    def delete_glossary_term(self):
+        for x in self.glossary_tree.selection(): self.glossary_tree.delete(x)
+        self.save_glossary_ui()
+
+    # ---------------- misc ----------------
+    def open_selected_output(self):
+        sel=self.queue_tree.selection(); path=None
+        if sel: path=Path(self.queue_items[int(sel[0])]["output"])
+        elif self.queue_items: path=Path(self.queue_items[-1]["output"])
+        if not path: return
+        path.mkdir(parents=True,exist_ok=True)
+        try:
+            if sys.platform=="darwin": subprocess.Popen(["open",str(path)])
+            elif os.name=="nt": os.startfile(str(path))
+            else: subprocess.Popen(["xdg-open",str(path)])
+        except Exception as e: messagebox.showerror(APP_NAME,str(e))
+
+    def _append_log(self,text):
+        self.log.config(state="normal"); self.log.insert("end",text+"\n"); self.log.see("end"); self.log.config(state="disabled")
+
+    def _clear_log(self):
+        self.log.config(state="normal"); self.log.delete("1.0","end"); self.log.config(state="disabled")
 
     def _poll_events(self):
         try:
             while True:
-                kind, payload = self.events.get_nowait()
-                if kind == "log":
-                    self._append_log(payload)
-                    self._update_progress_from_log(payload)
-                elif kind == "models":
-                    self.model_combo["values"] = payload
-                    if payload and self.model_var.get() not in payload:
-                        preferred = next((m for m in payload if m.startswith("qwen3.6")), payload[0])
-                        self.model_var.set(preferred)
-                    self.status_var.set(f"● 接続済み ({len(payload)}モデル)")
-                elif kind == "model_error":
-                    self.status_var.set("● 未接続")
-                    self._append_log(f"[Ollama] 接続確認失敗: {payload}")
-                elif kind == "done":
-                    self.progress.stop()
-                    self.progress.configure(mode="determinate", value=100)
-                    self.progress_text_var.set("完了")
-                    self.start_btn.configure(state="normal")
-                    self._append_log(f"GUI: {payload}ファイルの処理を完了しました。")
-                    messagebox.showinfo(APP_NAME, "翻訳処理が完了しました。")
-                elif kind == "fatal":
-                    self.progress.stop()
-                    self.progress.configure(mode="determinate", value=0)
-                    self.progress_text_var.set("エラー")
-                    self.start_btn.configure(state="normal")
-                    self._append_log(f"[致命的エラー] {payload}")
-                    messagebox.showerror(APP_NAME, payload)
-        except queue.Empty:
-            pass
-        self.after(100, self._poll_events)
+                kind,payload=self.events.get_nowait()
+                if kind=="models":
+                    self.model_combo["values"]=payload
+                    if payload and self.model_var.get() not in payload: self.model_var.set(payload[0])
+                    self.connection_var.set(f"{self.provider_var.get()} 接続済み / {len(payload)}モデル")
+                elif kind=="model_error":
+                    p=self.provider_var.get()
+                    if p=="Ollama": self.connection_var.set("Ollamaが起動していません（接続できません）")
+                    elif p=="LM Studio": self.connection_var.set("LM Studio Local Serverに接続できません")
+                    elif p in {"OpenAI","Anthropic","Gemini"}: self.connection_var.set(f"{p} APIに接続できません。APIキー・モデル・利用権限を確認してください")
+                    else: self.connection_var.set("OpenAI互換APIに接続できません。URL/APIキーを確認してください")
+                elif kind=="progress":
+                    if payload.get("kind")=="llm_metric":
+                        self._record_metric(payload.get("metric"))
+                    elif payload.get("kind")=="batch":
+                        done,total=payload.get("done",0),max(1,payload.get("total",1)); self.progress["value"]=done/total*100
+                        self.progress_text.set(f"キュー {self.current_queue_index+1}/{len(self.queue_items)} / ファイル {payload.get('file_no',0)}/{payload.get('file_total',0)} / {done}/{total}行")
+                        if self.request_durations and done < total:
+                            import math
+                            avg=sum(self.request_durations)/len(self.request_durations); remaining=max(0,total-done)
+                            batches=math.ceil(remaining/max(1,self.batch_var.get())); waves=math.ceil(batches/max(1,self.workers_var.get())); secs=max(0,int(avg*waves))
+                            if secs<60: eta=f"約{secs}秒"
+                            elif secs<3600: eta=f"約{math.ceil(secs/60)}分"
+                            else: eta=f"約{secs//3600}時間{math.ceil((secs%3600)/60)}分"
+                            self.eta_var.set(f"現在ファイル残り: {eta}")
+                        elif done>=total: self.eta_var.set("現在ファイル残り: ほぼ完了")
+                    elif payload.get("kind")=="file_done": self.progress["value"]=100
+                elif kind=="benchmark_metric":
+                    i,total,metric=payload
+                    if metric: self._record_metric(metric)
+                    self.benchmark_status_var.set(f"速度テスト中 {i}/{total}")
+                elif kind=="benchmark_error":
+                    i,total,model,err=payload; self.benchmark_status_var.set(f"{model} 失敗 ({i}/{total})")
+                    self._append_log(f"[速度テスト失敗] {model}: {err}")
+                elif kind=="benchmark_done": self.benchmark_status_var.set("速度テスト完了")
+                elif kind=="queue_refresh": self._refresh_queue_tree()
+                elif kind=="done":
+                    self._finish_controls(); self.progress["value"]=100; self.progress_text.set("すべての翻訳が完了しました"); self.eta_var.set("残り時間: 0分"); self._refresh_queue_tree(); messagebox.showinfo(APP_NAME,"翻訳キューが完了しました。")
+                elif kind=="fatal": self._finish_controls(); messagebox.showerror(APP_NAME,payload)
+                elif kind=="proofread": self.dst_text.delete("1.0","end"); self.dst_text.insert("1.0",payload); self.issue_text.set("AI校正結果を表示しました。内容を確認して保存してください。")
+                elif kind=="proofread_error": self.issue_text.set("AI校正エラー: "+payload)
+        except queue.Empty: pass
+        self.after(100,self._poll_events)
 
-    def _update_progress_from_log(self, line: str):
-        m = re.search(r"バッチ\s+(\d+)/(\d+)\s+完了", line)
-        if m:
-            done, total = map(int, m.groups())
-            if total:
-                self.progress.stop()
-                self.progress.configure(mode="determinate", value=done / total * 100)
-                self.progress_text_var.set(f"バッチ {done}/{total}")
+    def _finish_controls(self):
+        self.start_btn.config(state="normal"); self.pause_btn.config(state="disabled",text="一時停止"); self.stop_btn.config(state="disabled"); self.controller=None
 
-    def _append_log(self, line: str):
-        self.log.configure(state="normal")
-        self.log.insert("end", line + "\n")
-        self.log.see("end")
-        self.log.configure(state="disabled")
-
-    def _clear_log(self):
-        self.log.configure(state="normal")
-        self.log.delete("1.0", "end")
-        self.log.configure(state="disabled")
-
-    def open_output(self):
-        p = self.output_var.get().strip()
-        if not p:
-            return
-        Path(p).mkdir(parents=True, exist_ok=True)
-        try:
-            if sys.platform == "darwin":
-                os.system(f'open "{p}"')
-            elif os.name == "nt":
-                os.startfile(p)  # type: ignore[attr-defined]
-            else:
-                os.system(f'xdg-open "{p}" >/dev/null 2>&1 &')
-        except Exception as e:
-            messagebox.showerror(APP_NAME, str(e))
+    def on_close(self):
+        if self.worker and self.worker.is_alive():
+            if not messagebox.askyesno(APP_NAME,"翻訳中です。セッションを保存して終了しますか？\n完了済みバッチはキャッシュされ、次回再開できます。"):
+                return
+            self.save_session(active=True)
+            if self.controller: self.controller.request_stop(save=True)
+        self.destroy()
 
 
 if __name__ == "__main__":
-    TranslatorApp().mainloop()
+    app=App(); app.mainloop()
