@@ -16,12 +16,53 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 import translator_core as core
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.5.0"
-APP_HOME = Path.home() / ".paradox_localization_translator"
+APP_VERSION = "0.5.1"
+
+
+def _app_container_dir() -> Path:
+    """Return the directory beside the packaged app/executable when possible."""
+    if getattr(sys, "frozen", False):
+        exe = Path(sys.executable).resolve()
+        if sys.platform == "darwin":
+            for parent in [exe, *exe.parents]:
+                if parent.name.endswith(".app"):
+                    return parent.parent
+        return exe.parent
+    return Path(__file__).resolve().parent.parent
+
+
+def _is_writable_dir(path: Path) -> bool:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / ".write_test"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink(missing_ok=True)
+        return True
+    except Exception:
+        return False
+
+
+def _automatic_data_root() -> Path:
+    beside = _app_container_dir() / "ParadoxLocalizationTranslator_Data"
+    if _is_writable_dir(beside):
+        return beside
+    docs = Path.home() / "Documents" / "Paradox Localization Translator"
+    docs.mkdir(parents=True, exist_ok=True)
+    return docs
+
+
+DATA_ROOT = _automatic_data_root()
+APP_HOME = DATA_ROOT / "設定"
+OUTPUT_ROOT = DATA_ROOT / "翻訳結果"
 SESSION_PATH = APP_HOME / "session.json"
 DEFAULT_GLOSSARY = APP_HOME / "glossary.json"
 STATS_PATH = APP_HOME / "model_stats.json"
 PROFILES_PATH = APP_HOME / "model_profiles.json"
+
+
+def _automatic_output_root() -> Path:
+    OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
+    return OUTPUT_ROOT
 
 
 class App(tk.Tk):
@@ -86,14 +127,17 @@ class App(tk.Tk):
         self.tab_review = ttk.Frame(nb, padding=10)
         self.tab_glossary = ttk.Frame(nb, padding=10)
         self.tab_models = ttk.Frame(nb, padding=10)
+        self.tab_help = ttk.Frame(nb, padding=10)
         nb.add(self.tab_translate, text="翻訳 / キュー")
         nb.add(self.tab_review, text="QA / 比較編集")
         nb.add(self.tab_glossary, text="用語集")
         nb.add(self.tab_models, text="モデル / 接続")
+        nb.add(self.tab_help, text="使い方")
         self._build_translate_tab()
         self._build_review_tab()
         self._build_glossary_tab()
         self._build_models_tab()
+        self._build_help_tab()
 
     def _build_translate_tab(self):
         t = self.tab_translate
@@ -136,7 +180,7 @@ class App(tk.Tk):
         ttk.Button(toolbar,text="ファイル追加",command=self.add_files).pack(side="left",padx=(6,0))
         ttk.Button(toolbar,text="選択削除",command=self.remove_queue).pack(side="left",padx=(6,0))
         ttk.Button(toolbar,text="全消去",command=self.clear_queue).pack(side="left",padx=(6,0))
-        ttk.Button(toolbar,text="出力先変更",command=self.change_output).pack(side="left",padx=(14,0))
+        ttk.Button(toolbar,text="選択項目の出力先変更",command=self.change_output).pack(side="left",padx=(14,0))
         ttk.Button(toolbar,text="セッション読込",command=self.restore_session).pack(side="right")
         ttk.Button(toolbar,text="セッション保存",command=self.save_session).pack(side="right",padx=(0,6))
 
@@ -218,6 +262,68 @@ class App(tk.Tk):
         self.glossary_tree.pack(fill="both",expand=True)
         self.glossary_tree.bind("<Double-1>",lambda e:self.edit_glossary_term())
         self.load_glossary_ui(silent=True)
+
+    def _build_help_tab(self):
+        t = self.tab_help
+        title = ttk.Label(t, text="Paradox Localization Translator 使い方", font=("", 18, "bold"))
+        title.pack(anchor="w", pady=(0, 10))
+        box = tk.Text(t, wrap="word", padx=12, pady=12)
+        box.pack(fill="both", expand=True)
+        guide = """【基本的な使い方】
+
+1. Ollama / LM Studio / クラウドAPIのいずれかを準備します。
+2. 「翻訳 / キュー」タブで［フォルダ追加］または［ファイル追加］を押します。
+3. 必要ならモデル・バッチサイズ・用語集などを設定します。
+4. ［翻訳開始］を押します。
+
+【出力先】
+
+出力先は自動で決まります。
+・アプリ/実行ファイルの隣に書き込める場合:
+  ParadoxLocalizationTranslator_Data/翻訳結果 フォルダ
+・アプリの隣へ書き込めない場合（例: macOSの /Applications）:
+  書類/Documents/Paradox Localization Translator/翻訳結果 フォルダ
+
+セッション、用語集、モデル統計などの自動生成ファイルも同じDataフォルダ内の「設定」にまとめます。
+各翻訳項目は「翻訳結果」の中に「元ファイル名_japanese」または「元フォルダ名_japanese」で作成されます。
+
+出力先を個別に変更したい場合は、キューの対象行をクリックして選択してから［出力先変更］を押してください。
+未選択の場合は案内が表示されます。
+
+【中断と再開】
+
+・［一時停止］: 現在のリクエスト/バッチが終わった安全な地点で停止します。
+・［セーブして中断］: 状態とキャッシュを保存して終了します。次回起動時に復元できます。
+
+【QA / 比較編集】
+
+原文と訳文を読み込み、未翻訳、Paradox構文の破損、誤字脱字候補などを確認できます。
+警告行を選択すると、原文と訳文を並べて編集できます。
+
+【用語集】
+
+Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時に該当する語があればLLMへ自動提示されます。
+
+【LLM接続】
+
+・Ollama: 通常 http://localhost:11434
+・LM Studio: 通常 http://localhost:1234/v1
+・OpenAI / Anthropic / Gemini: APIキーを入力（キーは保存されません）
+・OpenAI Compatible: OpenAI互換APIのURLとキーを指定
+
+【既存日本語の修復】
+
+「既存日本語の未翻訳を修復」をONにすると、l_japanese の中に残った英語なども検出して再翻訳します。
+
+【困ったとき】
+
+・Ollama/LM Studioが起動しているか確認
+・モデルがロード/インストール済みか確認
+・ログ欄の最後のエラーを確認
+・出力先へ書き込めない場合はDocuments側が自動利用されます
+"""
+        box.insert("1.0", guide)
+        box.config(state="disabled")
 
     def _build_models_tab(self):
         t=self.tab_models
@@ -361,7 +467,9 @@ class App(tk.Tk):
 
     # ---------------- queue ----------------
     def _default_output(self,p:Path):
-        return p.parent / (p.stem + "_japanese" if p.is_file() else p.name + "_japanese")
+        root = _automatic_output_root()
+        name = p.stem + "_japanese" if p.is_file() else p.name + "_japanese"
+        return root / name
 
     def add_folder(self):
         p=filedialog.askdirectory(title="翻訳するMod/localizationフォルダを選択")
@@ -393,10 +501,16 @@ class App(tk.Tk):
 
     def change_output(self):
         sel=self.queue_tree.selection()
-        if not sel: return
-        p=filedialog.askdirectory(title="選択項目の出力先")
+        if not sel:
+            messagebox.showinfo(APP_NAME, "出力先を変更する項目を、キュー一覧から先に選択してください。\n\n通常は変更不要です。出力先は自動で『アプリの隣』、書き込めない場合は『書類/Documents』になります。")
+            return
+        current = self.queue_items[int(sel[0])].get("output", "")
+        initial = str(Path(current).parent) if current else str(_automatic_output_root())
+        p=filedialog.askdirectory(title="選択項目の出力先", initialdir=initial)
         if p:
-            self.queue_items[int(sel[0])]["output"]=p; self._refresh_queue_tree()
+            self.queue_items[int(sel[0])]["output"]=p
+            self._refresh_queue_tree()
+            self.save_session(active=bool(self.worker and self.worker.is_alive()))
 
     def start_queue(self):
         if self.worker and self.worker.is_alive(): return
