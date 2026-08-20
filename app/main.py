@@ -34,7 +34,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.6"
+APP_VERSION = "0.11.7"
 
 
 def _app_container_dir() -> Path:
@@ -1862,11 +1862,11 @@ AI校正は現在の翻訳用LLM設定を使用します。設定変更後は［
 検索:
 Mod名や状態を入力して、判定済み一覧を絞り込めます。
 
-選択Modを翻訳:
-選択Modをそのまま翻訳キューへ送ります。ユーザーがファイルを移動する必要はありません。
+キューへ追加:
+複数選択したModは、選択した全件を通常翻訳キューへ追加できます。中国語基準キューでは、中国語localizationがある選択Modを全件追加します。
 
-選択Modを除外して翻訳:
-選択したModだけ除外し、残りの未翻訳/欠損Modをまとめて翻訳キューへ送ります。
+選択Modを除外してキューへ追加:
+選択したModだけ除外し、残りを通常翻訳キュー、または中国語localizationがあるModだけ中国語基準キューへまとめて追加できます。
 
 日本語化Modへの上書き:
 既存日本語化Modがある場合は元Modではなく日本語化Mod側へ不足分を差分反映します。
@@ -2180,11 +2180,11 @@ Mod更新後だけ追加翻訳:
         bottom1=ttk.Frame(bottom); bottom1.pack(fill="x")
         bottom2=ttk.Frame(bottom); bottom2.pack(fill="x", pady=(4,0))
         ttk.Button(bottom1,text="選択Modだけ再調査",command=self.research_selected_status_mods).pack(side="left")
-        ttk.Button(bottom1,text="選択したModを翻訳",command=self.translate_selected_mod_from_status).pack(side="left",padx=(6,0))
-        ttk.Button(bottom1,text="選択Modを除外して翻訳",command=self.translate_all_except_selected_mods).pack(side="left",padx=(6,0))
         ttk.Button(bottom1,text="通常翻訳キューへ追加",command=lambda:self.queue_selected_mod_from_status(start_now=False)).pack(side="left",padx=(6,0))
         self.status_chinese_queue_btn = ttk.Button(bottom1,text="中国語基準キューへ追加",command=self.queue_selected_mods_to_chinese_basis,state="disabled")
         self.status_chinese_queue_btn.pack(side="left",padx=(6,0))
+        ttk.Button(bottom1,text="選択Modを除外して通常翻訳キューへ追加",command=self.queue_all_except_selected_mods).pack(side="left",padx=(6,0))
+        ttk.Button(bottom2,text="選択Modを除外して中国語基準キューへ追加",command=self.queue_all_except_selected_mods_chinese).pack(side="left")
 
         ttk.Button(bottom2,text="QA / 比較編集へ",command=lambda:self._send_pair_to_qa_or_diff("status","review")).pack(side="left")
         ttk.Button(bottom2,text="差分調査へ",command=lambda:self._send_pair_to_qa_or_diff("status","diff")).pack(side="left",padx=(6,0))
@@ -3009,42 +3009,40 @@ Mod更新後だけ追加翻訳:
             messagebox.showinfo(APP_NAME,"選択したModには簡体字中国語（l_simp_chinese）が見つかりませんでした。")
 
     def queue_selected_mod_from_status(self, start_now=False):
-        result = self._selected_mod_status_result()
-        if not result:
-            return None
-        loc = Path(result.get("localization", ""))
-        mod_root = Path(result.get("path", ""))
-        if not loc.is_dir():
-            messagebox.showerror(APP_NAME, "このModのlocalizationフォルダを確認できません。")
-            return None
-        if result.get("status") in {"翻訳あり", "別Modで完全翻訳"} and not result.get("gap_count"):
-            if not messagebox.askyesno(APP_NAME, f"{result.get('mod','このMod')} は日本語翻訳済みと判定されています。\nそれでも翻訳しますか？"):
-                return None
-        self._append_queue(loc)
-        item = self.queue_items[-1]
-        item["mod_root"] = str(mod_root)
-        item["mod_localization"] = str(loc)
-        item["mod_name"] = result.get("mod", mod_root.name)
-        item["direct_from_status"] = True
-        item["external_translation_mod"] = result.get("external_translation_mod", "")
-        item["external_translation_path"] = result.get("external_translation_path", "")
-        item["external_translation_localization"] = result.get("external_translation_localization", "")
-        item["external_gap_keys"] = [c.get("key") for c in result.get("external_translation_gaps", []) if c.get("key")]
+        """翻訳状況で選択したModをすべて通常翻訳キューへ追加する。"""
+        selected = self._selected_mod_status_results()
+        if not selected:
+            messagebox.showinfo(APP_NAME, "翻訳状況の一覧からModを1件以上選択してください。")
+            return []
+        added=[]; skipped=[]
+        for result in selected:
+            loc = Path(result.get("localization", ""))
+            if not loc.is_dir():
+                skipped.append(result.get("mod", Path(result.get("path", "")).name))
+                continue
+            item=self._queue_mod_status_result(result)
+            if item is not None:
+                added.append(item)
         self._refresh_queue_tree()
         self.save_session(active=False)
-        try:
-            self.notebook.select(self.tab_translate)
-        except Exception:
-            pass
-        if start_now:
+        if added:
+            try:self.notebook.select(self.tab_translate)
+            except Exception:pass
+        if start_now and added:
             if self.worker and self.worker.is_alive():
-                messagebox.showinfo(APP_NAME, "現在ほかの翻訳を実行中のため、選択Modをキュー末尾へ追加しました。")
+                messagebox.showinfo(APP_NAME, f"{len(added)} Modをキュー末尾へ追加しました。現在の翻訳完了後に続けて処理します。")
             else:
                 self.start_queue()
-        return item
+        elif added:
+            msg=f"選択した {len(added)} Modを通常翻訳キューへ追加しました。"
+            if skipped: msg += f"\nlocalizationを確認できずスキップ: {len(skipped)}件"
+            messagebox.showinfo(APP_NAME,msg)
+        elif skipped:
+            messagebox.showinfo(APP_NAME,"選択したModから調査可能なlocalizationフォルダを確認できませんでした。")
+        return added
 
     def translate_selected_mod_from_status(self):
-        """Translate the selected researched mod without requiring the user to move files."""
+        """互換用。選択Modを通常翻訳キューへ追加して開始する。"""
         self.queue_selected_mod_from_status(start_now=True)
 
     def _selected_mod_status_results(self):
@@ -3095,61 +3093,72 @@ Mod更新後だけ追加翻訳:
         item["external_gap_keys"] = [c.get("key") for c in result.get("external_translation_gaps", []) if c.get("key")]
         return item
 
-    def translate_all_except_selected_mods(self):
-        """Translate all researched mods that need work except the selected mods."""
+    def _status_results_except_selected(self):
         if not self.mod_research_results:
             messagebox.showinfo(APP_NAME, "先にModの翻訳状況を調査してください。")
-            return
-        selected = self._selected_mod_status_results()
+            return None, None
+        selected=self._selected_mod_status_results()
         if not selected:
             messagebox.showinfo(APP_NAME, "除外するModを1つ以上選択してください。\nCtrlキーを押しながらクリックすると複数選択できます。")
-            return
-        excluded = {str(Path(r.get("path", ""))) for r in selected}
-        targets = []
-        skipped_complete = 0
-        for result in self.mod_research_results:
-            path = str(Path(result.get("path", "")))
-            if path in excluded:
-                continue
-            # Fully translated mods do not need another translation pass.
+            return None, None
+        excluded={str(Path(r.get("path", ""))) for r in selected}
+        remaining=[r for r in self.mod_research_results if str(Path(r.get("path", ""))) not in excluded]
+        return selected, remaining
+
+    def queue_all_except_selected_mods(self):
+        """選択Modを除外し、残りを通常翻訳キューへ一括追加する。"""
+        selected, remaining=self._status_results_except_selected()
+        if selected is None: return
+        targets=[]; skipped_complete=0; skipped_invalid=0
+        for result in remaining:
             if result.get("status") in {"翻訳あり", "別Modで完全翻訳"} and not result.get("gap_count"):
                 skipped_complete += 1
                 continue
-            loc = Path(result.get("localization", ""))
-            if loc.is_dir():
-                targets.append(result)
+            if Path(result.get("localization", "")).is_dir(): targets.append(result)
+            else: skipped_invalid += 1
         if not targets:
-            messagebox.showinfo(APP_NAME, "選択したModを除外すると、翻訳が必要なModは残っていません。")
+            messagebox.showinfo(APP_NAME,"選択したModを除外すると、通常翻訳キューへ追加できるModは残っていません。")
             return
-        excluded_names = "、".join(r.get("mod", Path(r.get("path", "")).name) for r in selected[:8])
-        if len(selected) > 8:
-            excluded_names += f" ほか{len(selected)-8}件"
-        detail = (
-            f"選択した {len(selected)} Modを除外し、残りの翻訳対象 {len(targets)} Modをキューへ追加します。\n\n"
-            f"除外: {excluded_names}"
-        )
-        if skipped_complete:
-            detail += f"\n\n翻訳済み判定の {skipped_complete} Modは自動的に対象外です。"
-        detail += "\n\nこのまま翻訳を開始しますか？"
-        if not messagebox.askyesno(APP_NAME, detail):
-            return
-        added = 0
-        for result in targets:
-            if self._queue_mod_status_result(result) is not None:
+        added=sum(1 for r in targets if self._queue_mod_status_result(r) is not None)
+        self._refresh_queue_tree(); self.save_session(active=False)
+        if added:
+            try:self.notebook.select(self.tab_translate)
+            except Exception:pass
+        messagebox.showinfo(APP_NAME, f"選択した {len(selected)} Modを除外し、{added} Modを通常翻訳キューへ追加しました。\n翻訳済みで対象外: {skipped_complete}件\nlocalizationなし: {skipped_invalid}件")
+
+    def queue_all_except_selected_mods_chinese(self):
+        """選択Modを除外し、残りのうち中国語localizationがあるModを中国語基準キューへ一括追加する。"""
+        selected, remaining=self._status_results_except_selected()
+        if selected is None: return
+        added=0; no_chinese=0; invalid=0
+        for result in remaining:
+            loc=Path(result.get("localization", ""))
+            if not loc.is_dir():
+                invalid += 1; continue
+            has_zh=bool(result.get("simp_chinese_files",0))
+            if not has_zh:
+                try: has_zh=any(core.parse_localization_file(f)[0]=="simp_chinese" for f in core.gather_yml_files(loc))
+                except Exception: has_zh=False
+            if not has_zh:
+                no_chinese += 1; continue
+            item,_=self._append_chinese_queue(loc,result.get("mod",loc.name))
+            if item:
+                mod_root=Path(result.get("path", ""))
+                item["mod_root"]=str(mod_root); item["mod_localization"]=str(loc); item["direct_from_status"]=True
+                item["external_translation_mod"]=result.get("external_translation_mod","")
+                item["external_translation_path"]=result.get("external_translation_path","")
+                item["external_translation_localization"]=result.get("external_translation_localization","")
+                item["external_gap_keys"]=[c.get("key") for c in result.get("external_translation_gaps",[]) if c.get("key")]
                 added += 1
-        self._refresh_queue_tree()
-        self.save_session(active=False)
-        try:
-            self.notebook.select(self.tab_translate)
-        except Exception:
-            pass
-        if not added:
-            messagebox.showinfo(APP_NAME, "翻訳キューへ追加できるModがありませんでした。")
-            return
-        if self.worker and self.worker.is_alive():
-            messagebox.showinfo(APP_NAME, f"{added} Modをキュー末尾へ追加しました。現在の翻訳完了後に続けて処理します。")
-        else:
-            self.start_queue()
+        self._refresh_chinese_queue_tree()
+        if added:
+            try:self.notebook.select(self.tab_chinese)
+            except Exception:pass
+        messagebox.showinfo(APP_NAME, f"選択した {len(selected)} Modを除外し、中国語localizationがある {added} Modを中国語基準キューへ追加しました。\n中国語なし: {no_chinese}件\nlocalizationなし: {invalid}件")
+
+    def translate_all_except_selected_mods(self):
+        """旧呼び出し互換。現在は開始せず通常翻訳キューへ追加する。"""
+        self.queue_all_except_selected_mods()
 
     def _infer_mod_target_for_item(self, item):
         loc = Path(item.get("mod_localization", "")) if item.get("mod_localization") else None
@@ -3368,7 +3377,7 @@ Mod更新後だけ追加翻訳:
             if item.get("mod_localization") == loc or item.get("input") == loc:
                 candidates.append((idx,item))
         if not candidates:
-            messagebox.showinfo(APP_NAME, "このModの完成済み翻訳がキューに見つかりません。\n先に『選択したModを翻訳』を実行してください。")
+            messagebox.showinfo(APP_NAME, "このModの完成済み翻訳がキューに見つかりません。\n先に『通常翻訳キューへ追加』で対象Modをキューへ追加し、翻訳を完了してください。")
             return
         idx,item=candidates[-1]
         self.overwrite_selected_translation_to_mod(item_override=item)
