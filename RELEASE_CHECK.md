@@ -49,3 +49,17 @@
 - Session behavior: completed queue is not persisted on exit; unfinished queue is persisted for one restore prompt
 - Declining restore deletes the stale session
 - Chinese basis overwrite UI consolidated to one button
+
+
+## v0.9.5 QA回帰確認
+
+- Python構文チェック: PASS
+- GUI起動 / 11タブ生成: PASS
+- 英語原文QA: PASS
+- 簡体字中国語原文QA: PASS
+- 中国語の未翻訳原文検出: PASS
+- Paradoxトークン不一致検出: PASS
+- 中国語用語集固定訳チェック: PASS
+- 簡体字中国語→日本語の差分判定: PASS
+- 中国語基準翻訳後の自動QAレポート生成: PASS
+- 中国語基準翻訳の手動QAヘルパー: PASS

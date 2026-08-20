@@ -34,7 +34,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.9.3"
+APP_VERSION = "0.9.5"
 
 
 def _app_container_dir() -> Path:
@@ -253,6 +253,7 @@ class App(BaseTk):
         self.repair_var = tk.BooleanVar(value=True)
         self.dual_var = tk.BooleanVar(value=False)
         self.autoqa_var = tk.BooleanVar(value=True)
+        self.chinese_autoqa_var = tk.BooleanVar(value=bool(last_translation.get("chinese_autoqa", True)))
         self.glossary_path_var = tk.StringVar(value=str(DEFAULT_GLOSSARY))
         self.connection_var = tk.StringVar(value="LLM接続確認中…")
         self.profile_var = tk.StringVar(value="")
@@ -261,6 +262,7 @@ class App(BaseTk):
         self.review_src_var = tk.StringVar()
         self.review_dst_var = tk.StringVar()
         self.qa_summary_var = tk.StringVar(value="QA未実行")
+        self.review_source_lang = "english"
 
         # Simplified Chinese basis translation
         self.chinese_input_var = tk.StringVar(value="")
@@ -281,6 +283,7 @@ class App(BaseTk):
         self.diff_rows = []
         self.diff_row_by_key = {}
         self.diff_controller: core.TranslationController | None = None
+        self.diff_source_lang = "english"
         self.search_path_var = tk.StringVar(value="")
         self.search_query_var = tk.StringVar(value="")
         self.search_summary_var = tk.StringVar(value="検索待機中")
@@ -691,9 +694,13 @@ class App(BaseTk):
         ttk.Button(outbar,text="選択",command=self.pick_chinese_output).pack(side="left")
         ttk.Button(outbar,text="開く",command=lambda:self._open_path(Path(self.chinese_output_var.get()))).pack(side="left",padx=(5,0))
 
-        settings=ttk.LabelFrame(left,text="使用する翻訳設定",padding=9); settings.pack(fill="x",pady=(5,0))
+        settings=ttk.LabelFrame(left,text="使用する翻訳設定 / QA",padding=9); settings.pack(fill="x",pady=(5,0))
         ttk.Label(settings,text="通常翻訳タブのプロバイダ / URL / モデル / バッチ / 並列 / プリセット / 用語集を使用します。",wraplength=430,justify="left").pack(anchor="w")
         ttk.Label(settings,text="中国語の漢字語彙を優先し、不要な英語風カタカナ化を避けます。",foreground="#7a4b00",wraplength=430).pack(anchor="w",pady=(5,0))
+        qa_line=ttk.Frame(settings); qa_line.pack(fill="x",pady=(7,0))
+        ttk.Checkbutton(qa_line,text="翻訳後に中国語翻訳語自動QA",variable=self.chinese_autoqa_var,command=self._save_llm_preferences).pack(side="left")
+        ttk.Button(qa_line,text="選択項目の翻訳語QAを実行",command=self.run_selected_chinese_qa).pack(side="left",padx=(8,0))
+        ttk.Label(settings,text="QAでは未翻訳の中国語原文、キー欠落、ゲーム変数/タグ、誤字脱字、用語集の固定訳を確認します。",foreground="#555",wraplength=430,justify="left").pack(anchor="w",pady=(5,0))
 
         qbox=ttk.LabelFrame(right,text="中国語基準翻訳キュー",padding=8); qbox.pack(fill="both",expand=True)
         qbar=ttk.Frame(qbox); qbar.pack(fill="x",pady=(0,5))
@@ -893,6 +900,26 @@ class App(BaseTk):
 
         self.overwrite_selected_translation_to_mod(item_override=item, prefer_external=False)
 
+    def run_selected_chinese_qa(self):
+        item=self._selected_chinese_queue_item()
+        if not item: return
+        inp=Path(item.get("input", "")); out=Path(item.get("output", ""))
+        if not inp.exists():
+            messagebox.showerror(APP_NAME,"中国語原文が見つかりません。"); return
+        if not out.exists():
+            messagebox.showinfo(APP_NAME,"まだ翻訳出力がありません。先に中国語基準翻訳を実行してください。"); return
+        try:
+            result=core.qa_chinese_basis_translation(inp,out,self.glossary_path_var.get().strip() or None)
+            report_path=out / "chinese_basis_qa_report.json"
+            core.save_json(report_path,{"source_language":"simp_chinese",**result})
+            self._append_chinese_log(f"翻訳語QA: error {result['errors']} / warning {result['warnings']} / 確認 {result['checked_files']}ファイル")
+            if result.get("missing_outputs"):
+                self._append_chinese_log(f"翻訳語QA: 対応する日本語出力がないファイル {result['missing_outputs']}件")
+            messagebox.showinfo(APP_NAME,f"中国語翻訳語QAが完了しました。\n\nエラー: {result['errors']}\n警告: {result['warnings']}\n確認ファイル: {result['checked_files']}\n\nレポート: {report_path}")
+        except Exception as exc:
+            record_error("中国語翻訳語QA",exc)
+            messagebox.showerror(APP_NAME,str(exc))
+
     def pick_chinese_file(self):
         raw=filedialog.askopenfilename(title="簡体字中国語YAMLを選択",filetypes=[("Paradox YAML","*.yml *.yaml"),("All files","*")])
         if not raw:return
@@ -933,11 +960,11 @@ class App(BaseTk):
         self.chinese_progress["value"]=0; self.chinese_progress_var.set("キュー翻訳準備中…"); self.llm_operation="中国語基準翻訳"
         self.chinese_controller=core.TranslationController(progress_callback=lambda x:self.events.put(("chinese_progress",x)))
         self.chinese_start_btn.config(state="disabled"); self.chinese_pause_btn.config(state="normal", text="一時停止"); self.chinese_stop_btn.config(state="normal")
-        settings={"provider":self.provider_var.get(),"url":self.url_var.get().strip(),"model":self.model_var.get().strip(),"api_key":self.api_key_var.get().strip(),"preset":self.preset_var.get(),"batch":max(1,self.batch_var.get()),"workers":max(1,self.workers_var.get()),"glossary":self.glossary_path_var.get().strip() or None,"autoqa":self.autoqa_var.get()}
+        settings={"provider":self.provider_var.get(),"url":self.url_var.get().strip(),"model":self.model_var.get().strip(),"api_key":self.api_key_var.get().strip(),"preset":self.preset_var.get(),"batch":max(1,self.batch_var.get()),"workers":max(1,self.workers_var.get()),"glossary":self.glossary_path_var.get().strip() or None,"autoqa":self.chinese_autoqa_var.get()}
         snapshot=[dict(x) for x in self.chinese_queue_items]
         def worker():
             try:
-                total=len(snapshot); completed=0
+                total=len(snapshot); completed=0; qa_errors=0; qa_warnings=0
                 for i,item in enumerate(snapshot):
                     if self.chinese_controller.stop_event.is_set(): break
                     self.events.put(("chinese_queue_status",(i,"翻訳中")))
@@ -949,10 +976,12 @@ class App(BaseTk):
                     if 0 <= i < len(self.chinese_queue_items):
                         self.chinese_queue_items[i]["output"]=str(out); self.chinese_queue_items[i]["cache"]=str(cache)
                     result=core.run_chinese_basis_translation(inp,out,model=settings["model"],url=settings["url"],workers=settings["workers"],batch_size=settings["batch"],cache_path=cache,controller=self.chinese_controller,glossary_path=settings["glossary"],preset=settings["preset"],auto_qa=settings["autoqa"],provider=settings["provider"],api_key=settings["api_key"])
+                    qa_errors += int(result.get("qa_errors",0) or 0)
+                    qa_warnings += int(result.get("qa_warnings",0) or 0)
                     if result.get("interrupted"):
                         self.events.put(("chinese_queue_status",(i,"中断"))); break
                     completed+=1; self.events.put(("chinese_queue_status",(i,"完了")))
-                self.events.put(("chinese_done",{"interrupted":self.chinese_controller.stop_event.is_set(),"processed_files":completed,"jobs":0,"output":str(out_root),"queue_total":total}))
+                self.events.put(("chinese_done",{"interrupted":self.chinese_controller.stop_event.is_set(),"processed_files":completed,"jobs":0,"output":str(out_root),"queue_total":total,"qa_errors":qa_errors,"qa_warnings":qa_warnings}))
             except Exception as exc: self.events.put(("chinese_error",str(exc)))
         self.chinese_worker=threading.Thread(target=worker,daemon=True); self.chinese_worker.start()
 
@@ -992,7 +1021,7 @@ class App(BaseTk):
         self.review_dst_entry.grid(row=1,column=1,sticky="ew",padx=6,pady=(5,0))
         ttk.Button(pf,text="選択",command=lambda:self.pick_review_file(self.review_dst_var)).grid(row=1,column=2,pady=(5,0))
         ttk.Button(pf,text="比較を読み込む",command=self.load_review).grid(row=0,column=3,rowspan=2,padx=(8,0))
-        self.review_drop_hint=ttk.Label(pf,text="英語/原文YAMLと日本語YAMLをここへドラッグ＆ドロップできます" if DND_AVAILABLE else "ドラッグ＆ドロップはこのビルドでは利用できません",foreground="#555")
+        self.review_drop_hint=ttk.Label(pf,text="英語または簡体字中国語の原文YAMLと日本語YAMLをここへドラッグ＆ドロップできます" if DND_AVAILABLE else "ドラッグ＆ドロップはこのビルドでは利用できません",foreground="#555")
         self.review_drop_hint.grid(row=2,column=0,columnspan=4,sticky="ew",pady=(7,0))
 
         qa=ttk.Frame(t); qa.pack(fill="x",pady=(8,5))
@@ -1014,7 +1043,7 @@ class App(BaseTk):
         rys=ttk.Scrollbar(left,command=self.review_tree.yview); self.review_tree.configure(yscrollcommand=rys.set)
         self.review_tree.pack(side="left",fill="both",expand=True); rys.pack(side="right",fill="y")
 
-        ttk.Label(right,text="原文").pack(anchor="w")
+        ttk.Label(right,text="原文（英語 / 簡体字中国語）").pack(anchor="w")
         self.src_text=tk.Text(right,height=7,wrap="word"); self.src_text.pack(fill="x",pady=(2,8))
         ttk.Label(right,text="訳文（編集可）").pack(anchor="w")
         self.dst_text=tk.Text(right,height=10,wrap="word"); self.dst_text.pack(fill="both",expand=True,pady=(2,6))
@@ -1028,9 +1057,9 @@ class App(BaseTk):
 
     def _build_diff_tab(self):
         t = self.tab_diff
-        pf = ttk.LabelFrame(t, text="英語 / 日本語ファイル", padding=8); pf.pack(fill="x")
+        pf = ttk.LabelFrame(t, text="原文（英語 / 簡体字中国語） / 日本語ファイル", padding=8); pf.pack(fill="x")
         pf.columnconfigure(1, weight=1)
-        ttk.Label(pf, text="英語・原文").grid(row=0, column=0, sticky="w")
+        ttk.Label(pf, text="原文（英語 / 中国語）").grid(row=0, column=0, sticky="w")
         self.diff_src_entry=ttk.Entry(pf, textvariable=self.diff_src_var)
         self.diff_src_entry.grid(row=0, column=1, sticky="ew", padx=6)
         ttk.Button(pf, text="選択", command=lambda:self.pick_review_file(self.diff_src_var)).grid(row=0, column=2)
@@ -1039,7 +1068,7 @@ class App(BaseTk):
         self.diff_dst_entry.grid(row=1, column=1, sticky="ew", padx=6, pady=(5,0))
         ttk.Button(pf, text="選択", command=lambda:self.pick_review_file(self.diff_dst_var)).grid(row=1, column=2, pady=(5,0))
         ttk.Button(pf, text="差分を調査", command=self.load_diff_inspector).grid(row=0, column=3, rowspan=2, padx=(8,0))
-        self.diff_drop_hint=ttk.Label(pf,text="英語/原文YAMLと日本語YAMLをここへドラッグ＆ドロップできます" if DND_AVAILABLE else "ドラッグ＆ドロップはこのビルドでは利用できません",foreground="#555")
+        self.diff_drop_hint=ttk.Label(pf,text="英語または簡体字中国語の原文YAMLと日本語YAMLをここへドラッグ＆ドロップできます" if DND_AVAILABLE else "ドラッグ＆ドロップはこのビルドでは利用できません",foreground="#555")
         self.diff_drop_hint.grid(row=2,column=0,columnspan=4,sticky="ew",pady=(7,0))
 
         bar = ttk.Frame(t); bar.pack(fill="x", pady=(8,5))
@@ -1068,7 +1097,7 @@ class App(BaseTk):
 
         compare = ttk.Panedwindow(right, orient="horizontal"); compare.pack(fill="both", expand=True)
         srcf = ttk.Frame(compare); dstf = ttk.Frame(compare); compare.add(srcf, weight=1); compare.add(dstf, weight=1)
-        ttk.Label(srcf, text="英語 / 原文").pack(anchor="w")
+        ttk.Label(srcf, text="原文（英語 / 簡体字中国語）").pack(anchor="w")
         self.diff_src_text = tk.Text(srcf, wrap="word"); self.diff_src_text.pack(fill="both", expand=True, padx=(0,4), pady=(2,0))
         ttk.Label(dstf, text="日本語（直接編集可）").pack(anchor="w")
         self.diff_dst_text = tk.Text(dstf, wrap="word"); self.diff_dst_text.pack(fill="both", expand=True, padx=(4,0), pady=(2,0))
@@ -2128,6 +2157,7 @@ Mod更新後だけ追加翻訳:
                     # バッチ/並列も前回値を復元する。中国語基準翻訳も同じ翻訳設定を共有する。
                     "batch": max(1, self.batch_var.get()),
                     "workers": max(1, self.workers_var.get()),
+                    "chinese_autoqa": bool(self.chinese_autoqa_var.get()),
                 },
                 "monitor_llm": {
                     "provider": self.monitor_provider_var.get(),
@@ -3022,21 +3052,49 @@ Mod更新後だけ追加翻訳:
 
     def _build_models_tab(self):
         t=self.tab_models
-        conn=ttk.LabelFrame(t,text="接続",padding=8); conn.pack(fill="x")
+
+        body=ttk.Panedwindow(t, orient="horizontal")
+        body.pack(fill="both", expand=True)
+        left=ttk.Frame(body)
+        right=ttk.Frame(body)
+        body.add(left, weight=2)
+        body.add(right, weight=3)
+
+        conn=ttk.LabelFrame(left,text="接続",padding=8)
+        conn.pack(fill="x")
         ttk.Label(conn,text="プロバイダ").grid(row=0,column=0,sticky="w")
         pc=ttk.Combobox(conn,textvariable=self.provider_var,values=["Ollama","LM Studio","OpenAI","Anthropic","Gemini","OpenAI Compatible"],state="readonly",width=14)
-        pc.grid(row=0,column=1,padx=6); pc.bind("<<ComboboxSelected>>",lambda e:self.on_provider_change())
-        ttk.Label(conn,text="API URL").grid(row=0,column=2,sticky="e")
-        conn.columnconfigure(3,weight=1)
-        ttk.Entry(conn,textvariable=self.url_var).grid(row=0,column=3,sticky="ew",padx=6)
-        ttk.Button(conn,text="接続確認 / モデル再読込",command=self.refresh_models).grid(row=0,column=4)
-        ttk.Label(conn,textvariable=self.connection_var).grid(row=1,column=0,columnspan=5,sticky="w",pady=(7,0))
-        ttk.Label(conn,text="APIキー").grid(row=2,column=0,sticky="w",pady=(4,0))
-        ttk.Entry(conn,textvariable=self.api_key_var,show="•").grid(row=2,column=1,columnspan=3,sticky="ew",padx=6,pady=(4,0))
-        ttk.Label(conn,text="キーは保存しません",foreground="#666").grid(row=2,column=4,sticky="w",pady=(4,0))
-        ttk.Label(conn,text="ローカル: Ollama / LM Studio　クラウド: OpenAI / Anthropic / Gemini / OpenAI互換API",foreground="#666").grid(row=3,column=0,columnspan=5,sticky="w",pady=(4,0))
+        pc.grid(row=0,column=1,padx=6,sticky="ew"); pc.bind("<<ComboboxSelected>>",lambda e:self.on_provider_change())
+        ttk.Label(conn,text="API URL").grid(row=1,column=0,sticky="w",pady=(6,0))
+        ttk.Entry(conn,textvariable=self.url_var).grid(row=1,column=1,columnspan=2,sticky="ew",padx=6,pady=(6,0))
+        ttk.Button(conn,text="接続確認 / モデル再読込",command=self.refresh_models).grid(row=0,column=2,rowspan=2,sticky="ns",padx=(6,0))
+        ttk.Label(conn,textvariable=self.connection_var).grid(row=2,column=0,columnspan=3,sticky="w",pady=(7,0))
+        ttk.Label(conn,text="APIキー").grid(row=3,column=0,sticky="w",pady=(6,0))
+        ttk.Entry(conn,textvariable=self.api_key_var,show="•").grid(row=3,column=1,columnspan=2,sticky="ew",padx=6,pady=(6,0))
+        ttk.Label(conn,text="キーは保存しません",foreground="#666").grid(row=4,column=0,columnspan=3,sticky="w",pady=(4,0))
+        ttk.Label(conn,text="ローカル: Ollama / LM Studio　クラウド: OpenAI / Anthropic / Gemini / OpenAI互換API",foreground="#666",wraplength=440,justify="left").grid(row=5,column=0,columnspan=3,sticky="w",pady=(4,0))
+        conn.columnconfigure(1,weight=1)
 
-        bench=ttk.LabelFrame(t,text="モデル速度比較（実翻訳時の統計も自動記録）",padding=8); bench.pack(fill="both",expand=True,pady=(10,0))
+        pf=ttk.LabelFrame(left,text="モデルプロファイル",padding=8)
+        pf.pack(fill="both",expand=True,pady=(10,0))
+        pb=ttk.Frame(pf); pb.pack(fill="x",pady=(0,6))
+        ttk.Button(pb,text="現在設定をプロファイル保存",command=self.save_current_profile).pack(side="left")
+        ttk.Button(pb,text="選択を適用",command=self.apply_profile_from_tree).pack(side="left",padx=(6,0))
+        ttk.Button(pb,text="選択を削除",command=self.delete_profile).pack(side="left",padx=(6,0))
+        self.profile_tree=ttk.Treeview(pf,columns=("name","label","provider","model","batch","workers"),show="headings",height=11)
+        for c,txt,w in (("name","名前",160),("label","用途",130),("provider","方式",80),("model","モデル",250),("batch","バッチ",70),("workers","並列",60)):
+            self.profile_tree.heading(c,text=txt); self.profile_tree.column(c,width=w)
+        self._enable_tree_sort(self.profile_tree)
+        pscroll_y=ttk.Scrollbar(pf,orient="vertical",command=self.profile_tree.yview)
+        pscroll_x=ttk.Scrollbar(pf,orient="horizontal",command=self.profile_tree.xview)
+        self.profile_tree.configure(yscrollcommand=pscroll_y.set,xscrollcommand=pscroll_x.set)
+        self.profile_tree.pack(fill="both",expand=True)
+        pscroll_x.pack(fill="x")
+        pscroll_y.pack(side="right",fill="y")
+        self.profile_tree.bind("<Double-1>",lambda e:self.apply_profile_from_tree())
+
+        bench=ttk.LabelFrame(right,text="モデル速度比較（実翻訳時の統計も自動記録）",padding=8)
+        bench.pack(fill="both",expand=True)
         bar=ttk.Frame(bench); bar.pack(fill="x",pady=(0,6))
         ttk.Button(bar,text="現在のLLMを速度テスト",command=self.benchmark_selected_model).pack(side="left")
         ttk.Button(bar,text="選択したモデルを比較テスト",command=self.benchmark_selected_models).pack(side="left",padx=(6,0))
@@ -3048,29 +3106,24 @@ Mod更新後だけ追加翻訳:
 
         select_box=ttk.LabelFrame(bench,text="比較するモデルを選択（最大5モデル）",padding=6)
         select_box.pack(fill="x",pady=(0,8))
-        ttk.Label(select_box,text="Ctrlキーを押しながらクリックすると複数選択できます。最大5モデルまで選択できます。",foreground="#666").pack(anchor="w",pady=(0,4))
+        ttk.Label(select_box,text="小さく：Ctrlキーを押しながら複数選択できます。最大5モデルまで選択できます。",foreground="#666").pack(anchor="w",pady=(0,4))
         self.benchmark_model_list=tk.Listbox(select_box,selectmode=tk.EXTENDED,exportselection=False,height=5)
         self._enable_ctrl_multiselect(self.benchmark_model_list, max_items=5)
         self.benchmark_model_list.pack(fill="x")
         self.benchmark_model_list.bind("<<ListboxSelect>>",self._limit_benchmark_selection)
+
         cols=("provider","model","requests","avg","tps","fail")
-        self.stats_tree=ttk.Treeview(bench,columns=cols,show="headings",height=9)
+        self.stats_tree=ttk.Treeview(bench,columns=cols,show="headings",height=14)
         for c,txt,w in (("provider","プロバイダ",100),("model","モデル",330),("requests","回数",70),("avg","平均秒",90),("tps","tokens/s",100),("fail","失敗率",90)):
             self.stats_tree.heading(c,text=txt); self.stats_tree.column(c,width=w,anchor="center" if c not in ("model",) else "w")
         self._enable_tree_sort(self.stats_tree)
+        sscroll_y=ttk.Scrollbar(bench,orient="vertical",command=self.stats_tree.yview)
+        sscroll_x=ttk.Scrollbar(bench,orient="horizontal",command=self.stats_tree.xview)
+        self.stats_tree.configure(yscrollcommand=sscroll_y.set,xscrollcommand=sscroll_x.set)
         self.stats_tree.pack(fill="both",expand=True)
+        sscroll_x.pack(fill="x")
+        sscroll_y.pack(side="right",fill="y")
 
-        pf=ttk.LabelFrame(t,text="モデルプロファイル",padding=8); pf.pack(fill="both",expand=True,pady=(10,0))
-        pb=ttk.Frame(pf); pb.pack(fill="x",pady=(0,6))
-        ttk.Button(pb,text="現在設定をプロファイル保存",command=self.save_current_profile).pack(side="left")
-        ttk.Button(pb,text="選択を適用",command=self.apply_profile_from_tree).pack(side="left",padx=(6,0))
-        ttk.Button(pb,text="選択を削除",command=self.delete_profile).pack(side="left",padx=(6,0))
-        self.profile_tree=ttk.Treeview(pf,columns=("name","label","provider","model","batch","workers"),show="headings",height=7)
-        for c,txt,w in (("name","名前",180),("label","用途",160),("provider","方式",90),("model","モデル",300),("batch","バッチ",70),("workers","並列",60)):
-            self.profile_tree.heading(c,text=txt); self.profile_tree.column(c,width=w)
-        self._enable_tree_sort(self.profile_tree)
-        self.profile_tree.pack(fill="both",expand=True)
-        self.profile_tree.bind("<Double-1>",lambda e:self.apply_profile_from_tree())
         self.refresh_model_stats_ui(); self.refresh_profiles_ui()
 
     def on_provider_change(self):
@@ -3469,7 +3522,7 @@ Mod更新後だけ追加翻訳:
         if src and dst:
             self.load_review()
         elif files:
-            side = "日本語YAML" if src else "英語/原文YAML"
+            side = "日本語YAML" if src else "英語または簡体字中国語の原文YAML"
             self.qa_summary_var.set(f"片方を受け取りました。{side}もドロップしてください。")
         else:
             messagebox.showinfo(APP_NAME,"QAにはYAMLファイル、またはYAMLを含むフォルダをドロップしてください。")
@@ -3483,7 +3536,7 @@ Mod更新後だけ追加翻訳:
         if src and dst:
             self.load_diff_inspector()
         elif files:
-            self.diff_summary_var.set("片方を受け取りました。英語/原文と日本語の両方をドロップしてください。")
+            self.diff_summary_var.set("片方を受け取りました。英語または簡体字中国語の原文と日本語の両方をドロップしてください。")
         else:
             messagebox.showinfo(APP_NAME,"差分調査にはYAMLファイル、またはYAMLを含むフォルダをドロップしてください。")
         return event.action if hasattr(event,"action") else None
@@ -3757,10 +3810,11 @@ Mod更新後だけ追加翻訳:
         src = Path(self.diff_src_var.get())
         dst = Path(self.diff_dst_var.get())
         if not src.exists() or not dst.exists():
-            messagebox.showerror(APP_NAME, "英語/原文ファイルと日本語ファイルの両方を選択してください。")
+            messagebox.showerror(APP_NAME, "英語または簡体字中国語の原文ファイルと日本語ファイルの両方を選択してください。")
             return
         try:
             source_lang, self.diff_source_entries, _ = core.parse_localization_file(src)
+            self.diff_source_lang = source_lang
             _, self.diff_target_entries, _ = core.parse_localization_file(dst)
             self.diff_rows = core.compare_localization_entries(self.diff_source_entries, self.diff_target_entries, source_lang)
             self.diff_row_by_key = {r["key"]: r for r in self.diff_rows}
@@ -3840,7 +3894,8 @@ Mod更新後だけ追加翻訳:
                     if self.diff_controller.stop_event.is_set(): raise core.StopRequested()
                     self.events.put(("diff_translate_status", (i, len(keys), key)))
                     out[key] = core.translate_single_text(self.url_var.get(), self.model_var.get(), self.diff_source_entries[key], source_lang,
-                                                          glossary, self.preset_var.get(), self.provider_var.get(), self.api_key_var.get().strip(), self.diff_controller)
+                                                          glossary, self.preset_var.get(), self.provider_var.get(), self.api_key_var.get().strip(), self.diff_controller,
+                                                          chinese_basis=(source_lang == "simp_chinese"))
                 core.upsert_localization_values(dst_path, out)
                 self.events.put(("diff_translate_done", len(out)))
             except core.StopRequested:
@@ -3916,7 +3971,10 @@ Mod更新後だけ追加翻訳:
         try:
             _,self.review_target_entries,_=core.parse_localization_file(dst)
             src=Path(self.review_src_var.get()) if self.review_src_var.get() else None
-            self.review_source_entries=core.parse_localization_file(src)[1] if src and src.exists() else {}
+            if src and src.exists():
+                self.review_source_lang,self.review_source_entries,_=core.parse_localization_file(src)
+            else:
+                self.review_source_lang="english"; self.review_source_entries={}
             self.run_review_qa()
         except Exception as e: messagebox.showerror(APP_NAME,str(e))
 
@@ -3924,7 +3982,7 @@ Mod更新後だけ追加翻訳:
         if not self.review_target_entries and self.review_dst_var.get():
             try: _,self.review_target_entries,_=core.parse_localization_file(Path(self.review_dst_var.get()))
             except Exception as e: messagebox.showerror(APP_NAME,str(e)); return
-        self.review_issues=core.qa_entries(self.review_target_entries,self.review_source_entries or None)
+        self.review_issues=core.qa_entries(self.review_target_entries,self.review_source_entries or None,self.review_source_lang,core.load_glossary(Path(self.glossary_path_var.get())) if self.glossary_path_var.get() else {})
         self.review_issue_by_key={}
         for issue in self.review_issues: self.review_issue_by_key.setdefault(issue["key"],[]).append(issue)
         errs=sum(x["severity"]=="error" for x in self.review_issues); warns=sum(x["severity"]=="warning" for x in self.review_issues)
@@ -4343,10 +4401,12 @@ Mod更新後だけ追加翻訳:
                         self._set_llm_idle("LLM 待機中","中国語基準翻訳を中断しました")
                     else:
                         self.chinese_progress["value"]=100
-                        self.chinese_progress_var.set(f"完了 — {payload.get('processed_files',0)}/{payload.get('queue_total',len(self.chinese_queue_items))}項目")
+                        qa_e=payload.get('qa_errors',0); qa_w=payload.get('qa_warnings',0)
+                        self.chinese_progress_var.set(f"完了 — {payload.get('processed_files',0)}/{payload.get('queue_total',len(self.chinese_queue_items))}項目 / QA error {qa_e}・warning {qa_w}")
+                        self._append_chinese_log(f"翻訳語QA: error {qa_e} / warning {qa_w}")
                         self._append_chinese_log(f"出力先: {payload.get('output',self.chinese_output_var.get())}")
                         self._set_llm_idle("LLM 待機中","中国語基準翻訳が完了しました")
-                        messagebox.showinfo(APP_NAME,"中国語基準翻訳が完了しました。")
+                        messagebox.showinfo(APP_NAME,f"中国語基準翻訳が完了しました。\n翻訳語QA: error {qa_e} / warning {qa_w}")
                 elif kind=="chinese_error":
                     record_error("中国語基準翻訳", detail=str(payload)); self.chinese_worker=None; self.chinese_controller=None
                     self.chinese_start_btn.config(state="normal"); self.chinese_pause_btn.config(state="disabled", text="一時停止"); self.chinese_stop_btn.config(state="disabled")
