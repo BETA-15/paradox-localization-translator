@@ -1411,6 +1411,57 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
             "qa_errors": qa_errors, "qa_warnings": qa_warnings, "qa_report": str(qa_report_path) if auto_qa else ""}
 
 
+def qa_translation_output(input_path: Path, output_path: Path, glossary_path=None, target_lang: str = DEFAULT_TARGET_LANG) -> dict:
+    """Run QA against an existing normal translation output tree.
+
+    The file mapping intentionally mirrors ``run_translation`` so a queue item can
+    be checked again after translation without loading files manually in the QA tab.
+    English and Simplified Chinese sources are compared source-aware; Japanese
+    repair inputs are checked as Japanese output without treating the original
+    Japanese text as an untranslated source.
+    """
+    input_path = Path(input_path)
+    output_path = Path(output_path)
+    glossary = load_glossary(Path(glossary_path)) if glossary_path else {}
+    if input_path.is_file():
+        files = [input_path]
+        base_dir = input_path.parent
+    else:
+        files = gather_yml_files(input_path)
+        base_dir = input_path
+    issues_all = []
+    checked = 0
+    missing_outputs = 0
+    planned = set()
+    for f in files:
+        try:
+            source_lang = detect_source_lang(f, f.read_text(encoding="utf-8-sig").splitlines()[:5])
+        except Exception:
+            continue
+        rel = f.parent.relative_to(base_dir) if input_path.is_dir() else Path(".")
+        out = output_path / remap_rel_dir(rel, target_lang) / rename_for_target(f, target_lang, source_lang)
+        out_key = str(out.resolve())
+        if out_key in planned:
+            continue
+        planned.add(out_key)
+        if not out.exists():
+            missing_outputs += 1
+            try:
+                _, src_entries, _ = parse_localization_file(f)
+            except Exception:
+                src_entries = {}
+            for key in src_entries:
+                issues_all.append({"source_file": str(f), "target_file": str(out), "key": key, "severity": "error", "type": "missing_output", "message": "対応する日本語出力ファイルがありません", "value": ""})
+            continue
+        checked += 1
+        source_ref = None if source_lang == target_lang else f
+        for issue in qa_file(out, source_ref, source_lang=source_lang, glossary=glossary):
+            issues_all.append({"source_file": str(f), "target_file": str(out), **issue})
+    errors = sum(1 for x in issues_all if x.get("severity") == "error")
+    warnings = sum(1 for x in issues_all if x.get("severity") == "warning")
+    return {"checked_files": checked, "missing_outputs": missing_outputs, "errors": errors, "warnings": warnings, "issues": issues_all}
+
+
 def qa_chinese_basis_translation(input_path: Path, output_path: Path, glossary_path=None) -> dict:
     """Run Chinese-source-aware QA against an existing Chinese-basis translation output."""
     input_path = Path(input_path)

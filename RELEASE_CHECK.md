@@ -63,3 +63,11 @@
 - 簡体字中国語→日本語の差分判定: PASS
 - 中国語基準翻訳後の自動QAレポート生成: PASS
 - 中国語基準翻訳の手動QAヘルパー: PASS
+
+
+## v0.9.7 additional checks
+- Python syntax: PASS
+- GUI startup under virtual display: PASS (11 tabs)
+- English output pair detection for QA/diff: PASS
+- Simplified Chinese output pair detection for QA/diff: PASS
+- Translation status buttons reorganized into two rows.
