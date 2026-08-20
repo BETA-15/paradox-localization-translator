@@ -456,6 +456,9 @@ def call_llm_raw(provider: str, url: str, model: str, user_content: str, system_
             if not content:
                 raise RuntimeError("LLMから空の応答が返されました")
             if controller:
+                # GUIへ、モデルが実際に返した生のテキストを通知する。
+                # 読み取り専用のライブ確認欄で利用し、翻訳結果そのものの処理ロジックは変更しない。
+                controller.notify(kind="llm_response", activity_id=activity_id, provider=provider_display_name(provider), model=model, content=content, received_at=time.time())
                 controller.notify(kind="llm_metric", metric=_metric(provider, model, elapsed, True, completion_tokens, provider_tps))
                 controller.notify(kind="llm_activity", state="end", activity_id=activity_id, provider=provider_display_name(provider), model=model, success=True)
             return content
@@ -1177,6 +1180,76 @@ def update_localization_value(path: Path, key: str, new_value: str) -> bool:
         Path(path).write_text("\ufeff" + "\n".join(out) + "\n", encoding="utf-8")
     return changed
 
+
+def compare_localization_entries(source_entries: Dict[str, str], target_entries: Dict[str, str], source_lang: str = "english") -> List[dict]:
+    """Compare source/target localization dictionaries key-by-key."""
+    rows = []
+    for key in sorted(set(source_entries) | set(target_entries)):
+        src = source_entries.get(key, "")
+        dst = target_entries.get(key, "")
+        if key not in target_entries:
+            status = "missing"
+            message = "日本語側にキーがありません"
+        elif key not in source_entries:
+            status = "extra"
+            message = "日本語側だけに存在するキーです"
+        elif looks_untranslated(src, dst, source_lang) or (src.strip() and src.strip() == dst.strip()):
+            status = "untranslated"
+            message = "原文のまま残っている可能性があります"
+        else:
+            status = "ok"
+            message = "対応あり"
+        rows.append({"key": key, "status": status, "message": message, "source": src, "target": dst})
+    return rows
+
+
+def translate_single_text(url: str, model: str, text: str, source_lang: str = "english",
+                          glossary: Optional[dict] = None, preset: str = "General",
+                          provider: str = "Ollama", api_key: str = "",
+                          controller: Optional[TranslationController] = None) -> str:
+    """Translate one localization value while preserving Paradox tokens."""
+    protected, tokens = protect_text(text)
+    job = {"value": text, "protected": protected, "tokens": tokens}
+    out = translate_batch(url, model, [job], source_lang, glossary=glossary, preset=preset,
+                          dual_source=False, controller=controller, provider=provider, api_key=api_key)[0]
+    return restore_text(out, tokens)
+
+
+def upsert_localization_values(path: Path, values: Dict[str, str], target_lang: str = "japanese") -> int:
+    """Update existing keys and append missing keys to a Paradox localization YAML file."""
+    path = Path(path)
+    if not values:
+        return 0
+    if path.exists():
+        raw = path.read_text(encoding="utf-8-sig")
+        lines = raw.splitlines()
+    else:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        lines = [f"l_{target_lang}:"]
+    pending = dict(values)
+    out = []
+    changed = 0
+    for line in lines:
+        m = parse_line(line)
+        if m:
+            key = m.group("key").strip()
+            if key in pending:
+                val = pending.pop(key)
+                escaped = val.replace('"', '\\"') if '\\"' not in val else val
+                out.append(f'{m.group("indent")}{m.group("key")}: {m.group("version") or ""}"{escaped}"{m.group("trailing") or ""}')
+                changed += 1
+                continue
+        out.append(line)
+    if pending:
+        if not out:
+            out.append(f"l_{target_lang}:")
+        for key, val in pending.items():
+            escaped = val.replace('"', '\\"') if '\\"' not in val else val
+            out.append(f' {key}: "{escaped}"')
+            changed += 1
+    path.write_text("\ufeff" + "\n".join(out) + "\n", encoding="utf-8")
+    return changed
+
 # ---------------------------------------------------------------------------
 # Mod-level translation availability research
 # ---------------------------------------------------------------------------
@@ -1253,8 +1326,141 @@ def mod_localization_root(mod_root: Path) -> Optional[Path]:
     return None
 
 
-def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "english") -> dict:
-    """Return a mod-level Japanese translation status without invoking an LLM."""
+
+def _collect_mod_language_entries(mod_root: Path) -> dict:
+    """Collect source/Japanese localization entries for one mod."""
+    loc = mod_localization_root(mod_root)
+    result = {"localization": str(loc) if loc else "", "source": {}, "japanese": {}, "japanese_files": []}
+    if not loc:
+        return result
+    for f in gather_yml_files(loc):
+        try:
+            lang, entries, _ = parse_localization_file(f)
+        except Exception:
+            continue
+        if lang == "japanese":
+            result["japanese"].update(entries)
+            result["japanese_files"].append(str(f))
+        elif lang in {"english", "simp_chinese"}:
+            # Prefer English wording if both exist for the same key.
+            if lang == "english":
+                result["source"].update(entries)
+            else:
+                for k, v in entries.items():
+                    result["source"].setdefault(k, v)
+    return result
+
+
+def build_translation_mod_index(mod_roots: Iterable[Path]) -> List[dict]:
+    """Build a reusable index of mods that contain Japanese localization.
+
+    The index is intentionally key-based rather than filename-based because Japanese
+    translation mods frequently mirror another Workshop mod with a different folder
+    and descriptor name.
+    """
+    rows = []
+    for root in mod_roots:
+        root = Path(root)
+        data = _collect_mod_language_entries(root)
+        ja = data.get("japanese", {})
+        if not ja:
+            continue
+        rows.append({
+            "path": str(root),
+            "mod": detect_mod_name(root),
+            "localization": data.get("localization", ""),
+            "japanese": ja,
+            "japanese_keys": set(ja),
+        })
+    return rows
+
+
+def _normalize_mod_name_for_match(name: str) -> str:
+    text = (name or "").lower()
+    for token in ["japanese", "日本語化", "日本語", "translation", "localization", "localisation", "jp", "ja"]:
+        text = text.replace(token, " ")
+    return re.sub(r'[^0-9a-z\u3040-\u30ff\u4e00-\u9fff]+', '', text)
+
+
+def _external_gap_candidates(source_entries: Dict[str, str], japanese_entries: Dict[str, str]) -> List[dict]:
+    candidates = []
+    for key, source_text in source_entries.items():
+        target = japanese_entries.get(key)
+        if target is None:
+            candidates.append({"kind": "missing_key", "key": key, "source_text": source_text, "target_text": "", "confidence": "確定"})
+            continue
+        if source_text.strip() == target.strip() and source_text.strip():
+            candidates.append({"kind": "source_copy", "key": key, "source_text": source_text, "target_text": target, "confidence": "確定"})
+            continue
+        if looks_foreign_in_target(target, "japanese"):
+            candidates.append({"kind": "foreign_text", "key": key, "source_text": source_text, "target_text": target, "confidence": "要確認"})
+    return candidates
+
+
+def find_external_japanese_translation(mod_root: Path, translation_index: Optional[List[dict]]) -> Optional[dict]:
+    """Find the most plausible separate Japanese translation mod for *mod_root*.
+
+    Matching uses localization-key overlap, with descriptor/name similarity as a
+    secondary signal. This avoids relying on Workshop IDs or exact file names.
+    """
+    if not translation_index:
+        return None
+    mod_root = Path(mod_root)
+    src_data = _collect_mod_language_entries(mod_root)
+    source_entries = src_data.get("source", {})
+    if not source_entries:
+        return None
+    source_keys = set(source_entries)
+    source_name = detect_mod_name(mod_root)
+    source_norm = _normalize_mod_name_for_match(source_name)
+    best = None
+    best_score = -1.0
+    for row in translation_index:
+        try:
+            cand_path = Path(row.get("path", ""))
+            if cand_path.resolve() == mod_root.resolve():
+                continue
+        except Exception:
+            continue
+        ja = row.get("japanese", {}) or {}
+        ja_keys = set(ja)
+        overlap = source_keys & ja_keys
+        overlap_n = len(overlap)
+        if not overlap_n:
+            continue
+        coverage = overlap_n / max(1, len(source_keys))
+        precision = overlap_n / max(1, len(ja_keys))
+        cand_norm = _normalize_mod_name_for_match(row.get("mod", ""))
+        name_match = bool(source_norm and cand_norm and (source_norm in cand_norm or cand_norm in source_norm))
+        # Conservative acceptance to avoid mistaking generic shared game keys for a translation mod.
+        accept = coverage >= 0.55 or (coverage >= 0.25 and overlap_n >= 20) or (name_match and overlap_n >= 3 and coverage >= 0.10)
+        if not accept:
+            continue
+        score = coverage * 100 + min(precision, 1.0) * 12 + (18 if name_match else 0) + min(overlap_n, 100) / 100
+        if score <= best_score:
+            continue
+        gaps = _external_gap_candidates(source_entries, ja)
+        best_score = score
+        best = {
+            "mod": row.get("mod", cand_path.name),
+            "path": str(cand_path),
+            "localization": row.get("localization", ""),
+            "coverage": coverage,
+            "overlap_keys": overlap_n,
+            "source_keys": len(source_keys),
+            "gap_count": len(gaps),
+            "gaps": gaps,
+            "complete": len(gaps) == 0,
+        }
+    return best
+
+
+def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "english", translation_index: Optional[List[dict]] = None) -> dict:
+    """Return a mod-level Japanese translation status without invoking an LLM.
+
+    If ``translation_index`` is supplied, a separate Japanese translation mod is also
+    detected and classified as complete/incomplete.
+    """
     mod_root = Path(mod_root)
     loc = mod_localization_root(mod_root)
     name = detect_mod_name(mod_root)
@@ -1270,6 +1476,12 @@ def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "engl
         "japanese_keys": 0,
         "gap_count": 0,
         "candidates": [],
+        "external_translation_mod": "",
+        "external_translation_path": "",
+        "external_translation_localization": "",
+        "external_translation_gap_count": 0,
+        "external_translation_complete": False,
+        "external_translation_gaps": [],
     }
     if not loc:
         return result
@@ -1300,12 +1512,38 @@ def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "engl
         "candidates": candidates,
     })
 
+    external = find_external_japanese_translation(mod_root, translation_index)
+    if external:
+        result.update({
+            "external_translation_mod": external.get("mod", ""),
+            "external_translation_path": external.get("path", ""),
+            "external_translation_localization": external.get("localization", ""),
+            "external_translation_gap_count": external.get("gap_count", 0),
+            "external_translation_complete": bool(external.get("complete")),
+            "external_translation_gaps": external.get("gaps", []),
+            "external_translation_coverage": external.get("coverage", 0.0),
+        })
+
     if not source_keys:
         result["status"] = "対象なし"
         result["message"] = f"{name}には判定対象となる英語/中国語ローカライズが見つかりませんでした。"
+    elif japanese_files > 0 and japanese_keys and not candidates:
+        result["status"] = "翻訳あり"
+        result["message"] = f"{name}のModは日本語翻訳が確認できました。"
+        if external:
+            result["message"] += f" 別Mod『{external['mod']}』にも日本語化があります。"
+    elif external and external.get("complete"):
+        result["status"] = "別Modで完全翻訳"
+        result["gap_count"] = 0
+        result["message"] = f"{name}には日本語化Mod『{external['mod']}』があり、完全な日本語化を確認できました。"
+    elif external:
+        result["status"] = "別Mod翻訳・欠損"
+        result["gap_count"] = int(external.get("gap_count", 0))
+        result["candidates"] = list(external.get("gaps", []))
+        result["message"] = f"{name}には日本語化Mod『{external['mod']}』がありますが、翻訳に欠損があります（{result['gap_count']}件）。"
     elif japanese_files == 0 or not japanese_keys:
         result["status"] = "翻訳なし"
-        result["message"] = f"{name}というModは日本語翻訳がありません。"
+        result["message"] = f"{name}というModは日本語翻訳がありません。日本語化Modも確認できませんでした。"
     elif candidates:
         result["status"] = "欠損あり"
         result["message"] = f"{name}のModに翻訳の欠損箇所があります（{len(candidates)}件）。"
