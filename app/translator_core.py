@@ -94,6 +94,8 @@ class TranslationController:
     save_stop_event: threading.Event = field(default_factory=threading.Event)
     progress_callback: Optional[Callable[[dict], None]] = None
     checkpoint_callback: Optional[Callable[[dict], None]] = None
+    runtime_settings: dict = field(default_factory=dict)
+    settings_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def pause(self):
         self.pause_event.set()
@@ -119,6 +121,15 @@ class TranslationController:
     def checkpoint(self, payload: dict):
         if self.checkpoint_callback:
             self.checkpoint_callback(payload)
+
+    def update_runtime_settings(self, **settings):
+        """Update settings used from the next safe batch boundary."""
+        with self.settings_lock:
+            self.runtime_settings.update({k: v for k, v in settings.items() if v is not None})
+
+    def get_runtime_settings(self) -> dict:
+        with self.settings_lock:
+            return dict(self.runtime_settings)
 
 
 def load_json(path: Path, default):
@@ -922,35 +933,65 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
 
     results = {}
     failed = set()
-    batches = [jobs[i:i+batch_size] for i in range(0, len(jobs), batch_size)]
     completed_jobs = 0
+    cursor = 0
 
-    # GUIでは安全な一時停止のため、バッチ単位で制御する。workers>1 は同一ウィンドウ内で並列。
-    window = max(1, workers)
-    for start in range(0, len(batches), window):
+    def runtime_cfg():
+        cfg = controller.get_runtime_settings() if controller else {}
+        current_provider = cfg.get("provider", provider)
+        current_model = cfg.get("model", model)
+        current_url = cfg.get("url", url)
+        current_preset = cfg.get("preset", preset)
+        current_dual = bool(cfg.get("dual_source", dual_source))
+        current_api_key = cfg.get("api_key", api_key)
+        current_batch = max(1, int(cfg.get("batch_size", batch_size) or batch_size))
+        current_workers = max(1, int(cfg.get("workers", workers) or workers))
+        current_glossary = glossary
+        gp = cfg.get("glossary_path")
+        if gp:
+            try:
+                current_glossary = load_glossary(Path(gp))
+            except Exception:
+                current_glossary = glossary
+        return {
+            "provider": current_provider, "model": current_model, "url": current_url,
+            "preset": current_preset, "dual_source": current_dual, "api_key": current_api_key,
+            "batch_size": current_batch, "workers": current_workers, "glossary": current_glossary,
+        }
+
+    # v0.7.6: バッチ境界ごとにGUI側の最新設定を読み直す。
+    # モデル・URL・プロバイダ・バッチ・並列・プリセット等を翻訳途中でも安全に切り替えられる。
+    while cursor < len(jobs):
         if controller:
             controller.wait_if_paused()
-        group = batches[start:start+window]
-        if len(group) == 1:
-            work_results = []
+        cfg = runtime_cfg()
+        group = []
+        for _ in range(cfg["workers"]):
+            if cursor >= len(jobs):
+                break
+            b = jobs[cursor:cursor + cfg["batch_size"]]
+            cursor += len(b)
+            for j in b:
+                j["hash"] = (
+                    f"v5:{normalize_provider(cfg['provider'])}:{cfg['model']}:{cfg['preset']}:"
+                    f"{translation_source_lang}:{text_hash(j['value'])}"
+                )
+            group.append(b)
+
+        def run_one(b):
             try:
-                tr = translate_batch(url, model, group[0], translation_source_lang,
-                                     glossary, preset, dual_source, controller, provider, api_key)
-                work_results.append((group[0], tr, None))
+                return b, translate_batch(cfg["url"], cfg["model"], b, translation_source_lang,
+                                          cfg["glossary"], cfg["preset"], cfg["dual_source"],
+                                          controller, cfg["provider"], cfg["api_key"]), None
             except StopRequested:
-                raise
+                return b, None, "__STOP__"
             except Exception as e:
-                work_results.append((group[0], None, str(e)))
+                return b, None, str(e)
+
+        if len(group) == 1:
+            work_results = [run_one(group[0])]
         else:
-            def run_one(b):
-                try:
-                    return b, translate_batch(url, model, b, translation_source_lang,
-                                              glossary, preset, dual_source, controller, provider, api_key), None
-                except StopRequested:
-                    return b, None, "__STOP__"
-                except Exception as e:
-                    return b, None, str(e)
-            with concurrent.futures.ThreadPoolExecutor(max_workers=window) as ex:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(group)) as ex:
                 work_results = [f.result() for f in [ex.submit(run_one, b) for b in group]]
 
         for b, translated, err in work_results:
@@ -964,9 +1005,12 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
                 save_cache(cache_file, cache)
             if controller:
                 controller.notify(kind="batch", file=str(in_path), file_no=file_no, file_total=file_total,
-                                  done=completed_jobs, total=max(len(jobs), 1), key_count=len(b))
+                                  done=completed_jobs, total=max(len(jobs), 1), key_count=len(b),
+                                  active_model=cfg["model"], active_provider=provider_display_name(cfg["provider"]),
+                                  active_batch=cfg["batch_size"], active_workers=cfg["workers"])
                 controller.checkpoint({"current_file": str(in_path), "completed_in_file": completed_jobs,
-                                       "total_in_file": len(jobs), "timestamp": time.time()})
+                                       "total_in_file": len(jobs), "timestamp": time.time(),
+                                       "runtime_settings": {k:v for k,v in cfg.items() if k != "glossary"}})
             if controller and controller.stop_event.is_set():
                 raise StopRequested()
 
@@ -977,9 +1021,15 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
         for j in retry_jobs:
             if controller:
                 controller.wait_if_paused()
+            cfg = runtime_cfg()
+            j["hash"] = (
+                f"v5:{normalize_provider(cfg['provider'])}:{cfg['model']}:{cfg['preset']}:"
+                f"{translation_source_lang}:{text_hash(j['value'])}"
+            )
             try:
-                tr = translate_batch(url, model, [j], translation_source_lang,
-                                     glossary, preset, dual_source, controller, provider, api_key)
+                tr = translate_batch(cfg["url"], cfg["model"], [j], translation_source_lang,
+                                     cfg["glossary"], cfg["preset"], cfg["dual_source"],
+                                     controller, cfg["provider"], cfg["api_key"])
                 restored = restore_text(tr[0], j["tokens"])
                 if looks_untranslated(j["value"], restored, translation_source_lang):
                     cache.pop(j["hash"], None)
@@ -1031,7 +1081,7 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
     cache = load_cache(cache_file) if (resume or cache_file.exists()) else {}
     current_manifest = build_source_manifest(input_path, None if include_target_files else target_lang)
     glossary = load_glossary(Path(glossary_path)) if glossary_path else {}
-    zh_refs = build_chinese_reference_map(input_path) if dual_source and input_path.is_dir() else {}
+    zh_refs = build_chinese_reference_map(input_path) if input_path.is_dir() else {}
     exclude = None if include_target_files else target_lang
     files = gather_yml_files(input_path, exclude)
     if not files:
