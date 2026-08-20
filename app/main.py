@@ -34,7 +34,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.8.0"
+APP_VERSION = "0.8.2"
 
 
 def _app_container_dir() -> Path:
@@ -237,6 +237,10 @@ class App(BaseTk):
             self.app_preferences = {}
         last_translation = self.app_preferences.get("translation_llm", {})
         last_monitor = self.app_preferences.get("monitor_llm", {})
+        close_prefs = self.app_preferences.get("window_close", {}) if isinstance(self.app_preferences.get("window_close", {}), dict) else {}
+        # ×ボタン時の既定動作。confirm / minimize / quit の3種類。
+        self.close_action_var = tk.StringVar(value={"confirm":"毎回確認","minimize":"最小化","quit":"終了"}.get(close_prefs.get("action"), close_prefs.get("action", "毎回確認")))
+        self.close_prompt_var = tk.BooleanVar(value=bool(close_prefs.get("show_prompt", True)))
 
         self.provider_var = tk.StringVar(value=last_translation.get("provider", "Ollama"))
         self.api_key_var = tk.StringVar(value="")
@@ -285,6 +289,8 @@ class App(BaseTk):
         self.monitor_status_var = tk.StringVar(value="監視停止中")
         self.monitor_summary_var = tk.StringVar(value="未翻訳候補: --")
         self.mod_status_summary_var = tk.StringVar(value="調査結果: --")
+        self.mod_status_search_var = tk.StringVar(value="")
+        self.mod_status_search_result_var = tk.StringVar(value="")
         self.mod_research_results = []
         self.mod_research_thread = None
         self.mod_research_stop_event = threading.Event()
@@ -713,6 +719,22 @@ class App(BaseTk):
         ttk.Button(box, text="診断ログを収集", command=self.collect_error_logs).grid(row=2, column=3, padx=(6,0), pady=(10,0))
         ttk.Label(box, text="翻訳結果・キャッシュ・バックアップ・設定・セッション・モデル統計など、アプリが自動生成するデータはすべてこの『Paradox Localization Translator』フォルダ内にまとめます。", wraplength=920, foreground="#555").grid(row=1, column=0, columnspan=4, sticky="w", pady=(10,0))
 
+        close_box = ttk.LabelFrame(t, text="ウィンドウの×ボタンを押したときの動作", padding=12)
+        close_box.pack(fill="x", pady=(12,0))
+        ttk.Label(close_box, text="既定動作").grid(row=0, column=0, sticky="w")
+        close_combo = ttk.Combobox(close_box, textvariable=self.close_action_var, state="readonly", width=20,
+                                   values=("毎回確認", "最小化", "終了"))
+        close_combo.grid(row=0, column=1, sticky="w", padx=(8,12))
+        ttk.Label(close_box, text="通常は『毎回確認』を推奨します。", foreground="#555").grid(row=0,column=2,sticky="w")
+        ttk.Checkbutton(close_box, text="×ボタンを押したとき『最小化しますか？終了しますか？』の確認を表示する",
+                        variable=self.close_prompt_var, command=self._save_llm_preferences).grid(row=1,column=0,columnspan=3,sticky="w",pady=(8,0))
+        ttk.Button(close_box, text="この設定を保存", command=self.save_close_behavior_settings).grid(row=0,column=3,padx=(12,0))
+        ttk.Label(close_box, text=(
+            "最小化: アプリを閉じず、翻訳・探索・LLM処理はそのまま続きます。\n"
+            "終了: 翻訳中ならセッションとキャッシュを保存して停止要求を出してからアプリを終了します。\n"
+            "確認を表示しない場合は上の既定動作を直接実行します。設定はいつでもここから戻せます。"
+        ), foreground="#555", wraplength=1100, justify="left").grid(row=2,column=0,columnspan=4,sticky="w",pady=(8,0))
+
         structure = ttk.LabelFrame(t, text="フォルダ構成", padding=12)
         structure.pack(fill="both", expand=True, pady=(12,0))
         text = tk.Text(structure, height=16, wrap="none")
@@ -731,7 +753,8 @@ class App(BaseTk):
             "    ├── model_stats.json\n"
             "    ├── model_profiles.json\n"
             "    ├── mod_translation_status_cache.json\n"
-            "    └── steam_library_roots.json\n\n"
+            "    ├── steam_library_roots.json\n"
+            "    └── app_preferences.json  ← 前回LLM設定・×ボタン動作\n\n"
             "既定位置: 書類/Documents/Paradox Localization Translator\n"
             "［保存場所を変更］から、別ドライブ・外付けSSD・任意のフォルダへ移動できます。")
         text.config(state="disabled")
@@ -782,6 +805,94 @@ class App(BaseTk):
         except Exception as e:
             messagebox.showerror(APP_NAME, f"保存場所の変更に失敗しました。\n{e}")
 
+    def save_close_behavior_settings(self, silent=False):
+        """Save × button behavior and prompt visibility."""
+        if self.close_action_var.get() == "毎回確認" and not self.close_prompt_var.get():
+            self.close_prompt_var.set(True)
+            if not silent:
+                messagebox.showinfo(
+                    APP_NAME,
+                    "『毎回確認』では確認画面を非表示にはできません。\n\n"
+                    "確認を表示しない場合は、既定動作を『最小化』または『終了』に変更してください。"
+                )
+            return False
+        self._save_llm_preferences()
+        if not silent:
+            messagebox.showinfo(
+                APP_NAME,
+                "×ボタンの動作設定を保存しました。\n\n"
+                f"既定動作: {self.close_action_var.get()}\n"
+                f"確認画面: {'表示する' if self.close_prompt_var.get() else '表示しない'}"
+            )
+        return True
+
+    def _show_close_choice_dialog(self):
+        """Return 'minimize', 'quit' or 'cancel'. Also updates the do-not-show-again preference."""
+        dlg = tk.Toplevel(self)
+        dlg.title("アプリを閉じますか？")
+        dlg.transient(self)
+        dlg.grab_set()
+        dlg.resizable(False, False)
+        result = {"action": "cancel"}
+        show_next = tk.BooleanVar(value=True)
+        active_translation = bool(self.worker and self.worker.is_alive())
+        active_monitor = bool(self.monitor_thread and self.monitor_thread.is_alive())
+
+        frame = ttk.Frame(dlg, padding=18)
+        frame.pack(fill="both", expand=True)
+        ttk.Label(frame, text="×ボタンが押されました", font=("", 14, "bold")).pack(anchor="w")
+        ttk.Label(
+            frame,
+            text=(
+                "最小化しますか？ それともアプリを終了しますか？\n\n"
+                "・最小化: ウィンドウだけを最小化します。翻訳・探索・LLM処理は続行します。\n"
+                "・終了: 翻訳中ならセッションとキャッシュを保存し、安全停止を要求してから終了します。"
+            ),
+            justify="left", wraplength=560
+        ).pack(anchor="w", pady=(10, 10))
+        if active_translation or active_monitor:
+            running = []
+            if active_translation: running.append("翻訳")
+            if active_monitor: running.append("Mod探索/監視")
+            ttk.Label(frame, text="現在動作中: " + " / ".join(running), foreground="#a35a00").pack(anchor="w", pady=(0,8))
+        ttk.Checkbutton(frame, text="次回もこの確認を表示する", variable=show_next).pack(anchor="w", pady=(4,12))
+
+        buttons = ttk.Frame(frame)
+        buttons.pack(fill="x")
+        def choose(action):
+            result["action"] = action
+            if (not show_next.get()) and action in ("minimize", "quit"):
+                self.close_prompt_var.set(False)
+                self.close_action_var.set("最小化" if action == "minimize" else "終了")
+                self._save_llm_preferences()
+            dlg.destroy()
+        ttk.Button(buttons, text="最小化", command=lambda: choose("minimize")).pack(side="left")
+        ttk.Button(buttons, text="終了", command=lambda: choose("quit")).pack(side="left", padx=(8,0))
+        ttk.Button(buttons, text="キャンセル", command=lambda: choose("cancel")).pack(side="right")
+        dlg.protocol("WM_DELETE_WINDOW", lambda: choose("cancel"))
+        dlg.update_idletasks()
+        try:
+            x = self.winfo_rootx() + max(0, (self.winfo_width() - dlg.winfo_width()) // 2)
+            y = self.winfo_rooty() + max(0, (self.winfo_height() - dlg.winfo_height()) // 2)
+            dlg.geometry(f"+{x}+{y}")
+        except Exception:
+            pass
+        self.wait_window(dlg)
+        return result["action"]
+
+    def _perform_app_exit(self):
+        """Persist resumable state, request safe stops, then close the UI."""
+        self._save_llm_preferences()
+        if self.monitor_thread and self.monitor_thread.is_alive():
+            self.monitor_stop_event.set()
+            if self.monitor_llm_controller:
+                self.monitor_llm_controller.request_stop(save=False)
+        if self.worker and self.worker.is_alive():
+            self.save_session(active=True)
+            if self.controller:
+                self.controller.request_stop(save=True)
+        self.destroy()
+
     def apply_performance_preset(self):
         """バッチサイズと並列数の安全側プリセットを適用する。
 
@@ -822,124 +933,336 @@ class App(BaseTk):
         title.pack(anchor="w", pady=(0, 10))
         box = tk.Text(t, wrap="word", padx=12, pady=12)
         box.pack(fill="both", expand=True)
-        guide = """【基本的な使い方】
+        guide = """Paradox Localization Translator 詳細ガイド
 
-1. Ollama / LM Studio / クラウドAPIのいずれかを準備します。
-2. 「翻訳 / キュー」タブへYAML/フォルダをドラッグ＆ドロップするか、［追加］からファイルまたはフォルダを選びます。
-3. 必要ならモデル・バッチサイズ・用語集などを設定します。
-4. ［翻訳開始］を押します。
+【0. このアプリでできること】
+Paradox Interactive系ゲームのlocalization YAMLを、ローカルLLMまたはクラウドAPIで日本語化するための統合ツールです。
+単純な一括翻訳だけでなく、未翻訳修復、差分更新、QA、検索修正、Mod翻訳状況調査、既存日本語化Modへの差分反映、キャッシュ管理まで行えます。
 
-【バッチ / 並列のおすすめ設定】
+主な対応タイトル:
+・Crusader Kings III
+・Victoria 3
+・Hearts of Iron IV
+・Stellaris
+・Europa Universalis V
 
-翻訳 / キュー画面の「おすすめ設定」から3種類を選択して［適用］できます。
+【1. 最初に必要なもの】
+ローカルLLMを使う場合:
+・Ollama または LM Studio
+・翻訳に使うLLMモデル
 
-・安定重視: バッチ20 / 並列1
-  長文が多いMod、初回利用、メモリに余裕がない環境向け。
+クラウドAPIを使う場合:
+・OpenAI / Anthropic / Gemini / OpenAI互換APIのAPIキー
 
-・標準: バッチ40 / 並列1
-  通常はこちらを推奨。速度と安定性のバランスが良い設定です。
+配布版アプリにはPython、Tk/Tcl、必要なGUI部品が内蔵されるため、利用者がPythonを別途入れる必要はありません。
 
-・高速: バッチ60 / 並列2
-  Ollama / LM Studio側が同時2リクエストを処理でき、十分なRAM/VRAMがある場合向け。
+【2. 起動したら最初に確認する場所】
+画面上部にはLLM状態が2系統あります。
 
-安定性の目安:
+翻訳用LLM:
+通常翻訳、差分翻訳、QAのAI校正、モデル速度テストなどに使います。
+
+探索用LLM:
+未翻訳Mod探索や、翻訳状況の曖昧候補判定に使います。
+探索用には3B～8B程度の軽量モデルを推奨します。
+
+それぞれ「最新応答」欄には、実際にLLMから返ってきた応答を読み取り専用で表示します。
+「全文を開く」で完全な応答を確認できます。
+
+【3. 翻訳 / キュー タブ】
+ここが通常翻訳の中心です。
+
+［追加］:
+YAMLファイルまたはlocalization/Modフォルダを追加します。ドラッグ＆ドロップも利用できます。
+
+［選択削除］:
+選択中のキュー項目だけを削除します。原本ファイルは削除しません。
+
+［全消去］:
+翻訳キューを空にします。原本やキャッシュは削除しません。
+
+［翻訳開始］:
+上から順番に翻訳します。
+
+［一時停止］:
+現在のAPI/LLM応答が終わった安全な地点で一時停止します。
+
+［セーブして中断］:
+現在までのキャッシュとセッションを保存して停止します。次回起動時に再開できます。
+
+［現在の翻訳へ設定を適用］:
+翻訳途中でモデル、プロバイダ、URL、バッチ、並列、用語集、英中併用設定などを変更した後、このボタンを押すと次のバッチから新設定を使います。
+
+［完成した日本語化をModへ上書き］:
+完成した翻訳を元Modまたは検出済み日本語化Modへ反映します。
+既存日本語化Modがある場合は、そちらを優先して差分上書きします。上書き前に対象を明示し、バックアップを作成します。
+
+【4. バッチ / 並列のおすすめ設定】
+おすすめ設定から3種類を選べます。
+
+安定重視: バッチ20 / 並列1
+・長文が多いMod
+・初回利用
+・メモリ余裕が少ない環境
+・動作確認を優先したい場合
+
+標準: バッチ40 / 並列1
+・通常はこちらを推奨
+・速度と安定性のバランス重視
+
+高速: バッチ60 / 並列2
+・Ollama / LM Studio側が同時2リクエストを処理できる場合
+・十分なRAM/VRAMがある場合
+
+目安:
 ・バッチ1～60: 通常範囲
-・バッチ80超: 長文が多いファイルでは応答欠落・タイムアウトが増えやすい
+・バッチ80超: 長文で欠落、タイムアウトが増えやすい
 ・バッチ120超: 非推奨
 ・並列1: 最も安定
-・並列2: サーバー側の並列処理が有効な場合のみ推奨
-・並列3以上: ローカルLLMではVRAM/RAM圧迫、待ち行列、タイムアウトが増えやすいため非推奨
+・並列2: サーバー側並列処理を有効にしている場合に推奨
+・並列3以上: ローカルLLMではメモリ圧迫、待ち行列、タイムアウトが増えやすい
 
-※これは固定上限ではありません。モデルの大きさ、コンテキスト長、1行の長さ、RAM/VRAM、Ollama/LM Studio側の設定で変わります。
-※クラウドAPIはサービス側のレート制限を優先してください。
+クラウドAPIではサービス側のレート制限を優先してください。
 
-【出力先】
+【5. LLM / 翻訳設定】
+プロバイダ:
+Ollama / LM Studio / OpenAI / Anthropic / Gemini / OpenAI Compatible から選択できます。
 
-出力先は自動で決まります。
-・アプリ/実行ファイルの隣に書き込める場合:
-・アプリの隣へ書き込めない場合（例: macOSの /Applications）:
+URL:
+Ollama既定: http://localhost:11434
+LM Studio既定: http://localhost:1234/v1
+クラウドは通常自動設定されます。
 
-セッション、用語集、モデル統計などは「設定」、翻訳キャッシュは「キャッシュ」に分けて保存します。
-各翻訳項目は「翻訳結果」の中に「元ファイル名_japanese」または「元フォルダ名_japanese」で作成されます。
+モデル:
+接続確認後、利用可能なモデル一覧から選択します。
 
-出力先を個別に変更したい場合は、キューの対象行をクリックして選択してから［出力先変更］を押してください。
-未選択の場合は案内が表示されます。
+APIキー:
+クラウドAPI用です。アプリの設定ファイルには保存しません。
 
-【キャッシュ管理】
+プリセット:
+CK3などゲームごとの翻訳プロンプト方針に使います。
 
-各翻訳キューは、それぞれ独立したキャッシュを持ちます。
-Dataフォルダ内の「キャッシュ」に翻訳ごとの専用フォルダを作成します。
-［キャッシュを見る］で選択中の翻訳キャッシュを確認できます。
-［キャッシュを追加］では別の translate_cache.json を選択中の翻訳へ統合できます。
+英語＋簡体字中国語を併用:
+同じキーの英語を意味確認、中国語を歴史制度語の参考として同時にLLMへ渡します。
 
-【Mod更新時の差分追加翻訳】
-一度翻訳したModを更新後にもう一度ドラッグ＆ドロップすると、同じ入力パスの過去キャッシュと原文スナップショットを自動検索します。
-新規キー・文章が変更されたキー・削除キーを判定し、前回キャッシュを新しい専用キャッシュへ複製します。
-そのため、変更されていない文章は再翻訳せず、新規・変更箇所だけLLMへ送信します。
-必要なら［差分更新を再検出］で手動再判定できます。
+既存日本語の未翻訳を修復:
+l_japanese内に英語などが残っている場合、その部分だけ修復対象にします。
 
-【ドラッグ＆ドロップ】
+翻訳後に自動QA:
+翻訳後、未翻訳やParadox構文破損を検査します。
 
-YAMLファイルまたはlocalization/Modフォルダを翻訳キューへ直接ドロップできます。
-複数ファイルの同時ドロップにも対応します。
+【6. キャッシュ】
+翻訳ごとに独立したキャッシュを持ちます。
+同じMod更新時も過去キャッシュを特定し、変更のない文章を再翻訳しません。
 
-【LLM動作表示と停止】
+［キャッシュを見る］:
+選択キューのキャッシュ内容、件数、保存場所を確認します。
 
-アプリ上部には常にLLM状態バーがあります。翻訳・速度テスト・AI校正などでLLMが推論中になると、
-「● LLM 動作中」とプロバイダ、モデル、経過時間を表示します。
-上部の［現在のLLM処理を停止］から、その時実行中の処理を安全に停止できます。
-速度テストには専用の［速度テスト停止］ボタンもあります。
-通信中のAPIリクエストそのものは途中で破棄せず、応答が返った安全な地点で停止します。
+［キャッシュを追加］:
+別のtranslate_cache.jsonを現在の翻訳へ統合します。
 
-【中断と再開】
+差分更新:
+前回原文のsource_manifest.jsonと現在の原文を比較し、新規・変更箇所だけ再翻訳します。
 
-・［一時停止］: 現在のリクエスト/バッチが終わった安全な地点で停止します。
-・［セーブして中断］: 状態とキャッシュを保存して終了します。次回起動時に復元できます。
+【7. QA / 比較編集 タブ】
+原文と日本語を比較し、問題を階層表示します。
+YAMLをドラッグ＆ドロップして読み込めます。
 
-【QA / 比較編集】
+主な検査:
+・未翻訳
+・キー欠落
+・プレースホルダ不一致
+・[Character...] / $VALUE$ / §色コード等の破損
+・誤字脱字候補
+・括弧や句読点の不整合
 
-原文と訳文を読み込み、未翻訳、Paradox構文の破損、誤字脱字候補などを確認できます。
-警告行を選択すると、原文と訳文を並べて編集できます。
+問題行を選ぶと原文と日本語を並べて確認できます。
+日本語欄を直接編集して保存できます。
+AI校正は現在の翻訳用LLM設定を使用します。設定変更後は［現在の翻訳設定を適用］を押してください。
 
-【用語集】
+【8. 差分調査 タブ】
+英語/原文と日本語をキー単位で向かい合わせに比較します。
+ドラッグ＆ドロップにも対応します。
 
-Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時に該当する語があればLLMへ自動提示されます。
+判定例:
+・欠落: 原文にはあるが日本語にない
+・未翻訳: 日本語値が英語原文のまま
+・日本語のみ: 日本語側だけにキーがある
+・対応あり: 正常に対応している
 
-【LLM接続】
+［選択項目を翻訳］:
+選択した1キーだけ翻訳します。
 
-・Ollama: 通常 http://localhost:11434
-・LM Studio: 通常 http://localhost:1234/v1
-・OpenAI / Anthropic / Gemini: APIキーを入力（キーは保存されません）
-・OpenAI Compatible: OpenAI互換APIのURLとキーを指定
+［欠落・未翻訳をまとめて翻訳］:
+問題箇所だけまとめてLLMへ送ります。
 
-【既存日本語の修復】
+差分翻訳も現在の翻訳用LLM設定を使用します。
 
-「既存日本語の未翻訳を修復」をONにすると、l_japanese の中に残った英語なども検出して再翻訳します。
+【9. 翻訳検索 タブ】
+日本語YAML/フォルダを横断検索し、検索結果から直接翻訳を訂正できます。
 
-【未翻訳調査 / 常時監視】
+検索対象:
+・ファイル名
+・localizationキー
+・日本語本文
 
-「未翻訳監視」タブでは、通常翻訳とは別のプロバイダ・URL・モデルを監視専用LLMとして指定できます。
-曖昧候補の判定だけに使うため、3B～8B級など小さなモデルを推奨します。監視機能から自動翻訳やファイル書換えは行いません。
+結果を選ぶと現在の訳文を編集でき、［この日本語訳を保存］で元YAMLへ反映します。
 
-［ゲーム/Mod場所を自動検出］: Steam WorkshopやParadoxのローカルMod保存場所を自動で探します。
-［選択場所を調査対象に設定］: 自動検出一覧で選んだ場所を監視・調査対象に設定します。
-［選択ゲームの全Modを調べる］: 選んだSteam Workshop/ローカルMod場所をまとめて調査します。
-［指定したModをバックグラウンド調査］: 選択した1つのModをバックグラウンドで調べます。
-［全部のModを調べる］: 選択した親フォルダ直下のModをまとめて調べます。
-結果は新しい「翻訳状況」タブに、
-「〇〇というModは日本語翻訳がありません。」
-「〇〇のModに翻訳の欠損箇所があります。」
-という形で一覧表示されます。
+【10. 用語集 タブ】
+固定訳を登録できます。
+例: Grand Campaign → 開辺
 
-常時監視では待機中はファイルの更新時刻とサイズだけを見るため、LLMは常時動きません。更新を検知した時だけ再解析し、曖昧候補だけ監視専用LLMで精査します。
+該当する原文が翻訳バッチに含まれる場合、その用語だけLLMプロンプトへ提示します。
+用語集を途中変更した場合も、現在の翻訳へ設定を適用すれば次のバッチから反映できます。
 
-【困ったとき】
+【11. モデル / 接続 タブ】
+接続確認、モデル一覧、速度テスト、プロファイル管理を行います。
 
-・Ollama/LM Studioが起動しているか確認
-・モデルがロード/インストール済みか確認
-・エラーは「ログ」フォルダへ自動収集されます。［診断ログを収集］で共有用ZIPを作成できます。
-・翻訳状況一覧はキャッシュされ、次回起動時に復元されます。変更のないModは再調査せずキャッシュを使います。
-・自動生成データはすべて「Paradox Localization Translator」フォルダにまとまり、［設定］から保存場所を自由に変更できます
+現在モデルを速度テスト:
+現在選択中の1モデルを測定します。
+
+選択モデルを比較テスト:
+最大5モデルまで選び、平均処理時間、tokens/s、失敗率を比較します。
+
+モデルプロファイル:
+プロバイダ、URL、モデル、バッチ、並列、ゲームプリセットなどをまとめて保存できます。
+追加だけでなく削除もできます。
+
+前回使用した翻訳用/探索用のプロバイダ・URL・モデルは次回起動時に自動復元します。APIキーは保存しません。
+
+【12. 未翻訳監視 タブ】
+ゲーム本体やModフォルダを読み取り専用で調査します。自動翻訳はしません。
+
+ゲーム/Mod場所を自動検出:
+Steamのlibraryfolders.vdf、追加Steamライブラリ、別SSD、外付けドライブ、Documents/Paradox Interactive等を探索します。
+
+探索専用LLM:
+通常翻訳とは別モデルを指定できます。3B～8B程度の軽量モデルを推奨します。
+［モデル再読み込み］はモデル一覧を再取得するだけです。設定変更後は［探索設定を適用］を押してください。
+
+［指定したModをバックグラウンド調査］:
+1つのModだけ調べます。
+
+［全部のModを調べる］:
+指定した場所のModをまとめて調べます。
+
+探索はファイルの更新時刻・サイズ確認を中心に行い、曖昧な候補だけ軽量LLMへ送ります。
+
+【13. 翻訳状況 タブ】
+調査済みModを一覧表示します。結果はキャッシュされ、次回起動時に復元します。変更があったModだけ再調査します。
+
+表示例:
+・翻訳なし
+・欠損あり
+・別Mod翻訳・欠損
+・別Modで完全翻訳
+・翻訳あり
+
+日本語化Mod検出:
+元Modに日本語がなくても、同じゲーム内の別Modが原文キーに対応する日本語キーを持っていれば、日本語化Mod候補として判定します。
+完全か欠損ありかも表示します。
+
+検索:
+Mod名や状態を入力して、判定済み一覧を絞り込めます。
+
+選択Modを翻訳:
+選択Modをそのまま翻訳キューへ送ります。ユーザーがファイルを移動する必要はありません。
+
+選択Modを除外して翻訳:
+選択したModだけ除外し、残りの未翻訳/欠損Modをまとめて翻訳キューへ送ります。
+
+日本語化Modへの上書き:
+既存日本語化Modがある場合は元Modではなく日本語化Mod側へ不足分を差分反映します。
+既存訳を維持し、欠落キーや未翻訳キーだけ追加・更新します。
+実行前には上書き先Mod名とパスを表示し、バックアップ＋二重確認を行います。
+
+【14. 自動生成ファイルと保存場所】
+自動生成物はすべて1つのフォルダにまとめます。
+
+既定:
+書類/Documents/Paradox Localization Translator/
+
+構成:
+Paradox Localization Translator/
+├── 翻訳結果/
+├── キャッシュ/
+├── バックアップ/
+├── ログ/
+└── 設定/
+
+［設定］タブの［保存場所を変更］から別SSDや任意フォルダへ変更できます。既存データをコピーして移行することもできます。
+
+【15. エラーログ / 診断】
+アプリ例外、LLM接続失敗、YAML解析失敗、書込失敗などを日別ログへ保存します。
+
+［エラーログを開く］:
+ログフォルダを開きます。
+
+［診断ログを収集］:
+OS、アプリバージョン、モデル情報、エラーログなどを診断ZIPへまとめます。APIキーや翻訳本文は含めません。
+
+【16. ×ボタンを押したとき】
+右上/左上の×ボタンを押すと、既定では次の確認が出ます。
+
+「最小化しますか？ それともアプリを終了しますか？」
+
+最小化:
+・ウィンドウだけ最小化します
+・翻訳、探索、LLM処理は止まりません
+
+終了:
+・翻訳中ならセッションとキャッシュを保存します
+・LLM/翻訳処理へ安全停止要求を出します
+・その後アプリを終了します
+
+確認画面には「次回もこの確認を表示する」のチェックがあります。
+チェックを外して最小化または終了を選ぶと、次回からその動作を直接実行します。
+
+後から変更したい場合:
+［設定］→［ウィンドウの×ボタンを押したときの動作］で、
+・毎回確認
+・最小化
+・終了
+を選択できます。
+「×ボタンを押したとき確認を表示する」もON/OFFできます。
+
+【17. 安全に使うための注意】
+・元Modへ直接上書きする前に必ず警告内容を確認してください。
+・Steam Workshop更新で手動変更が上書きされる場合があります。
+・直接上書き時は自動バックアップを作ります。
+・大規模翻訳ではまず標準設定（40 / 1）を推奨します。
+・探索用LLMは小型モデルを使うと負荷を抑えられます。
+・クラウドAPIキーは保存されません。
+・不具合時は診断ログZIPを作成すると原因調査が容易です。
+
+【18. よくある使い方】
+新規Modを日本語化:
+1. Modをドラッグ
+2. 翻訳モデル確認
+3. 翻訳開始
+4. QA
+5. 必要なら検索修正
+6. 完成版をModへ差分上書き
+
+既存日本語化Modの欠損を直す:
+1. 全Mod調査
+2. 翻訳状況で「別Mod翻訳・欠損」を確認
+3. 対象Modを翻訳
+4. 日本語化Modへ差分上書き
+
+Mod更新後だけ追加翻訳:
+1. 更新済みModを再度追加
+2. 過去キャッシュ/原文スナップショットを自動特定
+3. 差分更新を確認
+4. 新規・変更キーだけ翻訳
+
+手動で訳語を直す:
+1. 翻訳検索タブ
+2. キーまたは日本語本文を検索
+3. 結果を選択
+4. 訳文を編集して保存
+
+この使い方タブはアプリ内蔵説明書です。配布版だけを受け取った利用者でも、外部READMEを開かず基本操作から高度機能まで確認できます。
 """
         box.insert("1.0", guide)
         box.config(state="disabled")
@@ -1040,6 +1363,16 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
         ttk.Label(top, text="Modごとの日本語翻訳状況", font=("", 13, "bold")).pack(side="left")
         ttk.Label(top, textvariable=self.mod_status_summary_var).pack(side="right")
 
+        search = ttk.LabelFrame(t, text="判定済みModを検索", padding=6); search.pack(fill="x", pady=(0,6))
+        ttk.Label(search, text="Mod名").pack(side="left")
+        search_entry = ttk.Entry(search, textvariable=self.mod_status_search_var, width=42)
+        search_entry.pack(side="left", fill="x", expand=True, padx=(6,6))
+        search_entry.bind("<Return>", lambda e:self.search_mod_status())
+        search_entry.bind("<KeyRelease>", lambda e:self.search_mod_status(live=True))
+        ttk.Button(search, text="検索", command=self.search_mod_status).pack(side="left")
+        ttk.Button(search, text="解除", command=self.clear_mod_status_search).pack(side="left", padx=(6,0))
+        ttk.Label(search, textvariable=self.mod_status_search_result_var, foreground="#555").pack(side="left", padx=(12,0))
+
         # 翻訳状況タブから探索専用LLMをそのまま変更・適用できる。
         moncfg = ttk.LabelFrame(t, text="探索用LLM設定", padding=6); moncfg.pack(fill="x", pady=(0,6))
         ttk.Label(moncfg, text="プロバイダ").grid(row=0,column=0,sticky="w")
@@ -1090,6 +1423,76 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
         ttk.Button(bottom,text="結果を消去",command=self.clear_mod_status_results).pack(side="left")
         ttk.Button(bottom,text="キャッシュ再読込",command=self._restore_cached_mod_status).pack(side="left",padx=(6,0))
         ttk.Button(bottom,text="CSV保存",command=self.export_mod_status_csv).pack(side="left",padx=(6,0))
+
+    def _mod_status_matches_query(self, result, query):
+        q = (query or "").strip().casefold()
+        if not q:
+            return True
+        fields = [
+            result.get("mod", ""),
+            result.get("status", ""),
+            result.get("external_translation_mod", ""),
+            result.get("message", ""),
+            result.get("path", ""),
+        ]
+        return any(q in str(v).casefold() for v in fields)
+
+    def _populate_mod_status_tree(self, results=None):
+        if not hasattr(self, "mod_status_tree"):
+            return
+        query = self.mod_status_search_var.get().strip() if hasattr(self, "mod_status_search_var") else ""
+        source = list(self.mod_research_results if results is None else results)
+        visible = [r for r in source if self._mod_status_matches_query(r, query)]
+        for x in self.mod_status_tree.get_children():
+            self.mod_status_tree.delete(x)
+        # iidは元リストのindexを使う。検索で絞っても選択→元データ参照がずれない。
+        index_by_id = {id(r): i for i, r in enumerate(self.mod_research_results)}
+        for r in visible:
+            i = index_by_id.get(id(r))
+            if i is None:
+                try:
+                    i = self.mod_research_results.index(r)
+                except ValueError:
+                    continue
+            self.mod_status_tree.insert("", "end", iid=f"mod_{i}", values=(
+                r.get("status", ""), r.get("mod", ""), r.get("gap_count", 0),
+                r.get("external_translation_mod", ""),
+                r.get("external_translation_gap_count", 0) if r.get("external_translation_mod") else ""
+            ))
+        if query:
+            self.mod_status_search_result_var.set(f"{len(visible)}件 / 全{len(source)}件")
+        else:
+            self.mod_status_search_result_var.set("")
+        if not visible and query:
+            self._set_mod_status_detail_text(f"『{query}』に一致する判定済みModはありません。")
+
+    def search_mod_status(self, live=False):
+        query = self.mod_status_search_var.get().strip()
+        self._populate_mod_status_tree()
+        if not query:
+            return
+        matches = [r for r in self.mod_research_results if self._mod_status_matches_query(r, query)]
+        if len(matches) == 1:
+            r = matches[0]
+            # 1件なら自動選択し、判定結果を下段に表示する。
+            try:
+                idx = self.mod_research_results.index(r)
+                iid = f"mod_{idx}"
+                if self.mod_status_tree.exists(iid):
+                    self.mod_status_tree.selection_set(iid)
+                    self.mod_status_tree.focus(iid)
+                    self.mod_status_tree.see(iid)
+                    self._on_mod_status_selection_changed()
+            except Exception:
+                pass
+        elif not matches and not live:
+            self.mod_status_search_result_var.set(f"『{query}』は見つかりませんでした")
+
+    def clear_mod_status_search(self):
+        self.mod_status_search_var.set("")
+        self.mod_status_search_result_var.set("")
+        self._populate_mod_status_tree()
+        self._set_mod_status_detail_text("一覧からModを選択すると、ここに調査結果・日本語化Mod・上書き先・場所を段落で表示します。")
 
     def _set_mod_status_detail_text(self, text):
         if not hasattr(self, "mod_status_detail"):
@@ -1222,8 +1625,9 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
     def _save_llm_preferences(self):
         """Persist last-used provider/URL/model only. API keys are intentionally excluded."""
         try:
-            data = {
-                "version": 1,
+            data = dict(self.app_preferences) if isinstance(self.app_preferences, dict) else {}
+            data.update({
+                "version": 2,
                 "translation_llm": {
                     "provider": self.provider_var.get(),
                     "url": self.url_var.get().strip(),
@@ -1234,7 +1638,11 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
                     "url": self.monitor_url_var.get().strip(),
                     "model": self.monitor_model_var.get().strip(),
                 },
-            }
+                "window_close": {
+                    "action": {"毎回確認":"confirm","最小化":"minimize","終了":"quit"}.get(self.close_action_var.get(), "confirm"),
+                    "show_prompt": bool(self.close_prompt_var.get()),
+                },
+            })
             core.save_json(APP_PREFS_PATH, data)
             self.app_preferences = data
         except Exception as e:
@@ -1477,13 +1885,8 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
             rows.sort(key=lambda r: str(r.get("mod", "")).lower())
             if not hasattr(self, "mod_status_tree"):
                 return
-            for x in self.mod_status_tree.get_children(): self.mod_status_tree.delete(x)
             self.mod_research_results = rows
-            for i,r in enumerate(rows):
-                msg = r.get("message", "")
-                if msg and not msg.endswith("（キャッシュ）"):
-                    msg += "（キャッシュ）"
-                self.mod_status_tree.insert("", "end", iid=f"mod_{i}", values=(r.get("status",""),r.get("mod",""),r.get("gap_count",0),r.get("external_translation_mod",""),r.get("external_translation_gap_count",0) if r.get("external_translation_mod") else ""))
+            self._populate_mod_status_tree()
             counts={}
             for r in rows: counts[r.get("status","")] = counts.get(r.get("status",""),0)+1
             summary=" / ".join(f"{k}: {v}" for k,v in counts.items())
@@ -3363,13 +3766,12 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
                     self.monitor_thread=None
                     messagebox.showerror(APP_NAME,"未翻訳監視エラー: "+payload)
                 elif kind=="mod_status_results":
-                    for x in self.mod_status_tree.get_children(): self.mod_status_tree.delete(x)
                     self.mod_research_results=[]
+                    self._populate_mod_status_tree()
                     self.mod_status_summary_var.set("調査結果: 0件")
                 elif kind=="mod_status_append":
                     self.mod_research_results.append(payload)
-                    i=len(self.mod_research_results)-1
-                    self.mod_status_tree.insert("","end",iid=f"mod_{i}",values=(payload.get("status",""),payload.get("mod",""),payload.get("gap_count",0),payload.get("external_translation_mod",""),payload.get("external_translation_gap_count",0) if payload.get("external_translation_mod") else ""))
+                    self._populate_mod_status_tree()
                     counts={}
                     for r in self.mod_research_results: counts[r.get("status","")]=counts.get(r.get("status",""),0)+1
                     summary=" / ".join(f"{k}: {v}" for k,v in counts.items())
@@ -3429,16 +3831,25 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
         self.start_btn.config(state="normal"); self.pause_btn.config(state="disabled",text="一時停止"); self.stop_btn.config(state="disabled"); self.controller=None
 
     def on_close(self):
+        """Handle the window × button according to the user's preference."""
         self._save_llm_preferences()
-        if self.monitor_thread and self.monitor_thread.is_alive():
-            self.monitor_stop_event.set()
-            if self.monitor_llm_controller: self.monitor_llm_controller.request_stop(save=False)
-        if self.worker and self.worker.is_alive():
-            if not messagebox.askyesno(APP_NAME,"翻訳中です。セッションを保存して終了しますか？\n完了済みバッチはキャッシュされ、次回再開できます。"):
-                return
-            self.save_session(active=True)
-            if self.controller: self.controller.request_stop(save=True)
-        self.destroy()
+        setting = self.close_action_var.get()
+        show_prompt = bool(self.close_prompt_var.get())
+
+        if setting == "毎回確認" or show_prompt:
+            action = self._show_close_choice_dialog()
+        elif setting == "最小化":
+            action = "minimize"
+        else:
+            action = "quit"
+
+        if action == "cancel":
+            return
+        if action == "minimize":
+            self.iconify()
+            return
+        self._perform_app_exit()
+
 
 
 if __name__ == "__main__":
