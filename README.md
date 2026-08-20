@@ -809,4 +809,4 @@ MIT License
 
 # Version
 
-Current release: **v0.8.9**
+Current release: **v0.9.0**

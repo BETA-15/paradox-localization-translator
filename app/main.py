@@ -34,7 +34,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.8.9"
+APP_VERSION = "0.9.0"
 
 
 def _app_container_dir() -> Path:
@@ -312,6 +312,7 @@ class App(BaseTk):
         self.monitor_snapshot = {}
         self.detected_mod_locations = []
         self.mod_discovery_status_var = tk.StringVar(value="ゲーム/Mod場所: 未検出")
+        self.discovery_multi_select_var = tk.BooleanVar(value=False)
         self.mod_status_cache_lock = threading.Lock()
         self.mod_status_cache = core.load_json(MOD_STATUS_CACHE_PATH, {"version": 1, "items": {}})
         if not isinstance(self.mod_status_cache, dict):
@@ -697,10 +698,19 @@ class App(BaseTk):
         qbar=ttk.Frame(qbox); qbar.pack(fill="x",pady=(0,5))
         ttk.Button(qbar,text="選択削除",command=self.remove_chinese_queue_selected).pack(side="left")
         ttk.Button(qbar,text="全消去",command=self.clear_chinese_queue).pack(side="left",padx=(5,0))
+        ttk.Button(qbar,text="出力先変更",command=self.change_chinese_output_for_selected).pack(side="left",padx=(10,0))
+        ttk.Button(qbar,text="出力を開く",command=self.open_selected_chinese_output).pack(side="left",padx=(5,0))
+        ttk.Button(qbar,text="キャッシュを見る",command=self.view_selected_chinese_cache).pack(side="left",padx=(5,0))
+        ttk.Button(qbar,text="キャッシュを追加",command=self.import_cache_to_selected_chinese).pack(side="left",padx=(5,0))
         ttk.Label(qbar,text="翻訳状況タブから中国語のあるModだけ追加できます",foreground="#666").pack(side="right")
-        cols=("mod","input","status")
+
+        qbar2=ttk.Frame(qbox); qbar2.pack(fill="x",pady=(0,5))
+        ttk.Button(qbar2,text="日本語化Modへ差分上書き",command=lambda:self.overwrite_selected_chinese_translation(True)).pack(side="left")
+        ttk.Button(qbar2,text="元Modへ上書き",command=lambda:self.overwrite_selected_chinese_translation(False)).pack(side="left",padx=(5,0))
+        ttk.Label(qbar2,text="上書き前にバックアップと最終確認を行います",foreground="#8a5a00").pack(side="left",padx=(10,0))
+        cols=("mod","input","output","status")
         self.chinese_queue_tree=ttk.Treeview(qbox,columns=cols,show="headings",height=10,selectmode="extended")
-        for c,txt,w in (("mod","Mod / 項目",210),("input","中国語localization",430),("status","状態",100)):
+        for c,txt,w in (("mod","Mod / 項目",190),("input","中国語localization",330),("output","出力",300),("status","状態",90)):
             self.chinese_queue_tree.heading(c,text=txt); self.chinese_queue_tree.column(c,width=w,anchor="center" if c=="status" else "w")
         self._enable_ctrl_multiselect(self.chinese_queue_tree)
         self._enable_tree_sort(self.chinese_queue_tree)
@@ -749,7 +759,7 @@ class App(BaseTk):
         if not hasattr(self,"chinese_queue_tree"): return
         for x in self.chinese_queue_tree.get_children(): self.chinese_queue_tree.delete(x)
         for i,item in enumerate(self.chinese_queue_items):
-            self.chinese_queue_tree.insert("","end",iid=f"zh_{i}",values=(item.get("mod_name",Path(item.get("input","")).name),item.get("input",""),item.get("status","待機")))
+            self.chinese_queue_tree.insert("","end",iid=f"zh_{i}",values=(item.get("mod_name",Path(item.get("input","")).name),item.get("input",""),item.get("output",""),item.get("status","待機")))
 
     def _append_chinese_queue(self, path, mod_name=""):
         path=Path(path); ok,msg=self._validate_chinese_input(path)
@@ -759,7 +769,12 @@ class App(BaseTk):
             try:
                 if str(Path(item.get("input","")).resolve())==key: return item,"すでに中国語基準キューに追加されています。"
             except Exception: pass
-        item={"input":str(path),"mod_name":mod_name or path.name,"status":"待機"}
+        safe=re.sub(r'[^0-9A-Za-z_\-\u3040-\u30ff\u4e00-\u9fff]+','_',mod_name or path.name).strip("_") or "ChineseBasis"
+        item={"input":str(path),"mod_name":mod_name or path.name,"status":"待機","output":str(Path(self.chinese_output_var.get().strip() or str(OUTPUT_ROOT/"中国語基準翻訳"))/safe)}
+        if path.is_dir() and path.name.lower()=="localization":
+            item["mod_localization"]=str(path); item["mod_root"]=str(path.parent)
+        elif path.is_dir() and (path/"localization").is_dir():
+            item["mod_root"]=str(path); item["mod_localization"]=str(path/"localization")
         self.chinese_queue_items.append(item); self._refresh_chinese_queue_tree()
         return item,msg
 
@@ -782,6 +797,79 @@ class App(BaseTk):
 
     def clear_chinese_queue(self):
         self.chinese_queue_items.clear(); self._refresh_chinese_queue_tree()
+
+    def _selected_chinese_queue_item(self):
+        if not hasattr(self,"chinese_queue_tree"):
+            return None
+        sel=self.chinese_queue_tree.selection()
+        if not sel:
+            messagebox.showinfo(APP_NAME,"中国語基準翻訳キューから項目を1つ選択してください。")
+            return None
+        try:
+            idx=int(sel[0].split("_",1)[1])
+        except Exception:
+            return None
+        return self.chinese_queue_items[idx] if 0 <= idx < len(self.chinese_queue_items) else None
+
+    def change_chinese_output_for_selected(self):
+        item=self._selected_chinese_queue_item()
+        if not item: return
+        raw=filedialog.askdirectory(title="選択した中国語基準翻訳の出力先を変更")
+        if not raw: return
+        item["output"]=str(Path(raw))
+        self._append_chinese_log(f"出力先変更: {item.get('mod_name','項目')} → {raw}")
+
+    def open_selected_chinese_output(self):
+        item=self._selected_chinese_queue_item()
+        if not item: return
+        raw=item.get("output","")
+        if not raw:
+            messagebox.showinfo(APP_NAME,"この項目の出力先が設定されていません。")
+            return
+        self._open_path(Path(raw))
+
+    def view_selected_chinese_cache(self):
+        item=self._selected_chinese_queue_item()
+        if not item: return
+        raw=item.get("cache","")
+        if not raw:
+            messagebox.showinfo(APP_NAME,"この項目にはまだキャッシュがありません。翻訳を開始すると作成されます。")
+            return
+        cache=Path(raw)
+        self._open_path(cache.parent if cache.parent.exists() else cache)
+
+    def import_cache_to_selected_chinese(self):
+        item=self._selected_chinese_queue_item()
+        if not item: return
+        raw=filedialog.askopenfilename(title="中国語基準翻訳キャッシュを追加",filetypes=[("JSON","*.json"),("All files","*")])
+        if not raw: return
+        src=Path(raw)
+        try:
+            core.load_json(src,{})
+            cache=Path(item.get("cache", "")) if item.get("cache") else self._new_cache_path(Path(item["input"]))
+            cache.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(src,cache)
+            item["cache"]=str(cache)
+            self._append_chinese_log(f"キャッシュ追加: {item.get('mod_name','項目')} ← {src.name}")
+        except Exception as exc:
+            record_error("中国語基準キャッシュ追加",exc,str(src))
+            messagebox.showerror(APP_NAME,f"キャッシュを追加できませんでした。\n{exc}")
+
+    def overwrite_selected_chinese_translation(self, prefer_external=True):
+        item=self._selected_chinese_queue_item()
+        if not item: return
+        if item.get("status","").startswith("翻訳中"):
+            messagebox.showinfo(APP_NAME,"翻訳中の項目は上書きできません。")
+            return
+        if prefer_external:
+            if not item.get("external_translation_path"):
+                messagebox.showinfo(APP_NAME,"この項目には別の日本語化Modが関連付けられていません。元Modへ上書きを使用してください。")
+                return
+            if self._merge_translation_gaps_into_external_mod(item):
+                return
+            messagebox.showinfo(APP_NAME,"日本語化Modへ反映できる差分情報がありません。")
+            return
+        self.overwrite_selected_translation_to_mod(item_override=item, prefer_external=False)
 
     def pick_chinese_file(self):
         raw=filedialog.askopenfilename(title="簡体字中国語YAMLを選択",filetypes=[("Paradox YAML","*.yml *.yaml"),("All files","*")])
@@ -833,9 +921,12 @@ class App(BaseTk):
                     self.events.put(("chinese_queue_status",(i,"翻訳中")))
                     self.events.put(("chinese_queue_current",(i+1,total,item.get("mod_name",""))))
                     inp=Path(item["input"]); safe=re.sub(r'[^0-9A-Za-z_\-\u3040-\u30ff\u4e00-\u9fff]+','_',item.get("mod_name") or inp.name).strip("_") or f"item_{i+1}"
-                    out=out_root/safe
-                    cache_dir=CACHE_ROOT/(datetime.now().strftime("%Y%m%d_%H%M%S")+f"_ChineseBasis_{i+1}"); cache_dir.mkdir(parents=True,exist_ok=True)
-                    result=core.run_chinese_basis_translation(inp,out,model=settings["model"],url=settings["url"],workers=settings["workers"],batch_size=settings["batch"],cache_path=cache_dir/"translate_cache.json",controller=self.chinese_controller,glossary_path=settings["glossary"],preset=settings["preset"],auto_qa=settings["autoqa"],provider=settings["provider"],api_key=settings["api_key"])
+                    out=Path(item.get("output") or (out_root/safe)); out.mkdir(parents=True,exist_ok=True)
+                    cache=Path(item.get("cache", "")) if item.get("cache") else self._new_cache_path(inp)
+                    item["output"]=str(out); item["cache"]=str(cache)
+                    if 0 <= i < len(self.chinese_queue_items):
+                        self.chinese_queue_items[i]["output"]=str(out); self.chinese_queue_items[i]["cache"]=str(cache)
+                    result=core.run_chinese_basis_translation(inp,out,model=settings["model"],url=settings["url"],workers=settings["workers"],batch_size=settings["batch"],cache_path=cache,controller=self.chinese_controller,glossary_path=settings["glossary"],preset=settings["preset"],auto_qa=settings["autoqa"],provider=settings["provider"],api_key=settings["api_key"])
                     if result.get("interrupted"):
                         self.events.put(("chinese_queue_status",(i,"中断"))); break
                     completed+=1; self.events.put(("chinese_queue_status",(i,"完了")))
@@ -1537,18 +1628,22 @@ Mod更新後だけ追加翻訳:
         discovery.pack(fill="x", pady=(0,8))
         dbar = ttk.Frame(discovery); dbar.pack(fill="x", pady=(0,5))
         ttk.Button(dbar, text="ゲーム/Mod場所を自動検出", command=self.discover_mod_locations).pack(side="left")
-        ttk.Button(dbar, text="選択場所を調査対象に設定", command=self.use_selected_discovered_location).pack(side="left", padx=(6,0))
-        ttk.Button(dbar, text="選択ゲームの全Modを調べる", command=self.research_selected_discovered_location).pack(side="left", padx=(6,0))
+        ttk.Button(dbar, text="選択場所を監視対象に設定（1か所）", command=self.use_selected_discovered_location).pack(side="left", padx=(6,0))
+        ttk.Button(dbar, text="選択した場所の全Modを一括調査", command=self.research_selected_discovered_location).pack(side="left", padx=(6,0))
+        ttk.Checkbutton(dbar, text="複数選択モード", variable=self.discovery_multi_select_var).pack(side="left", padx=(12,0))
+        ttk.Button(dbar, text="すべて選択", command=self.select_all_discovered_locations).pack(side="left", padx=(5,0))
+        ttk.Button(dbar, text="選択解除", command=lambda:self.discovered_mod_tree.selection_remove(self.discovered_mod_tree.selection())).pack(side="left", padx=(5,0))
         ttk.Label(dbar, textvariable=self.mod_discovery_status_var).pack(side="right")
         cols=("game","kind","mods","path")
         self.discovered_mod_tree=ttk.Treeview(discovery, columns=cols, show="headings", height=4, selectmode="extended")
         self._enable_ctrl_multiselect(self.discovered_mod_tree)
+        self.discovered_mod_tree.bind("<Button-1>", self._on_discovery_tree_click, add="+")
         for c,txt,w in (("game","ゲーム",210),("kind","種類",130),("mods","Mod数",70),("path","検出場所",650)):
             self.discovered_mod_tree.heading(c,text=txt); self.discovered_mod_tree.column(c,width=w,anchor="w")
         self._enable_tree_sort(self.discovered_mod_tree)
         self.discovered_mod_tree.pack(fill="x")
-        ttk.Label(discovery, text="Ctrlキーを押しながらクリックすると複数選択できます。", foreground="#666").pack(anchor="w", pady=(4,0))
-        ttk.Label(discovery, text="選択した複数のSteam Workshop / ローカルMod場所は［選択ゲームの全Modを調べる］でまとめて調査できます。Steamの追加ライブラリ、別ドライブ・外付けSSDも自動探索します。", foreground="#555").pack(anchor="w", pady=(1,0))
+        ttk.Label(discovery, text="複数選択: Ctrl+クリック、または［複数選択モード］をONにすると通常クリックで追加/解除できます。［すべて選択］も利用できます。", foreground="#666").pack(anchor="w", pady=(4,0))
+        ttk.Label(discovery, text="［監視対象に設定］は常時監視用の1か所を調査対象欄へ入れるだけです。［全Modを一括調査］は選択した複数場所のModをその場でまとめて調査し、結果を翻訳状況へ送ります。", foreground="#555", wraplength=1200).pack(anchor="w", pady=(1,0))
 
         cfg = ttk.LabelFrame(t, text="ゲーム本体 / Mod の未翻訳調査・監視", padding=8)
         cfg.pack(fill="x")
@@ -1681,6 +1776,8 @@ Mod更新後だけ追加翻訳:
         self.mod_status_detail.configure(state="disabled")
 
         bottom=ttk.Frame(t); bottom.pack(fill="x", pady=(4,0))
+        ttk.Button(bottom,text="選択Modだけ再調査",command=self.research_selected_status_mods).pack(side="left")
+        ttk.Separator(bottom,orient="vertical").pack(side="left",fill="y",padx=8)
         ttk.Button(bottom,text="選択したModを翻訳",command=self.translate_selected_mod_from_status).pack(side="left")
         ttk.Button(bottom,text="選択Modを除外して翻訳",command=self.translate_all_except_selected_mods).pack(side="left",padx=(6,0))
         ttk.Button(bottom,text="選択Modを翻訳キューへ追加",command=lambda:self.queue_selected_mod_from_status(start_now=False)).pack(side="left",padx=(6,0))
@@ -1834,6 +1931,28 @@ Mod更新後だけ追加翻訳:
             except Exception as e:
                 self.events.put(("mod_locations_error",str(e)))
         threading.Thread(target=work,daemon=True).start()
+
+    def _on_discovery_tree_click(self, event):
+        if not getattr(self,"discovery_multi_select_var",None) or not self.discovery_multi_select_var.get():
+            return None
+        iid=self.discovered_mod_tree.identify_row(event.y)
+        if not iid:
+            return "break"
+        if iid in self.discovered_mod_tree.selection():
+            self.discovered_mod_tree.selection_remove(iid)
+        else:
+            self.discovered_mod_tree.selection_add(iid)
+        self.discovered_mod_tree.focus(iid)
+        self.discovered_mod_tree.see(iid)
+        return "break"
+
+    def select_all_discovered_locations(self):
+        if not hasattr(self,"discovered_mod_tree"):
+            return
+        items=self.discovered_mod_tree.get_children()
+        if items:
+            self.discovered_mod_tree.selection_set(items)
+            self.mod_discovery_status_var.set(f"{len(items)}か所を選択中")
 
     def _selected_discovered_locations(self):
         if not hasattr(self, "discovered_mod_tree"):
@@ -2233,7 +2352,7 @@ Mod更新後だけ追加翻訳:
             return
         self._start_mod_research(roots, replace=True)
 
-    def _start_mod_research(self, roots, replace=True):
+    def _start_mod_research(self, roots, replace=True, translation_pool=None):
         if self.mod_research_thread and self.mod_research_thread.is_alive():
             messagebox.showinfo(APP_NAME,"すでに調査中です。")
             return
@@ -2244,7 +2363,7 @@ Mod更新後だけ追加翻訳:
         if replace:
             self.mod_research_results=[]
             self.events.put(("mod_status_results",[]))
-        self.mod_research_thread=threading.Thread(target=self._mod_research_worker,args=(roots,),daemon=True)
+        self.mod_research_thread=threading.Thread(target=self._mod_research_worker,args=(roots,translation_pool),daemon=True)
         self.mod_research_thread.start()
 
     def stop_mod_research(self):
@@ -2253,16 +2372,17 @@ Mod更新後だけ追加翻訳:
             self.monitor_llm_controller.request_stop(save=False)
         self.mod_status_summary_var.set("調査停止要求済み…")
 
-    def _mod_research_worker(self, roots):
+    def _mod_research_worker(self, roots, translation_pool=None):
         try:
             total=len(roots)
             results=[]
             check_external = bool(self.monitor_check_translation_mods_var.get())
-            translation_index = core.build_translation_mod_index(roots) if check_external else None
+            pool_roots = list(translation_pool or roots)
+            translation_index = core.build_translation_mod_index(pool_roots) if check_external else None
             pool_signature = ""
             if check_external:
                 h = hashlib.sha256()
-                for root in sorted((Path(r) for r in roots), key=lambda x: str(x)):
+                for root in sorted((Path(r) for r in pool_roots), key=lambda x: str(x)):
                     h.update(str(root).encode("utf-8", "ignore"))
                     h.update(self._mod_source_signature(root).encode())
                 pool_signature = h.hexdigest()
@@ -2344,6 +2464,47 @@ Mod更新後だけ追加翻訳:
                 return r
         return None
 
+    def research_selected_status_mods(self):
+        """翻訳状況一覧で選択したModだけを強制再調査し、他の結果は保持する。"""
+        selected=self._selected_mod_status_results()
+        if not selected:
+            messagebox.showinfo(APP_NAME,"翻訳状況の一覧から再調査するModを選択してください。Ctrlキーを押しながらクリックすると複数選択できます。")
+            return
+        if self.mod_research_thread and self.mod_research_thread.is_alive():
+            messagebox.showinfo(APP_NAME,"すでに調査中です。")
+            return
+        roots=[]; selected_paths=set()
+        for result in selected:
+            root=Path(result.get("path", ""))
+            if root.exists() and core.mod_localization_root(root):
+                roots.append(root)
+                try:selected_paths.add(str(root.resolve()))
+                except Exception:selected_paths.add(str(root))
+        if not roots:
+            messagebox.showinfo(APP_NAME,"選択した項目から調査可能なModフォルダを確認できませんでした。")
+            return
+        kept=[]
+        for r in self.mod_research_results:
+            try:key=str(Path(r.get("path","")).resolve())
+            except Exception:key=str(Path(r.get("path","")))
+            if key not in selected_paths:
+                kept.append(r)
+        self.mod_research_results=kept
+        with self.mod_status_cache_lock:
+            items=self.mod_status_cache.setdefault("items",{})
+            for key in selected_paths:
+                items.pop(key,None)
+            core.save_json(MOD_STATUS_CACHE_PATH,self.mod_status_cache)
+        self._populate_mod_status_tree()
+        pool=[]; seen=set()
+        for r in kept+selected:
+            root=Path(r.get("path", ""))
+            try:key=str(root.resolve())
+            except Exception:key=str(root)
+            if root.exists() and key not in seen:
+                seen.add(key); pool.append(root)
+        self._start_mod_research(roots, replace=False, translation_pool=pool or roots)
+
     def queue_selected_mods_to_chinese_basis(self):
         """翻訳状況で選択したうち、簡体字中国語localizationを持つModだけ中国語基準キューへ追加する。"""
         selected=self._selected_mod_status_results()
@@ -2365,6 +2526,14 @@ Mod更新後だけ追加翻訳:
                 continue
             item,msg=self._append_chinese_queue(loc,result.get("mod",loc.name))
             if item:
+                mod_root=Path(result.get("path", ""))
+                item["mod_root"]=str(mod_root)
+                item["mod_localization"]=str(loc)
+                item["direct_from_status"]=True
+                item["external_translation_mod"]=result.get("external_translation_mod","")
+                item["external_translation_path"]=result.get("external_translation_path","")
+                item["external_translation_localization"]=result.get("external_translation_localization","")
+                item["external_gap_keys"]=[c.get("key") for c in result.get("external_translation_gaps",[]) if c.get("key")]
                 added+=1
         self._refresh_chinese_queue_tree()
         if added:
@@ -2635,14 +2804,14 @@ Mod更新後だけ追加翻訳:
             messagebox.showerror(APP_NAME, f"日本語化Modへの差分上書き中にエラーが発生しました。\n{e}\n\nバックアップ先: {backup_root}")
             return True
 
-    def overwrite_selected_translation_to_mod(self, item_override=None):
+    def overwrite_selected_translation_to_mod(self, item_override=None, prefer_external=True):
         item = item_override or self._selected_queue_item()
         if not item:
             return
         if item.get("status", "").startswith("翻訳中"):
             messagebox.showinfo(APP_NAME, "翻訳中の項目は上書きできません。翻訳完了後に実行してください。")
             return
-        if item.get("external_translation_path") and item.get("external_gap_keys"):
+        if prefer_external and item.get("external_translation_path") and item.get("external_gap_keys"):
             if self._merge_translation_gaps_into_external_mod(item):
                 return
         loc_root, mod_root = self._infer_mod_target_for_item(item)
