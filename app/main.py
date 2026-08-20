@@ -34,7 +34,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.5"
+APP_VERSION = "0.11.6"
 
 
 def _app_container_dir() -> Path:
@@ -304,7 +304,7 @@ class App(BaseTk):
         # Live untranslated-localization monitor
         self.monitor_path_var = tk.StringVar(value="")  # legacy / first monitor target
         self.monitor_target_paths = []
-        self.monitor_target_summary_var = tk.StringVar(value="監視対象: 翻訳状況タブでMod場所を選択して調査してください")
+        self.monitor_target_summary_var = tk.StringVar(value="監視対象: 翻訳状況タブでゲーム / Mod場所を選択してください")
         self.monitor_interval_var = tk.IntVar(value=15)
         self.monitor_use_llm_var = tk.BooleanVar(value=True)
         self.monitor_check_translation_mods_var = tk.BooleanVar(value=True)
@@ -2100,6 +2100,7 @@ Mod更新後だけ追加翻訳:
         self.discovered_mod_tree=ttk.Treeview(treewrap, columns=cols, show="headings", height=6, selectmode="extended")
         self._enable_ctrl_multiselect(self.discovered_mod_tree)
         self.discovered_mod_tree.bind("<Button-1>", self._on_discovery_tree_click, add="+")
+        self.discovered_mod_tree.bind("<<TreeviewSelect>>", lambda e:self._sync_monitor_targets_from_discovery_selection(), add="+")
         for c,txt,w in (("game","ゲーム",180),("kind","種類",125),("mods","Mod数",70),("path","検出場所",650)):
             self.discovered_mod_tree.heading(c,text=txt)
             self.discovered_mod_tree.column(c,width=w,minwidth=w,stretch=False,anchor="w")
@@ -2348,6 +2349,7 @@ Mod更新後だけ追加翻訳:
             self.discovered_mod_tree.selection_add(iid)
         self.discovered_mod_tree.focus(iid)
         self.discovered_mod_tree.see(iid)
+        self.after_idle(self._sync_monitor_targets_from_discovery_selection)
         return "break"
 
     def select_all_discovered_locations(self):
@@ -2356,7 +2358,25 @@ Mod更新後だけ追加翻訳:
         items=self.discovered_mod_tree.get_children()
         if items:
             self.discovered_mod_tree.selection_set(items)
-            self.mod_discovery_status_var.set(f"{len(items)}か所を選択中")
+            self._sync_monitor_targets_from_discovery_selection()
+            self.mod_discovery_status_var.set(f"{len(items)}か所を選択中 / 監視対象へ反映済み")
+
+    def _sync_monitor_targets_from_discovery_selection(self):
+        """翻訳状況の場所一覧で現在選択中の行を、そのまま未翻訳監視対象へ同期する。"""
+        if not hasattr(self, "discovered_mod_tree"):
+            return []
+        rows=[]
+        for iid in self.discovered_mod_tree.selection():
+            try:
+                idx=int(iid.split("_",1)[1])
+                if 0 <= idx < len(self.detected_mod_locations):
+                    rows.append(self.detected_mod_locations[idx])
+            except Exception:
+                continue
+        self._set_monitor_targets(rows)
+        if rows:
+            self.mod_discovery_status_var.set(f"{len(rows)}か所を選択中 / 監視対象へ反映済み")
+        return rows
 
     def _selected_discovered_locations(self):
         if not hasattr(self, "discovered_mod_tree"):
@@ -2400,7 +2420,7 @@ Mod更新後だけ追加翻訳:
                 label += f" ほか{len(labels)-3}か所"
             self.monitor_target_summary_var.set(f"監視対象: {len(paths)}か所 — {label}")
         else:
-            self.monitor_target_summary_var.set("監視対象: 翻訳状況タブでMod場所を選択して調査してください")
+            self.monitor_target_summary_var.set("監視対象: 翻訳状況タブでゲーム / Mod場所を選択してください")
 
     def use_selected_discovered_location(self):
         # 旧UI/内部呼び出しとの互換。選択場所を監視対象として登録する。
@@ -2432,7 +2452,6 @@ Mod更新後だけ追加翻訳:
         if not rows:
             return
         all_roots, missing = self._collect_mod_roots_from_location_rows(rows)
-        self._set_monitor_targets(rows)
         if not all_roots:
             counts = ", ".join(f"{r.get('game','')} {r.get('kind','')}: {r.get('mod_count',0)}" for r in rows)
             messagebox.showinfo(APP_NAME, "選択した場所からlocalizationを持つModを確認できませんでした。\n\n" + counts)
@@ -2446,7 +2465,7 @@ Mod更新後だけ追加翻訳:
     def research_monitor_targets(self):
         paths=[Path(p) for p in self.monitor_target_paths if Path(p).exists()]
         if not paths:
-            messagebox.showinfo(APP_NAME, "監視対象がありません。［翻訳状況］タブでゲーム/Mod場所を選択して［選択した場所のModを調査］を実行してください。")
+            messagebox.showinfo(APP_NAME, "監視対象がありません。［翻訳状況］タブでゲーム / Mod場所を1件以上選択してください。")
             return
         rows=[]
         for p in paths:
@@ -2581,7 +2600,11 @@ Mod更新後だけ追加翻訳:
             return
         roots=self._current_monitor_roots()
         if not roots:
-            messagebox.showinfo(APP_NAME,"監視対象がありません。［翻訳状況］タブでMod場所を選択して調査してください。")
+            # 監視対象キャッシュが空でも、翻訳状況で現在選択されている場所をその場で再取得する。
+            self._sync_monitor_targets_from_discovery_selection()
+            roots=self._current_monitor_roots()
+        if not roots:
+            messagebox.showinfo(APP_NAME,"監視対象がありません。［翻訳状況］タブでゲーム / Mod場所を1件以上選択してください。")
             return
         self.monitor_stop_event.clear(); self.monitor_force_event.set(); self.monitor_snapshot={}
         self.monitor_toggle_btn.config(text="常時監視を停止")
@@ -5206,6 +5229,7 @@ Mod更新後だけ追加翻訳:
                         first=f"loc_{preferred_idx}"
                         if self.discovered_mod_tree.exists(first):
                             self.discovered_mod_tree.selection_set(first); self.discovered_mod_tree.focus(first); self.discovered_mod_tree.see(first)
+                            self._sync_monitor_targets_from_discovery_selection()
                     else:
                         self.mod_discovery_status_var.set("自動検出できませんでした — 手動選択を使用してください")
                 elif kind=="mod_locations_error":
