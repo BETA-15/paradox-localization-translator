@@ -34,7 +34,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.3"
+APP_VERSION = "0.11.4"
 
 
 def _app_container_dir() -> Path:
@@ -1334,14 +1334,22 @@ class App(BaseTk):
         ttk.Label(t, textvariable=self.search_summary_var).pack(anchor="w", pady=(7,4))
         paned = ttk.Panedwindow(t, orient="horizontal"); paned.pack(fill="both", expand=True)
         left = ttk.Frame(paned); right = ttk.Frame(paned); paned.add(left, weight=3); paned.add(right, weight=2)
-        self.search_tree = ttk.Treeview(left, columns=("mod","file","key","value"), show="headings")
-        for c, txt, w in (("mod","Mod",210),("file","ファイル",180),("key","キー",250),("value","日本語訳",330)):
-            self.search_tree.heading(c, text=txt); self.search_tree.column(c, width=w)
+        search_table = ttk.Frame(left)
+        search_table.pack(fill="both", expand=True)
+        search_table.rowconfigure(0, weight=1)
+        search_table.columnconfigure(0, weight=1)
+        self.search_tree = ttk.Treeview(search_table, columns=("mod","file","key","value"), show="headings")
+        for c, txt, w in (("mod","Mod",260),("file","ファイル",260),("key","キー",360),("value","日本語訳",520)):
+            self.search_tree.heading(c, text=txt)
+            self.search_tree.column(c, width=w, minwidth=w, stretch=False, anchor="w")
         self.search_tree.bind("<<TreeviewSelect>>", self.on_search_select)
         self._enable_tree_sort(self.search_tree)
-        ys = ttk.Scrollbar(left, command=self.search_tree.yview); xs=ttk.Scrollbar(left,orient="horizontal",command=self.search_tree.xview)
-        self.search_tree.configure(yscrollcommand=ys.set,xscrollcommand=xs.set)
-        self.search_tree.pack(side="top", fill="both", expand=True); xs.pack(side="bottom",fill="x"); ys.pack(side="right", fill="y")
+        ys = ttk.Scrollbar(search_table, orient="vertical", command=self.search_tree.yview)
+        xs = ttk.Scrollbar(search_table, orient="horizontal", command=self.search_tree.xview)
+        self.search_tree.configure(yscrollcommand=ys.set, xscrollcommand=xs.set)
+        self.search_tree.grid(row=0, column=0, sticky="nsew")
+        ys.grid(row=0, column=1, sticky="ns")
+        xs.grid(row=1, column=0, sticky="ew")
         self.search_selected_var = tk.StringVar(value="検索結果を選択してください")
         ttk.Label(right, textvariable=self.search_selected_var, wraplength=420).pack(fill="x", anchor="w")
         self.search_edit_text = tk.Text(right, wrap="word"); self.search_edit_text.pack(fill="both", expand=True, pady=(6,6))
@@ -2015,8 +2023,9 @@ Mod更新後だけ追加翻訳:
         self.discovered_mod_tree=ttk.Treeview(treewrap, columns=cols, show="headings", height=7, selectmode="extended")
         self._enable_ctrl_multiselect(self.discovered_mod_tree)
         self.discovered_mod_tree.bind("<Button-1>", self._on_discovery_tree_click, add="+")
-        for c,txt,w in (("game","ゲーム",160),("kind","種類",100),("mods","Mod数",60),("path","検出場所",430)):
-            self.discovered_mod_tree.heading(c,text=txt); self.discovered_mod_tree.column(c,width=w,anchor="w")
+        for c,txt,w in (("game","ゲーム",210),("kind","種類",140),("mods","Mod数",75),("path","検出場所",820)):
+            self.discovered_mod_tree.heading(c,text=txt)
+            self.discovered_mod_tree.column(c,width=w,minwidth=w,stretch=False,anchor="w")
         self._enable_tree_sort(self.discovered_mod_tree)
         dsy=ttk.Scrollbar(treewrap,orient="vertical",command=self.discovered_mod_tree.yview)
         dsx=ttk.Scrollbar(treewrap,orient="horizontal",command=self.discovered_mod_tree.xview)
