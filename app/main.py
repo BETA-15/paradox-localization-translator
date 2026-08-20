@@ -16,7 +16,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 import translator_core as core
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.5.2"
+APP_VERSION = "0.5.3"
 
 
 def _app_container_dir() -> Path:
@@ -368,13 +368,20 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
 
         bench=ttk.LabelFrame(t,text="モデル速度比較（実翻訳時の統計も自動記録）",padding=8); bench.pack(fill="both",expand=True,pady=(10,0))
         bar=ttk.Frame(bench); bar.pack(fill="x",pady=(0,6))
-        ttk.Button(bar,text="現在モデルを速度テスト",command=self.benchmark_selected_model).pack(side="left")
-        ttk.Button(bar,text="表示中の全モデルを速度テスト",command=self.benchmark_all_models).pack(side="left",padx=(6,0))
+        ttk.Button(bar,text="現在のLLMを速度テスト",command=self.benchmark_selected_model).pack(side="left")
+        ttk.Button(bar,text="選択したモデルを比較テスト",command=self.benchmark_selected_models).pack(side="left",padx=(6,0))
         self.benchmark_stop_btn=ttk.Button(bar,text="速度テスト停止",command=self.stop_benchmark,state="disabled")
         self.benchmark_stop_btn.pack(side="left",padx=(6,0))
         ttk.Button(bar,text="統計を消去",command=self.clear_model_stats).pack(side="left",padx=(6,0))
         self.benchmark_status_var=tk.StringVar(value="")
         ttk.Label(bar,textvariable=self.benchmark_status_var).pack(side="right")
+
+        select_box=ttk.LabelFrame(bench,text="比較するモデルを選択（最大5モデル）",padding=6)
+        select_box.pack(fill="x",pady=(0,8))
+        ttk.Label(select_box,text="Ctrl / ⌘ を押しながら複数選択できます。5モデルを超える選択は自動的に5件へ制限されます。",foreground="#666").pack(anchor="w",pady=(0,4))
+        self.benchmark_model_list=tk.Listbox(select_box,selectmode=tk.EXTENDED,exportselection=False,height=5)
+        self.benchmark_model_list.pack(fill="x")
+        self.benchmark_model_list.bind("<<ListboxSelect>>",self._limit_benchmark_selection)
         cols=("provider","model","requests","avg","tps","fail")
         self.stats_tree=ttk.Treeview(bench,columns=cols,show="headings",height=9)
         for c,txt,w in (("provider","プロバイダ",100),("model","モデル",330),("requests","回数",70),("avg","平均秒",90),("tps","tokens/s",100),("fail","失敗率",90)):
@@ -430,15 +437,31 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
         if not model: messagebox.showinfo(APP_NAME,"モデルを選択してください。"); return
         self._start_benchmark([model])
 
-    def benchmark_all_models(self):
-        models=list(self.model_combo["values"])
-        if not models: messagebox.showinfo(APP_NAME,"先に接続確認を実行してください。"); return
-        if len(models)>12 and not messagebox.askyesno(APP_NAME,f"{len(models)}モデルを順番に速度テストします。時間がかかる場合があります。続行しますか？"): return
+    def _limit_benchmark_selection(self,event=None):
+        if not hasattr(self,"benchmark_model_list"): return
+        selected=list(self.benchmark_model_list.curselection())
+        if len(selected)<=5: return
+        # Tkの選択順は取得できないため、先頭5件を残して6件目以降を解除する。
+        for idx in selected[5:]:
+            self.benchmark_model_list.selection_clear(idx)
+        self.benchmark_status_var.set("比較テストは最大5モデルまで選択できます")
+
+    def benchmark_selected_models(self):
+        if not hasattr(self,"benchmark_model_list"):
+            return
+        selected=list(self.benchmark_model_list.curselection())
+        if not selected:
+            messagebox.showinfo(APP_NAME,"比較するモデルを1〜5個選択してください。")
+            return
+        if len(selected)>5:
+            messagebox.showinfo(APP_NAME,"比較テストで選択できるのは最大5モデルです。")
+            return
+        models=[self.benchmark_model_list.get(i) for i in selected]
         self._start_benchmark(models)
 
     def _start_benchmark(self,models):
         if getattr(self,"benchmark_worker",None) and self.benchmark_worker.is_alive(): return
-        self.benchmark_status_var.set(f"速度テスト中 0/{len(models)} — LLM応答待ち")
+        self.benchmark_status_var.set(f"速度テスト中 0/{len(models)} — 開始準備")
         self.llm_operation = "モデル速度テスト"
         self.benchmark_stop_btn.config(state="normal")
         provider=self.provider_var.get(); url=self.url_var.get().strip()
@@ -448,6 +471,7 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
             for i,m in enumerate(models,1):
                 if self.benchmark_controller.stop_event.is_set():
                     stopped=True; break
+                self.events.put(("benchmark_model_start",(i,len(models),m)))
                 try:
                     captured=[]
                     original_cb=self.benchmark_controller.progress_callback
@@ -863,6 +887,14 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
                 if kind=="models":
                     self.model_combo["values"]=payload
                     if payload and self.model_var.get() not in payload: self.model_var.set(payload[0])
+                    if hasattr(self,"benchmark_model_list"):
+                        previous={self.benchmark_model_list.get(i) for i in self.benchmark_model_list.curselection()}
+                        self.benchmark_model_list.delete(0,"end")
+                        for model in payload:
+                            self.benchmark_model_list.insert("end",model)
+                        for i,model in enumerate(payload):
+                            if model in previous:
+                                self.benchmark_model_list.selection_set(i)
                     self.connection_var.set(f"{self.provider_var.get()} 接続済み / {len(payload)}モデル")
                 elif kind=="model_error":
                     p=self.provider_var.get()
@@ -891,9 +923,13 @@ Grand Campaign → 開辺 のような固定訳を登録できます。翻訳時
                 elif kind=="benchmark_progress":
                     if payload.get("kind")=="llm_activity": self._handle_llm_activity(payload,"モデル速度テスト")
                     elif payload.get("kind")=="llm_metric": self._record_metric(payload.get("metric"))
+                elif kind=="benchmark_model_start":
+                    i,total,model=payload
+                    self.benchmark_status_var.set(f"速度テスト中 {i}/{total} — {model}")
+                    self.llm_operation=f"モデル速度テスト {i}/{total}"
                 elif kind=="benchmark_metric":
                     i,total,metric=payload
-                    self.benchmark_status_var.set(f"速度テスト中 {i}/{total} — 次のモデルを準備")
+                    self.benchmark_status_var.set(f"速度テスト中 {i}/{total} 完了 — 次のモデルを準備")
                 elif kind=="benchmark_error":
                     i,total,model,err=payload; self.benchmark_status_var.set(f"{model} 失敗 ({i}/{total})")
                     self._append_log(f"[速度テスト失敗] {model}: {err}")
