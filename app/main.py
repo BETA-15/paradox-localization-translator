@@ -34,7 +34,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.10.8"
+APP_VERSION = "0.11.1"
 
 
 def _app_container_dir() -> Path:
@@ -591,9 +591,10 @@ class App(BaseTk):
         qbar2=ttk.Frame(qbox); qbar2.pack(fill="x",pady=(0,5))
         ttk.Button(qbar2,text="上書き",command=self.overwrite_selected_translation_to_mod).pack(side="left")
         ttk.Button(qbar2,text="選択項目の翻訳語QAを実行",command=self.run_selected_translation_qa).pack(side="left",padx=(6,0))
+        ttk.Button(qbar2,text="用語集を自動作成",command=lambda:self.start_auto_glossary_generation("normal")).pack(side="left",padx=(6,0))
         ttk.Button(qbar2,text="QA / 比較編集へ",command=lambda:self._send_pair_to_qa_or_diff("normal","review")).pack(side="left",padx=(6,0))
         ttk.Button(qbar2,text="差分調査へ",command=lambda:self._send_pair_to_qa_or_diff("normal","diff")).pack(side="left",padx=(6,0))
-        ttk.Label(qbar2,text="日本語化Modがある場合は上書き先を確認します。上書き前にバックアップを作成します。",foreground="#8a5a00").pack(side="left",padx=(10,0))
+        ttk.Label(qbox,text="上書き: 既存の日本語化Modが見つかった場合は、その日本語化Modへ反映するか元Modへ反映するかを確認します。実行前にバックアップを作成します。",foreground="#8a5a00",wraplength=900,justify="left").pack(fill="x",anchor="w",pady=(0,5))
 
         self.drop_hint=ttk.Label(qbox,textvariable=self.dnd_status_var,foreground="#666")
         self.drop_hint.pack(fill="x",pady=(0,5))
@@ -682,9 +683,10 @@ class App(BaseTk):
         qbar2=ttk.Frame(qbox); qbar2.pack(fill="x",pady=(0,5))
         ttk.Button(qbar2,text="上書き",command=self.overwrite_selected_chinese_translation).pack(side="left")
         ttk.Button(qbar2,text="選択項目の翻訳語QAを実行",command=self.run_selected_chinese_qa).pack(side="left",padx=(6,0))
+        ttk.Button(qbar2,text="用語集を自動作成",command=lambda:self.start_auto_glossary_generation("chinese")).pack(side="left",padx=(6,0))
         ttk.Button(qbar2,text="QA / 比較編集へ",command=lambda:self._send_pair_to_qa_or_diff("chinese","review")).pack(side="left",padx=(6,0))
         ttk.Button(qbar2,text="差分調査へ",command=lambda:self._send_pair_to_qa_or_diff("chinese","diff")).pack(side="left",padx=(6,0))
-        ttk.Label(qbar2,text="日本語化Modがある場合は上書き先を確認します。上書き前にバックアップを作成します。",foreground="#8a5a00").pack(side="left",padx=(10,0))
+        ttk.Label(qbox,text="上書き: 既存の日本語化Modが見つかった場合は、その日本語化Modへ反映するか元Modへ反映するかを確認します。実行前にバックアップを作成します。",foreground="#8a5a00",wraplength=900,justify="left").pack(fill="x",anchor="w",pady=(0,5))
         cols=("mod","input","output","status")
         self.chinese_queue_tree=ttk.Treeview(qbox,columns=cols,show="headings",height=10,selectmode="extended")
         for c,txt,w in (("mod","Mod / 項目",190),("input","中国語localization",330),("output","出力",300),("status","状態",90)):
@@ -1231,6 +1233,7 @@ class App(BaseTk):
         ttk.Button(qa,text="警告だけ表示",command=lambda:self.populate_review(True)).pack(side="left",padx=(6,0))
         ttk.Button(qa,text="全キー表示",command=lambda:self.populate_review(False)).pack(side="left",padx=(6,0))
         ttk.Button(qa,text="用語不一致を一括統一",command=self.bulk_unify_review_terms).pack(side="left",padx=(8,0))
+        ttk.Button(qa,text="用語集を自動作成",command=lambda:self.start_auto_glossary_generation("review")).pack(side="left",padx=(8,0))
         ttk.Button(qa,text="現在の翻訳設定を適用",command=self.apply_translation_settings_everywhere).pack(side="left",padx=(10,0))
         ttk.Label(qa,text="AI校正は現在の翻訳モデル設定を使用 / 一覧は重要度→問題種別→キーで整理",foreground="#666").pack(side="left",padx=(12,0))
         ttk.Label(qa,textvariable=self.qa_summary_var).pack(side="right")
@@ -1283,6 +1286,7 @@ class App(BaseTk):
         ttk.Button(bar, text="選択項目を翻訳", command=lambda:self.translate_diff_items(False)).pack(side="left")
         ttk.Button(bar, text="欠落・未翻訳をまとめて翻訳", command=lambda:self.translate_diff_items(True)).pack(side="left", padx=(6,0))
         ttk.Button(bar, text="選択訳を保存", command=self.save_diff_value).pack(side="left", padx=(6,0))
+        ttk.Button(bar,text="用語集を自動作成",command=lambda:self.start_auto_glossary_generation("diff")).pack(side="left",padx=(8,0))
         ttk.Button(bar,text="現在の翻訳設定を適用",command=self.apply_translation_settings_everywhere).pack(side="left",padx=(10,0))
         ttk.Label(bar,text="差分翻訳は現在の翻訳モデル設定を使用 / 一覧は状態→キーで整理",foreground="#666").pack(side="left",padx=(12,0))
         ttk.Label(bar, textvariable=self.diff_summary_var).pack(side="right")
@@ -1345,30 +1349,46 @@ class App(BaseTk):
 
     def _build_glossary_tab(self):
         t=self.tab_glossary
-        top=ttk.Frame(t); top.pack(fill="x")
+        top=ttk.LabelFrame(t,text="用語集設定",padding=8); top.pack(fill="x",pady=(0,6))
         ttk.Label(top,text="用語集ファイル").pack(side="left")
         ttk.Entry(top,textvariable=self.glossary_path_var).pack(side="left",fill="x",expand=True,padx=6)
         ttk.Button(top,text="読込",command=self.load_glossary_ui).pack(side="left")
         ttk.Button(top,text="保存",command=self.save_glossary_ui).pack(side="left",padx=(6,0))
+        ttk.Label(top,textvariable=self.auto_glossary_status_var,foreground="#555").pack(side="right",padx=(8,0))
 
-        auto=ttk.LabelFrame(t,text="自動用語作成 / 表記統一",padding=8); auto.pack(fill="x",pady=(8,5))
-        row=ttk.Frame(auto); row.pack(fill="x")
-        ttk.Button(row,text="通常翻訳から自動作成",command=lambda:self.start_auto_glossary_generation("normal")).pack(side="left")
-        ttk.Button(row,text="中国語基準翻訳から自動作成",command=lambda:self.start_auto_glossary_generation("chinese")).pack(side="left",padx=(6,0))
-        ttk.Button(row,text="QA中の翻訳から自動作成",command=lambda:self.start_auto_glossary_generation("review")).pack(side="left",padx=(6,0))
-        ttk.Label(row,textvariable=self.auto_glossary_status_var,foreground="#555").pack(side="right")
-        ttk.Label(auto,text="同じ短い原語が複数箇所で使われている場合、既存の日本語訳を集計します。複数訳があるものは現在のLLMに統一案を選ばせ、用語集へ追加します。手動登録済みの訳語は上書きしません。",foreground="#666",wraplength=1100,justify="left").pack(anchor="w",pady=(6,0))
+        panes=ttk.Panedwindow(t,orient="horizontal"); panes.pack(fill="both",expand=True)
+        manual=ttk.LabelFrame(panes,text="自分で作った用語",padding=8)
+        generated=ttk.LabelFrame(panes,text="自動生成 / 取り込み用語",padding=8)
+        panes.add(manual,weight=1); panes.add(generated,weight=1)
 
-        bar=ttk.Frame(t); bar.pack(fill="x",pady=5)
-        ttk.Button(bar,text="用語追加",command=self.add_glossary_term).pack(side="left")
-        ttk.Button(bar,text="選択削除",command=self.delete_glossary_term).pack(side="left",padx=(6,0))
-        ttk.Label(bar,text="英語/中国語の語句 → 固定したい日本語訳。QAでは不一致を検出し、一括統一できます。",foreground="#666").pack(side="left",padx=12)
-        self.glossary_tree=ttk.Treeview(t,columns=("src","dst"),show="headings")
+        mbar=ttk.Frame(manual); mbar.pack(fill="x",pady=(0,6))
+        ttk.Button(mbar,text="用語追加",command=self.add_glossary_term).pack(side="left")
+        ttk.Button(mbar,text="選択編集",command=self.edit_glossary_term).pack(side="left",padx=(6,0))
+        ttk.Button(mbar,text="選択削除",command=self.delete_glossary_term).pack(side="left",padx=(6,0))
+        ttk.Label(manual,text="手動で固定した原語 → 日本語訳です。手動用語は自動生成で上書きされません。",foreground="#666",wraplength=520,justify="left").pack(fill="x",anchor="w",pady=(0,6))
+        self.glossary_tree=ttk.Treeview(manual,columns=("src","dst"),show="headings")
         self.glossary_tree.heading("src",text="原語"); self.glossary_tree.heading("dst",text="日本語")
+        self.glossary_tree.column("src",width=260,stretch=True); self.glossary_tree.column("dst",width=300,stretch=True)
         self._enable_tree_sort(self.glossary_tree)
-        self.glossary_tree.column("src",width=400); self.glossary_tree.column("dst",width=500)
-        self.glossary_tree.pack(fill="both",expand=True)
+        my=ttk.Scrollbar(manual,orient="vertical",command=self.glossary_tree.yview); mx=ttk.Scrollbar(manual,orient="horizontal",command=self.glossary_tree.xview)
+        self.glossary_tree.configure(yscrollcommand=my.set,xscrollcommand=mx.set)
+        self.glossary_tree.pack(fill="both",expand=True); mx.pack(fill="x")
         self.glossary_tree.bind("<Double-1>",lambda e:self.edit_glossary_term())
+
+        gbar=ttk.Frame(generated); gbar.pack(fill="x",pady=(0,6))
+        ttk.Button(gbar,text="ゲーム本体から取り込む",command=self.import_glossary_from_base_game).pack(side="left")
+        import_menu=tk.Menu(gbar,tearoff=False)
+        import_menu.add_command(label="日本語YAMLファイルから取り込む",command=lambda:self.import_glossary_from_japanese_source("file"))
+        import_menu.add_command(label="日本語化Mod / localizationフォルダから取り込む",command=lambda:self.import_glossary_from_japanese_source("folder"))
+        ttk.Menubutton(gbar,text="日本語化ファイル / Modから取り込む",menu=import_menu).pack(side="left",padx=(6,0))
+        ttk.Label(generated,text="通常翻訳・中国語基準翻訳・QA・差分調査で作成した用語と、ゲーム本体や既存日本語化から取り込んだ用語を表示します。自動生成は各作業タブから実行します。",foreground="#666",wraplength=560,justify="left").pack(fill="x",anchor="w",pady=(0,6))
+        self.auto_glossary_tree=ttk.Treeview(generated,columns=("src","dst","kind"),show="headings")
+        for c,label,w in (("src","原語",250),("dst","日本語",280),("kind","由来",140)):
+            self.auto_glossary_tree.heading(c,text=label); self.auto_glossary_tree.column(c,width=w,stretch=True)
+        self._enable_tree_sort(self.auto_glossary_tree)
+        gy=ttk.Scrollbar(generated,orient="vertical",command=self.auto_glossary_tree.yview); gx=ttk.Scrollbar(generated,orient="horizontal",command=self.auto_glossary_tree.xview)
+        self.auto_glossary_tree.configure(yscrollcommand=gy.set,xscrollcommand=gx.set)
+        self.auto_glossary_tree.pack(fill="both",expand=True); gx.pack(fill="x")
         self.load_glossary_ui(silent=True)
 
     def _build_settings_tab(self):
@@ -1925,19 +1945,41 @@ Mod更新後だけ追加翻訳:
         box.insert("1.0", guide)
         box.config(state="disabled")
 
+    def _make_vertical_scroll_area(self, parent):
+        """親領域全体を縦スクロールできるCanvas+Frameとして返す。"""
+        outer = ttk.Frame(parent)
+        canvas = tk.Canvas(outer, highlightthickness=0, borderwidth=0, background=self.cget("background"))
+        scrollbar = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        inner = ttk.Frame(canvas)
+        window_id = canvas.create_window((0, 0), window=inner, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        def update_scrollregion(_event=None):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def fit_inner_width(event):
+            canvas.itemconfigure(window_id, width=event.width)
+            update_scrollregion()
+
+        inner.bind("<Configure>", update_scrollregion, add="+")
+        canvas.bind("<Configure>", fit_inner_width, add="+")
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        return outer, inner, canvas, scrollbar
+
     def _build_monitor_tab(self):
         t = self.tab_monitor
 
         # フルHDで縦方向に詰まりすぎないよう、監視設定と候補一覧を左右に分離する。
         body = ttk.Panedwindow(t, orient="horizontal")
         body.pack(fill="both", expand=True)
-        left = ttk.Frame(body)
+        left_outer, left, self.monitor_left_canvas, self.monitor_left_scrollbar = self._make_vertical_scroll_area(body)
         right = ttk.Frame(body)
-        body.add(left, weight=2)
+        body.add(left_outer, weight=2)
         body.add(right, weight=5)
 
         discovery = ttk.LabelFrame(left, text="ゲーム / Mod場所の自動検出", padding=8)
-        discovery.pack(fill="both", expand=True, pady=(0,8))
+        discovery.pack(fill="x", pady=(0,8))
         dbar1 = ttk.Frame(discovery); dbar1.pack(fill="x", pady=(0,5))
         ttk.Button(dbar1, text="ゲーム/Mod場所を自動検出", command=self.discover_mod_locations).pack(side="left")
         ttk.Button(dbar1, text="選択場所を監視対象に設定", command=self.use_selected_discovered_location).pack(side="left", padx=(6,0))
@@ -2045,9 +2087,9 @@ Mod更新後だけ追加翻訳:
         body = ttk.Panedwindow(t, orient="horizontal")
         body.pack(fill="both", expand=True)
         left = ttk.Frame(body)
-        right = ttk.Frame(body)
+        right_outer, right, self.status_right_canvas, self.status_right_scrollbar = self._make_vertical_scroll_area(body)
         body.add(left, weight=2)
-        body.add(right, weight=5)
+        body.add(right_outer, weight=5)
 
         search = ttk.LabelFrame(left, text="判定済みModを検索", padding=6); search.pack(fill="x", pady=(0,6))
         ttk.Label(search, text="Mod名").grid(row=0, column=0, sticky="w")
@@ -2082,20 +2124,26 @@ Mod更新後だけ追加翻訳:
         guide = ttk.LabelFrame(left, text="選択と操作", padding=6); guide.pack(fill="both", expand=True)
         ttk.Label(guide, text="小さく：Ctrlキーを押しながら複数選択できます。\n\n一覧では、選択したModだけの再調査、翻訳、除外翻訳、翻訳キュー追加、中国語基準キュー追加、上書きができます。", foreground="#666", justify="left", wraplength=320).pack(anchor="w")
 
-        content = ttk.Panedwindow(right, orient="vertical"); content.pack(fill="both", expand=True)
+        content = ttk.Panedwindow(right, orient="vertical"); content.pack(fill="x", expand=False)
         tree_frame=ttk.Frame(content); detail_frame=ttk.Frame(content)
         content.add(tree_frame, weight=6); content.add(detail_frame, weight=2)
         cols=("status","mod","gaps","chinese","jpmod","jpmod_gaps")
         self.mod_status_tree=ttk.Treeview(tree_frame, columns=cols, show="headings", height=16, selectmode="extended")
         self._enable_ctrl_multiselect(self.mod_status_tree)
-        for c,txt,w in (("status","状態",135),("mod","Mod",300),("gaps","欠損",65),("chinese","中国語",70),("jpmod","日本語化Mod",290),("jpmod_gaps","日本語化Mod欠損",125)):
-            self.mod_status_tree.heading(c,text=txt); self.mod_status_tree.column(c,width=w,anchor="w")
+        # v0.11.1: 翻訳状況一覧は列幅を固定し、表示領域に合わせて潰さない。
+        # 長いMod名・日本語化Mod名は下部の横スクロールバーで確認する。
+        for c,txt,w in (("status","状態",165),("mod","Mod",430),("gaps","欠損",80),("chinese","中国語",90),("jpmod","日本語化Mod",430),("jpmod_gaps","日本語化Mod欠損",150)):
+            self.mod_status_tree.heading(c,text=txt)
+            self.mod_status_tree.column(c,width=w,minwidth=w,stretch=False,anchor="w")
         sy=ttk.Scrollbar(tree_frame,orient="vertical",command=self.mod_status_tree.yview)
         sx=ttk.Scrollbar(tree_frame,orient="horizontal",command=self.mod_status_tree.xview)
         self.mod_status_tree.configure(yscrollcommand=sy.set, xscrollcommand=sx.set)
-        self.mod_status_tree.pack(side="top",fill="both",expand=True)
-        sx.pack(side="bottom", fill="x")
-        sy.pack(side="right",fill="y")
+        # pack順の影響で縦バーが下端へ押し出されることがあったため、gridで位置を固定する。
+        tree_frame.columnconfigure(0,weight=1)
+        tree_frame.rowconfigure(0,weight=1)
+        self.mod_status_tree.grid(row=0,column=0,sticky="nsew")
+        sy.grid(row=0,column=1,sticky="ns")
+        sx.grid(row=1,column=0,sticky="ew")
         self.mod_status_tree.bind("<<TreeviewSelect>>", self._on_mod_status_selection_changed)
         self._enable_tree_sort(self.mod_status_tree)
 
@@ -4479,6 +4527,16 @@ Mod更新後だけ追加翻訳:
                     lang="english"
                 return [{"source":src,"target":dst,"lang":lang}]
             return []
+        if origin == "diff":
+            src=Path(self.diff_src_var.get()) if self.diff_src_var.get() else None
+            dst=Path(self.diff_dst_var.get()) if self.diff_dst_var.get() else None
+            if src and dst and src.exists() and dst.exists():
+                try:
+                    lang=core.parse_localization_file(src)[0]
+                except Exception:
+                    lang="english"
+                return [{"source":src,"target":dst,"lang":lang}]
+            return []
         if origin == "normal":
             sels=list(self.queue_tree.selection()) if hasattr(self,"queue_tree") else []
             if not sels:
@@ -4507,6 +4565,8 @@ Mod更新後だけ追加翻訳:
         if not pairs:
             if origin == "review":
                 msg="QA / 比較編集で原文と日本語訳を読み込んでください。"
+            elif origin == "diff":
+                msg="差分調査で原文と日本語訳を読み込んでください。"
             else:
                 msg="対象キューから翻訳済み項目を選択してください。"
             messagebox.showinfo(APP_NAME,msg); return
@@ -4529,6 +4589,102 @@ Mod更新後だけ追加翻訳:
         threading.Thread(target=work,daemon=True).start()
 
     # ---------------- glossary ----------------
+    def _glossary_variant_metadata(self):
+        p=Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY)
+        data=core.load_json(core.glossary_variants_path(p), {})
+        return data if isinstance(data,dict) else {}
+
+    def _glossary_kind_label(self, meta):
+        kind=str((meta or {}).get("source_kind", "auto"))
+        if kind.startswith("base:"):
+            return "ゲーム本体: "+kind.split(":",1)[1]
+        if kind.startswith("import:file"):
+            return "日本語YAML"
+        if kind.startswith("import:mod"):
+            return "日本語化Mod"
+        return "自動生成"
+
+    def _choose_game_for_glossary_import(self):
+        result={"game":None}
+        win=tk.Toplevel(self); win.title("ゲーム本体から用語を取り込む"); win.transient(self); win.grab_set(); win.resizable(False,False)
+        frm=ttk.Frame(win,padding=12); frm.pack(fill="both",expand=True)
+        ttk.Label(frm,text="用語を取り込むゲームを選択してください。").pack(anchor="w")
+        var=tk.StringVar(value=next(iter(core.PARADOX_STEAM_GAMES)))
+        combo=ttk.Combobox(frm,textvariable=var,values=list(core.PARADOX_STEAM_GAMES),state="readonly",width=32); combo.pack(fill="x",pady=(8,10))
+        row=ttk.Frame(frm); row.pack(fill="x")
+        def ok(): result["game"]=var.get(); win.destroy()
+        ttk.Button(row,text="キャンセル",command=win.destroy).pack(side="right")
+        ttk.Button(row,text="選択",command=ok).pack(side="right",padx=(0,6))
+        win.wait_window()
+        return result["game"]
+
+    def _find_base_game_localization_root(self, game):
+        install_name=game
+        candidates=[]
+        try:
+            libs=core.discover_steam_libraries(Path.home(), sys.platform)
+        except Exception:
+            libs=[]
+        for lib in libs:
+            base=Path(lib)/"steamapps"/"common"/install_name
+            for rel in ("game/localization","game/localisation","localization","localisation"):
+                p=base/rel
+                if p.is_dir(): candidates.append(p)
+        if candidates:
+            return candidates[0]
+        chosen=filedialog.askdirectory(title=f"{game} のゲーム本体 localization / localisation フォルダを選択")
+        return Path(chosen) if chosen else None
+
+    def _save_imported_glossary_pairs(self, pairs, source_kind, label):
+        if not pairs:
+            messagebox.showinfo(APP_NAME,"原文（英語/簡体字中国語）と日本語を対応付けられるlocalizationが見つかりませんでした。")
+            return
+        try:
+            candidates=core.build_import_glossary_candidates(pairs,source_kind=source_kind)
+            if not candidates:
+                messagebox.showinfo(APP_NAME,"取り込み可能な短い用語候補が見つかりませんでした。")
+                return
+            result=core.save_auto_glossary_candidates(Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY),candidates,preserve_existing=True)
+            self.load_glossary_ui(silent=True)
+            self.auto_glossary_status_var.set(f"{label}: {result.get('added',0)}件追加 / 候補 {result.get('total',0)}件")
+            messagebox.showinfo(APP_NAME,f"{label}が完了しました。\n候補: {result.get('total',0)}件\n新規追加: {result.get('added',0)}件")
+        except Exception as exc:
+            record_error("用語集取り込み",exc)
+            messagebox.showerror(APP_NAME,str(exc))
+
+    def import_glossary_from_base_game(self):
+        game=self._choose_game_for_glossary_import()
+        if not game: return
+        root=self._find_base_game_localization_root(game)
+        if not root or not Path(root).exists(): return
+        pairs=self._collect_qa_diff_pairs(Path(root),Path(root),source_langs=("english","simp_chinese"))
+        self._save_imported_glossary_pairs(pairs,f"base:{game}",f"{game} 本体からの用語取り込み")
+
+    def import_glossary_from_japanese_source(self, kind):
+        if kind=="file":
+            raw=filedialog.askopenfilename(title="日本語localization YAMLを選択",filetypes=[("YAML","*.yml *.yaml"),("All files","*")])
+        else:
+            raw=filedialog.askdirectory(title="日本語化Modまたは localization フォルダを選択")
+        if not raw: return
+        target=Path(raw)
+        if kind=="file":
+            source_root=target.parent
+            cur=target.parent
+            for _ in range(6):
+                if cur.name.lower()=="japanese":
+                    source_root=cur.parent; break
+                if cur.parent==cur: break
+                cur=cur.parent
+            pairs=self._collect_qa_diff_pairs(source_root,target,source_langs=("english","simp_chinese"))
+            source_kind="import:file"
+            label="日本語YAMLからの用語取り込み"
+        else:
+            loc=core.mod_localization_root(target) or target
+            pairs=self._collect_qa_diff_pairs(loc,loc,source_langs=("english","simp_chinese"))
+            source_kind="import:mod"
+            label="日本語化Modからの用語取り込み"
+        self._save_imported_glossary_pairs(pairs,source_kind,label)
+
     def pick_glossary(self):
         p=filedialog.askopenfilename(filetypes=[("JSON","*.json"),("All","*")])
         if p: self.glossary_path_var.set(p); self.load_glossary_ui(silent=True)
@@ -4536,23 +4692,41 @@ Mod更新後だけ追加翻訳:
     def load_glossary_ui(self,silent=False):
         p=Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY)
         gl=core.load_glossary(p)
-        for x in getattr(self,"glossary_tree",ttk.Treeview()).get_children(): self.glossary_tree.delete(x)
+        variants=self._glossary_variant_metadata()
         if hasattr(self,"glossary_tree"):
-            for src,dst in sorted(gl.items()): self.glossary_tree.insert("","end",values=(src,dst))
+            for x in self.glossary_tree.get_children(): self.glossary_tree.delete(x)
+        if hasattr(self,"auto_glossary_tree"):
+            for x in self.auto_glossary_tree.get_children(): self.auto_glossary_tree.delete(x)
+        for src,dst in sorted(gl.items()):
+            meta=variants.get(src)
+            if meta and hasattr(self,"auto_glossary_tree"):
+                self.auto_glossary_tree.insert("","end",values=(src,dst,self._glossary_kind_label(meta)))
+            elif hasattr(self,"glossary_tree"):
+                self.glossary_tree.insert("","end",values=(src,dst))
         if not silent: self.progress_text.set(f"用語集 {len(gl)}件を読み込みました")
 
     def save_glossary_ui(self):
         p=Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY)
         gl={}
-        for iid in self.glossary_tree.get_children():
-            src,dst=self.glossary_tree.item(iid,"values"); gl[src]=dst
+        if hasattr(self,"glossary_tree"):
+            for iid in self.glossary_tree.get_children():
+                vals=self.glossary_tree.item(iid,"values")
+                if len(vals)>=2: gl[str(vals[0])]=str(vals[1])
+        if hasattr(self,"auto_glossary_tree"):
+            for iid in self.auto_glossary_tree.get_children():
+                vals=self.auto_glossary_tree.item(iid,"values")
+                if len(vals)>=2: gl[str(vals[0])]=str(vals[1])
         core.save_glossary(p,gl); self.glossary_path_var.set(str(p)); self.progress_text.set(f"用語集保存: {p}")
 
     def add_glossary_term(self):
         src=simpledialog.askstring("用語追加","原語（英語/中国語）")
         if not src: return
         dst=simpledialog.askstring("用語追加",f"「{src}」の固定日本語訳")
-        if dst: self.glossary_tree.insert("","end",values=(src,dst)); self.save_glossary_ui()
+        if dst:
+            # 手動追加した語は自動分類メタデータから外し、左側へ表示する。
+            p=Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY)
+            variants=self._glossary_variant_metadata(); variants.pop(src,None); core.save_json(core.glossary_variants_path(p),variants)
+            self.glossary_tree.insert("","end",values=(src,dst)); self.save_glossary_ui(); self.load_glossary_ui(silent=True)
 
     def edit_glossary_term(self):
         sel=self.glossary_tree.selection()
