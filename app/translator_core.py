@@ -79,6 +79,7 @@ GAME_PRESETS = {
     "Victoria 3": "Victoria 3。19世紀の政治・経済・産業・外交用語を重視する。",
     "HOI4": "Hearts of Iron IV。20世紀前半の軍事・政治・外交・装備用語を重視する。",
     "Stellaris": "Stellaris。SF、宇宙政治、技術、艦船、異星文明の用語を自然に訳す。",
+    "EU5": "Europa Universalis V。中世後期から近世・近代初期の政治・外交・宗教・交易・軍事・制度語彙を重視する。",
 }
 
 
@@ -1312,3 +1313,261 @@ def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "engl
         result["status"] = "翻訳あり"
         result["message"] = f"{name}のModは日本語翻訳が確認できました。"
     return result
+
+# ---------------------------------------------------------------------------
+# Automatic Paradox / Steam mod-location discovery
+# ---------------------------------------------------------------------------
+
+PARADOX_STEAM_GAMES = {
+    "Crusader Kings III": {"appid": "1158310", "docs": ["Crusader Kings III"]},
+    "Victoria 3": {"appid": "529340", "docs": ["Victoria 3"]},
+    "Hearts of Iron IV": {"appid": "394360", "docs": ["Hearts of Iron IV"]},
+    "Stellaris": {"appid": "281990", "docs": ["Stellaris"]},
+    "Europa Universalis V": {"appid": "3450310", "docs": ["Europa Universalis V"]},
+}
+
+
+def _windows_drive_roots() -> List[Path]:
+    """Return currently mounted Windows drive roots (C:\\, D:\\, ...)."""
+    roots: List[Path] = []
+    if not sys.platform.startswith("win"):
+        return roots
+    try:
+        import ctypes
+        mask = ctypes.windll.kernel32.GetLogicalDrives()
+        for i in range(26):
+            if mask & (1 << i):
+                roots.append(Path(f"{chr(65+i)}:\\\\"))
+    except Exception:
+        for i in range(26):
+            p = Path(f"{chr(65+i)}:\\\\")
+            try:
+                if p.exists():
+                    roots.append(p)
+            except Exception:
+                pass
+    return roots
+
+
+def _mounted_volume_roots(home: Optional[Path] = None, platform: Optional[str] = None) -> List[Path]:
+    """Return likely roots of secondary/internal/external volumes without deep scanning."""
+    home = Path(home or Path.home())
+    platform = platform or sys.platform
+    roots: List[Path] = []
+    if platform.startswith("win"):
+        roots.extend(_windows_drive_roots())
+    elif platform == "darwin":
+        volumes = Path("/Volumes")
+        if volumes.is_dir():
+            try:
+                roots.extend(p for p in volumes.iterdir() if p.is_dir())
+            except OSError:
+                pass
+    else:
+        candidates = [Path("/mnt"), Path("/media"), Path("/run/media")]
+        for base in candidates:
+            if not base.is_dir():
+                continue
+            try:
+                for p in base.iterdir():
+                    if not p.is_dir():
+                        continue
+                    roots.append(p)
+                    # Linux desktop mounts are often /media/$USER/<volume>.
+                    try:
+                        if p.name == home.name or base.name in {"media"}:
+                            roots.extend(c for c in p.iterdir() if c.is_dir())
+                    except OSError:
+                        pass
+            except OSError:
+                pass
+    # Deduplicate while keeping order.
+    seen = set(); out = []
+    for p in roots:
+        key = str(p).lower()
+        if key not in seen:
+            seen.add(key); out.append(p)
+    return out
+
+
+def _shallow_steam_library_candidates(volume_root: Path) -> List[Path]:
+    """Find Steam library roots on a volume using only a shallow, bounded scan.
+
+    This deliberately avoids recursive whole-drive searching. It checks common names and
+    first-level directories that already contain a steamapps folder.
+    """
+    volume_root = Path(volume_root)
+    candidates: List[Path] = []
+    common_names = (
+        "Steam", "SteamLibrary", "steam", "steamlibrary",
+        "Games/Steam", "Games/SteamLibrary",
+        "Program Files (x86)/Steam", "Program Files/Steam",
+    )
+    for rel in common_names:
+        p = volume_root / rel
+        if (p / "steamapps").is_dir():
+            candidates.append(p)
+    if (volume_root / "steamapps").is_dir():
+        candidates.append(volume_root)
+    # Also inspect first-level folders only. This catches custom names such as D:\\GameSSD.
+    try:
+        children = list(volume_root.iterdir())[:256]
+    except Exception:
+        children = []
+    for child in children:
+        try:
+            if child.is_dir() and (child / "steamapps").is_dir():
+                candidates.append(child)
+        except OSError:
+            continue
+    seen = set(); out = []
+    for p in candidates:
+        try:
+            key = str(p.resolve()).lower()
+        except Exception:
+            key = str(p).lower()
+        if key not in seen:
+            seen.add(key); out.append(p)
+    return out
+
+
+def _steam_root_candidates(home: Optional[Path] = None, platform: Optional[str] = None,
+                           scan_other_volumes: bool = True) -> List[Path]:
+    """Return likely Steam installation/library roots for the current OS.
+
+    Besides standard locations this can discover Steam libraries on other drives/SSDs.
+    The extra scan is intentionally shallow so it remains practical on large disks.
+    """
+    home = Path(home or Path.home())
+    platform = platform or sys.platform
+    out: List[Path] = []
+    if platform == "darwin":
+        out += [home / "Library/Application Support/Steam"]
+    elif platform.startswith("win"):
+        import os
+        for env in ("PROGRAMFILES(X86)", "PROGRAMFILES"):
+            base = os.environ.get(env)
+            if base:
+                out.append(Path(base) / "Steam")
+        out += [home / "AppData/Local/Steam"]
+    else:
+        out += [home / ".local/share/Steam", home / ".steam/steam", home / ".steam/root"]
+
+    if scan_other_volumes:
+        for volume in _mounted_volume_roots(home, platform):
+            out.extend(_shallow_steam_library_candidates(volume))
+
+    seen = set(); result = []
+    for p in out:
+        key = str(p).lower()
+        if key not in seen:
+            seen.add(key); result.append(p)
+    return result
+
+def _parse_steam_libraryfolders(vdf_path: Path) -> List[Path]:
+    """Best-effort parser for Steam libraryfolders.vdf across old/new formats."""
+    try:
+        text = Path(vdf_path).read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return []
+    libs: List[Path] = []
+    # New format: "path" "D:\\SteamLibrary". Old format: "1" "D:\\SteamLibrary".
+    patterns = [
+        r'"path"\s+"([^"]+)"',
+        r'^\s*"\d+"\s+"([^"]+)"\s*$',
+    ]
+    for pat in patterns:
+        for m in re.finditer(pat, text, flags=re.I | re.M):
+            raw = m.group(1).replace('\\\\', '\\')
+            p = Path(raw)
+            if p not in libs:
+                libs.append(p)
+    return libs
+
+
+def discover_steam_libraries(home: Optional[Path] = None, platform: Optional[str] = None,
+                             extra_roots: Optional[Iterable[Path]] = None) -> List[Path]:
+    """Discover Steam library roots, including libraries registered in libraryfolders.vdf."""
+    roots = list(extra_roots or []) + _steam_root_candidates(home, platform)
+    libs: List[Path] = []
+    for root in roots:
+        root = Path(root)
+        if root.exists() and root not in libs:
+            libs.append(root)
+        vdf = root / "steamapps/libraryfolders.vdf"
+        for lib in _parse_steam_libraryfolders(vdf):
+            if lib.exists() and lib not in libs:
+                libs.append(lib)
+    return libs
+
+
+def _count_mod_roots_fast(parent: Path) -> int:
+    """Count likely mods without recursively parsing localization files."""
+    parent = Path(parent)
+    if not parent.is_dir():
+        return 0
+    count = 0
+    try:
+        for child in parent.iterdir():
+            if not child.is_dir():
+                continue
+            if (child / "localization").is_dir() or (child / "descriptor.mod").exists():
+                count += 1
+    except OSError:
+        pass
+    return count
+
+
+def _paradox_documents_root(home: Path) -> Path:
+    return home / "Documents" / "Paradox Interactive"
+
+
+def discover_paradox_mod_locations(home: Optional[Path] = None, platform: Optional[str] = None,
+                                   extra_steam_roots: Optional[Iterable[Path]] = None) -> List[dict]:
+    """Discover selectable Paradox mod locations on macOS, Windows and Linux.
+
+    Returned rows contain: game, kind, path, appid, mod_count.
+    Sources include Steam Workshop libraries and Paradox user-mod folders.
+    """
+    home = Path(home or Path.home())
+    results: List[dict] = []
+    seen = set()
+
+    def add(game: str, kind: str, path: Path, appid: str = ""):
+        path = Path(path)
+        if not path.is_dir():
+            return
+        try:
+            resolved = str(path.resolve())
+        except Exception:
+            resolved = str(path)
+        key = (game, kind, resolved)
+        if key in seen:
+            return
+        seen.add(key)
+        results.append({
+            "game": game,
+            "kind": kind,
+            "path": resolved,
+            "appid": appid,
+            "mod_count": _count_mod_roots_fast(path),
+        })
+
+    # Steam Workshop locations in every registered library.
+    for lib in discover_steam_libraries(home, platform, extra_roots=extra_steam_roots):
+        steamapps = lib / "steamapps"
+        for game, meta in PARADOX_STEAM_GAMES.items():
+            appid = meta["appid"]
+            workshop = steamapps / "workshop" / "content" / appid
+            if workshop.is_dir():
+                add(game, "Steam Workshop", workshop, appid)
+
+    # Paradox launcher / manually installed user mods.
+    docs_root = _paradox_documents_root(home)
+    for game, meta in PARADOX_STEAM_GAMES.items():
+        for docs_name in meta.get("docs", []):
+            mod_dir = docs_root / docs_name / "mod"
+            if mod_dir.is_dir():
+                add(game, "ローカルMod", mod_dir, meta["appid"])
+
+    return sorted(results, key=lambda x: (x["game"].lower(), x["kind"], x["path"].lower()))
