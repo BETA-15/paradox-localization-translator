@@ -22,6 +22,7 @@ import re
 import sys
 import threading
 import time
+import tempfile
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -41,6 +42,8 @@ SESSION_FILE_NAME = ".plt_session.json"
 
 SOURCE_MANIFEST_NAME = "source_manifest.json"
 JOB_META_NAME = "job_meta.json"
+
+_JSON_SAVE_LOCK = threading.RLock()
 
 BATCH_LINE_SEP = "|||"
 DUAL_SEP = " ⟪ZH_REF⟫ "
@@ -189,10 +192,32 @@ def load_json(path: Path, default):
 
 
 def save_json(path: Path, data):
+    """Atomically save JSON without sharing a fixed .tmp name across threads.
+
+    A process-wide lock serializes JSON writes while a unique temporary file in the
+    destination directory prevents competing callbacks/checkpoints from deleting
+    each other's temporary file.
+    """
+    path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(path)
+    payload = json.dumps(data, ensure_ascii=False, indent=2)
+    with _JSON_SAVE_LOCK:
+        tmp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=path.parent,
+                prefix=path.name + ".", suffix=".tmp", delete=False
+            ) as fh:
+                fh.write(payload)
+                fh.flush()
+                tmp_path = Path(fh.name)
+            tmp_path.replace(path)
+        finally:
+            if tmp_path is not None and tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                except OSError:
+                    pass
 
 
 def load_cache(path: Path) -> dict:
@@ -1042,6 +1067,17 @@ def build_source_manifest(input_path: Path, exclude_lang_dir: Optional[str] = No
             "language": lang,
             "keys": {k: text_hash(v) for k, v in entries.items()},
         }
+    return manifest
+
+
+def build_source_manifest_for_language(input_path: Path, language: str) -> dict:
+    """Build a source manifest containing only one localization language."""
+    manifest = build_source_manifest(input_path)
+    manifest["files"] = {
+        rel: row for rel, row in manifest.get("files", {}).items()
+        if row.get("language") == language
+    }
+    manifest["language_filter"] = language
     return manifest
 
 
@@ -1927,6 +1963,7 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
     cache_file = Path(cache_path) if cache_path else output_path / "chinese_basis_translate_cache.json"
     cache_file.parent.mkdir(parents=True, exist_ok=True)
     cache = load_cache(cache_file) if cache_file.exists() else {}
+    current_manifest = build_source_manifest_for_language(input_path, "simp_chinese")
     glossary = load_glossary(Path(glossary_path)) if glossary_path else {}
 
     if input_path.is_file():
@@ -1985,8 +2022,10 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
                     raise StopRequested()
     except StopRequested:
         save_cache(cache_file, cache)
+        save_source_manifest(cache_file, current_manifest)
         return {"interrupted": True, "processed_files": processed, "jobs": total_jobs, "failed": total_failed, "cache": str(cache_file),
                 "qa_errors": qa_errors, "qa_warnings": qa_warnings}
+    save_source_manifest(cache_file, current_manifest)
     qa_report_path = output_path / "chinese_basis_qa_report.json"
     if auto_qa:
         save_json(qa_report_path, {"source_language": "simp_chinese", "errors": qa_errors, "warnings": qa_warnings, "issues": qa_report})
