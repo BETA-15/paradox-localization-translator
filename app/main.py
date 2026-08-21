@@ -34,7 +34,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.21"
+APP_VERSION = "0.11.23"
 MOD_STATUS_CACHE_VERSION = 3
 
 
@@ -1109,21 +1109,21 @@ class App(BaseTk):
             else:
                 item["diff_mode"] = True
                 counts = diff.get("counts", {})
-                changed_total = sum(int(counts.get(k, 0) or 0) for k in ("added", "changed", "removed", "added_files", "removed_files"))
+                changed_total = sum(int(counts.get(k, 0) or 0) for k in ("added", "changed", "removed", "added_files", "removed_files", "missing"))
                 if changed_total == 0:
-                    item["status"] = "完了（差分更新）"
+                    item["status"] = "完了（差分なし）"
         self._refresh_chinese_queue_tree()
         if unavailable:
             for item in targets:
                 if item.get("diff_mode"):
                     self._reset_item_for_full_translation(item)
             self._refresh_queue_tree()
-            messagebox.showinfo(APP_NAME, "前回の差分スナップショットがないため差分翻訳できない項目があります。\n\n" + "\n".join(unavailable[:10]))
+            messagebox.showinfo(APP_NAME, "差分スナップショットがなく、現在の日本語にも補完対象の欠損がないため、差分を判定できない項目があります。\n\n" + "\n".join(unavailable[:10]))
             return
         if any(not self._queue_item_is_completed(x) for x in targets):
             self.start_chinese_basis_translation(_diff_requested=True)
         else:
-            messagebox.showinfo(APP_NAME, "前回翻訳時から翻訳対象の差分はありません。")
+            messagebox.showinfo(APP_NAME, "原文差分も現在の日本語の欠損もありません。")
 
     def start_chinese_basis_translation(self, _diff_requested=False):
         if self.chinese_worker and self.chinese_worker.is_alive(): return
@@ -4426,13 +4426,19 @@ Mod更新後だけ追加翻訳:
 
     def _prepare_differential_cache(self, item: dict, silent: bool = True, mode: str = "normal") -> dict | None:
         p = Path(item["input"])
+        output_root = Path(item.get("output", ""))
         current_cache = Path(self._ensure_item_cache(item))
+        source_language = "simp_chinese" if mode == "chinese" else "english"
+
+        # 現在の日本語出力そのものも確認する。スナップショットがなくても、
+        # 日本語側に必要キーが欠けていれば差分翻訳の対象にできる。
+        try:
+            missing = core.collect_missing_translation_keys(p, output_root, source_language)
+        except Exception:
+            missing = {"count": 0, "details": [], "source_language": source_language}
+
         previous = self._find_previous_cache(p, exclude=current_cache, mode=mode)
-        if not previous:
-            return None
-        old_manifest = core.load_source_manifest(previous)
-        if not old_manifest:
-            return None
+        old_manifest = core.load_source_manifest(previous) if previous else {}
         try:
             if mode == "chinese":
                 new_manifest = core.build_source_manifest_for_language(p, "simp_chinese")
@@ -4440,30 +4446,62 @@ Mod更新後だけ追加翻訳:
                 new_manifest = core.build_source_manifest(p, None if self.repair_var.get() else core.DEFAULT_TARGET_LANG)
         except Exception:
             return None
-        diff = core.compare_source_manifests(old_manifest, new_manifest)
+
+        if old_manifest:
+            diff = core.compare_source_manifests(old_manifest, new_manifest)
+            diff["snapshot_available"] = True
+        else:
+            diff = {
+                "counts": {"added": 0, "changed": 0, "removed": 0, "unchanged": 0,
+                           "added_files": 0, "removed_files": 0},
+                "details": [],
+                "snapshot_available": False,
+            }
+        diff["missing"] = missing
+        diff["counts"]["missing"] = int(missing.get("count", 0) or 0)
         c = diff["counts"]
         changed_total = c["added"] + c["changed"] + c["removed"]
-        if changed_total == 0 and c["added_files"] == 0 and c["removed_files"] == 0:
+        source_changed = changed_total > 0 or c["added_files"] > 0 or c["removed_files"] > 0
+        missing_total = c["missing"]
+
+        # スナップショットもなく、現在の日本語にも欠損がなければ、
+        # 変更済み原文を判定する材料がないので従来どおり差分翻訳不可。
+        if not old_manifest and missing_total == 0:
+            return None
+
+        if not source_changed and missing_total == 0:
             item["diff"] = diff
-            item["previous_cache"] = str(previous)
+            if previous:
+                item["previous_cache"] = str(previous)
             if item.get("status") == "待機": item["status"] = "差分なし"
             return diff
-        # 翻訳ごとの独立キャッシュを維持したまま、前回キャッシュを複製して差分だけ追加する。
-        try:
-            shutil.copy2(previous, current_cache)
-        except Exception:
-            pass
-        item["previous_cache"] = str(previous)
+
+        # 過去キャッシュがある場合は複製し、既訳を再利用しつつ
+        # 原文差分と現在の欠損だけを補完する。
+        if previous:
+            try:
+                shutil.copy2(previous, current_cache)
+            except Exception:
+                pass
+            item["previous_cache"] = str(previous)
+        else:
+            item.pop("previous_cache", None)
         item["diff"] = diff
         item["diff_mode"] = True
-        item["status"] = f"差分 +{c['added']} / 変更{c['changed']}"
+        if source_changed and missing_total:
+            item["status"] = f"差分 +{c['added']} / 変更{c['changed']} / 欠損{missing_total}"
+        elif missing_total:
+            item["status"] = f"欠損補完 {missing_total}"
+        else:
+            item["status"] = f"差分 +{c['added']} / 変更{c['changed']}"
         core.save_json(current_cache.parent / "diff_report.json", {
-            "previous_cache": str(previous), "current_input": str(p),
+            "previous_cache": str(previous) if previous else "", "current_input": str(p),
             "detected_at": datetime.now().isoformat(timespec="seconds"), "diff": diff
         })
         if not silent:
+            snapshot_note = "あり" if old_manifest else "なし（現在の欠損から判定）"
             messagebox.showinfo(APP_NAME,
-                f"過去のキャッシュを自動特定しました。\n\n新規キー: {c['added']}\n変更キー: {c['changed']}\n削除キー: {c['removed']}\n新規ファイル: {c['added_files']}\n削除ファイル: {c['removed_files']}\n\n差分だけが追加翻訳されます。")
+                f"差分翻訳対象を確認しました。\n\nスナップショット: {snapshot_note}\n新規キー: {c['added']}\n変更キー: {c['changed']}\n削除キー: {c['removed']}\n現在の欠損: {missing_total}\n新規ファイル: {c['added_files']}\n削除ファイル: {c['removed_files']}\n\n原文差分と現在の欠損だけを補完します。")
         return diff
 
     def _append_queue(self,p:Path,out:Path|None=None,status="待機",cache:Path|None=None):
@@ -4786,9 +4824,9 @@ Mod更新後だけ追加翻訳:
             else:
                 item["diff_mode"] = True
                 counts = diff.get("counts", {})
-                changed_total = sum(int(counts.get(k, 0) or 0) for k in ("added", "changed", "removed", "added_files", "removed_files"))
+                changed_total = sum(int(counts.get(k, 0) or 0) for k in ("added", "changed", "removed", "added_files", "removed_files", "missing"))
                 if changed_total == 0:
-                    item["status"] = "完了（差分更新）"
+                    item["status"] = "完了（差分なし）"
                 else:
                     prepared += 1
         self._refresh_queue_tree()
@@ -4797,12 +4835,12 @@ Mod更新後だけ追加翻訳:
                 if item.get("diff_mode"):
                     self._reset_item_for_full_translation(item)
             self._refresh_chinese_queue_tree()
-            messagebox.showinfo(APP_NAME, "前回の差分スナップショットがないため差分翻訳できない項目があります。\n\n" + "\n".join(unavailable[:10]))
+            messagebox.showinfo(APP_NAME, "差分スナップショットがなく、現在の日本語にも補完対象の欠損がないため、差分を判定できない項目があります。\n\n" + "\n".join(unavailable[:10]))
             return
         if prepared:
             self.start_queue(_diff_requested=True)
         else:
-            messagebox.showinfo(APP_NAME, "前回翻訳時から翻訳対象の差分はありません。")
+            messagebox.showinfo(APP_NAME, "原文差分も現在の日本語の欠損もありません。")
 
     def start_queue(self, _diff_requested=False):
         if self.worker and self.worker.is_alive(): return
