@@ -35,7 +35,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.25"
+APP_VERSION = "0.11.26"
 MOD_STATUS_CACHE_VERSION = 3
 
 
@@ -1113,6 +1113,7 @@ class App(BaseTk):
             messagebox.showinfo(APP_NAME, "差分翻訳できる待機中の中国語基準項目がありません。")
             return
         unavailable = []
+        language_complete_notices = []
         for item in targets:
             self._ensure_item_cache(item)
             diff = self._prepare_differential_cache(item, silent=True, mode="chinese")
@@ -1122,18 +1123,31 @@ class App(BaseTk):
                 item["diff_mode"] = True
                 counts = diff.get("counts", {})
                 changed_total = sum(int(counts.get(k, 0) or 0) for k in ("added", "changed", "removed", "added_files", "removed_files", "missing"))
-                if changed_total == 0:
+                if changed_total == 0 and diff.get("language_complete"):
+                    n = int(diff.get("opposite_only_count", 0) or 0)
+                    item["status"] = self._language_complete_status_text("simp_chinese", n)
+                    language_complete_notices.append(
+                        f"{item.get('mod_name') or Path(item.get('input', '')).name}: " + self._language_complete_notice_text("simp_chinese", n)
+                    )
+                elif changed_total == 0:
                     item["status"] = "完了（差分なし）"
         self._refresh_chinese_queue_tree()
         if unavailable:
             for item in targets:
-                if item.get("diff_mode"):
+                if item.get("diff_mode") and not str(item.get("status", "")).startswith("完了（"):
                     self._reset_item_for_full_translation(item)
-            self._refresh_queue_tree()
-            messagebox.showinfo(APP_NAME, "差分スナップショットがなく、翻訳状況にも補完対象の欠損がないため、差分を判定できない項目があります。\n\n" + "\n".join(unavailable[:10]))
+            self._refresh_chinese_queue_tree()
+            msg = "差分スナップショットがなく、翻訳状況にも判定材料となる欠損がないため、差分を判定できない項目があります。\n\n" + "\n".join(unavailable[:10])
+            if language_complete_notices:
+                msg += "\n\n言語別に完了している項目:\n" + "\n".join(language_complete_notices[:10])
+            messagebox.showinfo(APP_NAME, msg)
             return
         if any(not self._queue_item_is_completed(x) for x in targets):
+            if language_complete_notices:
+                messagebox.showinfo(APP_NAME, "一部項目は現在の言語で翻訳が完了しています。\n\n" + "\n".join(language_complete_notices[:10]))
             self.start_chinese_basis_translation(_diff_requested=True)
+        elif language_complete_notices:
+            messagebox.showinfo(APP_NAME, "\n".join(language_complete_notices[:10]))
         else:
             messagebox.showinfo(APP_NAME, "原文差分も翻訳状況の欠損もありません。")
 
@@ -1179,10 +1193,18 @@ class App(BaseTk):
                     if result.get("interrupted"):
                         self.events.put(("chinese_queue_status",(i,"中断"))); break
                     completed += 1
-                    if self._item_has_remaining_translation_gap(item):
+                    if item.get("diff_mode"):
+                        lang_done = self._differential_language_completion(item, "simp_chinese")
+                        if lang_done.get("language_complete"):
+                            final_status = self._language_complete_status_text("simp_chinese", int(lang_done.get("opposite_only_count", 0) or 0))
+                        elif self._item_has_remaining_translation_gap(item):
+                            final_status = "完了（一部差分欠落あり）"
+                        else:
+                            final_status = "完了（差分更新）"
+                    elif self._item_has_remaining_translation_gap(item):
                         final_status = "完了（一部差分欠落あり）"
                     else:
-                        final_status = "完了（差分更新）" if item.get("diff_mode") else "完了"
+                        final_status = "完了"
                     self.events.put(("chinese_queue_status",(i,final_status)))
                 self.events.put(("chinese_done",{"interrupted":self.chinese_controller.stop_event.is_set(),"processed_files":completed,"jobs":0,"output":str(out_root),"queue_total":total,"qa_errors":qa_errors,"qa_warnings":qa_warnings}))
             except Exception as exc: self.events.put(("chinese_error",str(exc)))
@@ -4527,6 +4549,15 @@ Mod更新後だけ追加翻訳:
                 "target_file": str(Path(item.get("output", "")) / core.remap_rel_dir(rel_dir, core.DEFAULT_TARGET_LANG) / core.rename_for_target(source_file, core.DEFAULT_TARGET_LANG, source_language)),
                 "keys": keys,
             })
+        opposite_origin = "english_only" if source_language == "simp_chinese" else "chinese_only"
+        opposite_language = "english" if source_language == "simp_chinese" else "simp_chinese"
+        opposite_only_keys = sorted({
+            str(c.get("key")) for c in candidates
+            if c.get("key") and c.get("source_origin") == opposite_origin
+        })
+        unavailable_keys = sorted(wanted - selected)
+        opposite_only_unavailable = sorted(set(unavailable_keys) & set(opposite_only_keys))
+        other_unavailable = sorted(set(unavailable_keys) - set(opposite_only_unavailable))
         return {
             "count": len(selected),
             "details": details,
@@ -4535,6 +4566,12 @@ Mod更新後だけ追加翻訳:
             "status": status_label,
             "candidate_keys": sorted(wanted),
             "selected_keys": sorted(selected),
+            "unavailable_keys": unavailable_keys,
+            "opposite_language": opposite_language,
+            "opposite_only_keys": opposite_only_unavailable,
+            "opposite_only_count": len(opposite_only_unavailable),
+            "other_unavailable_keys": other_unavailable,
+            "other_unavailable_count": len(other_unavailable),
         }
 
     def _prepare_differential_cache(self, item: dict, silent: bool = True, mode: str = "normal") -> dict | None:
@@ -4578,16 +4615,35 @@ Mod更新後だけ追加翻訳:
         source_changed = changed_total > 0 or c["added_files"] > 0 or c["removed_files"] > 0
         missing_total = c["missing"]
 
-        # スナップショットもなく、現在の日本語にも欠損がなければ、
-        # 変更済み原文を判定する材料がないので従来どおり差分翻訳不可。
+        status_gap_total = int(missing.get("status_gap_total", 0) or 0)
+        opposite_only_count = int(missing.get("opposite_only_count", 0) or 0)
+        other_unavailable_count = int(missing.get("other_unavailable_count", 0) or 0)
+        language_complete = (
+            missing_total == 0
+            and status_gap_total > 0
+            and opposite_only_count == status_gap_total
+            and other_unavailable_count == 0
+        )
+        diff["language_complete"] = language_complete
+        diff["opposite_only_count"] = opposite_only_count
+        diff["opposite_language"] = missing.get("opposite_language", "")
+
+        # スナップショットがなくても、翻訳状況に残る欠損がすべて反対側言語固有なら、
+        # 現在の言語では翻訳が完了していると判定できる。
         if not old_manifest and missing_total == 0:
+            if language_complete:
+                item["diff"] = diff
+                item["diff_mode"] = True
+                return diff
+            # 欠損そのものがない場合は、同一キー本文の更新有無を判定する材料がない。
             return None
 
         if not source_changed and missing_total == 0:
             item["diff"] = diff
             if previous:
                 item["previous_cache"] = str(previous)
-            if item.get("status") == "待機": item["status"] = "差分なし"
+            if item.get("status") == "待機" and not language_complete:
+                item["status"] = "差分なし"
             return diff
 
         # 過去キャッシュがある場合は複製し、既訳を再利用しつつ
@@ -4911,6 +4967,37 @@ Mod更新後だけ追加翻訳:
             pass
         return False
 
+    def _differential_language_completion(self, item: dict, source_language: str) -> dict:
+        """Describe whether the current source language is complete while the opposite language still has gaps."""
+        try:
+            missing = self._translation_status_missing_for_item(item, source_language)
+        except Exception as exc:
+            record_error("差分翻訳 言語別完了判定", exc, str(item.get("input", "")))
+            return {"language_complete": False, "status_gap_total": 0, "current_missing": 0}
+        total = int(missing.get("status_gap_total", 0) or 0)
+        current = int(missing.get("count", 0) or 0)
+        opposite = int(missing.get("opposite_only_count", 0) or 0)
+        other = int(missing.get("other_unavailable_count", 0) or 0)
+        complete = current == 0 and total > 0 and opposite == total and other == 0
+        return {
+            "language_complete": complete,
+            "status_gap_total": total,
+            "current_missing": current,
+            "opposite_only_count": opposite,
+            "opposite_language": missing.get("opposite_language", ""),
+            "opposite_only_keys": list(missing.get("opposite_only_keys", [])),
+        }
+
+    def _language_complete_status_text(self, source_language: str, count: int) -> str:
+        if source_language == "simp_chinese":
+            return f"完了（中国語側完了・英語欠損{count}）"
+        return f"完了（通常側完了・中国語欠損{count}）"
+
+    def _language_complete_notice_text(self, source_language: str, count: int) -> str:
+        if source_language == "simp_chinese":
+            return f"中国語基準の翻訳は完了しています。残り{count}件は英語原文にのみ存在します。"
+        return f"通常翻訳は完了しています。残り{count}件は簡体字中国語原文にのみ存在します。"
+
     def _reset_item_for_full_translation(self, item: dict):
         was_diff = bool(item.get("diff_mode") or item.get("previous_cache") or item.get("diff"))
         item.pop("diff", None)
@@ -4932,6 +5019,7 @@ Mod更新後だけ追加翻訳:
             return
         prepared = 0
         unavailable = []
+        language_complete_notices = []
         for item in targets:
             diff = self._prepare_differential_cache(item, silent=True)
             if diff is None:
@@ -4940,20 +5028,33 @@ Mod更新後だけ追加翻訳:
                 item["diff_mode"] = True
                 counts = diff.get("counts", {})
                 changed_total = sum(int(counts.get(k, 0) or 0) for k in ("added", "changed", "removed", "added_files", "removed_files", "missing"))
-                if changed_total == 0:
+                if changed_total == 0 and diff.get("language_complete"):
+                    n = int(diff.get("opposite_only_count", 0) or 0)
+                    item["status"] = self._language_complete_status_text("english", n)
+                    language_complete_notices.append(
+                        f"{item.get('mod_name') or Path(item.get('input', '')).name}: " + self._language_complete_notice_text("english", n)
+                    )
+                elif changed_total == 0:
                     item["status"] = "完了（差分なし）"
                 else:
                     prepared += 1
         self._refresh_queue_tree()
         if unavailable:
             for item in targets:
-                if item.get("diff_mode"):
+                if item.get("diff_mode") and not str(item.get("status", "")).startswith("完了（"):
                     self._reset_item_for_full_translation(item)
-            self._refresh_chinese_queue_tree()
-            messagebox.showinfo(APP_NAME, "差分スナップショットがなく、翻訳状況にも補完対象の欠損がないため、差分を判定できない項目があります。\n\n" + "\n".join(unavailable[:10]))
+            self._refresh_queue_tree()
+            msg = "差分スナップショットがなく、翻訳状況にも判定材料となる欠損がないため、差分を判定できない項目があります。\n\n" + "\n".join(unavailable[:10])
+            if language_complete_notices:
+                msg += "\n\n言語別に完了している項目:\n" + "\n".join(language_complete_notices[:10])
+            messagebox.showinfo(APP_NAME, msg)
             return
         if prepared:
+            if language_complete_notices:
+                messagebox.showinfo(APP_NAME, "一部項目は現在の言語で翻訳が完了しています。\n\n" + "\n".join(language_complete_notices[:10]))
             self.start_queue(_diff_requested=True)
+        elif language_complete_notices:
+            messagebox.showinfo(APP_NAME, "\n".join(language_complete_notices[:10]))
         else:
             messagebox.showinfo(APP_NAME, "原文差分も翻訳状況の欠損もありません。")
 
@@ -5003,10 +5104,18 @@ Mod更新後だけ追加翻訳:
                 self._register_cache_job(item)
                 if result.get("interrupted"):
                     item["status"]="中断（再開可）"; self.events.put(("queue_refresh",None)); self.save_session(active=True); break
-                if self._item_has_remaining_translation_gap(item):
+                if item.get("diff_mode"):
+                    lang_done = self._differential_language_completion(item, "english")
+                    if lang_done.get("language_complete"):
+                        item["status"] = self._language_complete_status_text("english", int(lang_done.get("opposite_only_count", 0) or 0))
+                    elif self._item_has_remaining_translation_gap(item):
+                        item["status"] = "完了（一部差分欠落あり）"
+                    else:
+                        item["status"] = "完了（差分更新）"
+                elif self._item_has_remaining_translation_gap(item):
                     item["status"] = "完了（一部差分欠落あり）"
                 else:
-                    item["status"] = "完了（差分更新）" if item.get("diff_mode") else "完了"
+                    item["status"] = "完了"
                 self.events.put(("queue_refresh",None))
                 # 次の項目がある間だけ復元可能な実行中セッションとして保存する。
                 if i < len(self.queue_items)-1:
