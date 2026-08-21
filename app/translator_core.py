@@ -2668,6 +2668,10 @@ def rank_external_japanese_translations(mod_root: Path, translation_index: Optio
     source_keys = set(source_entries)
     source_name = detect_mod_name(mod_root)
     ranked = []
+    try:
+        source_id = str(mod_root.expanduser().resolve())
+    except Exception:
+        source_id = str(mod_root)
     for row in translation_index:
         try:
             cand_path = Path(row.get("path", ""))
@@ -2675,8 +2679,22 @@ def rank_external_japanese_translations(mod_root: Path, translation_index: Optio
                 continue
         except Exception:
             continue
+        manual_role = row.get("manual_role", "auto")
+        manual_sources = set(row.get("manual_source_paths") or [])
+        if manual_role == "source":
+            continue
+        if manual_role == "translation" and manual_sources and source_id not in manual_sources:
+            continue
         weight = _translation_mod_weight(source_name, source_keys, row)
-        if weight.get("overlap_keys", 0) <= 0:
+        if manual_role == "translation" and source_id in manual_sources:
+            reasons = ["手動例外: この日本語化Modと元Modの対応関係をユーザーが指定"] + list(weight.get("reasons") or [])
+            weight = {**weight, "score": 100.0, "raw_score": max(100.0, float(weight.get("raw_score",0.0) or 0.0)),
+                      "classification": "auto", "manual_relation": True, "reasons": reasons}
+        elif manual_role == "translation" and weight.get("overlap_keys", 0) > 0:
+            reasons = ["手動例外: このModを日本語化Modとして固定（対応元は自動判定）"] + list(weight.get("reasons") or [])
+            weight = {**weight, "classification": ("auto" if weight.get("classification")=="auto" else "candidate"),
+                      "manual_translation_role": True, "reasons": reasons}
+        elif weight.get("overlap_keys", 0) <= 0:
             continue
         ranked.append({**row, **weight})
     ranked.sort(key=lambda x: (float(x.get("score", 0.0)), float(x.get("precision", 0.0)), float(x.get("coverage", 0.0))), reverse=True)

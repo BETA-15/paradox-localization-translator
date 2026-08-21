@@ -35,7 +35,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.37"
+APP_VERSION = "0.11.39"
 MOD_STATUS_CACHE_VERSION = 7
 
 
@@ -126,7 +126,7 @@ def _configure_data_root(root: Path):
     """Update all generated-file locations after the user changes the storage root."""
     global DATA_ROOT, APP_HOME, OUTPUT_ROOT, SESSION_PATH, DEFAULT_GLOSSARY
     global STATS_PATH, PROFILES_PATH, CACHE_ROOT, CACHE_REGISTRY_PATH, BACKUP_ROOT
-    global SAVED_STEAM_ROOTS_PATH, LOG_ROOT, MOD_STATUS_CACHE_PATH, MOD_CLASSIFICATION_CACHE_PATH, APP_PREFS_PATH
+    global SAVED_STEAM_ROOTS_PATH, LOG_ROOT, MOD_STATUS_CACHE_PATH, MOD_CLASSIFICATION_CACHE_PATH, MOD_RELATION_OVERRIDES_PATH, APP_PREFS_PATH
     global RESUME_STATE_PATH, RESUME_HISTORY_PATH, WORK_STATE_ROOT, MIGRATION_STATE_PATH, WORKSPACE_STATE_PATH
     DATA_ROOT = root.expanduser().resolve()
     APP_HOME = DATA_ROOT / "設定"
@@ -145,6 +145,7 @@ def _configure_data_root(root: Path):
     # Japanese localization must not become an external Japanese-translation Mod
     # merely because this application later generated Japanese YAML inside it.
     MOD_CLASSIFICATION_CACHE_PATH = APP_HOME / "mod_classification_cache.json"
+    MOD_RELATION_OVERRIDES_PATH = APP_HOME / "mod_relation_overrides.json"
     APP_PREFS_PATH = APP_HOME / "app_preferences.json"
     # Stable, version-independent resume files. APP_VERSION is metadata only.
     RESUME_STATE_PATH = APP_HOME / "resume_state.json"
@@ -245,6 +246,7 @@ def _migrate_legacy_generated_data() -> dict:
         "steam_library_roots.json": SAVED_STEAM_ROOTS_PATH,
         "mod_translation_status_cache.json": MOD_STATUS_CACHE_PATH,
         "mod_classification_cache.json": MOD_CLASSIFICATION_CACHE_PATH,
+        "mod_relation_overrides.json": MOD_RELATION_OVERRIDES_PATH,
         "app_preferences.json": APP_PREFS_PATH,
         "workspace_state.json": WORKSPACE_STATE_PATH,
         "cache_registry.json": CACHE_REGISTRY_PATH,
@@ -562,6 +564,15 @@ class App(BaseTk):
         except Exception as exc:
             record_error("Mod初回分類キャッシュ移行", exc)
         self.mod_classification_lock = threading.Lock()
+        _relation_overrides = core.load_json(MOD_RELATION_OVERRIDES_PATH, {"schema": 1, "mods": {}})
+        if not isinstance(_relation_overrides, dict):
+            _relation_overrides = {"schema": 1, "mods": {}}
+        self.mod_relation_overrides = {
+            "schema": 1,
+            "mods": dict(_relation_overrides.get("mods") or {}),
+            "updated_at": _relation_overrides.get("updated_at", ""),
+        }
+        self.mod_relation_override_lock = threading.Lock()
         # Cross-version workspace persistence. This is broader than the active
         # translation session and stores the last visible/working state of every
         # major tab. API keys are intentionally excluded.
@@ -1886,6 +1897,9 @@ class App(BaseTk):
             self.mod_status_cache = core.load_json(MOD_STATUS_CACHE_PATH, {"version":MOD_STATUS_CACHE_VERSION,"items":{}})
             if not isinstance(self.mod_status_cache, dict) or self.mod_status_cache.get("version") != MOD_STATUS_CACHE_VERSION:
                 self.mod_status_cache={"version":MOD_STATUS_CACHE_VERSION,"items":{}}
+            _ov = core.load_json(MOD_RELATION_OVERRIDES_PATH, {"schema":1,"mods":{}})
+            if not isinstance(_ov, dict): _ov={"schema":1,"mods":{}}
+            self.mod_relation_overrides={"schema":1,"mods":dict(_ov.get("mods") or {}),"updated_at":_ov.get("updated_at","")}
             self.refresh_profiles_ui()
             self._restore_cached_mod_status()
             messagebox.showinfo(APP_NAME,
@@ -2583,6 +2597,7 @@ Mod更新後だけ追加翻訳:
         ttk.Button(bottom2,text="差分調査へ",command=lambda:self._send_pair_to_qa_or_diff("status","diff")).pack(side="left",padx=(6,0))
         self.status_overwrite_btn = ttk.Button(bottom2,text="完成した日本語化をModへ上書き",command=self.overwrite_selected_status_mod)
         self.status_overwrite_btn.pack(side="left",padx=(6,0))
+        ttk.Button(bottom2,text="Mod分類・関連付け",command=lambda:self._open_mod_relation_dialog("status")).pack(side="left",padx=(6,0))
         ttk.Separator(bottom2,orient="vertical").pack(side="left",fill="y",padx=8)
         ttk.Button(bottom2,text="結果を消去",command=self.clear_mod_status_results).pack(side="left")
         ttk.Button(bottom2,text="キャッシュ再読込",command=self._restore_cached_mod_status).pack(side="left",padx=(6,0))
@@ -2616,8 +2631,7 @@ Mod更新後だけ追加翻訳:
         self.diagnostic_target_tree.grid(row=0,column=0,sticky="nsew"); sy.grid(row=0,column=1,sticky="ns"); sx.grid(row=1,column=0,sticky="ew")
         tbtn=ttk.Frame(targets); tbtn.pack(fill="x",pady=(7,0))
         ttk.Button(tbtn,text="翻訳状況から再取得",command=self._refresh_diagnostic_targets).pack(side="left")
-        ttk.Button(tbtn,text="全体選択",command=self._select_all_diagnostic_targets).pack(side="left",padx=(6,0))
-        ttk.Button(tbtn,text="全選択解除",command=self._clear_diagnostic_target_selection).pack(side="left",padx=(6,0))
+        ttk.Button(tbtn,text="Mod分類・関連付け",command=lambda:self._open_mod_relation_dialog("diagnostic")).pack(side="left",padx=(6,0))
 
         actions = ttk.LabelFrame(left, text="操作", padding=6); actions.pack(fill="x", pady=(8,0))
         self.diagnostic_scan_btn=ttk.Button(actions,text="選択Modを診断",command=lambda:self._start_localization_diagnostic(False)); self.diagnostic_scan_btn.pack(fill="x")
@@ -2642,6 +2656,10 @@ Mod更新後だけ追加翻訳:
         ttk.Button(conflict_bar,text="選択キーは本体を残す",command=lambda:self._set_diagnostic_conflict_choice("source")).pack(side="left",padx=(8,0))
         ttk.Button(conflict_bar,text="選択キーは日本語化Modを残す",command=lambda:self._set_diagnostic_conflict_choice("translation")).pack(side="left",padx=(6,0))
         ttk.Button(conflict_bar,text="選択キーの指定を解除",command=lambda:self._set_diagnostic_conflict_choice(None)).pack(side="left",padx=(6,0))
+        conflict_bar2=ttk.Frame(resultbox); conflict_bar2.pack(fill="x",pady=(5,0))
+        ttk.Label(conflict_bar2,text="一括指定:").pack(side="left")
+        ttk.Button(conflict_bar2,text="すべてのキーを本体Modに",command=lambda:self._set_all_diagnostic_conflict_choices("source")).pack(side="left",padx=(8,0))
+        ttk.Button(conflict_bar2,text="すべてのキーを日本語化Modに",command=lambda:self._set_all_diagnostic_conflict_choices("translation")).pack(side="left",padx=(6,0))
         detail=ttk.LabelFrame(right,text="詳細 / 修復ログ",padding=6); detail.pack(fill="both",expand=True,pady=(8,0))
         self.diagnostic_detail=tk.Text(detail,height=9,wrap="word",state="disabled")
         dsy=ttk.Scrollbar(detail,orient="vertical",command=self.diagnostic_detail.yview); self.diagnostic_detail.configure(yscrollcommand=dsy.set)
@@ -3013,6 +3031,34 @@ Mod更新後だけ追加翻訳:
                 issue["decision"]="本体" if c=="source" else "日本語化Mod" if c=="translation" else "未選択"
         self._populate_diagnostic_results(self.diagnostic_last_analyses)
         self.diagnostic_summary_var.set(f"競合優先を {changed}件 更新しました")
+
+    def _set_all_diagnostic_conflict_choices(self, choice):
+        conflict_ids=[]
+        for analysis in self.diagnostic_last_analyses:
+            for issue in analysis.get("issues") or []:
+                cid=issue.get("conflict_id")
+                if cid and cid not in conflict_ids:
+                    conflict_ids.append(cid)
+        if not conflict_ids:
+            messagebox.showinfo(APP_NAME,"一括指定できる『本体/日本語化Mod重複』キーがありません。先に診断を実行してください。")
+            return
+        label="本体Mod" if choice=="source" else "日本語化Mod"
+        confirm_text=(
+            f"診断結果にある本体 / 日本語化Modの重複キー {len(conflict_ids)}件を、"
+            f"すべて『{label}を残す』に設定します。\n\n"
+            "このあと個別のキーだけ別の優先先へ変更できます。続行しますか？"
+        )
+        if not messagebox.askyesno(APP_NAME, confirm_text):
+            return
+        for cid in conflict_ids:
+            self.diagnostic_conflict_choices[cid]=choice
+        for analysis in self.diagnostic_last_analyses:
+            for issue in analysis.get("issues") or []:
+                cid=issue.get("conflict_id")
+                if cid:
+                    issue["decision"]="本体" if choice=="source" else "日本語化Mod"
+        self._populate_diagnostic_results(self.diagnostic_last_analyses)
+        self.diagnostic_summary_var.set(f"競合優先を全{len(conflict_ids)}件『{label}』に設定しました")
 
     def _start_localization_diagnostic(self, repair=False):
         if self.diagnostic_thread and self.diagnostic_thread.is_alive():
@@ -3851,15 +3897,177 @@ Mod更新後だけ追加翻訳:
             core.save_json(MOD_CLASSIFICATION_CACHE_PATH, self.mod_classification_cache)
         return bool(initial_has_japanese)
 
+    def _invalidate_mod_status_cache_paths(self, paths):
+        changed=False
+        with self.mod_status_cache_lock:
+            items=self.mod_status_cache.setdefault("items", {})
+            for raw in paths or []:
+                try: key=self._mod_classification_key(Path(raw))
+                except Exception: key=str(raw)
+                if key in items:
+                    items.pop(key, None); changed=True
+            if changed:
+                self.mod_status_cache["updated_at"] = datetime.now().isoformat(timespec="seconds")
+                core.save_json(MOD_STATUS_CACHE_PATH, self.mod_status_cache)
+
+    def _mod_relation_override(self, mod_root: Path) -> dict:
+        key = self._mod_classification_key(Path(mod_root))
+        with self.mod_relation_override_lock:
+            row = (self.mod_relation_overrides.get("mods") or {}).get(key, {})
+            return dict(row) if isinstance(row, dict) else {}
+
+    def _save_mod_relation_overrides(self):
+        with self.mod_relation_override_lock:
+            self.mod_relation_overrides["schema"] = 1
+            self.mod_relation_overrides["updated_at"] = datetime.now().isoformat(timespec="seconds")
+            core.save_json(MOD_RELATION_OVERRIDES_PATH, self.mod_relation_overrides)
+
+    def _set_mod_relation_override(self, mod_root: Path, role: str, source_paths=None):
+        key = self._mod_classification_key(Path(mod_root))
+        role = role if role in {"auto", "translation", "source"} else "auto"
+        sources=[]
+        for raw in (source_paths or []):
+            try: src=self._mod_classification_key(Path(raw))
+            except Exception: src=str(raw)
+            if src != key and src not in sources:
+                sources.append(src)
+        with self.mod_relation_override_lock:
+            mods=self.mod_relation_overrides.setdefault("mods", {})
+            if role == "auto" and not sources:
+                mods.pop(key, None)
+            else:
+                mods[key]={
+                    "role":role, "source_paths":sources,
+                    "mod":core.detect_mod_name(Path(mod_root)),
+                    "updated_at":datetime.now().isoformat(timespec="seconds"),
+                }
+        self._save_mod_relation_overrides()
+
     def _build_stable_translation_mod_index(self, pool_roots):
         eligible = []
+        overrides = {}
         for root in pool_roots:
+            root=Path(root)
             try:
-                if self._first_seen_japanese_candidate(Path(root)):
-                    eligible.append(Path(root))
+                ov=self._mod_relation_override(root)
+                role=ov.get("role","auto")
+                if role == "source":
+                    continue
+                if role == "translation" or self._first_seen_japanese_candidate(root):
+                    eligible.append(root)
+                    overrides[self._mod_classification_key(root)] = ov
             except Exception as exc:
                 record_error("Mod初期分類", exc, str(root))
-        return core.build_translation_mod_index(eligible)
+        rows=core.build_translation_mod_index(eligible)
+        for row in rows:
+            try: key=self._mod_classification_key(Path(row.get("path","")))
+            except Exception: key=str(row.get("path",""))
+            ov=overrides.get(key) or {}
+            row["manual_role"] = ov.get("role", "auto")
+            row["manual_source_paths"] = list(ov.get("source_paths") or [])
+        return rows
+
+    def _known_mod_rows_for_relation_dialog(self):
+        rows=[]; seen=set()
+        def add(path, name=""):
+            if not path: return
+            p=Path(path)
+            if not p.is_dir(): return
+            key=self._mod_classification_key(p)
+            if key in seen: return
+            seen.add(key)
+            rows.append({"path":key,"mod":name or core.detect_mod_name(p)})
+        for r in self.mod_research_results:
+            add(r.get("path"), r.get("mod",""))
+        if hasattr(self,"diagnostic_target_tree"):
+            for iid in self.diagnostic_target_tree.get_children():
+                vals=self.diagnostic_target_tree.item(iid,"values")
+                if len(vals)>=3: add(vals[2], vals[0])
+        rows.sort(key=lambda x:(str(x.get("mod","")).lower(),str(x.get("path",""))))
+        return rows
+
+    def _preselected_relation_path(self, origin="status"):
+        tree = self.mod_status_tree if origin=="status" and hasattr(self,"mod_status_tree") else self.diagnostic_target_tree if hasattr(self,"diagnostic_target_tree") else None
+        if tree is not None:
+            sel=tree.selection()
+            if sel:
+                vals=tree.item(sel[0],"values")
+                if origin=="status":
+                    name=str(vals[1]) if len(vals)>1 else ""
+                    for r in self.mod_research_results:
+                        if r.get("mod")==name and r.get("path"):
+                            return self._mod_classification_key(Path(r["path"]))
+                elif len(vals)>=3:
+                    return self._mod_classification_key(Path(vals[2]))
+        return ""
+
+    def _open_mod_relation_dialog(self, origin="status"):
+        rows=self._known_mod_rows_for_relation_dialog()
+        if not rows:
+            messagebox.showinfo(APP_NAME,"先に翻訳状況でMod一覧を取得してください。")
+            return
+        win=tk.Toplevel(self); win.title("Mod分類・関連付け"); win.geometry("1050x650"); win.transient(self)
+        outer=ttk.Frame(win,padding=10); outer.pack(fill="both",expand=True)
+        ttk.Label(outer,text="手動例外は自動判定より優先します。日本語化Modは複数の対応元Modを指定できます。",foreground="#555").pack(fill="x",pady=(0,8))
+        pane=ttk.Panedwindow(outer,orient="horizontal"); pane.pack(fill="both",expand=True)
+        lf=ttk.LabelFrame(pane,text="Mod",padding=6); rf=ttk.Frame(pane); pane.add(lf,weight=3); pane.add(rf,weight=4)
+        mt=ttk.Treeview(lf,columns=("mod","class","sources","path"),show="headings",selectmode="browse")
+        for c,txt,w in (("mod","Mod",240),("class","手動分類",110),("sources","対応元",70),("path","場所",360)):
+            mt.heading(c,text=txt); mt.column(c,width=w,minwidth=w,stretch=False,anchor="w")
+        msy=ttk.Scrollbar(lf,orient="vertical",command=mt.yview); msx=ttk.Scrollbar(lf,orient="horizontal",command=mt.xview); mt.configure(yscrollcommand=msy.set,xscrollcommand=msx.set)
+        lf.rowconfigure(0,weight=1); lf.columnconfigure(0,weight=1); mt.grid(row=0,column=0,sticky="nsew"); msy.grid(row=0,column=1,sticky="ns"); msx.grid(row=1,column=0,sticky="ew")
+        role_var=tk.StringVar(value="auto"); current_path=tk.StringVar(value="")
+        rolebox=ttk.LabelFrame(rf,text="分類",padding=8); rolebox.pack(fill="x")
+        for text,val in (("自動判定","auto"),("このModは日本語化Modです","translation"),("このModは通常Modです","source")):
+            ttk.Radiobutton(rolebox,text=text,value=val,variable=role_var).pack(anchor="w",pady=2)
+        ttk.Label(rolebox,text="日本語化Mod指定では、対応元を指定しなくても翻訳Mod候補として扱います。対応元を指定した場合、その関係を最優先します。",foreground="#666",wraplength=520,justify="left").pack(anchor="w",pady=(6,0))
+        srcbox=ttk.LabelFrame(rf,text="対応元Mod（複数選択可）",padding=8); srcbox.pack(fill="both",expand=True,pady=(8,0))
+        st=ttk.Treeview(srcbox,columns=("mod","path"),show="headings",selectmode="extended")
+        self._enable_ctrl_multiselect(st)
+        st.heading("mod",text="元Mod"); st.heading("path",text="場所"); st.column("mod",width=260,minwidth=260,stretch=False); st.column("path",width=480,minwidth=480,stretch=False)
+        ssy=ttk.Scrollbar(srcbox,orient="vertical",command=st.yview); ssx=ttk.Scrollbar(srcbox,orient="horizontal",command=st.xview); st.configure(yscrollcommand=ssy.set,xscrollcommand=ssx.set)
+        srcbox.rowconfigure(0,weight=1); srcbox.columnconfigure(0,weight=1); st.grid(row=0,column=0,sticky="nsew"); ssy.grid(row=0,column=1,sticky="ns"); ssx.grid(row=1,column=0,sticky="ew")
+        iid_by_path={}; row_by_iid={}
+        for row in rows:
+            ov=self._mod_relation_override(Path(row["path"])); role=ov.get("role","auto"); label={"auto":"自動","translation":"日本語化Mod","source":"通常Mod"}.get(role,"自動")
+            iid=mt.insert("","end",values=(row["mod"],label,len(ov.get("source_paths") or []),row["path"])); iid_by_path[row["path"]]=iid; row_by_iid[iid]=row
+        def load_selected(*_):
+            sel=mt.selection()
+            if not sel: return
+            row=row_by_iid.get(sel[0])
+            if not row: return
+            current_path.set(row["path"]); ov=self._mod_relation_override(Path(row["path"])); role_var.set(ov.get("role","auto"))
+            for iid in st.get_children(): st.delete(iid)
+            selected=set(ov.get("source_paths") or []); to_select=[]
+            for src in rows:
+                if src["path"]==row["path"]: continue
+                iid=st.insert("","end",values=(src["mod"],src["path"]))
+                if src["path"] in selected: to_select.append(iid)
+            if to_select: st.selection_set(to_select); st.see(to_select[0])
+        mt.bind("<<TreeviewSelect>>",load_selected)
+        btns=ttk.Frame(rf); btns.pack(fill="x",pady=(8,0))
+        def save_current():
+            raw=current_path.get()
+            if not raw: return
+            sources=[]
+            if role_var.get()=="translation":
+                for iid in st.selection():
+                    vals=st.item(iid,"values")
+                    if len(vals)>=2: sources.append(vals[1])
+            self._set_mod_relation_override(Path(raw),role_var.get(),sources)
+            iid=iid_by_path.get(raw)
+            if iid:
+                row=row_by_iid[iid]; label={"auto":"自動","translation":"日本語化Mod","source":"通常Mod"}.get(role_var.get(),"自動")
+                mt.item(iid,values=(row["mod"],label,len(sources),row["path"]))
+            self._invalidate_mod_status_cache_paths([r["path"] for r in rows])
+            self._refresh_diagnostic_targets()
+            messagebox.showinfo(APP_NAME,"Mod分類・関連付けの例外設定を保存しました。次回の再調査 / 総合診断から反映されます。",parent=win)
+        ttk.Button(btns,text="この設定を保存",command=save_current).pack(side="left")
+        ttk.Button(btns,text="閉じる",command=win.destroy).pack(side="right")
+        pre=self._preselected_relation_path(origin)
+        iid=iid_by_path.get(pre) or (mt.get_children()[0] if mt.get_children() else "")
+        if iid:
+            mt.selection_set(iid); mt.see(iid); load_selected()
 
     def _start_mod_research(self, roots, replace=True, translation_pool=None):
         if self.mod_research_thread and self.mod_research_thread.is_alive():
