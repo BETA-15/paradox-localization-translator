@@ -2338,10 +2338,11 @@ def mod_localization_root(mod_root: Path) -> Optional[Path]:
 
 
 def _collect_mod_language_entries(mod_root: Path) -> dict:
-    """Collect English, Simplified Chinese, union-source and Japanese entries."""
+    """Collect localization entries by language plus source/Japanese shortcuts."""
     loc = mod_localization_root(mod_root)
     result = {"localization": str(loc) if loc else "", "source": {}, "english": {},
-              "simp_chinese": {}, "japanese": {}, "japanese_files": []}
+              "simp_chinese": {}, "japanese": {}, "japanese_files": [], "languages": {},
+              "language_files": {}}
     if not loc:
         return result
     for f in gather_yml_files(loc):
@@ -2349,6 +2350,9 @@ def _collect_mod_language_entries(mod_root: Path) -> dict:
             lang, entries, _ = parse_localization_file(f)
         except Exception:
             continue
+        if lang:
+            result["languages"].setdefault(lang, {}).update(entries)
+            result["language_files"][lang] = int(result["language_files"].get(lang, 0)) + 1
         if lang == "japanese":
             result["japanese"].update(entries)
             result["japanese_files"].append(str(f))
@@ -2395,7 +2399,8 @@ def _descriptor_dependency_names(mod_root: Path) -> List[str]:
 
 
 def _mod_content_profile(mod_root: Path, japanese_files: int = 0,
-                         english_files: int = 0, chinese_files: int = 0) -> dict:
+                         english_files: int = 0, chinese_files: int = 0,
+                         other_language_files: int = 0) -> dict:
     """Describe whether a Mod is localization-centric without leaving its root.
 
     This is supplementary evidence only.  Translation Mods can legitimately bundle
@@ -2444,7 +2449,8 @@ def _mod_content_profile(mod_root: Path, japanese_files: int = 0,
             gameplay_files += count
         else:
             other_files += count
-    localization_files = int(japanese_files or 0) + int(english_files or 0) + int(chinese_files or 0)
+    localization_files = (int(japanese_files or 0) + int(english_files or 0) +
+                          int(chinese_files or 0) + int(other_language_files or 0))
     non_localization_files = gameplay_files + other_files
     total_relevant = localization_files + non_localization_files
     localization_ratio = localization_files / max(1, total_relevant)
@@ -2473,17 +2479,13 @@ def build_translation_mod_index(mod_roots: Iterable[Path]) -> List[dict]:
         if not ja:
             continue
         jp_files = len(data.get("japanese_files") or [])
-        # Count source-language YAML files inside this Mod's own localization root.
-        en_files = zh_files = 0
-        loc = mod_localization_root(root)
-        if loc:
-            for fp in gather_yml_files(loc):
-                try:
-                    lang = parse_localization_file(fp)[0]
-                except Exception:
-                    continue
-                if lang == "english": en_files += 1
-                elif lang == "simp_chinese": zh_files += 1
+        # Count localization files by language and keep every language's exact key set.
+        language_files = dict(data.get("language_files") or {})
+        en_files = int(language_files.get("english", 0) or 0)
+        zh_files = int(language_files.get("simp_chinese", 0) or 0)
+        other_language_files = sum(int(v or 0) for k, v in language_files.items()
+                                   if k not in {"japanese", "english", "simp_chinese"})
+        language_keys = {lang: set(entries or {}) for lang, entries in (data.get("languages") or {}).items()}
         rows.append({
             "path": str(root),
             "mod": detect_mod_name(root),
@@ -2493,8 +2495,11 @@ def build_translation_mod_index(mod_roots: Iterable[Path]) -> List[dict]:
             "japanese_files": jp_files,
             "english_files": en_files,
             "chinese_files": zh_files,
+            "other_language_files": other_language_files,
+            "language_files": language_files,
+            "language_keys": language_keys,
             "dependencies": _descriptor_dependency_names(root),
-            "profile": _mod_content_profile(root, jp_files, en_files, zh_files),
+            "profile": _mod_content_profile(root, jp_files, en_files, zh_files, other_language_files),
         })
     return rows
 
@@ -2539,50 +2544,73 @@ def _external_gap_candidates(source_entries: Dict[str, str], japanese_entries: D
 
 
 def _translation_mod_weight(source_name: str, source_keys: set, row: dict) -> dict:
-    """Score one Japanese Mod candidate using a weighted relationship model.
+    """Score one Japanese Mod candidate using two-stage exact-key evidence.
 
-    v0.11.35: the hard relationship gate is based on the *source Mod*.  At
-    least 20% of the source Mod's exact localization keys must exist in the
-    Japanese candidate.  This lets one large comprehensive translation pack
-    legitimately match several source Mods without being penalized merely
-    because the pack also contains many unrelated translations.
+    v0.11.45 tightens the source-side relationship gate for ordinary/large Mods:
+    * source has 100+ exact localization keys -> Japanese candidate must cover >=50%
+    * source has fewer than 100 keys -> >=20% remains sufficient so small Mods and
+      recently-added localization fragments are not rejected too aggressively.
+
+    Other localization languages are evaluated separately.  Their mere existence is
+    not a penalty: only poor exact-key relationship with the same source Mod reduces
+    the score.  Manual relation overrides are still applied by the caller afterwards.
     """
+    source_keys = set(source_keys or set())
     ja_keys = set(row.get("japanese_keys") or set(row.get("japanese", {}) or {}))
     overlap = source_keys & ja_keys
     overlap_n = len(overlap)
-    coverage = overlap_n / max(1, len(source_keys))
+    source_count = len(source_keys)
+    coverage = overlap_n / max(1, source_count)
     precision = overlap_n / max(1, len(ja_keys))
     profile = dict(row.get("profile") or {})
     dependencies = list(row.get("dependencies") or [])
     source_norm = _normalize_mod_name_for_match(source_name)
 
-    # Relationship gate and key evidence.
-    # IMPORTANT: coverage uses the source Mod as the denominator.
-    # A comprehensive translation pack can contain tens of thousands of keys;
-    # candidate-side precision would incorrectly reject it even when it fully
-    # translates this particular source Mod.
-    key_points = 0.0 if coverage < 0.20 else coverage * 45.0
+    # Dynamic relationship gate.  The denominator deliberately remains the source
+    # Mod so comprehensive translation packs can match several source Mods.
+    required_coverage = 0.50 if source_count >= 100 else 0.20
+    gate = coverage >= required_coverage
+    # Reaching the exact-key gate must provide meaningful positive evidence even for
+    # small Mods; otherwise a 20% small-Mod match could never become an automatic
+    # translation-only relation without descriptor metadata.
+    key_points = max(15.0, coverage * 45.0) if gate else 0.0
 
-    # Strong structural evidence for a translation-only Mod.  descriptor.mod,
-    # thumbnail and readme files are ignored by the profiler; therefore zero
-    # non-localization files means the payload is effectively localization-only.
+    # Weighted structural evidence for a translation-only Mod. descriptor.mod,
+    # thumbnail and readme files are ignored by the profiler.  v0.11.46 makes a
+    # *pure Japanese-localization package* the strongest possible structural signal.
+    # Other localization languages are not rejected here; their relationship is
+    # evaluated independently below and only unrelated payload is penalized.
     loc_ratio = float(profile.get("localization_ratio", 0.0) or 0.0)
     non_loc = int(profile.get("non_localization_files", 0) or 0)
     gameplay_files = int(profile.get("gameplay_files", 0) or 0)
     gameplay_dirs = list(profile.get("gameplay_dirs") or [])
     other_files = int(profile.get("other_files", 0) or 0)
-    if non_loc == 0:
+    language_files = dict(row.get("language_files") or {})
+    japanese_file_count = int(language_files.get("japanese", row.get("japanese_files", 0)) or 0)
+    non_japanese_loc_files = sum(
+        int(v or 0) for lang, v in language_files.items() if lang != "japanese"
+    )
+    if japanese_file_count > 0 and non_japanese_loc_files == 0 and non_loc == 0:
         translation_only_points = 35.0
-    elif gameplay_files == 0 and other_files <= 3:
+        structure_label = "日本語localization専用（最高評価）"
+    elif non_loc == 0:
         translation_only_points = 30.0
+        structure_label = "localization専用（他言語を含む）"
+    elif gameplay_files == 0 and other_files <= 3:
+        translation_only_points = 27.5
+        structure_label = "日本語化補助ファイルのみ"
     elif gameplay_files == 0 and loc_ratio >= 0.80:
-        translation_only_points = 25.0
+        translation_only_points = 22.5
+        structure_label = "localization中心"
     elif loc_ratio >= 0.60:
         translation_only_points = 15.0
+        structure_label = "localization優勢"
     elif loc_ratio >= 0.30:
         translation_only_points = 7.5
+        structure_label = "localization混在"
     else:
         translation_only_points = 0.0
+        structure_label = "ゲーム内容中心"
 
     dependency_match = False
     matched_dependency = ""
@@ -2592,7 +2620,6 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict) -> di
             dependency_match = True; matched_dependency = dep; break
     dependency_points = 20.0 if dependency_match else 0.0
 
-    # Smaller supplementary bonus for having no gameplay payload.
     if gameplay_files <= 0:
         low_gameplay_points = 10.0
     elif gameplay_files <= 5:
@@ -2602,16 +2629,44 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict) -> di
     else:
         low_gameplay_points = 0.0
 
-    # Source-language localization is legitimate in some translation packs, but
-    # a large amount of it is evidence that the candidate may be a normal/content
-    # Mod.  Penalize, without hard rejecting.
-    jp_files = max(1, int(row.get("japanese_files", 0) or 0))
-    foreign_loc_files = int(row.get("english_files", 0) or 0) + int(row.get("chinese_files", 0) or 0)
-    source_language_penalty = -min(15.0, (foreign_loc_files / jp_files) * 7.5) if foreign_loc_files else 0.0
+    # Evaluate every non-Japanese localization language against the same source Mod.
+    # A language that covers the source well is evidence-neutral; unrelated language
+    # payload reduces confidence.  This replaces the old file-count-only penalty.
+    language_keys = dict(row.get("language_keys") or {})
+    language_files = dict(row.get("language_files") or {})
+    other_language_relations = []
+    for lang, keys in sorted(language_keys.items()):
+        if lang == "japanese":
+            continue
+        keys = set(keys or set())
+        if not keys:
+            continue
+        lang_overlap = len(source_keys & keys)
+        source_relation = lang_overlap / max(1, source_count)
+        candidate_precision = lang_overlap / max(1, len(keys))
+        relation_quality = min(1.0, source_relation / max(required_coverage, 1e-9))
+        other_language_relations.append({
+            "language": lang,
+            "coverage": source_relation,
+            "quality": relation_quality,
+            "precision": candidate_precision,
+            "overlap_keys": lang_overlap,
+            "keys": len(keys),
+            "files": int(language_files.get(lang, 0) or 0),
+        })
+    if other_language_relations:
+        # Average source-side relationship across languages.  Each language gets one
+        # vote so a giant unrelated localization cannot dominate merely by file count.
+        avg_other_relation = sum(x["coverage"] for x in other_language_relations) / len(other_language_relations)
+        avg_other_quality = sum(x["quality"] for x in other_language_relations) / len(other_language_relations)
+        other_language_penalty = -20.0 * max(0.0, 1.0 - avg_other_quality)
+    else:
+        avg_other_relation = 1.0
+        avg_other_quality = 1.0
+        other_language_penalty = 0.0
 
-    raw_score = key_points + translation_only_points + dependency_points + low_gameplay_points + source_language_penalty
+    raw_score = key_points + translation_only_points + dependency_points + low_gameplay_points + other_language_penalty
     score = max(0.0, min(100.0, raw_score))
-    gate = coverage >= 0.20
     if not gate:
         classification = "rejected"
     elif score >= 60.0:
@@ -2621,28 +2676,40 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict) -> di
     else:
         classification = "rejected"
 
+    threshold_label = "100キー以上 → 50%" if source_count >= 100 else "100キー未満 → 20%"
     reasons = [
-        f"元Modキー完全一致率 {coverage*100:.1f}% ({overlap_n}/{len(source_keys)}) → {key_points:.1f}点",
+        f"元Modキー完全一致率 {coverage*100:.1f}% ({overlap_n}/{source_count}) / 判定基準 {threshold_label} → {key_points:.1f}点",
         f"参考: 日本語化Mod側一致率 {precision*100:.1f}% ({overlap_n}/{len(ja_keys)})",
-        f"翻訳専用構成 localize比率 {loc_ratio*100:.1f}% / 非localization {non_loc}ファイル → {translation_only_points:.1f}点",
+        f"構成評価 {structure_label}: 日本語YAML {japanese_file_count} / 他言語YAML {non_japanese_loc_files} / localization比率 {loc_ratio*100:.1f}% / 非localization {non_loc}ファイル → {translation_only_points:.1f}/35点",
         (f"dependencies一致『{matched_dependency}』 → 20.0点" if dependency_match else "dependencies一致なし → 0.0点"),
         f"ゲーム内容 {gameplay_files}ファイル / {len(gameplay_dirs)}分類 → {low_gameplay_points:.1f}点",
     ]
-    if foreign_loc_files:
-        reasons.append(f"英語・中国語localization {foreign_loc_files}ファイル → {source_language_penalty:.1f}点")
+    if other_language_relations:
+        details = ", ".join(
+            f"{x['language']} {x['coverage']*100:.1f}% ({x['overlap_keys']}/{source_count})"
+            for x in other_language_relations
+        )
+        reasons.append(f"他言語localizationの元Mod関連度: {details} / 基準充足度平均 {avg_other_quality*100:.1f}% → {other_language_penalty:.1f}点")
     else:
-        reasons.append("英語・中国語localizationなし → 減点なし")
+        reasons.append("他言語localizationなし → 減点なし")
     if not gate:
-        reasons.append("元Modキーの完全一致率が20%未満のため関係判定対象外")
+        reasons.append(f"元Modキーの完全一致率が必要値 {required_coverage*100:.0f}% 未満のため関係判定対象外")
     return {
         "score": score, "raw_score": raw_score, "classification": classification,
         "precision": precision, "coverage": coverage, "source_match_ratio": coverage, "overlap_keys": overlap_n,
-        "source_keys": len(source_keys), "japanese_keys": len(ja_keys),
+        "source_keys": source_count, "japanese_keys": len(ja_keys), "required_coverage": required_coverage,
         "key_points": key_points, "translation_only_points": translation_only_points,
         "dependency_points": dependency_points, "low_gameplay_points": low_gameplay_points,
-        "source_language_penalty": source_language_penalty,
+        "source_language_penalty": other_language_penalty,
+        "other_language_penalty": other_language_penalty,
+        "other_language_relation": avg_other_relation,
+        "other_language_quality": avg_other_quality,
+        "other_language_relations": other_language_relations,
         "dependency_match": dependency_match, "matched_dependency": matched_dependency,
-        "profile": profile, "reasons": reasons,
+        "profile": profile, "structure_label": structure_label,
+        "japanese_localization_files": japanese_file_count,
+        "non_japanese_localization_files": non_japanese_loc_files,
+        "reasons": reasons,
     }
 
 

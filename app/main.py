@@ -36,8 +36,8 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.42"
-MOD_STATUS_CACHE_VERSION = 7
+APP_VERSION = "0.11.46"
+MOD_STATUS_CACHE_VERSION = 9
 
 
 def _app_container_dir() -> Path:
@@ -128,6 +128,7 @@ def _configure_data_root(root: Path):
     global DATA_ROOT, APP_HOME, OUTPUT_ROOT, SESSION_PATH, DEFAULT_GLOSSARY
     global STATS_PATH, PROFILES_PATH, CACHE_ROOT, CACHE_REGISTRY_PATH, BACKUP_ROOT
     global SAVED_STEAM_ROOTS_PATH, LOG_ROOT, MOD_STATUS_CACHE_PATH, MOD_CLASSIFICATION_CACHE_PATH, MOD_RELATION_OVERRIDES_PATH, APP_PREFS_PATH
+    global TRANSLATION_STATUS_STATE_PATH, DIAGNOSTIC_STATE_PATH, SHARED_MOD_STATE_CACHE_PATH
     global RESUME_STATE_PATH, RESUME_HISTORY_PATH, WORK_STATE_ROOT, MIGRATION_STATE_PATH, WORKSPACE_STATE_PATH
     DATA_ROOT = root.expanduser().resolve()
     APP_HOME = DATA_ROOT / "設定"
@@ -141,12 +142,15 @@ def _configure_data_root(root: Path):
     BACKUP_ROOT = DATA_ROOT / "バックアップ"
     LOG_ROOT = DATA_ROOT / "ログ"
     SAVED_STEAM_ROOTS_PATH = APP_HOME / "steam_library_roots.json"
-    MOD_STATUS_CACHE_PATH = APP_HOME / "mod_translation_status_cache.json"
+    MOD_STATUS_CACHE_PATH = CACHE_ROOT / "mod_translation_status_cache.json"
     # Stable first-seen Mod role cache.  A source/child Mod that originally had no
     # Japanese localization must not become an external Japanese-translation Mod
     # merely because this application later generated Japanese YAML inside it.
-    MOD_CLASSIFICATION_CACHE_PATH = APP_HOME / "mod_classification_cache.json"
-    MOD_RELATION_OVERRIDES_PATH = APP_HOME / "mod_relation_overrides.json"
+    MOD_CLASSIFICATION_CACHE_PATH = CACHE_ROOT / "mod_classification_cache.json"
+    MOD_RELATION_OVERRIDES_PATH = CACHE_ROOT / "mod_relation_overrides.json"
+    TRANSLATION_STATUS_STATE_PATH = CACHE_ROOT / "translation_status_state.json"
+    DIAGNOSTIC_STATE_PATH = CACHE_ROOT / "diagnostic_state.json"
+    SHARED_MOD_STATE_CACHE_PATH = CACHE_ROOT / "shared_mod_state_cache.json"
     APP_PREFS_PATH = APP_HOME / "app_preferences.json"
     # Stable, version-independent resume files. APP_VERSION is metadata only.
     RESUME_STATE_PATH = APP_HOME / "resume_state.json"
@@ -248,6 +252,9 @@ def _migrate_legacy_generated_data() -> dict:
         "mod_translation_status_cache.json": MOD_STATUS_CACHE_PATH,
         "mod_classification_cache.json": MOD_CLASSIFICATION_CACHE_PATH,
         "mod_relation_overrides.json": MOD_RELATION_OVERRIDES_PATH,
+        "translation_status_state.json": TRANSLATION_STATUS_STATE_PATH,
+        "diagnostic_state.json": DIAGNOSTIC_STATE_PATH,
+        "shared_mod_state_cache.json": SHARED_MOD_STATE_CACHE_PATH,
         "app_preferences.json": APP_PREFS_PATH,
         "workspace_state.json": WORKSPACE_STATE_PATH,
         "cache_registry.json": CACHE_REGISTRY_PATH,
@@ -276,6 +283,20 @@ def _migrate_legacy_generated_data() -> dict:
             result["copied"] += n
             if str(old_home) not in result["sources"]:
                 result["sources"].append(str(old_home))
+    # v0.11.44 moved persistent Translation Status / Total Diagnosis cache files
+    # from 設定 to キャッシュ. Copy the previous current-layout files once,
+    # non-destructively, so upgrading never loses the user's state.
+    for name, dst in (
+        ("mod_translation_status_cache.json", MOD_STATUS_CACHE_PATH),
+        ("mod_classification_cache.json", MOD_CLASSIFICATION_CACHE_PATH),
+        ("mod_relation_overrides.json", MOD_RELATION_OVERRIDES_PATH),
+    ):
+        old = APP_HOME / name
+        if old != dst and _copy_newer_file(old, dst):
+            result["copied"] += 1
+            if str(APP_HOME) not in result["sources"]:
+                result["sources"].append(str(APP_HOME))
+
     try:
         previous = core.load_json(MIGRATION_STATE_PATH, {})
         result["previous_run"] = previous.get("timestamp") if isinstance(previous, dict) else None
@@ -710,6 +731,7 @@ class App(BaseTk):
             "updated_at": _relation_overrides.get("updated_at", ""),
         }
         self.mod_relation_override_lock = threading.Lock()
+        self._restore_shared_mod_state_cache()
         # Cross-version workspace persistence. This is broader than the active
         # translation session and stores the last visible/working state of every
         # major tab. API keys are intentionally excluded.
@@ -732,6 +754,7 @@ class App(BaseTk):
         self.after(450, self.refresh_monitor_models)
         self.after(550, self._offer_restore_session)
         self.after(650, self._restore_cached_mod_status)
+        self.after(760, self._restore_diagnostic_state)
         self.after(750, self.discover_mod_locations)
         self.after(15000, self._workspace_autosave_tick)
 
@@ -1953,6 +1976,12 @@ class App(BaseTk):
             "Paradox Localization Translator/\n"
             "├── 翻訳結果/\n"
             "├── キャッシュ/\n"
+            "│   ├── mod_translation_status_cache.json\n"
+            "│   ├── mod_classification_cache.json\n"
+            "│   ├── mod_relation_overrides.json\n"
+            "│   ├── translation_status_state.json\n"
+            "│   ├── diagnostic_state.json\n"
+            "│   └── shared_mod_state_cache.json\n"
             "├── バックアップ/\n"
             "├── ログ/\n"
             "│   ├── errors_YYYYMMDD.log\n"
@@ -1967,7 +1996,6 @@ class App(BaseTk):
             "    ├── glossary.json\n"
             "    ├── model_stats.json\n"
             "    ├── model_profiles.json\n"
-            "    ├── mod_translation_status_cache.json\n"
             "    ├── steam_library_roots.json\n"
             "    └── app_preferences.json  ← 前回LLM設定・×ボタン動作\n\n"
             "既定位置: 書類/Documents/Paradox Localization Translator\n"
@@ -2034,11 +2062,16 @@ class App(BaseTk):
             self.mod_status_cache = core.load_json(MOD_STATUS_CACHE_PATH, {"version":MOD_STATUS_CACHE_VERSION,"items":{}})
             if not isinstance(self.mod_status_cache, dict) or self.mod_status_cache.get("version") != MOD_STATUS_CACHE_VERSION:
                 self.mod_status_cache={"version":MOD_STATUS_CACHE_VERSION,"items":{}}
+            _cls = core.load_json(MOD_CLASSIFICATION_CACHE_PATH, {"schema":2,"mods":{}})
+            if not isinstance(_cls, dict): _cls={"schema":2,"mods":{}}
+            self.mod_classification_cache={"schema":2,"mods":dict(_cls.get("mods") or {}),"updated_at":_cls.get("updated_at","")}
             _ov = core.load_json(MOD_RELATION_OVERRIDES_PATH, {"schema":1,"mods":{}})
             if not isinstance(_ov, dict): _ov={"schema":1,"mods":{}}
             self.mod_relation_overrides={"schema":1,"mods":dict(_ov.get("mods") or {}),"updated_at":_ov.get("updated_at","")}
+            self._restore_shared_mod_state_cache()
             self.refresh_profiles_ui()
             self._restore_cached_mod_status()
+            self._restore_diagnostic_state()
             messagebox.showinfo(APP_NAME,
                 "保存場所を変更しました。\n\n"
                 f"{DATA_ROOT}\n\n"
@@ -2107,6 +2140,9 @@ class App(BaseTk):
     def _perform_app_exit(self):
         """終了時の保存規則を一箇所に固定してからUIを閉じる。"""
         self._save_llm_preferences()
+        self._save_translation_status_state("app_exit")
+        self._save_diagnostic_state("app_exit")
+        self._save_shared_mod_state_cache("app_exit")
         self._save_workspace_state("app_exit")
         if self.monitor_thread and self.monitor_thread.is_alive():
             self.monitor_stop_event.set()
@@ -2861,6 +2897,7 @@ Mod更新後だけ追加翻訳:
         children = self.diagnostic_target_tree.get_children()
         if children:
             self.diagnostic_target_tree.selection_set(children)
+        self._save_diagnostic_state("target_select_all")
 
     def _clear_diagnostic_target_selection(self):
         if not hasattr(self, "diagnostic_target_tree"):
@@ -2868,6 +2905,7 @@ Mod更新後だけ追加翻訳:
         selected = self.diagnostic_target_tree.selection()
         if selected:
             self.diagnostic_target_tree.selection_remove(selected)
+        self._save_diagnostic_state("target_selection_cleared")
 
     def _selected_diagnostic_roots(self):
         roots=[]
@@ -3037,13 +3075,21 @@ Mod更新後だけ追加翻訳:
         if auto_rels:
             names=[]
             for rel in auto_rels:
-                names.append(f"{rel.get('source_mod','')} {float(rel.get('score',0) or 0):.1f}点 / 元Mod一致 {float(rel.get('coverage',0) or 0)*100:.1f}%")
-            result["issues"].append({"severity":"INFO","kind":"日本語化Mod（複数対応可）","score":f"{max(float(r.get('score',0) or 0) for r in auto_rels):.1f}","file":"","count":len(auto_rels),"detail":"対応元: "+" / ".join(names)})
+                reason_text="; ".join(str(x) for x in (rel.get("reasons") or []))
+                item=f"{rel.get('source_mod','')} {float(rel.get('score',0) or 0):.1f}点 / 元Mod一致 {float(rel.get('coverage',0) or 0)*100:.1f}%"
+                if reason_text:
+                    item += f" / 判定理由: {reason_text}"
+                names.append(item)
+            result["issues"].append({"severity":"INFO","kind":"日本語化Mod（複数対応可）","score":f"{max(float(r.get('score',0) or 0) for r in auto_rels):.1f}","file":"","count":len(auto_rels),"detail":"対応元: "+"\n".join(names)})
         if candidate_rels:
             names=[]
             for rel in candidate_rels[:6]:
-                names.append(f"{rel.get('source_mod','')} {float(rel.get('score',0) or 0):.1f}点")
-            result["issues"].append({"severity":"WARN","kind":"日本語化Mod候補（未確定）","file":"","count":len(candidate_rels),"detail":"自動修復の正当キー集合には含めません: "+" / ".join(names)})
+                reason_text="; ".join(str(x) for x in (rel.get("reasons") or []))
+                item=f"{rel.get('source_mod','')} {float(rel.get('score',0) or 0):.1f}点 / 元Mod一致 {float(rel.get('coverage',0) or 0)*100:.1f}%"
+                if reason_text:
+                    item += f" / 判定理由: {reason_text}"
+                names.append(item)
+            result["issues"].append({"severity":"WARN","kind":"日本語化Mod候補（未確定）","file":"","count":len(candidate_rels),"detail":"自動修復の正当キー集合には含めません: "+"\n".join(names)})
 
         if not english_files:
             result["issues"].append({"severity":"WARN","kind":"英語原文なし","file":"","count":0,"detail":"英語localizationを確認できません。日本語化Modや中国語のみのModなら正常な場合があります。"})
@@ -3200,6 +3246,7 @@ Mod更新後だけ追加翻訳:
                 issue["decision"]="本体" if c=="source" else "日本語化Mod" if c=="translation" else "未選択"
         self._populate_diagnostic_results(self.diagnostic_last_analyses)
         self.diagnostic_summary_var.set(f"競合優先を {changed}件 更新しました")
+        self._save_diagnostic_state("conflict_choice_changed")
 
     def _set_all_diagnostic_conflict_choices(self, choice):
         conflict_ids=[]
@@ -3228,12 +3275,14 @@ Mod更新後だけ追加翻訳:
                     issue["decision"]="本体" if choice=="source" else "日本語化Mod"
         self._populate_diagnostic_results(self.diagnostic_last_analyses)
         self.diagnostic_summary_var.set(f"競合優先を全{len(conflict_ids)}件『{label}』に設定しました")
+        self._save_diagnostic_state("all_conflict_choices_changed")
 
     def _start_localization_diagnostic(self, repair=False):
         if self.diagnostic_thread and self.diagnostic_thread.is_alive():
             messagebox.showinfo(APP_NAME,"総合診断はすでにバックグラウンドで実行中です。")
             return
         roots=self._selected_diagnostic_roots()
+        self._save_diagnostic_state("diagnostic_start")
         if not roots:
             messagebox.showinfo(APP_NAME,"総合診断タブで対象Modを1件以上選択してください。")
             return
@@ -4002,24 +4051,52 @@ Mod更新後だけ追加翻訳:
             self.mod_status_cache["version"] = MOD_STATUS_CACHE_VERSION
             self.mod_status_cache["updated_at"] = datetime.now().isoformat(timespec="seconds")
             core.save_json(MOD_STATUS_CACHE_PATH, self.mod_status_cache)
+        try:
+            if threading.current_thread() is threading.main_thread():
+                self._save_translation_status_state("status_row_cached")
+        except Exception:
+            pass
 
     def _restore_cached_mod_status(self):
         try:
             data = core.load_json(MOD_STATUS_CACHE_PATH, {"version": MOD_STATUS_CACHE_VERSION, "items": {}})
             if not isinstance(data, dict) or data.get("version") != MOD_STATUS_CACHE_VERSION:
                 self.mod_status_cache = {"version": MOD_STATUS_CACHE_VERSION, "items": {}}
-                return
+                data = self.mod_status_cache
             items = data.get("items", {})
             rows = []
+            by_path = {}
             for row in items.values():
                 result = row.get("result") if isinstance(row, dict) else None
                 if isinstance(result, dict) and result.get("path"):
-                    r = dict(result); r["cached"] = True; rows.append(r)
+                    r = dict(result); r["cached"] = True
+                    by_path[str(r.get("path"))] = r
+            # The visible-state snapshot survives deliberate invalidation of the
+            # signature cache (classification change/repair/overwrite). This is
+            # why a restart no longer makes the tab look empty.
+            snap = self._load_translation_status_snapshot()
+            for r in (snap.get("results") or []):
+                if not isinstance(r, dict) or not r.get("path"):
+                    continue
+                path = str(r.get("path"))
+                if path not in by_path:
+                    rr = dict(r); rr["cached"] = True; rr["stale_cached"] = True
+                    by_path[path] = rr
+            rows = list(by_path.values())
             rows.sort(key=lambda r: str(r.get("mod", "")).lower())
             if not hasattr(self, "mod_status_tree"):
                 return
             self.mod_research_results = rows
             self._populate_mod_status_tree()
+            wanted = {str(x) for x in (snap.get("selected_paths") or []) if x}
+            if wanted:
+                for iid in self.mod_status_tree.get_children():
+                    try:
+                        idx=int(str(iid).replace("mod_", ""))
+                        if 0 <= idx < len(self.mod_research_results) and str(self.mod_research_results[idx].get("path", "")) in wanted:
+                            self.mod_status_tree.selection_add(iid)
+                    except Exception:
+                        continue
             counts={}
             for r in rows: counts[r.get("status","")] = counts.get(r.get("status",""),0)+1
             summary=" / ".join(f"{k}: {v}" for k,v in counts.items())
@@ -4117,6 +4194,11 @@ Mod更新後だけ追加翻訳:
             self.mod_relation_overrides["schema"] = 1
             self.mod_relation_overrides["updated_at"] = datetime.now().isoformat(timespec="seconds")
             core.save_json(MOD_RELATION_OVERRIDES_PATH, self.mod_relation_overrides)
+        self._save_shared_mod_state_cache("relation_override_updated")
+        try:
+            self._save_translation_status_state("relation_override_updated")
+        except Exception:
+            pass
 
     def _set_mod_relation_override(self, mod_root: Path, role: str, source_paths=None):
         key = self._mod_classification_key(Path(mod_root))
@@ -4220,10 +4302,37 @@ Mod更新後だけ追加翻訳:
         ttk.Label(rolebox,text="日本語化Mod指定では、対応元を指定しなくても翻訳Mod候補として扱います。対応元を指定した場合、その関係を最優先します。",foreground="#666",wraplength=520,justify="left").pack(anchor="w",pady=(6,0))
         srcbox=ttk.LabelFrame(rf,text="対応元Mod（複数選択可）",padding=8); srcbox.pack(fill="both",expand=True,pady=(8,0))
         st=ttk.Treeview(srcbox,columns=("mod","path"),show="headings",selectmode="extended")
-        self._enable_ctrl_multiselect(st)
         st.heading("mod",text="元Mod"); st.heading("path",text="場所"); st.column("mod",width=260,minwidth=260,stretch=False); st.column("path",width=480,minwidth=480,stretch=False)
         ssy=ttk.Scrollbar(srcbox,orient="vertical",command=st.yview); ssx=ttk.Scrollbar(srcbox,orient="horizontal",command=st.xview); st.configure(yscrollcommand=ssy.set,xscrollcommand=ssx.set)
         srcbox.rowconfigure(0,weight=1); srcbox.columnconfigure(0,weight=1); st.grid(row=0,column=0,sticky="nsew"); ssy.grid(row=0,column=1,sticky="ns"); ssx.grid(row=1,column=0,sticky="ew")
+        src_actions=ttk.Frame(srcbox); src_actions.grid(row=2,column=0,columnspan=2,sticky="ew",pady=(7,0))
+
+        # 対応元Modは通常クリック自体をON/OFFトグルにする。
+        # macOS/Windows/Linuxで修飾キーに依存せず、選択済みの行を
+        # もう一度押すだけで解除できるようにする。
+        def toggle_source_click(event):
+            if st.identify_region(event.x,event.y) not in ("cell","tree"):
+                return None
+            iid=st.identify_row(event.y)
+            if not iid:
+                return None
+            selected=set(st.selection())
+            if iid in selected:
+                st.selection_remove(iid)
+            else:
+                st.selection_add(iid)
+            st.focus(iid); st.see(iid)
+            st.event_generate("<<TreeviewSelect>>")
+            return "break"
+
+        def clear_source_selection():
+            sel=st.selection()
+            if sel:
+                st.selection_remove(sel)
+                st.event_generate("<<TreeviewSelect>>")
+
+        st.bind("<Button-1>",toggle_source_click,add="+")
+        ttk.Button(src_actions,text="対応元Modの選択解除",command=clear_source_selection).pack(side="left")
         iid_by_path={}; row_by_iid={}
         for row in rows:
             ov=self._mod_relation_override(Path(row["path"])); role=ov.get("role","auto"); label={"auto":"自動","translation":"日本語化Mod","source":"通常Mod"}.get(role,"自動")
@@ -6439,6 +6548,167 @@ Mod更新後だけ追加翻訳:
             self.progress_text.set("保存して中断中… 現在のリクエスト完了を待っています")
             self.stop_btn.config(state="disabled")
 
+    # ---------------- persistent Translation Status / Total Diagnosis state ----------------
+    @staticmethod
+    def _json_safe_state(value):
+        """Convert runtime diagnostic structures (sets/Path/etc.) to JSON-safe data."""
+        if isinstance(value, dict):
+            return {str(k): App._json_safe_state(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [App._json_safe_state(v) for v in value]
+        if isinstance(value, set):
+            return [App._json_safe_state(v) for v in sorted(value, key=lambda x: str(x))]
+        if isinstance(value, Path):
+            return str(value)
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        return str(value)
+
+    def _save_shared_mod_state_cache(self, reason="update"):
+        """Mirror classification/relation state into キャッシュ for cross-tab recovery."""
+        try:
+            payload = {
+                "schema": 1,
+                "saved_at": datetime.now().isoformat(timespec="seconds"),
+                "saved_at_ns": time.time_ns(),
+                "reason": reason,
+                "classification": self._json_safe_state(getattr(self, "mod_classification_cache", {})),
+                "relations": self._json_safe_state(getattr(self, "mod_relation_overrides", {})),
+            }
+            core.save_json(SHARED_MOD_STATE_CACHE_PATH, payload)
+        except Exception as exc:
+            record_error("共通Mod状態キャッシュ保存", exc)
+
+    def _restore_shared_mod_state_cache(self):
+        """Use the shared cache as a safety fallback if the primary cache files are missing/incomplete."""
+        try:
+            data = core.load_json(SHARED_MOD_STATE_CACHE_PATH, {})
+            if not isinstance(data, dict):
+                return
+            cached_cls = data.get("classification") if isinstance(data.get("classification"), dict) else {}
+            cached_rel = data.get("relations") if isinstance(data.get("relations"), dict) else {}
+            changed = False
+            if cached_cls:
+                cur = getattr(self, "mod_classification_cache", {})
+                cur_mods = dict((cur or {}).get("mods") or {})
+                for key, row in dict(cached_cls.get("mods") or {}).items():
+                    if key not in cur_mods:
+                        cur_mods[key] = row
+                        changed = True
+                if changed:
+                    self.mod_classification_cache["mods"] = cur_mods
+                    self.mod_classification_cache["updated_at"] = datetime.now().isoformat(timespec="seconds")
+                    core.save_json(MOD_CLASSIFICATION_CACHE_PATH, self.mod_classification_cache)
+            rel_changed = False
+            if cached_rel:
+                cur_rel = getattr(self, "mod_relation_overrides", {})
+                cur_mods = dict((cur_rel or {}).get("mods") or {})
+                for key, row in dict(cached_rel.get("mods") or {}).items():
+                    if key not in cur_mods:
+                        cur_mods[key] = row
+                        rel_changed = True
+                if rel_changed:
+                    self.mod_relation_overrides["mods"] = cur_mods
+                    self.mod_relation_overrides["updated_at"] = datetime.now().isoformat(timespec="seconds")
+                    core.save_json(MOD_RELATION_OVERRIDES_PATH, self.mod_relation_overrides)
+            if changed or rel_changed:
+                self._save_shared_mod_state_cache("fallback_restore")
+        except Exception as exc:
+            record_error("共通Mod状態キャッシュ復元", exc)
+
+    def _save_translation_status_state(self, reason="update"):
+        """Persist the visible Translation Status state independently from scan-signature cache."""
+        try:
+            selected_paths = []
+            if hasattr(self, "mod_status_tree"):
+                for row in self._selected_mod_status_results():
+                    raw = row.get("path")
+                    if raw and raw not in selected_paths:
+                        selected_paths.append(str(raw))
+            payload = {
+                "schema": 1,
+                "saved_at": datetime.now().isoformat(timespec="seconds"),
+                "saved_at_ns": time.time_ns(),
+                "reason": reason,
+                "results": self._json_safe_state(list(getattr(self, "mod_research_results", []) or [])),
+                "selected_paths": selected_paths,
+                "summary": self._workspace_scalar(getattr(self, "mod_status_summary_var", None), ""),
+                "search": self._workspace_scalar(getattr(self, "mod_status_search_var", None), ""),
+            }
+            core.save_json(TRANSLATION_STATUS_STATE_PATH, payload)
+            self._save_shared_mod_state_cache("translation_status:" + str(reason))
+        except Exception as exc:
+            record_error("翻訳状況状態キャッシュ保存", exc)
+
+    def _load_translation_status_snapshot(self):
+        try:
+            data = core.load_json(TRANSLATION_STATUS_STATE_PATH, {})
+            return data if isinstance(data, dict) else {}
+        except Exception as exc:
+            record_error("翻訳状況状態キャッシュ読込", exc)
+            return {}
+
+    def _save_diagnostic_state(self, reason="update"):
+        """Persist last Total Diagnosis results, selected targets, and per-key conflict decisions."""
+        try:
+            target_paths = []
+            if hasattr(self, "diagnostic_target_tree"):
+                for iid in self.diagnostic_target_tree.selection():
+                    vals = self.diagnostic_target_tree.item(iid, "values")
+                    if len(vals) >= 3 and vals[2]:
+                        target_paths.append(str(vals[2]))
+            payload = {
+                "schema": 1,
+                "saved_at": datetime.now().isoformat(timespec="seconds"),
+                "saved_at_ns": time.time_ns(),
+                "reason": reason,
+                "target_paths": target_paths,
+                "summary": self._workspace_scalar(getattr(self, "diagnostic_summary_var", None), ""),
+                "analyses": self._json_safe_state(list(getattr(self, "diagnostic_last_analyses", []) or [])),
+                "conflict_choices": self._json_safe_state(dict(getattr(self, "diagnostic_conflict_choices", {}) or {})),
+            }
+            core.save_json(DIAGNOSTIC_STATE_PATH, payload)
+            self._save_shared_mod_state_cache("diagnostic:" + str(reason))
+        except Exception as exc:
+            record_error("総合診断状態キャッシュ保存", exc)
+
+    def _restore_diagnostic_state(self):
+        try:
+            self._restore_shared_mod_state_cache()
+            data = core.load_json(DIAGNOSTIC_STATE_PATH, {})
+            if not isinstance(data, dict):
+                return
+            choices = data.get("conflict_choices") or {}
+            if isinstance(choices, dict):
+                self.diagnostic_conflict_choices = {str(k): str(v) for k, v in choices.items() if v in {"source", "translation"}}
+            analyses = data.get("analyses") or []
+            if isinstance(analyses, list):
+                # Drop only entries whose Mod root no longer exists. One missing Mod
+                # must not prevent every other cached diagnosis from being restored.
+                valid = []
+                for row in analyses:
+                    if not isinstance(row, dict):
+                        continue
+                    raw = row.get("path")
+                    if raw and not Path(raw).exists():
+                        continue
+                    valid.append(row)
+                if valid:
+                    self.diagnostic_results = list(valid)
+                    self._populate_diagnostic_results(valid)
+            wanted = {str(x) for x in (data.get("target_paths") or []) if x}
+            if wanted and hasattr(self, "diagnostic_target_tree"):
+                for iid in self.diagnostic_target_tree.get_children():
+                    vals = self.diagnostic_target_tree.item(iid, "values")
+                    if len(vals) >= 3 and str(vals[2]) in wanted:
+                        self.diagnostic_target_tree.selection_add(iid)
+            if 'valid' in locals() and valid:
+                issues = sum(1 for a in valid for x in (a.get("issues") or []) if x.get("severity") in {"ERROR", "WARN"})
+                self.diagnostic_summary_var.set(f"前回診断を復元: {len(valid)} Mod / 要確認 {issues}件")
+                self._set_diagnostic_detail("前回終了時の総合診断結果をキャッシュから復元しました。必要なら再診断してください。")
+        except Exception as exc:
+            record_error("総合診断状態キャッシュ復元", exc)
+
     # ---------------- workspace persistence ----------------
     def _workspace_scalar(self, var, default=None):
         try:
@@ -8258,6 +8528,7 @@ Mod更新後だけ追加翻訳:
                 elif kind=="mod_status_append":
                     self.mod_research_results.append(payload)
                     self._populate_mod_status_tree()
+                    self._save_translation_status_state("status_append")
                     counts={}
                     for r in self.mod_research_results: counts[r.get("status","")]=counts.get(r.get("status",""),0)+1
                     summary=" / ".join(f"{k}: {v}" for k,v in counts.items())
@@ -8279,6 +8550,7 @@ Mod更新後だけ追加翻訳:
                         summary=" / ".join(f"{k}: {v}" for k,v in counts.items())
                         self.mod_status_summary_var.set(f"調査完了: {len(self.mod_research_results)}件"+(f"　{summary}" if summary else ""))
                     self._set_monitor_llm_idle("探索用LLM 待機中","Mod翻訳状況の調査が完了しました")
+                    self._save_translation_status_state("status_research_done")
                 elif kind=="mod_research_error":
                     record_error("Mod翻訳状況調査", detail=str(payload))
                     self.mod_research_stop_btn.config(state="disabled"); self.mod_research_thread=None
@@ -8297,6 +8569,7 @@ Mod更新後だけ追加翻訳:
                         self.diagnostic_results=list(shown)
                         self._populate_diagnostic_results(shown)
                         self.diagnostic_summary_var.set("競合の優先先を指定してください")
+                        self._save_diagnostic_state("choices_required")
                         messagebox.showwarning(APP_NAME,
                             "修復前に本体 / 日本語化Modの重複キーについて優先先の指定が必要です。\n\n"
                             +str(payload.get("message", ""))+
@@ -8318,6 +8591,7 @@ Mod更新後だけ追加翻訳:
                         logs=payload.get("logs") or []
                         if logs: self._set_diagnostic_detail("\n".join(logs)+"\n\n修復後の診断結果を一覧へ表示しています。")
                         elif count: self._set_diagnostic_detail("診断が完了しました。一覧から項目を選択すると詳細を確認できます。")
+                        self._save_diagnostic_state("repair_done" if payload.get("repair") else "diagnostic_done")
                         try:
                             if payload.get("repair"):
                                 # Discard stale status summaries and re-check repaired Mods on the next status scan.
