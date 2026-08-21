@@ -36,7 +36,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.40"
+APP_VERSION = "0.11.41"
 MOD_STATUS_CACHE_VERSION = 7
 
 
@@ -2777,6 +2777,8 @@ Mod更新後だけ追加翻訳:
         self.diagnostic_target_tree.grid(row=0,column=0,sticky="nsew"); sy.grid(row=0,column=1,sticky="ns"); sx.grid(row=1,column=0,sticky="ew")
         tbtn=ttk.Frame(targets); tbtn.pack(fill="x",pady=(7,0))
         ttk.Button(tbtn,text="翻訳状況から再取得",command=self._refresh_diagnostic_targets).pack(side="left")
+        ttk.Button(tbtn,text="全体選択",command=self._select_all_diagnostic_targets).pack(side="left",padx=(6,0))
+        ttk.Button(tbtn,text="全選択解除",command=self._clear_diagnostic_target_selection).pack(side="left",padx=(6,0))
         ttk.Button(tbtn,text="Mod分類・関連付け",command=lambda:self._open_mod_relation_dialog("diagnostic")).pack(side="left",padx=(6,0))
 
         actions = ttk.LabelFrame(left, text="操作", padding=6); actions.pack(fill="x", pady=(8,0))
@@ -4185,6 +4187,7 @@ Mod更新後だけ追加翻訳:
             mt.heading(c,text=txt); mt.column(c,width=w,minwidth=w,stretch=False,anchor="w")
         msy=ttk.Scrollbar(lf,orient="vertical",command=mt.yview); msx=ttk.Scrollbar(lf,orient="horizontal",command=mt.xview); mt.configure(yscrollcommand=msy.set,xscrollcommand=msx.set)
         lf.rowconfigure(0,weight=1); lf.columnconfigure(0,weight=1); mt.grid(row=0,column=0,sticky="nsew"); msy.grid(row=0,column=1,sticky="ns"); msx.grid(row=1,column=0,sticky="ew")
+        mt_actions=ttk.Frame(lf); mt_actions.grid(row=2,column=0,columnspan=2,sticky="ew",pady=(7,0))
         role_var=tk.StringVar(value="auto"); current_path=tk.StringVar(value="")
         rolebox=ttk.LabelFrame(rf,text="分類",padding=8); rolebox.pack(fill="x")
         for text,val in (("自動判定","auto"),("このModは日本語化Modです","translation"),("このModは通常Modです","source")):
@@ -4200,9 +4203,44 @@ Mod更新後だけ追加翻訳:
         for row in rows:
             ov=self._mod_relation_override(Path(row["path"])); role=ov.get("role","auto"); label={"auto":"自動","translation":"日本語化Mod","source":"通常Mod"}.get(role,"自動")
             iid=mt.insert("","end",values=(row["mod"],label,len(ov.get("source_paths") or []),row["path"])); iid_by_path[row["path"]]=iid; row_by_iid[iid]=row
+        def clear_mod_selection(*_):
+            sel=mt.selection()
+            if sel:
+                mt.selection_remove(sel)
+            current_path.set("")
+            role_var.set("auto")
+            for iid in st.get_children():
+                st.delete(iid)
+
+        click_state={"row":"","was_selected":False}
+        def remember_mod_click(event):
+            row=mt.identify_row(event.y) if mt.identify_region(event.x,event.y) in ("cell","tree") else ""
+            click_state["row"]=row
+            click_state["was_selected"]=bool(row and row in mt.selection())
+        def toggle_mod_click(event):
+            row=mt.identify_row(event.y) if mt.identify_region(event.x,event.y) in ("cell","tree") else ""
+            if not row or row!=click_state.get("row"):
+                return None
+            if click_state.get("was_selected"):
+                mt.selection_remove(row)
+                current_path.set("")
+                role_var.set("auto")
+                for iid in st.get_children():
+                    st.delete(iid)
+            else:
+                mt.selection_set(row)
+                mt.focus(row)
+                mt.see(row)
+            mt.event_generate("<<TreeviewSelect>>")
+            return "break"
+
         def load_selected(*_):
             sel=mt.selection()
-            if not sel: return
+            if not sel:
+                current_path.set("")
+                role_var.set("auto")
+                for iid in st.get_children(): st.delete(iid)
+                return
             row=row_by_iid.get(sel[0])
             if not row: return
             current_path.set(row["path"]); ov=self._mod_relation_override(Path(row["path"])); role_var.set(ov.get("role","auto"))
@@ -4213,7 +4251,10 @@ Mod更新後だけ追加翻訳:
                 iid=st.insert("","end",values=(src["mod"],src["path"]))
                 if src["path"] in selected: to_select.append(iid)
             if to_select: st.selection_set(to_select); st.see(to_select[0])
+        mt.bind("<ButtonPress-1>",remember_mod_click,add="+")
+        mt.bind("<ButtonRelease-1>",toggle_mod_click,add="+")
         mt.bind("<<TreeviewSelect>>",load_selected)
+        ttk.Button(mt_actions,text="選択解除",command=clear_mod_selection).pack(side="left")
         btns=ttk.Frame(rf); btns.pack(fill="x",pady=(8,0))
         def save_current():
             raw=current_path.get()
