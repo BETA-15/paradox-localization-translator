@@ -23,5 +23,12 @@ rm -rf pyinstaller-build dist
   app/main.py
 APP="dist/Paradox Localization Translator.app"
 [[ -d "$APP" ]] || { echo "ERROR: $APP が生成されませんでした" >&2; exit 1; }
+APP_VERSION="$(tr -d '[:space:]' < VERSION)"
+PLIST="$APP/Contents/Info.plist"
+if [[ -f "$PLIST" ]]; then
+  /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $APP_VERSION" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $APP_VERSION" "$PLIST"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $APP_VERSION" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $APP_VERSION" "$PLIST"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.beta15.ParadoxLocalizationTranslator" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string com.beta15.ParadoxLocalizationTranslator" "$PLIST"
+fi
 codesign --force --deep --sign - "$APP" || true
 echo "完成: $APP"

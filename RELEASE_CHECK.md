@@ -1,3 +1,19 @@
+# v0.11.40 追加確認
+
+- [x] `VERSION` / `APP_VERSION` を 0.11.40 に統一
+- [x] `python -m py_compile app/main.py app/translator_core.py` PASS
+- [x] Mod調査 / 監視 / 通常翻訳 / モデル取得など主要workerからTk変数の直接 `.get()` を除去
+- [x] 差分翻訳 / AI校正 / モデル速度テストのローカルworkerも設定値をメインスレッドでスナップショット
+- [x] macOS DiagnosticReportsの新規クラッシュレポートを `errors_*.log` に自動取り込みする合成テスト PASS
+- [x] 元クラッシュレポートを `ログ/native_crash_reports/` に保存し、診断ZIPへ同梱
+- [x] 前回異常終了マーカー / faulthandler fatalログを追加
+- [x] macOS build scriptが `VERSION` を `CFBundleShortVersionString` / `CFBundleVersion` に設定
+- [x] 翻訳状況の「選択Modを除外して中国語基準キューへ追加」を1段目へ移動
+- [x] 翻訳状況の「Mod分類・関連付け」を左側ブロックへ移動
+- [x] Xvfb GUI smoke testで新しい左側分類ボタンと中国語除外ボタンを確認
+
+---
+
 # v0.11.39 追加確認
 
 - [x] `VERSION` / `APP_VERSION` を 0.11.39 に統一
