@@ -785,85 +785,185 @@ def _logical_localization_id(path: Path, root: Path, lang: str) -> str:
         name = 'l_LANG.yml'
     return '/'.join(parts + [name])
 
-def scan_translation_gaps(root: Path, preferred_source: str = "english") -> List[dict]:
-    """Scan one localization tree using the same global key view the game loads.
-
-    Japanese localization may be split across many files, including the translator's
-    generated ``paradox_localization_translator_missing_l_japanese.yml`` patch file.
-    For status/monitoring purposes those files must be combined before judging gaps;
-    pairing source and target by filename can otherwise report already-added keys as
-    missing.  English is preferred per key and Simplified Chinese is used as fallback.
-    """
+def _multilingual_source_view(root: Path, preferred_source: str = "english") -> dict:
+    """Collect English, Simplified Chinese and Japanese entries in one global view."""
     root = Path(root)
-    source_entries: Dict[str, str] = {}
-    source_paths: Dict[str, str] = {}
-    source_langs: Dict[str, str] = {}
-    chinese_fallback: Dict[str, Tuple[str, str]] = {}
-    japanese_entries: Dict[str, str] = {}
-    japanese_paths: Dict[str, str] = {}
-
+    english: Dict[str, str] = {}
+    chinese: Dict[str, str] = {}
+    japanese: Dict[str, str] = {}
+    paths = {"english": {}, "simp_chinese": {}, "japanese": {}}
     for f in gather_yml_files(root):
         try:
             lang, entries, _ = parse_localization_file(f)
         except Exception:
             continue
-        if lang == "japanese":
-            for key, value in entries.items():
-                japanese_entries[key] = value
-                japanese_paths[key] = str(f)
-        elif lang == preferred_source:
-            for key, value in entries.items():
-                source_entries[key] = value
-                source_paths[key] = str(f)
-                source_langs[key] = lang
-        elif lang == "simp_chinese":
-            for key, value in entries.items():
-                chinese_fallback[key] = (value, str(f))
+        if lang not in paths:
+            continue
+        bucket = {"english": english, "simp_chinese": chinese, "japanese": japanese}[lang]
+        bucket.update(entries)
+        for key in entries:
+            paths[lang][key] = str(f)
+    return {"english": english, "simp_chinese": chinese, "japanese": japanese, "paths": paths,
+            "preferred_source": preferred_source}
 
-    for key, (value, path) in chinese_fallback.items():
-        if key not in source_entries:
-            source_entries[key] = value
-            source_paths[key] = path
-            source_langs[key] = "simp_chinese"
 
+def analyze_source_language_gaps(root: Path) -> dict:
+    """Find translatable keys that exist in only one of English/Chinese sources.
+
+    Dynamic/script-only values are ignored.  The comparison is only considered
+    meaningful when both source languages are present under ``root``.
+    """
+    view = _multilingual_source_view(Path(root))
+    english = view["english"]
+    chinese = view["simp_chinese"]
+    if not english or not chinese:
+        return {
+            "comparable": False, "has_gaps": False,
+            "english_only": [], "chinese_only": [],
+            "english_only_count": 0, "chinese_only_count": 0,
+        }
+    english_only = [k for k in sorted(set(english) - set(chinese))
+                    if not looks_untranslatable(english.get(k, ""))]
+    chinese_only = [k for k in sorted(set(chinese) - set(english))
+                    if not looks_untranslatable(chinese.get(k, ""))]
+    return {
+        "comparable": True,
+        "has_gaps": bool(english_only or chinese_only),
+        "english_only": english_only,
+        "chinese_only": chinese_only,
+        "english_only_count": len(english_only),
+        "chinese_only_count": len(chinese_only),
+    }
+
+
+def source_language_gap_reason_text(result: dict) -> str:
+    parts = []
+    en = int((result or {}).get("english_only_count", 0) or 0)
+    zh = int((result or {}).get("chinese_only_count", 0) or 0)
+    if en:
+        parts.append(f"英語にのみ存在する翻訳対象キー {en}件")
+    if zh:
+        parts.append(f"簡体字中国語にのみ存在する翻訳対象キー {zh}件")
+    return " / ".join(parts) if parts else "原文間の欠落なし"
+
+
+def gap_origin_counts(candidates: List[dict]) -> dict:
+    """Count gaps by whether the localization key is shared or language-specific."""
+    counts = {"english_only": 0, "chinese_only": 0, "shared": 0, "other": 0}
+    for c in candidates or []:
+        origin = c.get("source_origin", "")
+        if origin in counts:
+            counts[origin] += 1
+        else:
+            counts["other"] += 1
+    counts["total"] = sum(counts.values())
+    return counts
+
+
+def gap_reason_text(candidates: List[dict]) -> str:
+    """Human-readable reason for a multilingual Japanese coverage failure."""
+    counts = gap_origin_counts(candidates)
+    parts = []
+    if counts["english_only"]:
+        parts.append(f"英語にのみ存在するキーのうち、日本語訳が必要な {counts['english_only']}件が欠如")
+    if counts["chinese_only"]:
+        parts.append(f"簡体字中国語にのみ存在するキーのうち、日本語訳が必要な {counts['chinese_only']}件が欠如")
+    if counts["shared"]:
+        parts.append(f"英語・簡体字中国語の共通キーで {counts['shared']}件が欠如または未翻訳")
+    if counts["other"]:
+        parts.append(f"その他の翻訳不足 {counts['other']}件")
+    return " / ".join(parts) if parts else "欠損なし"
+
+
+def scan_translation_gaps(root: Path, preferred_source: str = "english") -> List[dict]:
+    """Scan Japanese coverage against the union of English and Simplified Chinese.
+
+    A localization key that exists in only one source language is not automatically a
+    Japanese gap. Dynamic/script-only values are ignored. If the language-specific
+    value contains translatable display text, however, the missing Japanese key is a
+    real gap and is tagged with its source language so the UI can explain why.
+
+    This makes the check symmetric: Chinese-basis translations are checked for
+    English-only keys, and English-basis translations are checked for Chinese-only
+    keys.
+    """
+    view = _multilingual_source_view(Path(root), preferred_source=preferred_source)
+    english = view["english"]
+    chinese = view["simp_chinese"]
+    japanese = view["japanese"]
+    paths = view["paths"]
     candidates: List[dict] = []
-    for key, source in source_entries.items():
-        source_lang = source_langs.get(key, preferred_source)
-        source_file = source_paths.get(key, "")
 
-        # Script references / variables that contain no translatable text are valid
-        # even when Japanese is absent or byte-for-byte identical to the source.
-        if looks_untranslatable(source):
+    for key in sorted(set(english) | set(chinese)):
+        en = english.get(key)
+        zh = chinese.get(key)
+        if en is not None and zh is not None:
+            origin = "shared"
+        elif en is not None:
+            origin = "english_only"
+        else:
+            origin = "chinese_only"
+
+        # Prefer the requested basis when available, otherwise use the other language.
+        if preferred_source == "simp_chinese" and zh is not None:
+            source_lang, source = "simp_chinese", zh
+        elif en is not None:
+            source_lang, source = "english", en
+        else:
+            source_lang, source = "simp_chinese", zh or ""
+        source_file = paths[source_lang].get(key, "")
+
+        # If every available source value consists only of variables/script tokens,
+        # omitting a Japanese copy does not affect displayed translatable text.
+        available = [v for v in (en, zh) if v is not None]
+        if available and all(looks_untranslatable(v) for v in available):
             continue
 
-        if key not in japanese_entries:
+        if key not in japanese:
+            kind = {
+                "english_only": "英語固有キー欠損",
+                "chinese_only": "中国語固有キー欠損",
+                "shared": "日本語キーなし",
+            }[origin]
             candidates.append({
-                "kind": "日本語キーなし", "logical_file": "",
-                "source_file": source_file, "target_file": "",
-                "source_lang": source_lang, "key": key, "source": source,
-                "target": "", "needs_llm": False, "confidence": "確定",
+                "kind": kind, "logical_file": "", "source_file": source_file,
+                "target_file": "", "source_lang": source_lang, "source_origin": origin,
+                "key": key, "source": source, "target": "", "needs_llm": False,
+                "confidence": "確定",
             })
             continue
 
-        target = japanese_entries.get(key, "")
-        target_file = japanese_paths.get(key, "")
+        target = japanese.get(key, "")
+        target_file = paths["japanese"].get(key, "")
         if not target or looks_untranslatable(target):
             continue
-        exact = bool(source and target.strip() == source.strip())
+
+        # Compare against both source-language variants. Matching a source verbatim
+        # can be legitimate for Japanese/Chinese shared terminology, so reuse the
+        # language-aware untranslated detector rather than raw equality alone.
+        untranslated = False
+        untranslated_source = source
+        untranslated_lang = source_lang
+        for lang, src in (("english", en), ("simp_chinese", zh)):
+            if src is None:
+                continue
+            if looks_untranslated(src, target, lang):
+                untranslated = True
+                untranslated_source = src
+                untranslated_lang = lang
+                break
         foreign = looks_foreign_in_target(target, "japanese")
-        if exact or foreign:
-            ambiguous = not exact and len(PROTECT_RE.sub('', target).strip()) <= 80
+        if untranslated or foreign:
+            ambiguous = foreign and not untranslated and len(PROTECT_RE.sub('', target).strip()) <= 80
             candidates.append({
                 "kind": "英語/外国語残り", "logical_file": "",
-                "source_file": source_file, "target_file": target_file,
-                "source_lang": source_lang, "key": key, "source": source,
+                "source_file": paths[untranslated_lang].get(key, source_file),
+                "target_file": target_file, "source_lang": untranslated_lang,
+                "source_origin": origin, "key": key, "source": untranslated_source,
                 "target": target, "needs_llm": ambiguous,
                 "confidence": "要確認" if ambiguous else "高",
             })
 
-    # Japanese-only entries are not gaps.  They may intentionally override base-game
-    # strings, so status monitoring should not flag them merely for lacking a source
-    # entry inside this particular mod.
     return candidates
 
 def classify_monitor_candidates(provider: str, url: str, model: str, candidates: List[dict],
@@ -2130,9 +2230,10 @@ def mod_localization_root(mod_root: Path) -> Optional[Path]:
 
 
 def _collect_mod_language_entries(mod_root: Path) -> dict:
-    """Collect source/Japanese localization entries for one mod."""
+    """Collect English, Simplified Chinese, union-source and Japanese entries."""
     loc = mod_localization_root(mod_root)
-    result = {"localization": str(loc) if loc else "", "source": {}, "japanese": {}, "japanese_files": []}
+    result = {"localization": str(loc) if loc else "", "source": {}, "english": {},
+              "simp_chinese": {}, "japanese": {}, "japanese_files": []}
     if not loc:
         return result
     for f in gather_yml_files(loc):
@@ -2143,13 +2244,13 @@ def _collect_mod_language_entries(mod_root: Path) -> dict:
         if lang == "japanese":
             result["japanese"].update(entries)
             result["japanese_files"].append(str(f))
-        elif lang in {"english", "simp_chinese"}:
-            # Prefer English wording if both exist for the same key.
-            if lang == "english":
-                result["source"].update(entries)
-            else:
-                for k, v in entries.items():
-                    result["source"].setdefault(k, v)
+        elif lang == "english":
+            result["english"].update(entries)
+        elif lang == "simp_chinese":
+            result["simp_chinese"].update(entries)
+    result["source"].update(result["english"])
+    for k, v in result["simp_chinese"].items():
+        result["source"].setdefault(k, v)
     return result
 
 
@@ -2184,29 +2285,40 @@ def _normalize_mod_name_for_match(name: str) -> str:
     return re.sub(r'[^0-9a-z\u3040-\u30ff\u4e00-\u9fff]+', '', text)
 
 
-def _external_gap_candidates(source_entries: Dict[str, str], japanese_entries: Dict[str, str]) -> List[dict]:
+def _external_gap_candidates(source_entries: Dict[str, str], japanese_entries: Dict[str, str],
+                             english_entries: Optional[Dict[str, str]] = None,
+                             chinese_entries: Optional[Dict[str, str]] = None) -> List[dict]:
     """Return real translation gaps for an external Japanese translation mod.
 
-    Paradox localization often contains values made only from dynamic references
-    such as ``$foo$`` or ``[GetModifier(...).GetName]``.  Those values are meant
-    to remain identical across languages and must not be counted as untranslated.
+    When per-language maps are supplied, each gap records whether the key is English-
+    only, Chinese-only, or shared so the UI can explain cross-language omissions.
     """
+    english_entries = english_entries or {}
+    chinese_entries = chinese_entries or {}
     candidates = []
     for key, source_text in source_entries.items():
-        # Dynamic/script-only values do not need a Japanese translation at all.
+        in_en = key in english_entries
+        in_zh = key in chinese_entries
+        origin = "shared" if in_en and in_zh else "english_only" if in_en else "chinese_only" if in_zh else "other"
+        source_lang = "english" if in_en else "simp_chinese" if in_zh else "english"
         if looks_untranslatable(source_text):
             continue
         target = japanese_entries.get(key)
         if target is None:
-            candidates.append({"kind": "missing_key", "key": key, "source_text": source_text, "target_text": "", "confidence": "確定"})
+            candidates.append({"kind": "missing_key", "key": key, "source_text": source_text,
+                               "target_text": "", "confidence": "確定", "source_origin": origin,
+                               "source_lang": source_lang, "needs_llm": False})
             continue
-        if source_text.strip() == target.strip() and source_text.strip():
-            candidates.append({"kind": "source_copy", "key": key, "source_text": source_text, "target_text": target, "confidence": "確定"})
+        if looks_untranslated(source_text, target, source_lang):
+            candidates.append({"kind": "source_copy", "key": key, "source_text": source_text,
+                               "target_text": target, "confidence": "確定", "source_origin": origin,
+                               "source_lang": source_lang, "needs_llm": False})
             continue
         if looks_foreign_in_target(target, "japanese"):
-            candidates.append({"kind": "foreign_text", "key": key, "source_text": source_text, "target_text": target, "confidence": "要確認"})
+            candidates.append({"kind": "foreign_text", "key": key, "source_text": source_text,
+                               "target_text": target, "confidence": "要確認", "source_origin": origin,
+                               "source_lang": source_lang, "needs_llm": True})
     return candidates
-
 
 def find_external_japanese_translation(mod_root: Path, translation_index: Optional[List[dict]]) -> Optional[dict]:
     """Find the most plausible separate Japanese translation mod for *mod_root*.
@@ -2250,7 +2362,7 @@ def find_external_japanese_translation(mod_root: Path, translation_index: Option
         score = coverage * 100 + min(precision, 1.0) * 12 + (18 if name_match else 0) + min(overlap_n, 100) / 100
         if score <= best_score:
             continue
-        gaps = _external_gap_candidates(source_entries, ja)
+        gaps = _external_gap_candidates(source_entries, ja, src_data.get("english", {}), src_data.get("simp_chinese", {}))
         best_score = score
         best = {
             "mod": row.get("mod", cand_path.name),
@@ -2264,6 +2376,25 @@ def find_external_japanese_translation(mod_root: Path, translation_index: Option
             "complete": len(gaps) == 0,
         }
     return best
+
+
+def analyze_external_translation_coverage(source_mod_root: Path, japanese_mod_root: Path) -> dict:
+    """Compare one source mod's English/Chinese union with a separate Japanese mod."""
+    source_data = _collect_mod_language_entries(Path(source_mod_root))
+    japanese_data = _collect_mod_language_entries(Path(japanese_mod_root))
+    source_entries = source_data.get("source", {})
+    japanese_entries = japanese_data.get("japanese", {})
+    gaps = _external_gap_candidates(
+        source_entries, japanese_entries,
+        source_data.get("english", {}), source_data.get("simp_chinese", {}))
+    return {
+        "gap_count": len(gaps),
+        "gaps": gaps,
+        "gap_reason": gap_reason_text(gaps),
+        "complete": len(gaps) == 0,
+        "source_keys": len(source_entries),
+        "japanese_keys": len(japanese_entries),
+    }
 
 
 def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "english", translation_index: Optional[List[dict]] = None) -> dict:
@@ -2299,11 +2430,11 @@ def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "engl
     if not loc:
         return result
 
-    source_keys = set()
-    japanese_keys = set()
-    source_files = 0
-    simp_chinese_files = 0
+    english_keys = set()
     simp_chinese_keys = set()
+    japanese_keys = set()
+    english_files = 0
+    simp_chinese_files = 0
     japanese_files = 0
     for f in gather_yml_files(loc):
         try:
@@ -2313,22 +2444,30 @@ def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "engl
         if lang == "japanese":
             japanese_files += 1
             japanese_keys.update(entries.keys())
-        elif lang in {preferred_source, "simp_chinese"}:
-            source_files += 1
-            source_keys.update(entries.keys())
-            if lang == "simp_chinese":
-                simp_chinese_files += 1
-                simp_chinese_keys.update(entries.keys())
+        elif lang == "english":
+            english_files += 1
+            english_keys.update(entries.keys())
+        elif lang == "simp_chinese":
+            simp_chinese_files += 1
+            simp_chinese_keys.update(entries.keys())
 
+    source_keys = english_keys | simp_chinese_keys
     candidates = scan_translation_gaps(loc, preferred_source=preferred_source)
+    origin_counts = gap_origin_counts(candidates)
     result.update({
-        "source_files": source_files,
+        "source_files": english_files + simp_chinese_files,
+        "english_files": english_files,
+        "english_keys": len(english_keys),
         "simp_chinese_files": simp_chinese_files,
         "simp_chinese_keys": len(simp_chinese_keys),
         "japanese_files": japanese_files,
         "source_keys": len(source_keys),
         "japanese_keys": len(japanese_keys),
+        "english_only_keys": len(english_keys - simp_chinese_keys),
+        "chinese_only_keys": len(simp_chinese_keys - english_keys),
         "gap_count": len(candidates),
+        "gap_origin_counts": origin_counts,
+        "gap_reason": gap_reason_text(candidates),
         "candidates": candidates,
     })
 
@@ -2364,13 +2503,13 @@ def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "engl
         result["status"] = "別Mod翻訳・欠損"
         result["gap_count"] = int(external.get("gap_count", 0))
         result["candidates"] = list(external.get("gaps", []))
-        result["message"] = f"{name}には日本語化Mod『{external['mod']}』がありますが、翻訳に欠損があります（{result['gap_count']}件）。"
+        result["message"] = f"{name}には日本語化Mod『{external['mod']}』がありますが、翻訳に欠損があります（{result['gap_count']}件）。 {gap_reason_text(result['candidates'])}。"
     elif japanese_files == 0 or not japanese_keys:
         result["status"] = "翻訳なし"
         result["message"] = f"{name}というModは日本語翻訳がありません。日本語化Modも確認できませんでした。"
     elif candidates:
         result["status"] = "欠損あり"
-        result["message"] = f"{name}のModに翻訳の欠損箇所があります（{len(candidates)}件）。"
+        result["message"] = f"{name}のModに翻訳の欠損箇所があります（{len(candidates)}件）。 {gap_reason_text(candidates)}。"
     else:
         result["status"] = "翻訳あり"
         result["message"] = f"{name}のModは日本語翻訳が確認できました。"
