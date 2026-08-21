@@ -1,3 +1,53 @@
+# v0.11.46 追加確認
+
+- [x] `VERSION` / `APP_VERSION` を 0.11.46 に統一
+- [x] `MOD_STATUS_CACHE_VERSION` を 9 へ更新し既存の自動判定結果を新しい加重方式で再調査
+- [x] 日本語localization専用構成を35/35点の最高評価にする
+- [x] localization専用で他言語YAMLありは30点、日本語化補助ファイルのみは27.5点へ段階評価
+- [x] 100キー以上50% / 100キー未満20%の必須一致ゲートを維持
+- [x] 他言語が元Modと十分関連する場合は減点なし、無関係なら最大20点減点
+- [x] 手動の日本語化Mod / 通常Mod / 対応元Mod指定が自動判定より優先
+- [x] `python -m py_compile app/main.py app/translator_core.py` PASS
+- [x] 合成テスト: 純日本語localization=35点、他言語localization併存=30点、無関係他言語=-20点 PASS
+
+---
+
+# v0.11.45 追加確認
+
+- [x] `VERSION` / `APP_VERSION` を 0.11.45 に統一
+- [x] `MOD_STATUS_CACHE_VERSION` を 8 へ更新し旧自動関連付け結果を再調査
+- [x] 100キー以上の元Modは完全一致50%未満をreject、50%以上を判定対象にする
+- [x] 100キー未満の元Modは完全一致20%未満をreject、20%以上を判定対象にする
+- [x] 小規模・翻訳専用Modは20%到達時に自動関連付けへ到達可能
+- [x] 英語 / 簡体字中国語 / その他言語localizationの元Mod関連度を完全一致で評価
+- [x] 他言語が十分関連している場合は減点なし、無関係なら最大20点減点
+- [x] 手動の日本語化Mod / 通常Mod / 対応元Mod指定が自動判定より優先
+- [x] `python -m py_compile app/main.py app/translator_core.py` PASS
+
+---
+
+# v0.11.44 追加確認
+
+- [x] `VERSION` / `APP_VERSION` を 0.11.44 に統一
+- [x] `python -m py_compile app/main.py app/translator_core.py` PASS
+- [x] 翻訳状況の表示スナップショットを `キャッシュ/translation_status_state.json` に保存
+- [x] 総合診断の結果・対象Mod・競合保持先を `キャッシュ/diagnostic_state.json` に保存
+- [x] Mod分類・関連付け共通状態を `キャッシュ/shared_mod_state_cache.json` にミラー保存
+- [x] v0.11.43以前の設定フォルダ内3キャッシュをキャッシュフォルダへ非破壊移行
+- [x] 分類変更/修復で署名キャッシュが無効化されても表示スナップショットから翻訳状況を復元
+- [x] Xvfb再起動合成テストで翻訳状況2件、選択状態、総合診断1件、競合保持先、診断対象選択を復元
+- [x] 保存場所変更時に分類・関連付け・翻訳状況・総合診断キャッシュを新しい保存先から再読込
+
+---
+
+# v0.11.43 追加確認
+
+- [x] 対応元Mod一覧は通常クリックで追加/解除できるトグル選択
+- [x] 「対応元Modの選択解除」で対応元だけ全解除
+- [x] 左側の編集中Mod選択は維持
+
+---
+
 # v0.11.42 追加確認
 
 - [x] `VERSION` / `APP_VERSION` を 0.11.42 に統一
@@ -347,3 +397,4 @@
 - [x] 初回日本語なしModは後から日本語YAMLが増えても日本語化Mod候補へ昇格しない
 - [x] 初回から存在する日本語化Modは従来どおり検出可能
 - [x] 日本語化Mod上書き前に関係確認の警告を表示
+
