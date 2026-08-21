@@ -35,7 +35,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.36"
+APP_VERSION = "0.11.37"
 MOD_STATUS_CACHE_VERSION = 7
 
 
@@ -2616,7 +2616,8 @@ Mod更新後だけ追加翻訳:
         self.diagnostic_target_tree.grid(row=0,column=0,sticky="nsew"); sy.grid(row=0,column=1,sticky="ns"); sx.grid(row=1,column=0,sticky="ew")
         tbtn=ttk.Frame(targets); tbtn.pack(fill="x",pady=(7,0))
         ttk.Button(tbtn,text="翻訳状況から再取得",command=self._refresh_diagnostic_targets).pack(side="left")
-        ttk.Button(tbtn,text="すべて選択",command=lambda:self.diagnostic_target_tree.selection_set(self.diagnostic_target_tree.get_children())).pack(side="left",padx=(6,0))
+        ttk.Button(tbtn,text="全体選択",command=self._select_all_diagnostic_targets).pack(side="left",padx=(6,0))
+        ttk.Button(tbtn,text="全選択解除",command=self._clear_diagnostic_target_selection).pack(side="left",padx=(6,0))
 
         actions = ttk.LabelFrame(left, text="操作", padding=6); actions.pack(fill="x", pady=(8,0))
         self.diagnostic_scan_btn=ttk.Button(actions,text="選択Modを診断",command=lambda:self._start_localization_diagnostic(False)); self.diagnostic_scan_btn.pack(fill="x")
@@ -2666,6 +2667,20 @@ Mod更新後だけ追加翻訳:
             self.diagnostic_target_tree.insert("","end",iid=iid,values=(r.get("mod") or Path(path).name,r.get("status") or "",path))
             if path in selected_paths: self.diagnostic_target_tree.selection_add(iid)
         self.diagnostic_target_var.set(f"対象Mod: {count}件" if count else "対象Mod: 翻訳状況タブでMod調査を実行してください")
+
+    def _select_all_diagnostic_targets(self):
+        if not hasattr(self, "diagnostic_target_tree"):
+            return
+        children = self.diagnostic_target_tree.get_children()
+        if children:
+            self.diagnostic_target_tree.selection_set(children)
+
+    def _clear_diagnostic_target_selection(self):
+        if not hasattr(self, "diagnostic_target_tree"):
+            return
+        selected = self.diagnostic_target_tree.selection()
+        if selected:
+            self.diagnostic_target_tree.selection_remove(selected)
 
     def _selected_diagnostic_roots(self):
         roots=[]
