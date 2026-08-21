@@ -35,8 +35,8 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.33"
-MOD_STATUS_CACHE_VERSION = 5
+APP_VERSION = "0.11.34"
+MOD_STATUS_CACHE_VERSION = 6
 
 
 def _app_container_dir() -> Path:
@@ -3709,6 +3709,8 @@ Mod更新後だけ追加翻訳:
             check_external = bool(self.monitor_check_translation_mods_var.get())
             pool_roots = list(translation_pool or roots)
             translation_index = self._build_stable_translation_mod_index(pool_roots) if check_external else None
+            if check_external and translation_index:
+                translation_index = core.assign_translation_candidate_owners(pool_roots, translation_index)
             pool_signature = ""
             if check_external:
                 h = hashlib.sha256()

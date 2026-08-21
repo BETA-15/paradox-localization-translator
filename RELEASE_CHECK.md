@@ -1,3 +1,17 @@
+# v0.11.34 追加確認
+
+- [x] `VERSION` / `APP_VERSION` を 0.11.34 に統一
+- [x] 翻訳専用構成（localization + descriptor/thumbnail/README中心）を最大35点で強く加点
+- [x] 20%キー一致ゲートを維持
+- [x] 同じ日本語化Mod候補を複数元Modへ自動関連付けせず、最高スコア1件へ割り当てる競合判定を追加
+- [x] localization-only + 100%一致候補が90点で自動関連付けされる合成テスト PASS
+- [x] 同じ候補がSourceA/SourceB双方に一致してもSourceAだけに割り当てられる合成テスト PASS
+- [x] gameplay 100ファイルを持つ候補は45点で候補止まりになる合成テスト PASS
+- [x] 翻訳状況キャッシュ世代を更新し旧判定を自動再調査
+- [x] `python -m py_compile app/main.py app/translator_core.py` PASS
+
+---
+
 # v0.11.33 追加確認
 
 - [x] `VERSION` / `APP_VERSION` を 0.11.33 に統一
