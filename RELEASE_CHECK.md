@@ -83,3 +83,18 @@
 - Single-occurrence glossary import candidate extraction: PASS
 - Japanese YAML pairing for import: PASS
 - Manual terms remain manual when auto/import candidates overlap: PASS
+
+
+## v0.11.21 追加確認
+- [ ] 不足分キュー追加直後にセッション保存エラーが出ない
+- [ ] 通常翻訳の `差分翻訳` で前回翻訳済みキーを再翻訳しない
+- [ ] 中国語基準翻訳の `差分翻訳` で前回翻訳済みキーを再翻訳しない
+- [ ] 差分スナップショットがない場合は案内して開始しない
+- [ ] 残存欠落がある完了項目は `完了（一部差分欠落あり）` と表示される
+- [ ] 通常 / 中国語基準のキュー操作ボタンが2段で表示される
+
+
+## v0.11.22 追加確認
+- 通常翻訳キューで横スクロールが全列へ作用すること。
+- 中国語基準翻訳キューで横スクロールが全列へ作用すること。
+- 列幅拡張後も縦スクロールが利用できること。
