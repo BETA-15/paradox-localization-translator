@@ -36,7 +36,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.52"
+APP_VERSION = "0.11.53"
 MOD_STATUS_CACHE_VERSION = 11
 
 
@@ -685,6 +685,7 @@ class App(BaseTk):
         self.backup_restore_detail_var = tk.StringVar(value="一覧からバックアップを選択してください。")
         self.backup_restore_game_var = tk.StringVar(value="すべてのゲーム")
         self.backup_restore_mod_var = tk.StringVar(value="すべてのMod")
+        self.backup_restore_search_var = tk.StringVar(value="")
 
         self.mod_research_results = []
         self.mod_research_thread = None
@@ -3212,17 +3213,22 @@ Mod更新後だけ追加翻訳:
             ' v0.11.52以降の新規バックアップも「ゲーム / Mod / 種別 / 履歴」の階層へ保存します。既存バックアップは移動せず、この画面で可能な範囲を自動分類します。'
         ),foreground='#555',wraplength=1150,justify='left').pack(fill='x',pady=(6,8))
 
-        filters=ttk.LabelFrame(t,text='1. ゲームとModを選択',padding=6); filters.pack(fill='x')
+        filters=ttk.LabelFrame(t,text='1. ゲームとModを選択 / 検索',padding=6); filters.pack(fill='x')
         ttk.Label(filters,text='ゲーム:').grid(row=0,column=0,sticky='w')
         self.backup_restore_game_combo=ttk.Combobox(filters,textvariable=self.backup_restore_game_var,state='readonly',width=28)
         self.backup_restore_game_combo.grid(row=0,column=1,sticky='w',padx=(6,18))
         ttk.Label(filters,text='Mod:').grid(row=0,column=2,sticky='w')
         self.backup_restore_mod_combo=ttk.Combobox(filters,textvariable=self.backup_restore_mod_var,state='readonly',width=42)
         self.backup_restore_mod_combo.grid(row=0,column=3,sticky='ew',padx=(6,18))
+        ttk.Button(filters,text='バックアップ一覧を再読込',command=self._refresh_backup_restore_entries).grid(row=0,column=4,sticky='e')
+        ttk.Label(filters,text='検索:').grid(row=1,column=0,sticky='w',pady=(7,0))
+        self.backup_restore_search_entry=ttk.Entry(filters,textvariable=self.backup_restore_search_var)
+        self.backup_restore_search_entry.grid(row=1,column=1,columnspan=3,sticky='ew',padx=(6,18),pady=(7,0))
+        self.backup_restore_search_entry.bind('<KeyRelease>',self._on_backup_restore_search_changed)
+        ttk.Button(filters,text='検索クリア',command=self._clear_backup_restore_search).grid(row=1,column=4,sticky='e',pady=(7,0))
         filters.columnconfigure(3,weight=1)
         self.backup_restore_game_combo.bind('<<ComboboxSelected>>',self._on_backup_restore_game_changed)
         self.backup_restore_mod_combo.bind('<<ComboboxSelected>>',lambda _e:self._render_backup_restore_entries())
-        ttk.Button(filters,text='バックアップ一覧を再読込',command=self._refresh_backup_restore_entries).grid(row=0,column=4,sticky='e')
 
         action=ttk.Frame(t); action.pack(fill='x',pady=(8,0))
         ttk.Label(action,text='2. 履歴を選択して復元:').pack(side='left')
@@ -3335,14 +3341,43 @@ Mod更新後だけ追加翻訳:
         self._refresh_backup_restore_mod_filter()
         self._render_backup_restore_entries()
 
+    def _backup_restore_entry_matches_search(self, entry, query=None):
+        query=(self.backup_restore_search_var.get() if query is None else query).strip().casefold()
+        if not query:
+            return True
+        generation=entry.get('generation')
+        generation_text=(f"第{int(generation)}回 {int(generation)}" if generation else '')
+        haystack=' '.join(str(v or '') for v in (
+            entry.get('game'), entry.get('mod'), entry.get('kind'), entry.get('state'),
+            entry.get('created_at'), generation_text, entry.get('target_root'), entry.get('format'),
+            entry.get('entry_root'),
+        )).casefold()
+        # Consecutive whitespace differences should not make a search miss.
+        normalized_query=' '.join(query.split())
+        normalized_haystack=' '.join(haystack.split())
+        return normalized_query in normalized_haystack
+
     def _refresh_backup_restore_mod_filter(self):
         game=self.backup_restore_game_var.get() or 'すべてのゲーム'
+        query=self.backup_restore_search_var.get().strip() if hasattr(self,'backup_restore_search_var') else ''
         mods=sorted({str(e.get('mod') or 'Mod') for e in self.backup_restore_entries
-                     if game == 'すべてのゲーム' or str(e.get('game')) == game},key=str.casefold)
+                     if (game == 'すべてのゲーム' or str(e.get('game')) == game)
+                     and self._backup_restore_entry_matches_search(e,query)},key=str.casefold)
         values=['すべてのMod']+mods
         self.backup_restore_mod_combo['values']=values
         if self.backup_restore_mod_var.get() not in values:
             self.backup_restore_mod_var.set(values[0])
+
+    def _on_backup_restore_search_changed(self, _event=None):
+        self._refresh_backup_restore_mod_filter()
+        self._render_backup_restore_entries()
+
+    def _clear_backup_restore_search(self):
+        self.backup_restore_search_var.set('')
+        self._refresh_backup_restore_mod_filter()
+        self._render_backup_restore_entries()
+        if hasattr(self,'backup_restore_search_entry'):
+            self.backup_restore_search_entry.focus_set()
 
     def _on_backup_restore_game_changed(self, _event=None):
         self.backup_restore_mod_var.set('すべてのMod')
@@ -3355,10 +3390,12 @@ Mod更新後だけ追加翻訳:
         self.backup_restore_entry_map={}
         game=self.backup_restore_game_var.get() or 'すべてのゲーム'
         mod=self.backup_restore_mod_var.get() or 'すべてのMod'
+        query=self.backup_restore_search_var.get().strip() if hasattr(self,'backup_restore_search_var') else ''
         visible=[]
         for e in self.backup_restore_entries:
             if game != 'すべてのゲーム' and str(e.get('game')) != game: continue
             if mod != 'すべてのMod' and str(e.get('mod')) != mod: continue
+            if not self._backup_restore_entry_matches_search(e,query): continue
             visible.append(e)
         for idx,e in enumerate(visible):
             iid=f'b{idx}'
@@ -3371,7 +3408,8 @@ Mod更新後だけ追加翻訳:
         if game != 'すべてのゲーム': scope.append(game)
         if mod != 'すべてのMod': scope.append(mod)
         suffix=(' / ' + ' → '.join(scope)) if scope else ''
-        self.backup_restore_summary_var.set(f'バックアップ: {len(visible)}件（全{len(self.backup_restore_entries)}件）{suffix}')
+        search_suffix=(f" / 検索: {query}" if query else '')
+        self.backup_restore_summary_var.set(f'バックアップ: {len(visible)}件（全{len(self.backup_restore_entries)}件）{suffix}{search_suffix}')
         self.backup_restore_detail_var.set('一覧からバックアップを選択してください。')
         self.backup_restore_btn.config(state='disabled')
 

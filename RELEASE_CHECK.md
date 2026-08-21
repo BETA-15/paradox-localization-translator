@@ -1,3 +1,13 @@
+# v0.11.53 追加確認
+
+- [x] `VERSION` / `APP_VERSION` を 0.11.53 に統一
+- [x] バックアップ復元タブへ検索欄と検索クリアを追加
+- [x] ゲーム名 / Mod名 / 種別 / 日時 / 世代番号 / 保存状態 / 復元先 / 形式を検索対象化
+- [x] ゲーム・Modの既存絞り込みと検索を併用可能
+- [x] 検索一致履歴を持つModだけをMod候補へ表示
+- [x] 検索は表示絞り込みのみでバックアップ内容を変更しない
+- [x] `python -m py_compile app/main.py app/translator_core.py` PASS
+
 # v0.11.52 追加確認
 
 - [x] `VERSION` / `APP_VERSION` を 0.11.52 に統一
