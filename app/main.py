@@ -35,7 +35,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.31"
+APP_VERSION = "0.11.32"
 MOD_STATUS_CACHE_VERSION = 4
 
 
@@ -506,6 +506,15 @@ class App(BaseTk):
         self.mod_status_summary_var = tk.StringVar(value="調査結果: --")
         self.mod_status_search_var = tk.StringVar(value="")
         self.mod_status_search_result_var = tk.StringVar(value="")
+
+        # Comprehensive localization diagnostics / repair
+        self.diagnostic_summary_var = tk.StringVar(value="診断待機中")
+        self.diagnostic_target_var = tk.StringVar(value="対象Mod: 翻訳状況から取得")
+        self.diagnostic_results = []
+        self.diagnostic_result_map = {}
+        self.diagnostic_thread = None
+        self.diagnostic_generation = 0
+
         self.mod_research_results = []
         self.mod_research_thread = None
         self.mod_research_stop_event = threading.Event()
@@ -642,6 +651,7 @@ class App(BaseTk):
         self.tab_models = ttk.Frame(nb, padding=10)
         self.tab_monitor = ttk.Frame(nb, padding=10)
         self.tab_status = ttk.Frame(nb, padding=10)
+        self.tab_diagnostic = ttk.Frame(nb, padding=10)
         self.tab_settings = ttk.Frame(nb, padding=10)
         self.tab_help = ttk.Frame(nb, padding=10)
         nb.add(self.tab_translate, text="翻訳 / キュー")
@@ -653,6 +663,7 @@ class App(BaseTk):
         nb.add(self.tab_models, text="モデル / 接続")
         nb.add(self.tab_monitor, text="未翻訳監視")
         nb.add(self.tab_status, text="翻訳状況")
+        nb.add(self.tab_diagnostic, text="総合診断")
         nb.add(self.tab_settings, text="設定")
         nb.add(self.tab_help, text="使い方")
         self._build_translate_tab()
@@ -664,6 +675,7 @@ class App(BaseTk):
         self._build_models_tab()
         self._build_monitor_tab()
         self._build_status_tab()
+        self._build_diagnostic_tab()
         self._build_settings_tab()
         self._build_help_tab()
 
@@ -2574,6 +2586,327 @@ Mod更新後だけ追加翻訳:
         ttk.Button(bottom2,text="キャッシュ再読込",command=self._restore_cached_mod_status).pack(side="left",padx=(6,0))
         ttk.Button(bottom2,text="CSV保存",command=self.export_mod_status_csv).pack(side="left",padx=(6,0))
 
+    # ---------------- Comprehensive localization diagnostics / repair ----------------
+    def _build_diagnostic_tab(self):
+        t = self.tab_diagnostic
+        head = ttk.Frame(t); head.pack(fill="x")
+        ttk.Label(head, text="総合診断 — localization の混入・欠損・異常を確認", font=("", 14, "bold")).pack(side="left")
+        ttk.Label(head, textvariable=self.diagnostic_summary_var).pack(side="right")
+        ttk.Label(t, text=(
+            "英語 / 簡体字中国語の原文キーを基準に、日本語localizationへ別Mod由来のファイル・キーが混入していないかを調べます。"
+            " 修復は日本語側だけを変更し、実行直前に対象Modの localization フォルダ全体を丸ごとバックアップします。"
+        ), foreground="#555", wraplength=1100, justify="left").pack(fill="x", pady=(6,8))
+
+        pane = ttk.Panedwindow(t, orient="horizontal"); pane.pack(fill="both", expand=True)
+        left = ttk.Frame(pane); right = ttk.Frame(pane)
+        pane.add(left, weight=2); pane.add(right, weight=5)
+
+        targets = ttk.LabelFrame(left, text="診断対象Mod（翻訳状況から取得）", padding=6); targets.pack(fill="both", expand=True)
+        ttk.Label(targets, textvariable=self.diagnostic_target_var, foreground="#555").pack(anchor="w")
+        tw = ttk.Frame(targets); tw.pack(fill="both", expand=True, pady=(6,0))
+        self.diagnostic_target_tree = ttk.Treeview(tw, columns=("mod","status","path"), show="headings", selectmode="extended", height=18)
+        self._enable_ctrl_multiselect(self.diagnostic_target_tree)
+        for c,txt,w in (("mod","Mod",260),("status","現在の状態",150),("path","場所",500)):
+            self.diagnostic_target_tree.heading(c,text=txt); self.diagnostic_target_tree.column(c,width=w,minwidth=w,stretch=False,anchor="w")
+        sy=ttk.Scrollbar(tw,orient="vertical",command=self.diagnostic_target_tree.yview); sx=ttk.Scrollbar(tw,orient="horizontal",command=self.diagnostic_target_tree.xview)
+        self.diagnostic_target_tree.configure(yscrollcommand=sy.set,xscrollcommand=sx.set)
+        tw.rowconfigure(0,weight=1); tw.columnconfigure(0,weight=1)
+        self.diagnostic_target_tree.grid(row=0,column=0,sticky="nsew"); sy.grid(row=0,column=1,sticky="ns"); sx.grid(row=1,column=0,sticky="ew")
+        tbtn=ttk.Frame(targets); tbtn.pack(fill="x",pady=(7,0))
+        ttk.Button(tbtn,text="翻訳状況から再取得",command=self._refresh_diagnostic_targets).pack(side="left")
+        ttk.Button(tbtn,text="すべて選択",command=lambda:self.diagnostic_target_tree.selection_set(self.diagnostic_target_tree.get_children())).pack(side="left",padx=(6,0))
+
+        actions = ttk.LabelFrame(left, text="操作", padding=6); actions.pack(fill="x", pady=(8,0))
+        self.diagnostic_scan_btn=ttk.Button(actions,text="選択Modを診断",command=lambda:self._start_localization_diagnostic(False)); self.diagnostic_scan_btn.pack(fill="x")
+        self.diagnostic_repair_btn=ttk.Button(actions,text="バックアップして修復",command=lambda:self._start_localization_diagnostic(True)); self.diagnostic_repair_btn.pack(fill="x",pady=(6,0))
+        ttk.Label(actions,text="修復時のバックアップ先:\nDocuments/Paradox Localization Translator/バックアップ/総合診断/日時/Mod名/localization/",foreground="#666",wraplength=340,justify="left").pack(anchor="w",pady=(7,0))
+
+        resultbox=ttk.LabelFrame(right,text="診断結果",padding=6); resultbox.pack(fill="both",expand=True)
+        rw=ttk.Frame(resultbox); rw.pack(fill="both",expand=True)
+        cols=("severity","mod","kind","file","count","detail")
+        self.diagnostic_tree=ttk.Treeview(rw,columns=cols,show="headings",height=18,selectmode="browse")
+        for c,txt,w in (("severity","重要度",80),("mod","Mod",220),("kind","診断項目",190),("file","ファイル",250),("count","件数",70),("detail","内容",560)):
+            self.diagnostic_tree.heading(c,text=txt); self.diagnostic_tree.column(c,width=w,minwidth=w,stretch=False,anchor="w")
+        sy2=ttk.Scrollbar(rw,orient="vertical",command=self.diagnostic_tree.yview); sx2=ttk.Scrollbar(rw,orient="horizontal",command=self.diagnostic_tree.xview)
+        self.diagnostic_tree.configure(yscrollcommand=sy2.set,xscrollcommand=sx2.set)
+        rw.rowconfigure(0,weight=1); rw.columnconfigure(0,weight=1)
+        self.diagnostic_tree.grid(row=0,column=0,sticky="nsew"); sy2.grid(row=0,column=1,sticky="ns"); sx2.grid(row=1,column=0,sticky="ew")
+        self.diagnostic_tree.bind("<<TreeviewSelect>>", self._on_diagnostic_result_selected)
+        self._enable_tree_sort(self.diagnostic_tree)
+        detail=ttk.LabelFrame(right,text="詳細 / 修復ログ",padding=6); detail.pack(fill="both",expand=True,pady=(8,0))
+        self.diagnostic_detail=tk.Text(detail,height=9,wrap="word",state="disabled")
+        dsy=ttk.Scrollbar(detail,orient="vertical",command=self.diagnostic_detail.yview); self.diagnostic_detail.configure(yscrollcommand=dsy.set)
+        dsy.pack(side="right",fill="y"); self.diagnostic_detail.pack(side="left",fill="both",expand=True)
+        self._refresh_diagnostic_targets()
+
+    def _set_diagnostic_detail(self, text):
+        if not hasattr(self,"diagnostic_detail"): return
+        self.diagnostic_detail.config(state="normal"); self.diagnostic_detail.delete("1.0","end"); self.diagnostic_detail.insert("1.0",str(text)); self.diagnostic_detail.config(state="disabled")
+
+    def _refresh_diagnostic_targets(self):
+        if not hasattr(self,"diagnostic_target_tree"): return
+        selected_paths=set()
+        for iid in self.diagnostic_target_tree.selection():
+            vals=self.diagnostic_target_tree.item(iid,"values")
+            if len(vals)>=3: selected_paths.add(str(vals[2]))
+        for iid in self.diagnostic_target_tree.get_children(): self.diagnostic_target_tree.delete(iid)
+        seen=set(); count=0
+        for r in self.mod_research_results:
+            path=str(r.get("path") or "")
+            if not path or path in seen or not Path(path).exists(): continue
+            seen.add(path); iid=f"diagmod_{count}"; count+=1
+            self.diagnostic_target_tree.insert("","end",iid=iid,values=(r.get("mod") or Path(path).name,r.get("status") or "",path))
+            if path in selected_paths: self.diagnostic_target_tree.selection_add(iid)
+        self.diagnostic_target_var.set(f"対象Mod: {count}件" if count else "対象Mod: 翻訳状況タブでMod調査を実行してください")
+
+    def _selected_diagnostic_roots(self):
+        roots=[]
+        if not hasattr(self,"diagnostic_target_tree"): return roots
+        for iid in self.diagnostic_target_tree.selection():
+            vals=self.diagnostic_target_tree.item(iid,"values")
+            if len(vals)>=3:
+                p=Path(str(vals[2]))
+                if p.exists(): roots.append(p)
+        return roots
+
+    def _all_known_mod_roots_for_diagnostic(self):
+        roots=[]; seen=set()
+        def add(p):
+            try: key=str(Path(p).expanduser().resolve())
+            except Exception: key=str(p)
+            if key not in seen and Path(p).is_dir(): seen.add(key); roots.append(Path(p))
+        for r in self.mod_research_results:
+            if r.get("path"): add(r.get("path"))
+        # Also include discovered Workshop/local Mod roots so foreign-key attribution
+        # is not limited to the rows currently visible in Translation Status.
+        for row in self.detected_mod_locations:
+            raw=row.get("path")
+            if not raw: continue
+            try:
+                for root in core.find_mod_roots(Path(raw)): add(root)
+            except Exception:
+                continue
+        return roots
+
+    def _diagnostic_source_key_index(self, roots):
+        index={}; meta={}
+        for root in roots:
+            loc=core.mod_localization_root(root)
+            if not loc or not loc.exists(): continue
+            name=core.detect_mod_name(root)
+            try: rid=str(root.resolve())
+            except Exception: rid=str(root)
+            meta[rid]={"name":name,"path":str(root)}
+            keys=set()
+            for f in core.gather_yml_files(loc):
+                try:
+                    lang,entries,_=core.parse_localization_file(f)
+                except Exception:
+                    continue
+                if lang in {"english","simp_chinese"}:
+                    keys.update(entries)
+            for key in keys: index.setdefault(key,set()).add(rid)
+        return index,meta
+
+    def _analyze_localization_health(self, mod_root, source_index, source_meta):
+        mod_root=Path(mod_root); loc=core.mod_localization_root(mod_root)
+        name=core.detect_mod_name(mod_root)
+        result={"mod":name,"path":str(mod_root),"localization":str(loc or ""),"issues":[],"foreign_by_file":{},"stats":{}}
+        if not loc or not loc.exists():
+            result["issues"].append({"severity":"ERROR","kind":"localization欠落","file":"","count":1,"detail":"localizationフォルダが見つかりません。"})
+            return result
+        try: self_id=str(mod_root.resolve())
+        except Exception: self_id=str(mod_root)
+        source_keys=set(); jp_files=[]; english_files=[]; chinese_files=[]; jp_key_files={}
+        for f in core.gather_yml_files(loc):
+            try: lang,entries,_=core.parse_localization_file(f)
+            except Exception as exc:
+                result["issues"].append({"severity":"WARN","kind":"YAML読込エラー","file":str(f),"count":1,"detail":str(exc)})
+                continue
+            if lang=="english": english_files.append((f,entries)); source_keys.update(entries)
+            elif lang=="simp_chinese": chinese_files.append((f,entries)); source_keys.update(entries)
+            elif lang=="japanese":
+                jp_files.append((f,entries))
+                for k in entries: jp_key_files.setdefault(k,[]).append(str(f))
+        result["stats"]={"english_files":len(english_files),"chinese_files":len(chinese_files),"japanese_files":len(jp_files),"source_keys":len(source_keys),"japanese_keys":len(jp_key_files)}
+        if not english_files:
+            result["issues"].append({"severity":"WARN","kind":"英語原文なし","file":"","count":0,"detail":"英語localizationを確認できません。中国語のみのModなら正常な場合があります。"})
+        if not chinese_files:
+            result["issues"].append({"severity":"INFO","kind":"簡体字中国語なし","file":"","count":0,"detail":"簡体字中国語localizationはありません。対応していないModでは正常です。"})
+        if not jp_files:
+            result["issues"].append({"severity":"INFO","kind":"日本語なし","file":"","count":0,"detail":"日本語localizationはまだありません。"})
+
+        duplicate={k:v for k,v in jp_key_files.items() if len(v)>1}
+        if duplicate:
+            sample=", ".join(list(duplicate)[:8])
+            result["issues"].append({"severity":"WARN","kind":"日本語キー重複","file":"","count":len(duplicate),"detail":f"複数の日本語YAMLに同じキーがあります。例: {sample}"})
+
+        total_extras=0; total_foreign=0; total_unknown=0
+        for f,entries in jp_files:
+            foreign={}; unknown=[]; ambiguous=[]
+            for key in entries:
+                if key in source_keys: continue
+                total_extras += 1
+                owners=set(source_index.get(key) or set()); owners.discard(self_id)
+                if len(owners)==1:
+                    owner=next(iter(owners)); foreign[key]=owner; total_foreign += 1
+                elif len(owners)>1:
+                    ambiguous.append(key); total_unknown += 1
+                else:
+                    unknown.append(key); total_unknown += 1
+            if foreign:
+                result["foreign_by_file"][str(f)]=sorted(foreign)
+                by_owner={}
+                for key,owner in foreign.items(): by_owner.setdefault(owner,[]).append(key)
+                labels=[]
+                for owner,keys in sorted(by_owner.items(),key=lambda x:-len(x[1])):
+                    labels.append(f"{source_meta.get(owner,{}).get('name',Path(owner).name)}: {len(keys)}キー")
+                result["issues"].append({"severity":"ERROR","kind":"別Mod由来キー混入","file":str(f),"count":len(foreign),"detail":" / ".join(labels)})
+            if unknown or ambiguous:
+                result["issues"].append({"severity":"WARN","kind":"原文にない日本語キー","file":str(f),"count":len(unknown)+len(ambiguous),"detail":"出所を一意に特定できないため自動修復では削除しません。"})
+            if entries and len(foreign)==len(entries):
+                result["issues"].append({"severity":"ERROR","kind":"別Mod由来ファイル疑い","file":str(f),"count":len(entries),"detail":"この日本語YAMLの全キーが別Mod由来として一意に特定されました。"})
+        if source_keys and len(jp_files) > max(4, (len(english_files)+len(chinese_files))*2):
+            result["issues"].append({"severity":"WARN","kind":"日本語ファイル異常増加","file":"","count":len(jp_files),"detail":f"日本語YAML {len(jp_files)}件に対し、英語+中国語YAMLは {len(english_files)+len(chinese_files)}件です。"})
+        result["stats"].update({"extra_keys":total_extras,"foreign_keys":total_foreign,"unknown_keys":total_unknown})
+        if not result["issues"]:
+            result["issues"].append({"severity":"OK","kind":"異常なし","file":"","count":0,"detail":"現在の判定範囲では明らかな混入を確認できませんでした。"})
+        return result
+
+    def _backup_localization_for_repair(self, mod_root, stamp):
+        mod_root=Path(mod_root); loc=core.mod_localization_root(mod_root)
+        if not loc or not loc.exists(): raise FileNotFoundError("localizationフォルダがありません")
+        safe=re.sub(r'[^0-9A-Za-zぁ-んァ-ヶ一-龠._-]+','_',core.detect_mod_name(mod_root)).strip('_') or mod_root.name or "Mod"
+        try: suffix=hashlib.sha1(str(mod_root.resolve()).encode('utf-8')).hexdigest()[:8]
+        except Exception: suffix=hashlib.sha1(str(mod_root).encode('utf-8')).hexdigest()[:8]
+        dst=BACKUP_ROOT / "総合診断" / stamp / f"{safe}_{suffix}" / "localization"
+        dst.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copytree(loc,dst)
+        if not dst.exists(): raise OSError("バックアップの作成確認に失敗しました")
+        return dst
+
+    def _remove_foreign_localization_keys(self, analysis):
+        removed=0; files_changed=0; files_deleted=0
+        for raw,keys in (analysis.get("foreign_by_file") or {}).items():
+            path=Path(raw)
+            if not path.exists() or not keys: continue
+            remove=set(keys)
+            raw_bytes=path.read_bytes()
+            if raw_bytes.startswith(b"\xff\xfe"):
+                original_encoding="utf-16-le"
+            elif raw_bytes.startswith(b"\xfe\xff"):
+                original_encoding="utf-16-be"
+            elif raw_bytes.startswith(b"\xef\xbb\xbf"):
+                original_encoding="utf-8-sig"
+            else:
+                original_encoding="utf-8"
+            text=core.read_localization_text(path)
+            out=[]
+            for line in text.splitlines(keepends=True):
+                m=core.parse_line(line)
+                if m and m.group("key").strip() in remove:
+                    removed += 1; continue
+                out.append(line)
+            new_text=''.join(out)
+            # Preserve only meaningful Japanese files. If every localization entry was
+            # removed, delete the now-empty foreign file; the full folder is backed up.
+            try:
+                remaining=[]
+                for line in new_text.splitlines():
+                    m=core.parse_line(line)
+                    if m: remaining.append(m.group("key").strip())
+            except Exception: remaining=["keep"]
+            if not remaining:
+                path.unlink(); files_deleted += 1
+            else:
+                payload=new_text.lstrip('\ufeff')
+                if original_encoding=="utf-16-le":
+                    path.write_bytes(b"\xff\xfe"+payload.encode("utf-16-le"))
+                elif original_encoding=="utf-16-be":
+                    path.write_bytes(b"\xfe\xff"+payload.encode("utf-16-be"))
+                elif original_encoding=="utf-8-sig":
+                    path.write_bytes(b"\xef\xbb\xbf"+payload.encode("utf-8"))
+                else:
+                    path.write_bytes(payload.encode("utf-8"))
+                files_changed += 1
+        return {"removed_keys":removed,"changed_files":files_changed,"deleted_files":files_deleted}
+
+    def _start_localization_diagnostic(self, repair=False):
+        if self.diagnostic_thread and self.diagnostic_thread.is_alive():
+            messagebox.showinfo(APP_NAME,"総合診断はすでにバックグラウンドで実行中です。")
+            return
+        roots=self._selected_diagnostic_roots()
+        if not roots:
+            messagebox.showinfo(APP_NAME,"総合診断タブで対象Modを1件以上選択してください。")
+            return
+        if repair:
+            if not messagebox.askyesno(APP_NAME,
+                "選択したModの localization フォルダを丸ごとバックアップしてから、日本語側の明らかな別Mod由来キーだけを除去します。\n\n"
+                "英語 / 簡体字中国語は変更しません。出所不明の日本語キーも自動削除しません。\n\n修復を実行しますか？"):
+                return
+        self.diagnostic_generation += 1; generation=self.diagnostic_generation
+        self.diagnostic_scan_btn.config(state="disabled"); self.diagnostic_repair_btn.config(state="disabled")
+        self.diagnostic_summary_var.set(("バックアップして修復中" if repair else "バックグラウンド診断中")+f" — {len(roots)} Mod")
+        self._set_diagnostic_detail("既知Modの原文キー索引を作成しています…")
+        def work():
+            try:
+                all_roots=self._all_known_mod_roots_for_diagnostic()
+                for r in roots:
+                    if all(str(r)!=str(x) for x in all_roots): all_roots.append(r)
+                source_index,source_meta=self._diagnostic_source_key_index(all_roots)
+                before=[]; logs=[]; stamp=datetime.now().strftime("%Y-%m-%d_%H%M%S")
+                for i,root in enumerate(roots,1):
+                    self.events.put(("diagnostic_progress",{"generation":generation,"done":i,"total":len(roots),"mod":core.detect_mod_name(root),"phase":"診断"}))
+                    analysis=self._analyze_localization_health(root,source_index,source_meta); before.append(analysis)
+                if repair:
+                    # Back up every selected localization folder first. No file is modified
+                    # until every backup has succeeded, so a later backup failure cannot
+                    # leave a partially repaired selection.
+                    backups={}
+                    for i,root in enumerate(roots,1):
+                        self.events.put(("diagnostic_progress",{"generation":generation,"done":i,"total":len(roots),"mod":core.detect_mod_name(root),"phase":"バックアップ"}))
+                        backup=self._backup_localization_for_repair(root,stamp)
+                        backups[str(root)]=str(backup)
+                        logs.append(f"{core.detect_mod_name(root)}: localizationを丸ごとバックアップ → {backup}")
+                    for analysis in before:
+                        if analysis.get("foreign_by_file"):
+                            changed=self._remove_foreign_localization_keys(analysis)
+                            logs.append(f"{analysis['mod']}: 別Mod由来キー {changed['removed_keys']}件除去 / 更新 {changed['changed_files']}ファイル / 削除 {changed['deleted_files']}ファイル")
+                        else:
+                            logs.append(f"{analysis['mod']}: 明らかな別Mod由来キーなし — バックアップのみ、ファイル変更なし")
+                after=[]
+                if repair:
+                    for i,root in enumerate(roots,1):
+                        self.events.put(("diagnostic_progress",{"generation":generation,"done":i,"total":len(roots),"mod":core.detect_mod_name(root),"phase":"再診断"}))
+                        after.append(self._analyze_localization_health(root,source_index,source_meta))
+                self.events.put(("diagnostic_done",{"generation":generation,"repair":repair,"before":before,"after":after,"logs":logs}))
+            except Exception as exc:
+                self.events.put(("diagnostic_error",{"generation":generation,"error":str(exc)}))
+        self.diagnostic_thread=threading.Thread(target=work,daemon=True); self.diagnostic_thread.start()
+
+    def _populate_diagnostic_results(self, analyses):
+        if not hasattr(self,"diagnostic_tree"): return
+        for iid in self.diagnostic_tree.get_children(): self.diagnostic_tree.delete(iid)
+        self.diagnostic_result_map={}; n=0
+        for analysis in analyses:
+            for issue in analysis.get("issues") or []:
+                iid=f"diag_{n}"; n+=1
+                row=dict(issue); row["mod"]=analysis.get("mod",""); row["path"]=analysis.get("path",""); row["stats"]=analysis.get("stats",{})
+                self.diagnostic_result_map[iid]=row
+                file_name=Path(issue.get("file","")).name if issue.get("file") else ""
+                self.diagnostic_tree.insert("","end",iid=iid,values=(issue.get("severity",""),analysis.get("mod",""),issue.get("kind",""),file_name,issue.get("count",0),issue.get("detail","")))
+        return n
+
+    def _on_diagnostic_result_selected(self, _event=None):
+        sel=self.diagnostic_tree.selection() if hasattr(self,"diagnostic_tree") else []
+        if not sel: return
+        row=self.diagnostic_result_map.get(sel[0],{})
+        stats=row.get("stats") or {}
+        lines=[f"Mod: {row.get('mod','')}",f"Mod場所: {row.get('path','')}",f"重要度: {row.get('severity','')}",f"診断項目: {row.get('kind','')}"]
+        if row.get("file"): lines.append(f"ファイル: {row.get('file')}")
+        lines += [f"件数: {row.get('count',0)}",f"内容: {row.get('detail','')}","",f"英語YAML: {stats.get('english_files',0)} / 中国語YAML: {stats.get('chinese_files',0)} / 日本語YAML: {stats.get('japanese_files',0)}",f"原文キー: {stats.get('source_keys',0)} / 日本語キー: {stats.get('japanese_keys',0)} / 別Mod由来: {stats.get('foreign_keys',0)} / 出所不明: {stats.get('unknown_keys',0)}"]
+        self._set_diagnostic_detail("\n".join(lines))
+
     def _mod_status_matches_query(self, result, query):
         q = (query or "").strip().casefold()
         if not q:
@@ -2590,6 +2923,9 @@ Mod更新後だけ追加翻訳:
     def _populate_mod_status_tree(self, results=None):
         if not hasattr(self, "mod_status_tree"):
             return
+        if hasattr(self, "diagnostic_target_tree"):
+            try: self._refresh_diagnostic_targets()
+            except Exception: pass
         query = self.mod_status_search_var.get().strip() if hasattr(self, "mod_status_search_var") else ""
         source = list(self.mod_research_results if results is None else results)
         visible = [r for r in source if self._mod_status_matches_query(r, query)]
@@ -5443,7 +5779,7 @@ Mod更新後だけ追加翻訳:
             tab_index=0
         now_ns=time.time_ns()
         return {
-            "schema_version":2,
+            "schema_version":3,
             "app_version":APP_VERSION,
             "saved_at":datetime.now().isoformat(timespec="seconds"),
             "saved_at_ns":now_ns,
@@ -5451,6 +5787,7 @@ Mod更新後だけ追加翻訳:
             "reason":reason,
             "data_root":str(DATA_ROOT),
             "active_tab":tab_index,
+            "active_tab_text":self.notebook.tab(self.notebook.select(), "text") if self.notebook.select() else "",
             "normal_translation":{
                 "input":self._workspace_scalar(self.normal_input_var,""),
                 "output":self._workspace_scalar(self.normal_output_var,str(OUTPUT_ROOT)),
@@ -5610,8 +5947,19 @@ Mod更新後だけ追加翻訳:
             try: self.after_idle(self.refresh_translation_search_mods)
             except Exception: pass
             try:
-                idx=int(data.get("active_tab",0) or 0)
-                if 0 <= idx < self.notebook.index("end"): self.notebook.select(idx)
+                wanted_text=str(data.get("active_tab_text") or "")
+                selected=False
+                if wanted_text:
+                    for i in range(self.notebook.index("end")):
+                        if self.notebook.tab(i,"text")==wanted_text:
+                            self.notebook.select(i); selected=True; break
+                if not selected:
+                    idx=int(data.get("active_tab",0) or 0)
+                    # v0.11.32 inserted 総合診断 before 設定. Preserve the old
+                    # Settings/Help tab positions when restoring a pre-v0.11.32 workspace.
+                    if str(data.get("app_version", "")) and str(data.get("app_version", "")) != APP_VERSION and idx >= 9:
+                        idx += 1
+                    if 0 <= idx < self.notebook.index("end"): self.notebook.select(idx)
             except Exception: pass
         except Exception as e:
             record_error("ワークスペース状態復元",e)
@@ -7226,6 +7574,36 @@ Mod更新後だけ追加翻訳:
                     self.mod_status_summary_var.set("調査エラー")
                     self._set_monitor_llm_idle("探索用LLM 待機中","Mod調査でエラーが発生しました")
                     messagebox.showerror(APP_NAME,"Mod翻訳状況の調査エラー: "+payload)
+                elif kind=="diagnostic_progress":
+                    if int(payload.get("generation",-1))==self.diagnostic_generation:
+                        self.diagnostic_summary_var.set(f"{payload.get('phase','診断')}中: {payload.get('done',0)}/{payload.get('total',0)} — {payload.get('mod','')}")
+                elif kind=="diagnostic_done":
+                    if int(payload.get("generation",-1))==self.diagnostic_generation:
+                        self.diagnostic_thread=None
+                        self.diagnostic_scan_btn.config(state="normal"); self.diagnostic_repair_btn.config(state="normal")
+                        shown=payload.get("after") if payload.get("repair") else payload.get("before")
+                        count=self._populate_diagnostic_results(shown or []) or 0
+                        issues=sum(1 for a in (shown or []) for x in (a.get("issues") or []) if x.get("severity") in {"ERROR","WARN"})
+                        self.diagnostic_results=list(shown or [])
+                        self.diagnostic_summary_var.set(("修復・再診断完了" if payload.get("repair") else "診断完了")+f": {len(shown or [])} Mod / 要確認 {issues}件")
+                        logs=payload.get("logs") or []
+                        if logs: self._set_diagnostic_detail("\n".join(logs)+"\n\n修復後の診断結果を一覧へ表示しています。")
+                        elif count: self._set_diagnostic_detail("診断が完了しました。一覧から項目を選択すると詳細を確認できます。")
+                        try:
+                            if payload.get("repair"):
+                                # Discard stale status summaries and re-check repaired Mods on the next status scan.
+                                with self.mod_status_cache_lock:
+                                    self.mod_status_cache={"version":MOD_STATUS_CACHE_VERSION,"items":{},"reset_for_version":APP_VERSION,"reset_at":datetime.now().isoformat(timespec="seconds")}
+                                    core.save_json(MOD_STATUS_CACHE_PATH,self.mod_status_cache)
+                        except Exception as exc:
+                            record_error("総合診断 修復後キャッシュ更新",exc)
+                elif kind=="diagnostic_error":
+                    if int(payload.get("generation",-1))==self.diagnostic_generation:
+                        self.diagnostic_thread=None
+                        self.diagnostic_scan_btn.config(state="normal"); self.diagnostic_repair_btn.config(state="normal")
+                        self.diagnostic_summary_var.set("診断エラー")
+                        record_error("総合診断",detail=str(payload.get("error","")))
+                        messagebox.showerror(APP_NAME,"総合診断エラー: "+str(payload.get("error","")))
                 elif kind=="translation_search_mods_done":
                     if int(payload.get("generation",-1)) == self.search_mod_refresh_generation:
                         rows=list(payload.get("rows") or [])
