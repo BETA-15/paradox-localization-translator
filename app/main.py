@@ -35,7 +35,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.28"
+APP_VERSION = "0.11.29"
 MOD_STATUS_CACHE_VERSION = 3
 
 
@@ -477,6 +477,12 @@ class App(BaseTk):
         self.search_query_var = tk.StringVar(value="")
         self.search_summary_var = tk.StringVar(value="検索待機中")
         self.search_result_map = {}
+        self.search_mod_map = {}
+        self.search_selected_mod_paths = []
+        self.search_thread = None
+        self.search_generation = 0
+        self.search_mod_refresh_generation = 0
+        self.search_mod_status_var = tk.StringVar(value="対象Mod: 未取得")
 
         # Live untranslated-localization monitor
         self.monitor_path_var = tk.StringVar(value="")  # legacy / first monitor target
@@ -1609,12 +1615,28 @@ class App(BaseTk):
         ttk.Label(top, text="対象ゲーム").grid(row=0, column=0, sticky="w")
         self.search_game_combo = ttk.Combobox(top, textvariable=self.search_game_var, values=list(core.PARADOX_STEAM_GAMES), state="readonly", width=28)
         self.search_game_combo.grid(row=0, column=1, sticky="w", padx=6)
+        self.search_game_combo.bind("<<ComboboxSelected>>", lambda e:self.refresh_translation_search_mods())
         ttk.Button(top, text="ゲーム / Mod場所を再検出", command=self.discover_mod_locations).grid(row=0, column=2, columnspan=2, sticky="e")
         ttk.Label(top, text="検索語").grid(row=1, column=0, sticky="w", pady=(6,0))
         ent = ttk.Entry(top, textvariable=self.search_query_var); ent.grid(row=1, column=1, sticky="ew", padx=6, pady=(6,0)); ent.bind("<Return>", lambda e:self.run_translation_search())
         ttk.Button(top, text="検索", command=self.run_translation_search).grid(row=1, column=2, sticky="ew", pady=(6,0))
         ttk.Button(top, text="結果を消去", command=self.clear_translation_search_results).grid(row=1, column=3, sticky="ew", padx=(6,0), pady=(6,0))
         ttk.Label(top, text="検索語は必須です。ローカライズキー・日本語本文・原文を検索し、原文にあるのに日本語側にないキーは「未訳」として表示します。", foreground="#666").grid(row=2, column=0, columnspan=4, sticky="w", pady=(6,0))
+
+        target = ttk.LabelFrame(t, text="対象Mod（翻訳状況 / 未翻訳監視から取得）", padding=6); target.pack(fill="x", pady=(6,0))
+        target.columnconfigure(0, weight=1)
+        listframe=ttk.Frame(target); listframe.grid(row=0,column=0,rowspan=2,sticky="ew")
+        listframe.columnconfigure(0,weight=1)
+        self.search_mod_list = tk.Listbox(listframe, height=5, selectmode="extended", exportselection=False)
+        smy=ttk.Scrollbar(listframe, orient="vertical", command=self.search_mod_list.yview); self.search_mod_list.configure(yscrollcommand=smy.set)
+        self.search_mod_list.grid(row=0,column=0,sticky="ew"); smy.grid(row=0,column=1,sticky="ns")
+        self.search_mod_list.bind("<<ListboxSelect>>", lambda e:self._remember_translation_search_mod_selection())
+        buttons=ttk.Frame(target); buttons.grid(row=0,column=1,sticky="ns",padx=(8,0))
+        ttk.Button(buttons,text="対象Modを更新",command=self.refresh_translation_search_mods).pack(fill="x")
+        ttk.Button(buttons,text="すべて選択",command=self._select_all_translation_search_mods).pack(fill="x",pady=(4,0))
+        ttk.Button(buttons,text="選択解除",command=self._clear_translation_search_mod_selection).pack(fill="x",pady=(4,0))
+        ttk.Label(target,textvariable=self.search_mod_status_var,foreground="#555").grid(row=1,column=1,sticky="sw",padx=(8,0))
+        ttk.Label(target,text="Modを選択した場合はそのModだけを検索します。未選択なら、取得済みの対象ゲームModすべてを検索します。",foreground="#666").grid(row=2,column=0,columnspan=2,sticky="w",pady=(4,0))
 
         ttk.Label(t, textvariable=self.search_summary_var).pack(anchor="w", pady=(7,4))
         paned = ttk.Panedwindow(t, orient="horizontal"); paned.pack(fill="both", expand=True)
@@ -1639,6 +1661,7 @@ class App(BaseTk):
         ttk.Label(right, textvariable=self.search_selected_var, wraplength=420).pack(fill="x", anchor="w")
         self.search_edit_text = tk.Text(right, wrap="word"); self.search_edit_text.pack(fill="both", expand=True, pady=(6,6))
         ttk.Button(right, text="この日本語訳を保存", command=self.save_search_value).pack(anchor="w")
+        self.after_idle(self.refresh_translation_search_mods)
 
     def _build_glossary_tab(self):
         t=self.tab_glossary
@@ -5142,6 +5165,9 @@ Mod更新後だけ追加翻訳:
             "glossary":self.glossary_path_var.get().strip() or None, "dual":False,
             "repair":self.repair_var.get(), "autoqa":self.autoqa_var.get()}
         self._active_normal_indices = selected_indices
+        mode_label = "差分だけ翻訳" if diff_requested else "一からすべて翻訳"
+        self._append_log(f"翻訳開始: {len(selected_indices)}項目 / {mode_label}")
+        self._append_log(f"接続: {self.provider_var.get()} / {self.model_var.get().strip() or '(model未指定)'} / batch {max(1,self.batch_var.get())} / workers {max(1,self.workers_var.get())}")
         self.start_btn.config(state="disabled"); self.pause_btn.config(state="normal",text="一時停止"); self.stop_btn.config(state="normal")
         self.worker=threading.Thread(target=self._queue_worker,daemon=True); self.worker.start()
         self.save_session(active=True)
@@ -5157,6 +5183,7 @@ Mod更新後だけ追加翻訳:
                 item=self.queue_items[i]
                 self.current_queue_index=i
                 item["status"]="翻訳中"; self.events.put(("queue_refresh",None))
+                self.events.put(("normal_log", f"開始: {item.get('mod_name') or Path(item.get('input','')).name} ({pos+1}/{len(active)})"))
                 self._checkpoint({"queue_index":i})
                 cache_file=Path(self._ensure_item_cache(item))
                 st=getattr(self,"translation_start_settings",{})
@@ -5168,6 +5195,7 @@ Mod更新後だけ追加翻訳:
                     dual_source=False, auto_qa=st.get("autoqa",self.autoqa_var.get()),
                     provider=st.get("provider",self.provider_var.get()), api_key=st.get("api_key",self.api_key_var.get().strip()))
                 self._register_cache_job(item)
+                self.events.put(("normal_log", f"処理結果: {item.get('mod_name') or Path(item.get('input','')).name} / ファイル {result.get('processed',0)} / LLMジョブ {result.get('jobs',0)} / 失敗 {result.get('failed',0)}"))
                 if result.get("interrupted"):
                     interrupted = True
                     item["status"]="中断（再開可）"
@@ -5311,6 +5339,7 @@ Mod更新後だけ追加翻訳:
             "translation_search":{
                 "game":self._workspace_scalar(self.search_game_var,"Crusader Kings III"),
                 "query":self._workspace_scalar(self.search_query_var,""),
+                "selected_mod_paths":list(self.search_selected_mod_paths or []),
             },
         }
 
@@ -5387,7 +5416,9 @@ Mod更新後だけ追加翻訳:
             st=data.get("translation_status") or {}
             self._workspace_selected_location_paths=[str(x) for x in (st.get("selected_location_paths") or []) if x]
             self.discovery_multi_select_var.set(bool(st.get("multi_select",False))); self.mod_status_search_var.set(st.get("search","") or "")
-            sr=data.get("translation_search") or {}; self.search_game_var.set(sr.get("game",self.search_game_var.get())); self.search_query_var.set(sr.get("query","") or "")
+            sr=data.get("translation_search") or {}; self.search_game_var.set(sr.get("game",self.search_game_var.get())); self.search_query_var.set(sr.get("query","") or ""); self.search_selected_mod_paths=[str(x) for x in (sr.get("selected_mod_paths") or []) if x]
+            try: self.after_idle(self.refresh_translation_search_mods)
+            except Exception: pass
             try:
                 idx=int(data.get("active_tab",0) or 0)
                 if 0 <= idx < self.notebook.index("end"): self.notebook.select(idx)
@@ -5690,24 +5721,102 @@ Mod更新後だけ追加翻訳:
         if hasattr(self, "search_selected_var"):
             self.search_selected_var.set("検索結果を選択してください")
 
-    def _translation_search_mod_roots_for_game(self, game):
-        roots = []
-        seen = set()
+    def _translation_search_location_rows_for_game(self, game):
+        rows=[]
+        seen=set()
         for row in self.detected_mod_locations:
             if row.get("game") != game:
                 continue
-            location = Path(row.get("path", ""))
+            raw=str(row.get("path","")).strip()
+            if raw and raw not in seen:
+                seen.add(raw); rows.append(dict(row))
+        for raw in self.monitor_target_paths:
+            raw=str(raw or "").strip()
+            if not raw or raw in seen:
+                continue
+            matched=next((r for r in self.detected_mod_locations if str(r.get("path", ""))==raw and r.get("game")==game), None)
+            if matched:
+                seen.add(raw); rows.append(dict(matched))
+        return rows
+
+    def _translation_search_mod_roots_for_game(self, game):
+        roots=[]; seen=set()
+        rows=self._translation_search_location_rows_for_game(game)
+        for row in rows:
+            location=Path(row.get("path", ""))
             if not location.exists():
                 continue
-            try:
-                candidates = core.find_mod_roots(location)
-            except Exception:
-                candidates = []
+            try: candidates=core.find_mod_roots(location)
+            except Exception: candidates=[]
             for root in candidates:
-                key = str(Path(root).resolve())
+                try: key=str(Path(root).resolve())
+                except Exception: key=str(Path(root))
                 if key not in seen:
                     seen.add(key); roots.append(Path(root))
+        # 翻訳状況で既に個別Modが確定している場合も取り込む。
+        allowed=[Path(r.get("path","")) for r in rows if r.get("path")]
+        for result in self.mod_research_results:
+            raw=str(result.get("path","")).strip()
+            if not raw:
+                continue
+            rp=Path(raw)
+            if not rp.exists():
+                continue
+            if allowed:
+                try:
+                    rr=rp.resolve()
+                    if not any(rr == a.resolve() or a.resolve() in rr.parents for a in allowed if a.exists()):
+                        continue
+                except Exception:
+                    pass
+            try: key=str(rp.resolve())
+            except Exception: key=str(rp)
+            if key not in seen:
+                seen.add(key); roots.append(rp)
         return roots
+
+    def _remember_translation_search_mod_selection(self):
+        if not hasattr(self,"search_mod_list"):
+            return
+        paths=[]
+        for i in self.search_mod_list.curselection():
+            path=self.search_mod_map.get(int(i))
+            if path: paths.append(str(path))
+        self.search_selected_mod_paths=paths
+        self._save_workspace_state("translation_search_mod_selection")
+
+    def _select_all_translation_search_mods(self):
+        if hasattr(self,"search_mod_list"):
+            self.search_mod_list.selection_set(0,"end")
+            self._remember_translation_search_mod_selection()
+
+    def _clear_translation_search_mod_selection(self):
+        if hasattr(self,"search_mod_list"):
+            self.search_mod_list.selection_clear(0,"end")
+        self.search_selected_mod_paths=[]
+        self._save_workspace_state("translation_search_mod_selection_clear")
+
+    def refresh_translation_search_mods(self):
+        if not hasattr(self,"search_mod_list"):
+            return
+        game=self.search_game_var.get().strip()
+        self.search_mod_refresh_generation += 1
+        generation=self.search_mod_refresh_generation
+        wanted=set(self.search_selected_mod_paths or [])
+        self.search_mod_status_var.set("対象Modをバックグラウンド取得中…")
+        def work():
+            try:
+                roots=self._translation_search_mod_roots_for_game(game)
+                rows=[]
+                for root in roots:
+                    try: name=core.detect_mod_name(Path(root))
+                    except Exception: name=Path(root).name
+                    rows.append((name,str(Path(root))))
+                rows.sort(key=lambda x:x[0].casefold())
+                self.events.put(("translation_search_mods_done", {"generation":generation,"game":game,"rows":rows,"wanted":list(wanted)}))
+            except Exception as e:
+                self.events.put(("translation_search_mods_error", {"generation":generation,"error":str(e)}))
+        threading.Thread(target=work,daemon=True).start()
 
     def _search_expected_japanese_path(self, loc_root, source_file, source_lang):
         """Return the deterministic Japanese counterpart path for a source localization file."""
@@ -5720,94 +5829,73 @@ Mod更新後だけ追加翻訳:
         return loc_root / core.remap_rel_dir(rel_parent, "japanese") / core.rename_for_target(source_file, "japanese", source_lang)
 
     def run_translation_search(self):
-        game = self.search_game_var.get().strip()
-        q = self.search_query_var.get().strip().casefold()
+        game=self.search_game_var.get().strip()
+        q_raw=self.search_query_var.get().strip()
+        q=q_raw.casefold()
         if not game:
-            messagebox.showerror(APP_NAME, "検索するゲームを選択してください。")
-            return
+            messagebox.showerror(APP_NAME,"検索するゲームを選択してください。"); return
         if not q:
-            messagebox.showinfo(APP_NAME, "全件列挙を防ぐため、検索語を入力してください。")
-            return
-        roots = self._translation_search_mod_roots_for_game(game)
-        if not roots:
-            messagebox.showinfo(APP_NAME, f"{game} のMod場所がまだ検出されていません。［ゲーム / Mod場所を再検出］を実行してから再度検索してください。")
-            return
-        for iid in self.search_tree.get_children():
-            self.search_tree.delete(iid)
-        self.search_result_map = {}
-        count = 0
-        missing_count = 0
-        scanned_mods = 0
-
-        for mod_root in roots:
-            loc = core.mod_localization_root(mod_root)
-            if not loc:
-                continue
-            scanned_mods += 1
-            mod_name = core.detect_mod_name(mod_root)
+            messagebox.showinfo(APP_NAME,"全件列挙を防ぐため、検索語を入力してください。"); return
+        selected=[Path(p) for p in (self.search_selected_mod_paths or []) if Path(p).exists()]
+        if not selected:
+            selected=[Path(v) for v in self.search_mod_map.values() if Path(v).exists()]
+        if not selected:
+            # 一覧取得前でも検索ボタンからそのまま開始できるよう、Mod取得もバックグラウンド側で行う。
+            rows=self._translation_search_location_rows_for_game(game)
+        else:
+            rows=[]
+        self.search_generation += 1
+        generation=self.search_generation
+        self.search_summary_var.set(f"{game}: バックグラウンド検索中…")
+        def work():
             try:
-                files = core.gather_yml_files(loc)
-            except Exception:
-                continue
-
-            groups = {}
-            for f in files:
-                try:
-                    lang, entries, _ = core.parse_localization_file(f)
-                except Exception:
-                    continue
-                if lang not in ("english", "simp_chinese", "japanese"):
-                    continue
-                try:
-                    lid = core._logical_localization_id(f, loc, lang)
-                except Exception:
-                    lid = f.name
-                groups.setdefault(lid, {})[lang] = {"path": Path(f), "entries": entries}
-
-            for _lid, langs in groups.items():
-                ja = langs.get("japanese")
-                src = langs.get("english") or langs.get("simp_chinese")
-                src_lang = "english" if "english" in langs else ("simp_chinese" if "simp_chinese" in langs else "")
-                ja_entries = ja["entries"] if ja else {}
-                src_entries = src["entries"] if src else {}
-                all_keys = set(ja_entries) | set(src_entries)
-
-                for key in sorted(all_keys):
-                    ja_value = ja_entries.get(key)
-                    source_value = src_entries.get(key, "")
-                    source_file = src["path"] if src else None
-                    target_file = ja["path"] if ja else (self._search_expected_japanese_path(loc, source_file, src_lang) if source_file else None)
-                    missing = key in src_entries and key not in ja_entries
-
-                    searchable = [key, mod_name, source_value]
-                    if ja_value is not None:
-                        searchable.append(ja_value)
-                    if source_file:
-                        searchable.append(source_file.name)
-                    if target_file:
-                        searchable.append(Path(target_file).name)
-                    if not any(q in str(v).casefold() for v in searchable if v is not None):
-                        continue
-
-                    shown_file = source_file if missing and source_file else (ja["path"] if ja else target_file)
-                    shown_value = "【未訳】" if missing else (ja_value or "")
-                    iid = f"r{count}"
-                    self.search_result_map[iid] = {
-                        "target_file": Path(target_file) if target_file else None,
-                        "source_file": Path(source_file) if source_file else None,
-                        "key": key,
-                        "value": "" if missing else (ja_value or ""),
-                        "source_value": source_value,
-                        "source_lang": src_lang,
-                        "mod_name": mod_name,
-                        "missing": missing,
-                    }
-                    self.search_tree.insert("", "end", iid=iid, values=(mod_name, self._localization_display_path(shown_file) if shown_file else "", key, shown_value[:180]))
-                    count += 1
-                    if missing:
-                        missing_count += 1
-
-        self.search_summary_var.set(f"{game}: {scanned_mods} Modを検索 / {count}件一致（未訳 {missing_count}件）")
+                roots=selected or self._translation_search_mod_roots_for_game(game)
+                results=[]; missing_count=0; scanned_mods=0
+                for mod_no,mod_root in enumerate(roots,1):
+                    loc=core.mod_localization_root(mod_root)
+                    if not loc: continue
+                    scanned_mods += 1
+                    mod_name=core.detect_mod_name(mod_root)
+                    self.events.put(("translation_search_progress", {"generation":generation,"game":game,"done":mod_no,"total":len(roots),"mod":mod_name}))
+                    try: files=core.gather_yml_files(loc)
+                    except Exception: continue
+                    groups={}
+                    for f in files:
+                        try: lang,entries,_=core.parse_localization_file(f)
+                        except Exception: continue
+                        if lang not in ("english","simp_chinese","japanese"): continue
+                        try: lid=core._logical_localization_id(f,loc,lang)
+                        except Exception: lid=f.name
+                        groups.setdefault(lid,{})[lang]={"path":Path(f),"entries":entries}
+                    for _lid,langs in groups.items():
+                        ja=langs.get("japanese")
+                        src=langs.get("english") or langs.get("simp_chinese")
+                        src_lang="english" if "english" in langs else ("simp_chinese" if "simp_chinese" in langs else "")
+                        ja_entries=ja["entries"] if ja else {}
+                        src_entries=src["entries"] if src else {}
+                        for key in sorted(set(ja_entries)|set(src_entries)):
+                            ja_value=ja_entries.get(key); source_value=src_entries.get(key,"")
+                            source_file=src["path"] if src else None
+                            target_file=ja["path"] if ja else (self._search_expected_japanese_path(loc,source_file,src_lang) if source_file else None)
+                            missing=key in src_entries and key not in ja_entries
+                            searchable=[key,mod_name,source_value]
+                            if ja_value is not None: searchable.append(ja_value)
+                            if source_file: searchable.append(source_file.name)
+                            if target_file: searchable.append(Path(target_file).name)
+                            if not any(q in str(v).casefold() for v in searchable if v is not None): continue
+                            shown_file=source_file if missing and source_file else (ja["path"] if ja else target_file)
+                            results.append({
+                                "target_file":str(target_file) if target_file else "",
+                                "source_file":str(source_file) if source_file else "",
+                                "key":key,"value":"" if missing else (ja_value or ""),"source_value":source_value,
+                                "source_lang":src_lang,"mod_name":mod_name,"missing":missing,
+                                "shown_file":str(shown_file) if shown_file else "",
+                            })
+                            if missing: missing_count += 1
+                self.events.put(("translation_search_done", {"generation":generation,"game":game,"rows":results,"missing":missing_count,"scanned_mods":scanned_mods}))
+            except Exception as e:
+                self.events.put(("translation_search_error", {"generation":generation,"error":str(e)}))
+        self.search_thread=threading.Thread(target=work,daemon=True); self.search_thread.start()
 
     def on_search_select(self, _=None):
         sel = self.search_tree.selection()
@@ -6764,7 +6852,10 @@ Mod更新後だけ追加翻訳:
                     elif payload.get("kind")=="batch":
                         done,total=payload.get("done",0),max(1,payload.get("total",1)); self.progress["value"]=done/total*100
                         self.progress_text.set(f"キュー {self.current_queue_index+1}/{len(self.queue_items)} / ファイル {payload.get('file_no',0)}/{payload.get('file_total',0)} / {done}/{total}行")
-                    elif payload.get("kind")=="file_done": self.progress["value"]=100
+                        self._append_log(f"翻訳中: {Path(payload.get('file','')).name} — {done}/{total}行")
+                    elif payload.get("kind")=="file_done":
+                        self.progress["value"]=100
+                        self._append_log(f"完了: {Path(payload.get('file','')).name}")
                 elif kind=="chinese_queue_status":
                     idx,status=payload
                     if 0 <= idx < len(self.chinese_queue_items):
@@ -6854,6 +6945,8 @@ Mod更新後だけ追加翻訳:
                     for i,row in enumerate(self.detected_mod_locations):
                         self.discovered_mod_tree.insert("","end",iid=f"loc_{i}",values=(row.get("game",""),row.get("kind",""),row.get("mod_count",0),row.get("path","")))
                     if self.detected_mod_locations:
+                        try: self.refresh_translation_search_mods()
+                        except Exception: pass
                         self.mod_discovery_status_var.set(f"{len(self.detected_mod_locations)}か所検出")
                         restored=[]
                         wanted=set(getattr(self,"_workspace_selected_location_paths",[]) or [])
@@ -6924,6 +7017,8 @@ Mod更新後だけ追加翻訳:
                     self._set_monitor_scan_status(f"● 未翻訳Mod探索中 — {i}/{total}", f"現在調査中: {name}")
                 elif kind=="mod_research_done":
                     self.mod_research_stop_btn.config(state="disabled"); self.mod_research_thread=None
+                    try: self.refresh_translation_search_mods()
+                    except Exception: pass
                     if self.mod_research_stop_event.is_set():
                         self.mod_status_summary_var.set(f"調査を停止しました — {len(self.mod_research_results)}件確認")
                     else:
@@ -6938,6 +7033,47 @@ Mod更新後だけ追加翻訳:
                     self.mod_status_summary_var.set("調査エラー")
                     self._set_monitor_llm_idle("探索用LLM 待機中","Mod調査でエラーが発生しました")
                     messagebox.showerror(APP_NAME,"Mod翻訳状況の調査エラー: "+payload)
+                elif kind=="translation_search_mods_done":
+                    if int(payload.get("generation",-1)) == self.search_mod_refresh_generation:
+                        rows=list(payload.get("rows") or [])
+                        wanted=set(payload.get("wanted") or self.search_selected_mod_paths or [])
+                        self.search_mod_list.delete(0,"end"); self.search_mod_map={}
+                        for i,(name,path) in enumerate(rows):
+                            self.search_mod_list.insert("end",name); self.search_mod_map[i]=path
+                            if path in wanted: self.search_mod_list.selection_set(i)
+                        self._remember_translation_search_mod_selection()
+                        self.search_mod_status_var.set(f"対象Mod: {len(rows)}件")
+                elif kind=="translation_search_mods_error":
+                    if int(payload.get("generation",-1)) == self.search_mod_refresh_generation:
+                        self.search_mod_status_var.set("対象Mod取得エラー")
+                        record_error("翻訳検索 対象Mod取得", detail=str(payload.get("error","")))
+                elif kind=="translation_search_progress":
+                    if int(payload.get("generation",-1)) == self.search_generation:
+                        self.search_summary_var.set(f"{payload.get('game','')}: バックグラウンド検索中 {payload.get('done',0)}/{payload.get('total',0)} — {payload.get('mod','')}")
+                elif kind=="translation_search_done":
+                    if int(payload.get("generation",-1)) == self.search_generation:
+                        for iid in self.search_tree.get_children(): self.search_tree.delete(iid)
+                        self.search_result_map={}
+                        for n,row in enumerate(payload.get("rows") or []):
+                            iid=f"r{n}"
+                            converted=dict(row)
+                            for k in ("target_file","source_file","shown_file"):
+                                if converted.get(k): converted[k]=Path(converted[k])
+                            self.search_result_map[iid]=converted
+                            shown_file=converted.get("shown_file")
+                            shown_value="【未訳】" if converted.get("missing") else converted.get("value","")
+                            self.search_tree.insert("","end",iid=iid,values=(converted.get("mod_name",""),self._localization_display_path(shown_file) if shown_file else "",converted.get("key",""),shown_value[:180]))
+                        self.search_summary_var.set(f"{payload.get('game','')}: {payload.get('scanned_mods',0)} Modを検索 / {len(payload.get('rows') or [])}件一致（未訳 {payload.get('missing',0)}件）")
+                        self.search_thread=None
+                        self._save_workspace_state("translation_search_done")
+                elif kind=="translation_search_error":
+                    if int(payload.get("generation",-1)) == self.search_generation:
+                        self.search_thread=None
+                        self.search_summary_var.set("検索エラー")
+                        record_error("翻訳検索", detail=str(payload.get("error","")))
+                        messagebox.showerror(APP_NAME,"翻訳検索エラー: "+str(payload.get("error","")))
+                elif kind=="normal_log":
+                    self._append_log(str(payload))
                 elif kind=="queue_refresh": self._refresh_queue_tree()
                 elif kind=="done":
                     self.worker=None
@@ -6948,9 +7084,11 @@ Mod更新後だけ追加翻訳:
                     self._finish_controls()
                     self._refresh_queue_tree()
                     if interrupted:
+                        self._append_log("翻訳を中断しました。キャッシュを保存しました。")
                         self._set_llm_idle("LLM 待機中","翻訳を中断しました")
                         self.progress_text.set("中断しました（キャッシュ保存済み）")
                     else:
+                        self._append_log(f"翻訳完了: {info.get('processed_items',0)}/{info.get('selected_total',0)}項目")
                         self._set_llm_idle("LLM 待機中","翻訳が完了しました")
                         self.progress["value"]=100
                         self.progress_text.set("選択した翻訳が完了しました")
@@ -6961,6 +7099,7 @@ Mod更新後だけ追加翻訳:
                         messagebox.showinfo(APP_NAME,msg)
                 elif kind=="fatal":
                     self.worker=None
+                    self._append_log("エラー: "+str(payload))
                     record_error("翻訳処理 fatal", detail=str(payload)); self._finish_controls(); self._set_llm_idle("LLM 待機中","翻訳処理でエラーが発生しました"); messagebox.showerror(APP_NAME,payload)
                 elif kind=="diff_translate_progress":
                     if payload.get("kind")=="llm_activity": self._handle_llm_activity(payload,"差分翻訳")
