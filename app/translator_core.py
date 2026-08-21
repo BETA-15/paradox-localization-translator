@@ -169,6 +169,37 @@ def save_glossary(path: Path, glossary: dict):
     save_json(path, glossary)
 
 
+def read_localization_text(path: Path) -> str:
+    """Read a Paradox localization text file with BOM-aware encoding detection.
+
+    Paradox/community mods are normally UTF-8 with BOM, but some mods contain
+    UTF-16 LE/BE files. Detect the BOM first and fall back conservatively so a
+    single differently encoded YAML does not abort an entire translation queue.
+    """
+    path = Path(path)
+    data = path.read_bytes()
+    if data.startswith(b"\xef\xbb\xbf"):
+        return data.decode("utf-8-sig")
+    if data.startswith(b"\xff\xfe"):
+        return data.decode("utf-16-le").lstrip("\ufeff")
+    if data.startswith(b"\xfe\xff"):
+        return data.decode("utf-16-be").lstrip("\ufeff")
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        # UTF-16 without a BOM is uncommon, but this gives legacy/community
+        # files a safe fallback while still raising if neither variant is valid.
+        for enc in ("utf-16-le", "utf-16-be"):
+            try:
+                text = data.decode(enc)
+                # A plausible localization file should not be dominated by NULs.
+                if text.count("\x00") <= max(1, len(text) // 20):
+                    return text.lstrip("\ufeff")
+            except UnicodeDecodeError:
+                pass
+        raise
+
+
 def text_hash(s: str) -> str:
     return hashlib.sha256(s.encode("utf-8")).hexdigest()[:16]
 
@@ -631,7 +662,7 @@ def parse_line(line: str):
 
 
 def parse_localization_file(path: Path) -> Tuple[str, Dict[str, str], List[str]]:
-    raw = path.read_text(encoding="utf-8-sig")
+    raw = read_localization_text(path)
     lines = raw.splitlines()
     lang = detect_source_lang(path, lines)
     entries = {}
@@ -932,7 +963,7 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
                  zh_refs: Optional[dict] = None, dual_source: bool = False,
                  cache_file: Optional[Path] = None, file_no: int = 0, file_total: int = 0,
                  provider: str = "Ollama", api_key: str = "", chinese_basis: bool = False):
-    raw = in_path.read_text(encoding="utf-8-sig")
+    raw = read_localization_text(in_path)
     lines = raw.splitlines(keepends=False)
     source_lang = detect_source_lang(in_path, lines)
     repair_target_file = source_lang == target_lang
@@ -1144,9 +1175,9 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
         return (0 if is_en else 3 if is_target else 2 if is_zh else 1, str(p))
     files = sorted(files, key=sort_key)
     if dual_source:
-        english_exists = any(detect_source_lang(p, p.read_text(encoding="utf-8-sig").splitlines()[:5]) == "english" for p in files)
+        english_exists = any(detect_source_lang(p, read_localization_text(p).splitlines()[:5]) == "english" for p in files)
         if english_exists:
-            files = [p for p in files if detect_source_lang(p, p.read_text(encoding="utf-8-sig").splitlines()[:5]) != "simp_chinese"]
+            files = [p for p in files if detect_source_lang(p, read_localization_text(p).splitlines()[:5]) != "simp_chinese"]
 
     print(f"プロバイダ: {provider} / モデル: {model} / 対象ファイル: {len(files)} / プリセット: {preset} / 英中併用: {'ON' if dual_source else 'OFF'}")
     base_dir = input_path if input_path.is_dir() else input_path.parent
@@ -1158,7 +1189,7 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
             if controller:
                 controller.wait_if_paused()
             rel = f.parent.relative_to(base_dir) if input_path.is_dir() else Path(".")
-            source_lang = detect_source_lang(f, f.read_text(encoding="utf-8-sig").splitlines()[:5])
+            source_lang = detect_source_lang(f, read_localization_text(f).splitlines()[:5])
             out = output_path / remap_rel_dir(rel, target_lang) / rename_for_target(f, target_lang, source_lang)
             key = str(out.resolve())
             if key in planned:
@@ -1532,7 +1563,7 @@ def proofread_text(url: str, model: str, text: str, source_text: str = "",
 
 
 def update_localization_value(path: Path, key: str, new_value: str) -> bool:
-    raw = Path(path).read_text(encoding="utf-8-sig")
+    raw = read_localization_text(Path(path))
     lines = raw.splitlines()
     changed = False
     out = []
@@ -1595,7 +1626,7 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
     chinese_files = []
     for f in files:
         try:
-            lang = detect_source_lang(f, f.read_text(encoding="utf-8-sig").splitlines()[:5])
+            lang = detect_source_lang(f, read_localization_text(f).splitlines()[:5])
         except Exception:
             continue
         if lang == "simp_chinese":
@@ -1674,7 +1705,7 @@ def qa_translation_output(input_path: Path, output_path: Path, glossary_path=Non
     planned = set()
     for f in files:
         try:
-            source_lang = detect_source_lang(f, f.read_text(encoding="utf-8-sig").splitlines()[:5])
+            source_lang = detect_source_lang(f, read_localization_text(f).splitlines()[:5])
         except Exception:
             continue
         rel = f.parent.relative_to(base_dir) if input_path.is_dir() else Path(".")
@@ -1717,7 +1748,7 @@ def qa_chinese_basis_translation(input_path: Path, output_path: Path, glossary_p
     missing_outputs = 0
     for f in files:
         try:
-            lang = detect_source_lang(f, f.read_text(encoding="utf-8-sig").splitlines()[:5])
+            lang = detect_source_lang(f, read_localization_text(f).splitlines()[:5])
         except Exception:
             continue
         if lang != "simp_chinese":
@@ -1761,7 +1792,7 @@ def upsert_localization_values(path: Path, values: Dict[str, str], target_lang: 
     if not values:
         return 0
     if path.exists():
-        raw = path.read_text(encoding="utf-8-sig")
+        raw = read_localization_text(path)
         lines = raw.splitlines()
     else:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -1805,7 +1836,7 @@ def detect_mod_name(mod_root: Path) -> str:
         candidates.extend(sorted(mod_root.glob("*.mod"))[:5])
     for p in candidates:
         try:
-            text = p.read_text(encoding="utf-8-sig", errors="ignore")
+            text = read_localization_text(p)
         except Exception:
             continue
         m = re.search(r'^\s*name\s*=\s*["\']([^"\']+)["\']', text, flags=re.I | re.M)
