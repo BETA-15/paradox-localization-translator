@@ -1,3 +1,22 @@
+# v0.11.33 追加確認
+
+- [x] `VERSION` / `APP_VERSION` を 0.11.33 に統一
+- [x] 翻訳状況キャッシュ世代を更新し、旧日本語化Mod関連付けを自動リセット
+- [x] 20%未満の候補は比重判定対象外
+- [x] 日本語キー一致率 最大50点 / localization主体度 最大25点 / dependencies 20点 / ゲーム内容の少なさ 最大15点 / 英語・中国語localization 最大-10点を実装
+- [x] 60点以上=自動関連付け、40〜59点=候補表示のみ、39点以下=別Mod扱い
+- [x] localizationのみ・100%キー一致の日本語化Modが高得点で自動関連付けされるテスト PASS
+- [x] 20%一致 + dependencies一致の部分日本語化Modが60点以上になるテスト PASS
+- [x] 100%キー一致でも大量の gameplay script を持つModは自動関連付けされず候補止まりになるテスト PASS
+- [x] 翻訳状況に候補表示・スコア・判定理由を追加
+- [x] 総合診断に比重スコアと判定理由を追加し、候補/高信頼関係のキーを誤修復から保護
+- [x] Mod構成評価でネストした独立Modを境界外として扱う
+- [x] 総合診断で高信頼/要確認の日本語化Mod関係キーを別Mod混入として誤削除しない合成テスト PASS
+- [x] Xvfb上でGUI起動、12タブ生成、総合診断の関連度列生成 PASS
+- [x] `python -m py_compile app/main.py app/translator_core.py` PASS
+
+---
+
 # v0.11.32 追加確認
 
 - [x] `VERSION` / `APP_VERSION` を 0.11.32 に統一

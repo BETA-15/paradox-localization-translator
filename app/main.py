@@ -35,8 +35,8 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.32"
-MOD_STATUS_CACHE_VERSION = 4
+APP_VERSION = "0.11.33"
+MOD_STATUS_CACHE_VERSION = 5
 
 
 def _app_container_dir() -> Path:
@@ -2623,9 +2623,9 @@ Mod更新後だけ追加翻訳:
 
         resultbox=ttk.LabelFrame(right,text="診断結果",padding=6); resultbox.pack(fill="both",expand=True)
         rw=ttk.Frame(resultbox); rw.pack(fill="both",expand=True)
-        cols=("severity","mod","kind","file","count","detail")
+        cols=("severity","mod","kind","score","file","count","detail")
         self.diagnostic_tree=ttk.Treeview(rw,columns=cols,show="headings",height=18,selectmode="browse")
-        for c,txt,w in (("severity","重要度",80),("mod","Mod",220),("kind","診断項目",190),("file","ファイル",250),("count","件数",70),("detail","内容",560)):
+        for c,txt,w in (("severity","重要度",80),("mod","Mod",220),("kind","診断項目",190),("score","関連度",80),("file","ファイル",250),("count","件数",70),("detail","内容",560)):
             self.diagnostic_tree.heading(c,text=txt); self.diagnostic_tree.column(c,width=w,minwidth=w,stretch=False,anchor="w")
         sy2=ttk.Scrollbar(rw,orient="vertical",command=self.diagnostic_tree.yview); sx2=ttk.Scrollbar(rw,orient="horizontal",command=self.diagnostic_tree.xview)
         self.diagnostic_tree.configure(yscrollcommand=sy2.set,xscrollcommand=sx2.set)
@@ -2696,7 +2696,7 @@ Mod更新後だけ追加翻訳:
             name=core.detect_mod_name(root)
             try: rid=str(root.resolve())
             except Exception: rid=str(root)
-            meta[rid]={"name":name,"path":str(root)}
+            meta[rid]={"name":name,"path":str(root),"keys":set()}
             keys=set()
             for f in core.gather_yml_files(loc):
                 try:
@@ -2705,10 +2705,42 @@ Mod更新後だけ追加翻訳:
                     continue
                 if lang in {"english","simp_chinese"}:
                     keys.update(entries)
+            meta[rid]["keys"] = set(keys)
             for key in keys: index.setdefault(key,set()).add(rid)
         return index,meta
 
-    def _analyze_localization_health(self, mod_root, source_index, source_meta):
+    def _diagnostic_translation_relation_map(self, roots):
+        """Map Japanese candidate Mod roots to their strongest weighted source relation."""
+        translation_index=self._build_stable_translation_mod_index(roots)
+        best={}
+        for source_root in roots:
+            try:
+                ranked=core.rank_external_japanese_translations(Path(source_root), translation_index)
+            except Exception as exc:
+                record_error("総合診断 日本語化Mod比重判定", exc, str(source_root)); continue
+            source_name=core.detect_mod_name(Path(source_root))
+            try: source_id=str(Path(source_root).resolve())
+            except Exception: source_id=str(source_root)
+            for row in ranked:
+                if row.get("classification") not in {"auto","candidate"}:
+                    continue
+                try: cand_id=str(Path(row.get("path","")).resolve())
+                except Exception: cand_id=str(row.get("path", ""))
+                rel={
+                    "source_path":source_id,"source_mod":source_name,
+                    "candidate_path":cand_id,"candidate_mod":row.get("mod", ""),
+                    "score":float(row.get("score",0.0) or 0.0),
+                    "classification":row.get("classification", ""),
+                    "precision":float(row.get("precision",0.0) or 0.0),
+                    "coverage":float(row.get("coverage",0.0) or 0.0),
+                    "overlap_keys":int(row.get("overlap_keys",0) or 0),
+                    "reasons":list(row.get("reasons") or []),
+                }
+                if cand_id not in best or rel["score"] > float(best[cand_id].get("score",0.0) or 0.0):
+                    best[cand_id]=rel
+        return best
+
+    def _analyze_localization_health(self, mod_root, source_index, source_meta, translation_relation=None):
         mod_root=Path(mod_root); loc=core.mod_localization_root(mod_root)
         name=core.detect_mod_name(mod_root)
         result={"mod":name,"path":str(mod_root),"localization":str(loc or ""),"issues":[],"foreign_by_file":{},"stats":{}}
@@ -2729,6 +2761,23 @@ Mod更新後だけ追加翻訳:
                 jp_files.append((f,entries))
                 for k in entries: jp_key_files.setdefault(k,[]).append(str(f))
         result["stats"]={"english_files":len(english_files),"chinese_files":len(chinese_files),"japanese_files":len(jp_files),"source_keys":len(source_keys),"japanese_keys":len(jp_key_files)}
+        # Weighted Japanese-translation relationship evidence.  Auto and review-only
+        # relations protect keys belonging to the linked source from destructive
+        # contamination repair; only >=60 points is auto-linked elsewhere.
+        relation = dict(translation_relation or {})
+        linked_source_keys=set()
+        if relation:
+            linked_id=str(relation.get("source_path") or "")
+            linked_source_keys=set((source_meta.get(linked_id) or {}).get("keys") or set())
+            score=float(relation.get("score",0.0) or 0.0)
+            cls=str(relation.get("classification") or "")
+            label="高信頼" if cls=="auto" else "要確認" if cls=="candidate" else "対象外"
+            severity="INFO" if cls=="auto" else "WARN"
+            reasons=" / ".join(relation.get("reasons") or [])
+            result["issues"].append({"severity":severity,"kind":"日本語化Mod関連判定","score":f"{score:.1f}","file":"","count":int(relation.get("overlap_keys",0) or 0),"detail":f"{label}: {relation.get('source_mod','')} に対する関連度 {score:.1f}/100。{reasons}"})
+            result["stats"]["translation_relation_score"]=score
+            result["stats"]["translation_relation_source"]=relation.get("source_mod","")
+        allowed_source_keys = set(source_keys) | linked_source_keys
         if not english_files:
             result["issues"].append({"severity":"WARN","kind":"英語原文なし","file":"","count":0,"detail":"英語localizationを確認できません。中国語のみのModなら正常な場合があります。"})
         if not chinese_files:
@@ -2745,7 +2794,7 @@ Mod更新後だけ追加翻訳:
         for f,entries in jp_files:
             foreign={}; unknown=[]; ambiguous=[]
             for key in entries:
-                if key in source_keys: continue
+                if key in allowed_source_keys: continue
                 total_extras += 1
                 owners=set(source_index.get(key) or set()); owners.discard(self_id)
                 if len(owners)==1:
@@ -2854,10 +2903,13 @@ Mod更新後だけ追加翻訳:
                 for r in roots:
                     if all(str(r)!=str(x) for x in all_roots): all_roots.append(r)
                 source_index,source_meta=self._diagnostic_source_key_index(all_roots)
+                relation_map=self._diagnostic_translation_relation_map(all_roots)
                 before=[]; logs=[]; stamp=datetime.now().strftime("%Y-%m-%d_%H%M%S")
                 for i,root in enumerate(roots,1):
                     self.events.put(("diagnostic_progress",{"generation":generation,"done":i,"total":len(roots),"mod":core.detect_mod_name(root),"phase":"診断"}))
-                    analysis=self._analyze_localization_health(root,source_index,source_meta); before.append(analysis)
+                    try: relation_key=str(Path(root).resolve())
+                    except Exception: relation_key=str(root)
+                    analysis=self._analyze_localization_health(root,source_index,source_meta,relation_map.get(relation_key)); before.append(analysis)
                 if repair:
                     # Back up every selected localization folder first. No file is modified
                     # until every backup has succeeded, so a later backup failure cannot
@@ -2878,7 +2930,9 @@ Mod更新後だけ追加翻訳:
                 if repair:
                     for i,root in enumerate(roots,1):
                         self.events.put(("diagnostic_progress",{"generation":generation,"done":i,"total":len(roots),"mod":core.detect_mod_name(root),"phase":"再診断"}))
-                        after.append(self._analyze_localization_health(root,source_index,source_meta))
+                        try: relation_key=str(Path(root).resolve())
+                        except Exception: relation_key=str(root)
+                        after.append(self._analyze_localization_health(root,source_index,source_meta,relation_map.get(relation_key)))
                 self.events.put(("diagnostic_done",{"generation":generation,"repair":repair,"before":before,"after":after,"logs":logs}))
             except Exception as exc:
                 self.events.put(("diagnostic_error",{"generation":generation,"error":str(exc)}))
@@ -2894,7 +2948,7 @@ Mod更新後だけ追加翻訳:
                 row=dict(issue); row["mod"]=analysis.get("mod",""); row["path"]=analysis.get("path",""); row["stats"]=analysis.get("stats",{})
                 self.diagnostic_result_map[iid]=row
                 file_name=Path(issue.get("file","")).name if issue.get("file") else ""
-                self.diagnostic_tree.insert("","end",iid=iid,values=(issue.get("severity",""),analysis.get("mod",""),issue.get("kind",""),file_name,issue.get("count",0),issue.get("detail","")))
+                self.diagnostic_tree.insert("","end",iid=iid,values=(issue.get("severity",""),analysis.get("mod",""),issue.get("kind",""),issue.get("score",""),file_name,issue.get("count",0),issue.get("detail","")))
         return n
 
     def _on_diagnostic_result_selected(self, _event=None):
@@ -2903,6 +2957,7 @@ Mod更新後だけ追加翻訳:
         row=self.diagnostic_result_map.get(sel[0],{})
         stats=row.get("stats") or {}
         lines=[f"Mod: {row.get('mod','')}",f"Mod場所: {row.get('path','')}",f"重要度: {row.get('severity','')}",f"診断項目: {row.get('kind','')}"]
+        if row.get("score") not in (None, ""): lines.append(f"関連度スコア: {row.get('score')}/100")
         if row.get("file"): lines.append(f"ファイル: {row.get('file')}")
         lines += [f"件数: {row.get('count',0)}",f"内容: {row.get('detail','')}","",f"英語YAML: {stats.get('english_files',0)} / 中国語YAML: {stats.get('chinese_files',0)} / 日本語YAML: {stats.get('japanese_files',0)}",f"原文キー: {stats.get('source_keys',0)} / 日本語キー: {stats.get('japanese_keys',0)} / 別Mod由来: {stats.get('foreign_keys',0)} / 出所不明: {stats.get('unknown_keys',0)}"]
         self._set_diagnostic_detail("\n".join(lines))
@@ -2915,6 +2970,7 @@ Mod更新後だけ追加翻訳:
             result.get("mod", ""),
             result.get("status", ""),
             result.get("external_translation_mod", ""),
+            result.get("translation_candidate_mod", ""),
             result.get("message", ""),
             result.get("path", ""),
         ]
@@ -2943,8 +2999,8 @@ Mod更新後だけ追加翻訳:
             self.mod_status_tree.insert("", "end", iid=f"mod_{i}", values=(
                 r.get("status", ""), r.get("mod", ""), r.get("gap_count", 0),
                 "あり" if r.get("simp_chinese_files", 0) else "なし",
-                r.get("external_translation_mod", ""),
-                r.get("external_translation_gap_count", 0) if r.get("external_translation_mod") else ""
+                r.get("external_translation_mod", "") or (("候補: " + r.get("translation_candidate_mod", "")) if r.get("translation_candidate_mod") else ""),
+                r.get("external_translation_gap_count", 0) if r.get("external_translation_mod") else ((f"{float(r.get('translation_candidate_score',0.0) or 0.0):.1f}点") if r.get("translation_candidate_mod") else "")
             ))
         if query:
             self.mod_status_search_result_var.set(f"{len(visible)}件 / 全{len(source)}件")
@@ -3009,13 +3065,25 @@ Mod更新後だけ追加翻訳:
             has_zh = any(x.get("simp_chinese_files", 0) for x in selected)
             self.status_chinese_queue_btn.config(state="normal" if has_zh else "disabled")
         if jpmod:
-            lines += ["", f"日本語化Mod: {jpmod}", f"日本語化Mod側の欠損: {r.get('external_translation_gap_count',0)}件", f"上書き先: 日本語化Mod『{jpmod}』", f"日本語化Mod場所: {jp_path}"]
+            score=float(r.get("external_translation_score",0.0) or 0.0)
+            precision=float(r.get("external_translation_precision",0.0) or 0.0)
+            lines += ["", f"日本語化Mod: {jpmod}", f"関連度スコア: {score:.1f}/100　キー一致率: {precision*100:.1f}%", f"日本語化Mod側の欠損: {r.get('external_translation_gap_count',0)}件", f"上書き先: 日本語化Mod『{jpmod}』", f"日本語化Mod場所: {jp_path}"]
+            reasons=list(r.get("external_translation_reasons") or [])
+            if reasons:
+                lines += ["判定理由:"] + [f"・{x}" for x in reasons]
             if hasattr(self, "status_overwrite_btn"):
                 label = f"日本語化Mod『{jpmod}』へ差分上書き"
                 if len(label) > 34:
                     label = "日本語化Modへ差分上書き"
                 self.status_overwrite_btn.config(text=label)
         else:
+            cand=r.get("translation_candidate_mod", "")
+            if cand:
+                cscore=float(r.get("translation_candidate_score",0.0) or 0.0)
+                cprec=float(r.get("translation_candidate_precision",0.0) or 0.0)
+                lines += ["", f"日本語化Mod候補（自動関連付けなし）: {cand}", f"関連度スコア: {cscore:.1f}/100　キー一致率: {cprec*100:.1f}%", f"候補場所: {r.get('translation_candidate_path','')}"]
+                creasons=list(r.get("translation_candidate_reasons") or [])
+                if creasons: lines += ["判定理由:"] + [f"・{x}" for x in creasons]
             lines += ["", "上書き先: 元Mod内の日本語localization"]
             if hasattr(self, "status_overwrite_btn"):
                 self.status_overwrite_btn.config(text="完成した日本語化を元Modへ上書き")
@@ -5866,11 +5934,10 @@ Mod更新後だけ追加翻訳:
 
     @staticmethod
     def _clear_stale_external_translation_relation(item):
-        """Drop external-Japanese-Mod links saved by pre-v0.11.31 detection.
+        """Drop saved external-Japanese-Mod relationship metadata from older builds.
 
-        Translation output/cache paths remain untouched.  Only auto-detected external
-        relation metadata is cleared so a fresh Translation Status scan can rebuild
-        it under the 20% rule.
+        Translation output/cache paths remain untouched.  A fresh Translation Status
+        scan rebuilds relationships with the v0.11.33 weighted classifier.
         """
         if not isinstance(item, dict):
             return
@@ -5879,6 +5946,9 @@ Mod更新後だけ追加翻訳:
             "external_translation_localization", "external_translation_gap_count",
             "external_translation_complete", "external_translation_gaps",
             "external_translation_coverage", "external_translation_precision",
+            "external_translation_score", "external_translation_confidence", "external_translation_reasons",
+            "translation_candidate_mod", "translation_candidate_path", "translation_candidate_score",
+            "translation_candidate_precision", "translation_candidate_reasons",
             "external_gap_keys",
         ):
             item.pop(key, None)
