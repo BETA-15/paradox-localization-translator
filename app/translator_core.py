@@ -2462,11 +2462,16 @@ def find_external_japanese_translation(mod_root: Path, translation_index: Option
         precision = overlap_n / max(1, len(ja_keys))
         cand_norm = _normalize_mod_name_for_match(row.get("mod", ""))
         name_match = bool(source_norm and cand_norm and (source_norm in cand_norm or cand_norm in source_norm))
-        # Conservative acceptance to avoid mistaking generic shared game keys for a translation mod.
-        accept = coverage >= 0.55 or (coverage >= 0.25 and overlap_n >= 20) or (name_match and overlap_n >= 3 and coverage >= 0.10)
+        # v0.11.31: classify a separate Japanese translation mod by the share of
+        # its Japanese keys that belong to this source Mod.  A percentage-only
+        # threshold intentionally supports very small translation Mods; there is
+        # no minimum overlap-key count.
+        accept = precision >= 0.20
         if not accept:
             continue
-        score = coverage * 100 + min(precision, 1.0) * 12 + (18 if name_match else 0) + min(overlap_n, 100) / 100
+        # Prefer candidates whose Japanese key set belongs mostly to this Mod.
+        # Source-side coverage and name similarity are secondary tie-breakers only.
+        score = precision * 100 + coverage * 12 + (6 if name_match else 0) + min(overlap_n, 100) / 100
         if score <= best_score:
             continue
         gaps = _external_gap_candidates(source_entries, ja, src_data.get("english", {}), src_data.get("simp_chinese", {}))
@@ -2476,6 +2481,7 @@ def find_external_japanese_translation(mod_root: Path, translation_index: Option
             "path": str(cand_path),
             "localization": row.get("localization", ""),
             "coverage": coverage,
+            "precision": precision,
             "overlap_keys": overlap_n,
             "source_keys": len(source_keys),
             "gap_count": len(gaps),

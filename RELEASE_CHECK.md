@@ -1,3 +1,17 @@
+# v0.11.31 追加確認
+
+- [x] `VERSION` / `APP_VERSION` を 0.11.31 に統一
+- [x] 日本語化Mod候補判定を候補側日本語キー一致率20%以上へ変更
+- [x] 最低一致キー数なし（1キー規模でも割合条件のみで判定）
+- [x] 19%候補は除外、20%候補は採用するテストを実施
+- [x] 1/1キー一致の小規模日本語化Modが採用されるテストを実施
+- [x] 旧翻訳状況キャッシュ世代を更新し自動リセット
+- [x] 旧workspace/session/resumeの外部日本語化Mod関連情報を復元時に破棄
+- [x] 初回Mod役割キャッシュは保持・schema 2へ移行
+- [x] `python -m py_compile app/main.py app/translator_core.py` PASS
+
+---
+
 # Release Check — v0.11.30
 
 ## 主な変更
