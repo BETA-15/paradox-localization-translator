@@ -34,7 +34,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.8"
+APP_VERSION = "0.11.9"
 
 
 def _app_container_dir() -> Path:
@@ -1305,7 +1305,7 @@ class App(BaseTk):
         ent = ttk.Entry(top, textvariable=self.search_query_var); ent.grid(row=1, column=1, sticky="ew", padx=6, pady=(6,0)); ent.bind("<Return>", lambda e:self.run_translation_search())
         ttk.Button(top, text="検索", command=self.run_translation_search).grid(row=1, column=2, sticky="ew", pady=(6,0))
         ttk.Button(top, text="結果を消去", command=self.clear_translation_search_results).grid(row=1, column=3, sticky="ew", padx=(6,0), pady=(6,0))
-        ttk.Label(top, text="検索語は必須です。選択したゲームの自動検出済みModにある l_japanese だけを検索します。", foreground="#666").grid(row=2, column=0, columnspan=4, sticky="w", pady=(6,0))
+        ttk.Label(top, text="検索語は必須です。ローカライズキー・日本語本文・原文を検索し、原文にあるのに日本語側にないキーは「未訳」として表示します。", foreground="#666").grid(row=2, column=0, columnspan=4, sticky="w", pady=(6,0))
 
         ttk.Label(t, textvariable=self.search_summary_var).pack(anchor="w", pady=(7,4))
         paned = ttk.Panedwindow(t, orient="horizontal"); paned.pack(fill="both", expand=True)
@@ -4482,6 +4482,16 @@ Mod更新後だけ追加翻訳:
                     seen.add(key); roots.append(Path(root))
         return roots
 
+    def _search_expected_japanese_path(self, loc_root, source_file, source_lang):
+        """Return the deterministic Japanese counterpart path for a source localization file."""
+        loc_root = Path(loc_root)
+        source_file = Path(source_file)
+        try:
+            rel_parent = source_file.parent.relative_to(loc_root)
+        except Exception:
+            rel_parent = Path(source_file.parent.name)
+        return loc_root / core.remap_rel_dir(rel_parent, "japanese") / core.rename_for_target(source_file, "japanese", source_lang)
+
     def run_translation_search(self):
         game = self.search_game_var.get().strip()
         q = self.search_query_var.get().strip().casefold()
@@ -4495,10 +4505,13 @@ Mod更新後だけ追加翻訳:
         if not roots:
             messagebox.showinfo(APP_NAME, f"{game} のMod場所がまだ検出されていません。［ゲーム / Mod場所を再検出］を実行してから再度検索してください。")
             return
-        for iid in self.search_tree.get_children(): self.search_tree.delete(iid)
+        for iid in self.search_tree.get_children():
+            self.search_tree.delete(iid)
         self.search_result_map = {}
         count = 0
+        missing_count = 0
         scanned_mods = 0
+
         for mod_root in roots:
             loc = core.mod_localization_root(mod_root)
             if not loc:
@@ -4509,45 +4522,114 @@ Mod更新後だけ追加翻訳:
                 files = core.gather_yml_files(loc)
             except Exception:
                 continue
+
+            groups = {}
             for f in files:
                 try:
                     lang, entries, _ = core.parse_localization_file(f)
                 except Exception:
                     continue
-                if lang != "japanese":
+                if lang not in ("english", "simp_chinese", "japanese"):
                     continue
-                display_file = self._localization_display_path(f)
-                for key, value in entries.items():
-                    if q not in key.casefold() and q not in value.casefold() and q not in f.name.casefold() and q not in mod_name.casefold():
+                try:
+                    lid = core._logical_localization_id(f, loc, lang)
+                except Exception:
+                    lid = f.name
+                groups.setdefault(lid, {})[lang] = {"path": Path(f), "entries": entries}
+
+            for _lid, langs in groups.items():
+                ja = langs.get("japanese")
+                src = langs.get("english") or langs.get("simp_chinese")
+                src_lang = "english" if "english" in langs else ("simp_chinese" if "simp_chinese" in langs else "")
+                ja_entries = ja["entries"] if ja else {}
+                src_entries = src["entries"] if src else {}
+                all_keys = set(ja_entries) | set(src_entries)
+
+                for key in sorted(all_keys):
+                    ja_value = ja_entries.get(key)
+                    source_value = src_entries.get(key, "")
+                    source_file = src["path"] if src else None
+                    target_file = ja["path"] if ja else (self._search_expected_japanese_path(loc, source_file, src_lang) if source_file else None)
+                    missing = key in src_entries and key not in ja_entries
+
+                    searchable = [key, mod_name, source_value]
+                    if ja_value is not None:
+                        searchable.append(ja_value)
+                    if source_file:
+                        searchable.append(source_file.name)
+                    if target_file:
+                        searchable.append(Path(target_file).name)
+                    if not any(q in str(v).casefold() for v in searchable if v is not None):
                         continue
+
+                    shown_file = source_file if missing and source_file else (ja["path"] if ja else target_file)
+                    shown_value = "【未訳】" if missing else (ja_value or "")
                     iid = f"r{count}"
-                    self.search_result_map[iid] = (f, key, value, mod_name)
-                    self.search_tree.insert("", "end", iid=iid, values=(mod_name, display_file, key, value[:180]))
+                    self.search_result_map[iid] = {
+                        "target_file": Path(target_file) if target_file else None,
+                        "source_file": Path(source_file) if source_file else None,
+                        "key": key,
+                        "value": "" if missing else (ja_value or ""),
+                        "source_value": source_value,
+                        "source_lang": src_lang,
+                        "mod_name": mod_name,
+                        "missing": missing,
+                    }
+                    self.search_tree.insert("", "end", iid=iid, values=(mod_name, self._localization_display_path(shown_file) if shown_file else "", key, shown_value[:180]))
                     count += 1
-        self.search_summary_var.set(f"{game}: {scanned_mods} Modを検索 / {count}件一致")
+                    if missing:
+                        missing_count += 1
+
+        self.search_summary_var.set(f"{game}: {scanned_mods} Modを検索 / {count}件一致（未訳 {missing_count}件）")
 
     def on_search_select(self, _=None):
         sel = self.search_tree.selection()
-        if not sel: return
-        f, key, value, mod_name = self.search_result_map.get(sel[0], (None,"","", ""))
-        if not f: return
-        self.search_selected_var.set(f"{mod_name} / {self._localization_display_path(f)} / {key}")
-        self.search_edit_text.delete("1.0", "end"); self.search_edit_text.insert("1.0", value)
+        if not sel:
+            return
+        row = self.search_result_map.get(sel[0])
+        if not row:
+            return
+        key = row["key"]
+        mod_name = row["mod_name"]
+        source_file = row.get("source_file")
+        target_file = row.get("target_file")
+        if row.get("missing"):
+            src = self._localization_display_path(source_file) if source_file else ""
+            dst = self._localization_display_path(target_file) if target_file else ""
+            self.search_selected_var.set(f"{mod_name} / {key} / 未訳  原文: {src}  → 日本語: {dst}")
+        else:
+            self.search_selected_var.set(f"{mod_name} / {self._localization_display_path(target_file)} / {key}")
+        self.search_edit_text.delete("1.0", "end")
+        self.search_edit_text.insert("1.0", row.get("value", ""))
 
     def save_search_value(self):
         sel = self.search_tree.selection()
-        if not sel: return
-        f, key, _, mod_name = self.search_result_map.get(sel[0], (None,"","", ""))
-        if not f: return
+        if not sel:
+            return
+        row = self.search_result_map.get(sel[0])
+        if not row:
+            return
+        target_file = row.get("target_file")
+        key = row.get("key", "")
+        mod_name = row.get("mod_name", "")
+        if not target_file:
+            messagebox.showerror(APP_NAME, "日本語ファイルの保存先を特定できませんでした。")
+            return
         value = self.search_edit_text.get("1.0", "end-1c")
         try:
-            if not core.update_localization_value(Path(f), key, value):
+            if row.get("missing"):
+                core.upsert_localization_values(Path(target_file), {key: value}, "japanese")
+            elif not core.update_localization_value(Path(target_file), key, value):
                 raise RuntimeError("対象キーをファイル内で更新できませんでした")
-            self.search_result_map[sel[0]] = (f, key, value, mod_name)
-            self.search_tree.item(sel[0], values=(mod_name, self._localization_display_path(f), key, value[:180]))
+            row["value"] = value
+            row["missing"] = False
+            self.search_result_map[sel[0]] = row
+            self.search_tree.item(sel[0], values=(mod_name, self._localization_display_path(target_file), key, value[:180]))
+            self.search_selected_var.set(f"{mod_name} / {self._localization_display_path(target_file)} / {key}")
             self.search_summary_var.set(f"保存しました: {key}")
         except Exception as e:
-            record_error("翻訳検索から直接訂正", e); messagebox.showerror(APP_NAME, str(e))
+            record_error("翻訳検索から直接訂正", e)
+            messagebox.showerror(APP_NAME, str(e))
 
     # ---------------- QA/editor ----------------
     def pick_review_file(self,var):
