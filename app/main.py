@@ -35,7 +35,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.27"
+APP_VERSION = "0.11.28"
 MOD_STATUS_CACHE_VERSION = 3
 
 
