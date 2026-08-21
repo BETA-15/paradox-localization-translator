@@ -1,3 +1,15 @@
+# v0.11.40
+
+- macOSでPython例外を残さず終了するネイティブクラッシュ対策を追加。バックグラウンドworkerからTkinterの `StringVar` / `BooleanVar` / `IntVar` を直接参照していた箇所を整理し、メインスレッドで設定値を通常のPython値へスナップショットしてからworkerへ渡す方式へ変更。
+- Mod調査、常時監視、通常翻訳、モデル一覧取得、モデル速度テスト、差分翻訳、AI校正でworkerからTk変数を直接読む経路を除去。GUI更新は既存イベントキュー経由を維持。
+- macOSの `~/Library/Logs/DiagnosticReports` に生成されたParadox Localization Translatorの新規クラッシュレポートを次回起動時に自動検出し、通常の `errors_YYYYMMDD.log` へ概要を記録。元レポートも `ログ/native_crash_reports/` へ保存し、診断ZIPへ同梱。
+- 正常終了マーカーを追加し、前回起動が正常終了せず終了した場合は次回起動時にエラーログへ記録。`faulthandler` のfatalログも `ログ/` に保存。
+- macOSビルド時に `VERSION` を `.app` の `CFBundleShortVersionString` / `CFBundleVersion` へ反映し、クラッシュレポートが `0.0.0` ではなく実際のアプリ版を表示するよう修正。
+- 翻訳状況タブの **「選択Modを除外して中国語基準キューへ追加」** を1段目へ移動。
+- 翻訳状況タブの **「Mod分類・関連付け」** を右側の結果操作列から左側ブロックへ移し、Mod探索・検索・分類設定を同じ側にまとめた。総合診断側の共通入口は維持。
+
+---
+
 # v0.11.39
 
 - 翻訳状況タブと総合診断タブの両方から開ける共通 **「Mod分類・関連付け」** 画面を追加。

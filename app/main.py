@@ -8,6 +8,7 @@ import queue
 import hashlib
 import platform
 import traceback
+import faulthandler
 import zipfile
 import subprocess
 import sys
@@ -35,7 +36,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.39"
+APP_VERSION = "0.11.40"
 MOD_STATUS_CACHE_VERSION = 7
 
 
@@ -357,6 +358,133 @@ def record_error(context: str, exc: BaseException | None = None, detail: str = "
         pass
 
 
+
+def _native_crash_state_path() -> Path:
+    return APP_HOME / "native_crash_import_state.json"
+
+
+def _runtime_marker_path() -> Path:
+    return APP_HOME / "runtime_state.json"
+
+
+def _collect_native_crash_reports():
+    """Import new macOS DiagnosticReports for this app into the normal error log."""
+    if sys.platform != "darwin":
+        return
+    try:
+        state = core.load_json(_native_crash_state_path(), {"seen": []})
+        seen = set(state.get("seen") or []) if isinstance(state, dict) else set()
+        report_dirs = [
+            Path.home() / "Library" / "Logs" / "DiagnosticReports",
+            Path.home() / "Library" / "Logs" / "DiagnosticReports" / "Retired",
+        ]
+        candidates = []
+        for report_dir in report_dirs:
+            if not report_dir.exists():
+                continue
+            for path in report_dir.glob("*"):
+                if not path.is_file():
+                    continue
+                name = path.name.lower()
+                if "paradox localization translator" not in name and "paradoxlocalizationtranslator" not in name:
+                    continue
+                if path.suffix.lower() not in {".ips", ".crash", ".diag"}:
+                    continue
+                try:
+                    key = f"{path.resolve()}::{path.stat().st_mtime_ns}::{path.stat().st_size}"
+                except Exception:
+                    key = str(path)
+                if key not in seen:
+                    candidates.append((path, key))
+        if not candidates:
+            return
+        archive_dir = LOG_ROOT / "native_crash_reports"
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        for path, key in sorted(candidates, key=lambda x: x[0].stat().st_mtime):
+            try:
+                raw = path.read_text(encoding="utf-8", errors="replace")
+                summary = []
+                for line in raw.splitlines():
+                    stripped = line.strip()
+                    if any(token in stripped for token in (
+                        "Date/Time:", "Exception Type:", "Exception Codes:", "Termination Reason:",
+                        "Triggered by Thread:", "Thread 0 Crashed", "GameControllerUI", "Tkapp_ThreadSend",
+                    )):
+                        summary.append(stripped)
+                    if len(summary) >= 30:
+                        break
+                copied = archive_dir / path.name
+                if copied.exists():
+                    copied = archive_dir / f"{path.stem}_{int(time.time())}{path.suffix}"
+                shutil.copy2(path, copied)
+                record_error(
+                    "macOS native crash imported",
+                    detail=(
+                        f"DiagnosticReport: {path}\nCopied: {copied}\n"
+                        + ("\n".join(summary) if summary else "クラッシュ概要を抽出できませんでした。")
+                    ),
+                )
+                seen.add(key)
+            except Exception as exc:
+                record_error("macOS native crash import failed", exc, detail=str(path))
+        core.save_json(_native_crash_state_path(), {"seen": sorted(seen), "updated_at": datetime.now().isoformat(timespec="seconds")})
+    except Exception as exc:
+        record_error("macOS native crash scan", exc)
+
+
+def _pid_is_running(pid):
+    try:
+        pid = int(pid)
+        if pid <= 0:
+            return False
+        if os.name == "nt":
+            # Avoid optional platform APIs here; stale markers are still harmless on Windows.
+            return False
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except Exception:
+        return False
+
+
+def _mark_runtime_started():
+    """Record a process marker so an unclean native termination is visible next launch."""
+    try:
+        previous = core.load_json(_runtime_marker_path(), {})
+        previous_pid = previous.get("pid") if isinstance(previous, dict) else None
+        if isinstance(previous, dict) and previous.get("active") and not _pid_is_running(previous_pid):
+            record_error(
+                "previous run ended unexpectedly",
+                detail=(
+                    f"Previous start: {previous.get('started_at','unknown')} / pid={previous.get('pid','?')}. "
+                    "正常終了マーカーが残らなかったため、強制終了またはネイティブクラッシュの可能性があります。"
+                ),
+            )
+        core.save_json(_runtime_marker_path(), {
+            "active": True,
+            "pid": os.getpid(),
+            "app_version": APP_VERSION,
+            "started_at": datetime.now().isoformat(timespec="seconds"),
+        })
+    except Exception as exc:
+        record_error("runtime marker start", exc)
+
+
+def _mark_runtime_clean_exit():
+    try:
+        core.save_json(_runtime_marker_path(), {
+            "active": False,
+            "pid": os.getpid(),
+            "app_version": APP_VERSION,
+            "clean_exit_at": datetime.now().isoformat(timespec="seconds"),
+        })
+    except Exception as exc:
+        record_error("runtime marker clean exit", exc)
+
+
 def _automatic_output_root() -> Path:
     OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
     return OUTPUT_ROOT
@@ -368,6 +496,15 @@ class App(BaseTk):
         APP_HOME.mkdir(parents=True, exist_ok=True)
         CACHE_ROOT.mkdir(parents=True, exist_ok=True)
         BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
+        _collect_native_crash_reports()
+        _mark_runtime_started()
+        self._fatal_log_handle = None
+        try:
+            fatal_path = LOG_ROOT / f"fatal_{datetime.now().strftime('%Y%m%d')}.log"
+            self._fatal_log_handle = fatal_path.open("a", encoding="utf-8")
+            faulthandler.enable(file=self._fatal_log_handle, all_threads=True)
+        except Exception as exc:
+            record_error("faulthandler enable", exc)
         self.title(f"{APP_NAME} {APP_VERSION}")
         # v0.7.3: 機能増加後も起動直後から下部操作まで見えるよう、
         # 画面のほぼ全域を初期サイズとして使う。以前の 940px 高さ上限は撤廃。
@@ -1992,6 +2129,12 @@ class App(BaseTk):
 
         if self.chinese_worker and self.chinese_worker.is_alive() and self.chinese_controller:
             self.chinese_controller.request_stop(save=True)
+        _mark_runtime_clean_exit()
+        try:
+            if self._fatal_log_handle:
+                self._fatal_log_handle.flush()
+        except Exception:
+            pass
         self.destroy()
 
     def apply_performance_preset(self):
@@ -2532,6 +2675,10 @@ Mod更新後だけ追加翻訳:
         ttk.Label(search, textvariable=self.mod_status_search_result_var, foreground="#555", wraplength=300, justify="left").grid(row=1, column=0, columnspan=4, sticky="w", pady=(6,0))
         search.columnconfigure(1, weight=1)
 
+        relation = ttk.LabelFrame(left, text="Mod分類・関連付け", padding=6); relation.pack(fill="x", pady=(0,6))
+        ttk.Label(relation, text="日本語化Mod / 通常Modの例外指定と、対応元Modの手動関連付けを設定します。総合診断と共通設定です。", foreground="#555", wraplength=320, justify="left").pack(anchor="w")
+        ttk.Button(relation, text="Mod分類・関連付けを開く", command=lambda:self._open_mod_relation_dialog("status")).pack(anchor="w", pady=(6,0))
+
         # 翻訳状況タブから探索専用LLMをそのまま変更・適用できる。
         moncfg = ttk.LabelFrame(left, text="探索用LLM設定", padding=6); moncfg.pack(fill="x", pady=(0,6))
         ttk.Label(moncfg, text="プロバイダ").grid(row=0,column=0,sticky="w")
@@ -2591,13 +2738,12 @@ Mod更新後だけ追加翻訳:
         self.status_chinese_queue_btn = ttk.Button(bottom1,text="中国語基準キューへ追加",command=self.queue_selected_mods_to_chinese_basis,state="disabled")
         self.status_chinese_queue_btn.pack(side="left",padx=(6,0))
         ttk.Button(bottom1,text="選択Modを除外して通常翻訳キューへ追加",command=self.queue_all_except_selected_mods).pack(side="left",padx=(6,0))
-        ttk.Button(bottom2,text="選択Modを除外して中国語基準キューへ追加",command=self.queue_all_except_selected_mods_chinese).pack(side="left")
+        ttk.Button(bottom1,text="選択Modを除外して中国語基準キューへ追加",command=self.queue_all_except_selected_mods_chinese).pack(side="left",padx=(6,0))
 
         ttk.Button(bottom2,text="QA / 比較編集へ",command=lambda:self._send_pair_to_qa_or_diff("status","review")).pack(side="left")
         ttk.Button(bottom2,text="差分調査へ",command=lambda:self._send_pair_to_qa_or_diff("status","diff")).pack(side="left",padx=(6,0))
         self.status_overwrite_btn = ttk.Button(bottom2,text="完成した日本語化をModへ上書き",command=self.overwrite_selected_status_mod)
         self.status_overwrite_btn.pack(side="left",padx=(6,0))
-        ttk.Button(bottom2,text="Mod分類・関連付け",command=lambda:self._open_mod_relation_dialog("status")).pack(side="left",padx=(6,0))
         ttk.Separator(bottom2,orient="vertical").pack(side="left",fill="y",padx=8)
         ttk.Button(bottom2,text="結果を消去",command=self.clear_mod_status_results).pack(side="left")
         ttk.Button(bottom2,text="キャッシュ再読込",command=self._restore_cached_mod_status).pack(side="left",padx=(6,0))
@@ -3591,6 +3737,18 @@ Mod更新後だけ追加翻訳:
                 + ("\n実行中の通常翻訳は次のバッチから切り替わります。" if self.controller and self.worker and self.worker.is_alive() else ""))
         return True
 
+    def _snapshot_monitor_worker_settings(self):
+        """Capture Tk-backed monitor settings on the main thread before workers start."""
+        return {
+            "interval": max(3, int(self.monitor_interval_var.get() or 15)),
+            "use_llm": bool(self.monitor_use_llm_var.get()),
+            "check_translation_mods": bool(self.monitor_check_translation_mods_var.get()),
+            "provider": self.monitor_provider_var.get(),
+            "url": self.monitor_url_var.get().strip(),
+            "model": self.monitor_model_var.get().strip(),
+            "api_key": self.monitor_api_key_var.get().strip(),
+        }
+
     def _current_monitor_roots(self):
         roots=[]
         for raw in self.monitor_target_paths:
@@ -3617,6 +3775,7 @@ Mod更新後だけ追加翻訳:
             messagebox.showinfo(APP_NAME,"監視対象がありません。［翻訳状況］タブでゲーム / Mod場所を1件以上選択してください。")
             return
         self.monitor_stop_event.clear(); self.monitor_force_event.set(); self.monitor_snapshot={}
+        self._monitor_worker_settings = self._snapshot_monitor_worker_settings()
         self.monitor_toggle_btn.config(text="常時監視を停止")
         self.monitor_status_var.set(f"● 常時監視中 — {len(roots)}か所 / 初回確認中…")
         self._set_monitor_scan_status("● 未翻訳Mod監視中", f"{len(roots)}か所の変更されたYAMLを確認しています")
@@ -3638,11 +3797,15 @@ Mod更新後だけ追加翻訳:
         # 旧内部呼び出しとの互換。現在は「再調査」に統合。
         self.research_monitor_targets()
 
-    def _refine_candidates_with_monitor_llm(self, candidates):
+    def _refine_candidates_with_monitor_llm(self, candidates, settings=None):
         ambiguous=[(i,c) for i,c in enumerate(candidates) if c.get("needs_llm")]
-        if not (self.monitor_use_llm_var.get() and ambiguous):
+        settings = dict(settings or {})
+        if not (bool(settings.get("use_llm", False)) and ambiguous):
             return candidates
-        provider,url,model,api_key=self._monitor_llm_config()
+        provider = settings.get("provider", "")
+        url = settings.get("url", "")
+        model = settings.get("model", "")
+        api_key = settings.get("api_key", "")
         if not model:
             self.events.put(("monitor_log","監視専用LLMが未選択のため曖昧候補の精査をスキップしました。"))
             return candidates
@@ -3661,6 +3824,7 @@ Mod更新後だけ追加翻訳:
 
     def _monitor_worker(self, one_shot=False):
         roots=self._current_monitor_roots()
+        settings = dict(getattr(self, "_monitor_worker_settings", {}) or {})
         try:
             first=True
             while not self.monitor_stop_event.is_set():
@@ -3681,7 +3845,7 @@ Mod更新後だけ追加翻訳:
                         except Exception as exc:
                             self.events.put(("monitor_log",f"{root}: 解析をスキップ: {exc}"))
                     try:
-                        candidates=self._refine_candidates_with_monitor_llm(candidates)
+                        candidates=self._refine_candidates_with_monitor_llm(candidates, settings)
                     except core.StopRequested:
                         if self.monitor_stop_event.is_set(): break
                     except Exception as e:
@@ -3691,7 +3855,7 @@ Mod更新後だけ追加翻訳:
                     first=False
                 if one_shot:
                     break
-                interval=max(3,int(self.monitor_interval_var.get() or 15))
+                interval=max(3,int(settings.get("interval", 15) or 15))
                 for _ in range(interval*5):
                     if self.monitor_stop_event.is_set() or self.monitor_force_event.is_set(): break
                     self.monitor_stop_event.wait(0.2)
@@ -3739,6 +3903,11 @@ Mod更新後だけ追加翻訳:
                 zf.writestr("diagnostics.json", json.dumps(info, ensure_ascii=False, indent=2))
                 for lp in sorted(LOG_ROOT.glob("*.log")):
                     zf.write(lp, f"logs/{lp.name}")
+                native_dir = LOG_ROOT / "native_crash_reports"
+                if native_dir.exists():
+                    for rp in sorted(native_dir.iterdir()):
+                        if rp.is_file():
+                            zf.write(rp, f"native_crash_reports/{rp.name}")
                 if SESSION_PATH.exists():
                     try:
                         session = core.load_json(SESSION_PATH, {})
@@ -4080,6 +4249,7 @@ Mod更新後だけ追加翻訳:
         if replace:
             self.mod_research_results=[]
             self.events.put(("mod_status_results",[]))
+        self._mod_research_worker_settings = self._snapshot_monitor_worker_settings()
         self.mod_research_thread=threading.Thread(target=self._mod_research_worker,args=(roots,translation_pool),daemon=True)
         self.mod_research_thread.start()
 
@@ -4093,7 +4263,8 @@ Mod更新後だけ追加翻訳:
         try:
             total=len(roots)
             results=[]
-            check_external = bool(self.monitor_check_translation_mods_var.get())
+            settings = dict(getattr(self, "_mod_research_worker_settings", {}) or {})
+            check_external = bool(settings.get("check_translation_mods", True))
             pool_roots = list(translation_pool or roots)
             translation_index = self._build_stable_translation_mod_index(pool_roots) if check_external else None
             if check_external and translation_index:
@@ -4117,7 +4288,7 @@ Mod更新後だけ追加翻訳:
                     result=core.analyze_mod_translation_status(mod_root, translation_index=translation_index)
                     candidates=result.get("candidates",[])
                     try:
-                        refined=self._refine_candidates_with_monitor_llm(candidates)
+                        refined=self._refine_candidates_with_monitor_llm(candidates, settings)
                         result["candidates"]=refined
                         result["gap_count"]=len(refined)
                         result["gap_origin_counts"]=core.gap_origin_counts(refined)
@@ -5264,7 +5435,7 @@ Mod更新後だけ追加翻訳:
         self.benchmark_status_var.set(f"速度テスト中 0/{len(models)} — 開始準備")
         self.llm_operation = "モデル速度テスト"
         self.benchmark_stop_btn.config(state="normal")
-        provider=self.provider_var.get(); url=self.url_var.get().strip()
+        provider=self.provider_var.get(); url=self.url_var.get().strip(); api_key=self.api_key_var.get().strip()
         self.benchmark_controller=core.TranslationController(progress_callback=lambda p:self.events.put(("benchmark_progress",p)))
         def work():
             stopped=False
@@ -5279,7 +5450,7 @@ Mod更新後だけ追加翻訳:
                         if payload.get("kind")=="llm_metric": captured.append(payload.get("metric"))
                         if original_cb: original_cb(payload)
                     self.benchmark_controller.progress_callback=cb
-                    core.benchmark_model(provider,url,m,self.benchmark_controller,self.api_key_var.get().strip())
+                    core.benchmark_model(provider,url,m,self.benchmark_controller,api_key)
                     metric=next((x for x in reversed(captured) if x),None)
                     self.events.put(("benchmark_metric",(i,len(models),metric)))
                 except core.StopRequested:
@@ -6147,12 +6318,12 @@ Mod更新後だけ追加翻訳:
                 cache_file=Path(self._ensure_item_cache(item))
                 st=getattr(self,"translation_start_settings",{})
                 result=core.run_translation(
-                    item["input"], item["output"], model=st.get("model",self.model_var.get().strip()), url=st.get("url",self.url_var.get().strip()),
-                    workers=max(1,st.get("workers",self.workers_var.get())), batch_size=max(1,st.get("batch",self.batch_var.get())), cache_path=cache_file,
-                    resume=True, verbose=True, include_target_files=st.get("repair",self.repair_var.get()), controller=self.controller,
-                    glossary_path=st.get("glossary") or None, preset=st.get("preset",self.preset_var.get()),
-                    dual_source=False, auto_qa=st.get("autoqa",self.autoqa_var.get()),
-                    provider=st.get("provider",self.provider_var.get()), api_key=st.get("api_key",self.api_key_var.get().strip()))
+                    item["input"], item["output"], model=st.get("model", ""), url=st.get("url", ""),
+                    workers=max(1,int(st.get("workers",1) or 1)), batch_size=max(1,int(st.get("batch",40) or 40)), cache_path=cache_file,
+                    resume=True, verbose=True, include_target_files=bool(st.get("repair",True)), controller=self.controller,
+                    glossary_path=st.get("glossary") or None, preset=st.get("preset","CK3"),
+                    dual_source=False, auto_qa=bool(st.get("autoqa",True)),
+                    provider=st.get("provider","Ollama"), api_key=st.get("api_key", ""))
                 self._register_cache_job(item)
                 self.events.put(("normal_log", f"処理結果: {item.get('mod_name') or Path(item.get('input','')).name} / ファイル {result.get('processed',0)} / LLMジョブ {result.get('jobs',0)} / 失敗 {result.get('failed',0)}"))
                 if result.get("interrupted"):
@@ -6595,11 +6766,14 @@ Mod更新後だけ追加翻訳:
             self.connection_var.set(f"{label}: APIキーが未設定です")
         else:
             self.connection_var.set(f"{label} 接続確認中…")
-        threading.Thread(target=self._fetch_models,daemon=True).start()
+        provider = self.provider_var.get()
+        url = self.url_var.get().strip()
+        api_key = self.api_key_var.get().strip()
+        threading.Thread(target=self._fetch_models,args=(provider,url,api_key),daemon=True).start()
 
-    def _fetch_models(self):
+    def _fetch_models(self, provider, url, api_key):
         try:
-            models=core.list_models(self.provider_var.get(),self.url_var.get().strip(),timeout=8,api_key=self.api_key_var.get().strip())
+            models=core.list_models(provider,url,timeout=8,api_key=api_key)
             self.events.put(("models",models))
         except Exception as e:
             self.events.put(("model_error",str(e)))
@@ -6685,15 +6859,21 @@ Mod更新後だけ追加翻訳:
         self.diff_controller = core.TranslationController(progress_callback=lambda p:self.events.put(("diff_translate_progress", p)))
         self.llm_operation = "差分翻訳"
         self.diff_message_var.set(f"差分翻訳中… {len(keys)}件")
+        glossary_path = self.glossary_path_var.get().strip()
+        diff_settings = {
+            "url": self.url_var.get().strip(), "model": self.model_var.get().strip(),
+            "preset": self.preset_var.get(), "provider": self.provider_var.get(),
+            "api_key": self.api_key_var.get().strip(),
+        }
         def work():
             try:
-                glossary = core.load_glossary(Path(self.glossary_path_var.get())) if self.glossary_path_var.get() else {}
+                glossary = core.load_glossary(Path(glossary_path)) if glossary_path else {}
                 out = {}
                 for i, key in enumerate(keys, 1):
                     if self.diff_controller.stop_event.is_set(): raise core.StopRequested()
                     self.events.put(("diff_translate_status", (i, len(keys), key)))
-                    out[key] = core.translate_single_text(self.url_var.get(), self.model_var.get(), self.diff_source_entries[key], source_lang,
-                                                          glossary, self.preset_var.get(), self.provider_var.get(), self.api_key_var.get().strip(), self.diff_controller,
+                    out[key] = core.translate_single_text(diff_settings["url"], diff_settings["model"], self.diff_source_entries[key], source_lang,
+                                                          glossary, diff_settings["preset"], diff_settings["provider"], diff_settings["api_key"], self.diff_controller,
                                                           chinese_basis=(source_lang == "simp_chinese"))
                 core.upsert_localization_values(dst_path, out)
                 self.events.put(("diff_translate_done", len(out)))
@@ -7083,10 +7263,16 @@ Mod更新後だけ追加翻訳:
         self.issue_text.set("AI校正中…（上部のLLM動作表示から停止できます）")
         self.llm_operation = "AI誤字脱字校正"
         self.proofread_controller=core.TranslationController(progress_callback=lambda p:self.events.put(("proofread_progress",p)))
+        glossary_path = self.glossary_path_var.get().strip()
+        proofread_settings = {
+            "url": self.url_var.get().strip(), "model": self.model_var.get().strip(),
+            "preset": self.preset_var.get(), "provider": self.provider_var.get(),
+            "api_key": self.api_key_var.get().strip(),
+        }
         def work():
             try:
-                glossary=core.load_glossary(Path(self.glossary_path_var.get())) if self.glossary_path_var.get() else {}
-                out=core.proofread_text(self.url_var.get(),self.model_var.get(),text,src,glossary,self.preset_var.get(),self.provider_var.get(),self.api_key_var.get().strip(),controller=self.proofread_controller)
+                glossary=core.load_glossary(Path(glossary_path)) if glossary_path else {}
+                out=core.proofread_text(proofread_settings["url"],proofread_settings["model"],text,src,glossary,proofread_settings["preset"],proofread_settings["provider"],proofread_settings["api_key"],controller=self.proofread_controller)
                 self.events.put(("proofread",out))
             except core.StopRequested:
                 self.events.put(("proofread_stopped",None))
