@@ -1378,12 +1378,6 @@ class App(BaseTk):
         ttk.Button(pf,text="比較を読み込む",command=self.load_review).grid(row=0,column=3,rowspan=2,padx=(8,0))
         self.review_drop_hint=ttk.Label(pf,text="英語または簡体字中国語の原文YAMLと日本語YAMLをここへドラッグ＆ドロップできます" if DND_AVAILABLE else "ドラッグ＆ドロップはこのビルドでは利用できません",foreground="#555")
         self.review_drop_hint.grid(row=2,column=0,columnspan=4,sticky="ew",pady=(7,0))
-        importbar=ttk.Frame(pf); importbar.grid(row=3,column=0,columnspan=4,sticky="w",pady=(6,0))
-        ttk.Label(importbar,text="翻訳結果から:",foreground="#555").pack(side="left")
-        ttk.Button(importbar,text="通常翻訳",command=lambda:self._send_pair_to_qa_or_diff("normal","review")).pack(side="left",padx=(6,0))
-        ttk.Button(importbar,text="中国語基準翻訳",command=lambda:self._send_pair_to_qa_or_diff("chinese","review")).pack(side="left",padx=(6,0))
-        ttk.Button(importbar,text="翻訳状況",command=lambda:self._send_pair_to_qa_or_diff("status","review")).pack(side="left",padx=(6,0))
-
         qa=ttk.Frame(t); qa.pack(fill="x",pady=(8,5))
         ttk.Button(qa,text="QA再実行",command=self.run_review_qa).pack(side="left")
         ttk.Button(qa,text="警告だけ表示",command=lambda:self.populate_review(True)).pack(side="left",padx=(6,0))
