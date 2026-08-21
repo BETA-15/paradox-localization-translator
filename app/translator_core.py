@@ -1033,8 +1033,22 @@ def classify_monitor_candidates(provider: str, url: str, model: str, candidates:
 
 
 def remap_rel_dir(rel_dir: Path, target_lang: str) -> Path:
-    parts = [target_lang if p.lower() in KNOWN_SOURCE_LANGS else p for p in rel_dir.parts]
-    return Path(*parts) if parts else rel_dir
+    """Map a source localization directory into an isolated target-language tree.
+
+    If the source path already contains a known language directory, replace only
+    that component (``english`` -> ``japanese`` etc.).  If no language directory
+    exists -- including a YAML stored directly under ``localization`` -- prefix
+    the relative path with the target language.  This guarantees generated
+    Japanese YAML never shares the English/Chinese directory or the localization
+    root directly.
+    """
+    raw_parts = [p for p in rel_dir.parts if p not in ("", ".")]
+    has_language = any(p.lower() in KNOWN_SOURCE_LANGS for p in raw_parts)
+    if has_language:
+        parts = [target_lang if p.lower() in KNOWN_SOURCE_LANGS else p for p in raw_parts]
+    else:
+        parts = [target_lang, *raw_parts]
+    return Path(*parts)
 
 
 def rename_for_target(path: Path, target_lang: str, source_lang: str) -> str:

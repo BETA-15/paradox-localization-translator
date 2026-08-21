@@ -35,7 +35,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.29"
+APP_VERSION = "0.11.30"
 MOD_STATUS_CACHE_VERSION = 3
 
 
@@ -126,7 +126,7 @@ def _configure_data_root(root: Path):
     """Update all generated-file locations after the user changes the storage root."""
     global DATA_ROOT, APP_HOME, OUTPUT_ROOT, SESSION_PATH, DEFAULT_GLOSSARY
     global STATS_PATH, PROFILES_PATH, CACHE_ROOT, CACHE_REGISTRY_PATH, BACKUP_ROOT
-    global SAVED_STEAM_ROOTS_PATH, LOG_ROOT, MOD_STATUS_CACHE_PATH, APP_PREFS_PATH
+    global SAVED_STEAM_ROOTS_PATH, LOG_ROOT, MOD_STATUS_CACHE_PATH, MOD_CLASSIFICATION_CACHE_PATH, APP_PREFS_PATH
     global RESUME_STATE_PATH, RESUME_HISTORY_PATH, WORK_STATE_ROOT, MIGRATION_STATE_PATH, WORKSPACE_STATE_PATH
     DATA_ROOT = root.expanduser().resolve()
     APP_HOME = DATA_ROOT / "設定"
@@ -141,6 +141,10 @@ def _configure_data_root(root: Path):
     LOG_ROOT = DATA_ROOT / "ログ"
     SAVED_STEAM_ROOTS_PATH = APP_HOME / "steam_library_roots.json"
     MOD_STATUS_CACHE_PATH = APP_HOME / "mod_translation_status_cache.json"
+    # Stable first-seen Mod role cache.  A source/child Mod that originally had no
+    # Japanese localization must not become an external Japanese-translation Mod
+    # merely because this application later generated Japanese YAML inside it.
+    MOD_CLASSIFICATION_CACHE_PATH = APP_HOME / "mod_classification_cache.json"
     APP_PREFS_PATH = APP_HOME / "app_preferences.json"
     # Stable, version-independent resume files. APP_VERSION is metadata only.
     RESUME_STATE_PATH = APP_HOME / "resume_state.json"
@@ -240,6 +244,7 @@ def _migrate_legacy_generated_data() -> dict:
         "model_profiles.json": PROFILES_PATH,
         "steam_library_roots.json": SAVED_STEAM_ROOTS_PATH,
         "mod_translation_status_cache.json": MOD_STATUS_CACHE_PATH,
+        "mod_classification_cache.json": MOD_CLASSIFICATION_CACHE_PATH,
         "app_preferences.json": APP_PREFS_PATH,
         "workspace_state.json": WORKSPACE_STATE_PATH,
         "cache_registry.json": CACHE_REGISTRY_PATH,
@@ -517,6 +522,12 @@ class App(BaseTk):
         self.mod_status_cache = core.load_json(MOD_STATUS_CACHE_PATH, {"version": MOD_STATUS_CACHE_VERSION, "items": {}})
         if not isinstance(self.mod_status_cache, dict) or self.mod_status_cache.get("version") != MOD_STATUS_CACHE_VERSION:
             self.mod_status_cache = {"version": MOD_STATUS_CACHE_VERSION, "items": {}}
+        self.mod_classification_cache = core.load_json(MOD_CLASSIFICATION_CACHE_PATH, {"schema": 1, "mods": {}})
+        if not isinstance(self.mod_classification_cache, dict):
+            self.mod_classification_cache = {"schema": 1, "mods": {}}
+        self.mod_classification_cache.setdefault("schema", 1)
+        self.mod_classification_cache.setdefault("mods", {})
+        self.mod_classification_lock = threading.Lock()
         # Cross-version workspace persistence. This is broader than the active
         # translation session and stores the last visible/working state of every
         # major tab. API keys are intentionally excluded.
@@ -968,8 +979,9 @@ class App(BaseTk):
             try:
                 if str(Path(item.get("input","")).resolve())==key: return item,"すでに中国語基準キューに追加されています。"
             except Exception: pass
-        safe=re.sub(r'[^0-9A-Za-z_\-\u3040-\u30ff\u4e00-\u9fff]+','_',mod_name or path.name).strip("_") or "ChineseBasis"
-        item={"input":str(path),"mod_name":mod_name or path.name,"status":"待機","output":str(Path(self.chinese_output_var.get().strip() or str(OUTPUT_ROOT/"中国語基準翻訳"))/safe)}
+        output_root = Path(self.chinese_output_var.get().strip() or str(OUTPUT_ROOT/"中国語基準翻訳"))
+        isolated_output = self._isolated_output_path(path, output_root, mod_name or "")
+        item={"input":str(path),"mod_name":mod_name or path.name,"status":"待機","output":str(isolated_output),"output_isolated_v2":True}
         if path.is_dir() and path.name.lower()=="localization":
             item["mod_localization"]=str(path); item["mod_root"]=str(path.parent)
         elif path.is_dir() and (path/"localization").is_dir():
@@ -1220,6 +1232,9 @@ class App(BaseTk):
         selected_indices = sorted(set(int(x) for x in selected_indices if 0 <= int(x) < len(self.chinese_queue_items)))
         if not selected_indices:
             messagebox.showinfo(APP_NAME,"翻訳する項目を選択してください。"); return
+        for idx in selected_indices:
+            self._ensure_isolated_item_output(self.chinese_queue_items[idx], mode="chinese")
+        self._refresh_chinese_queue_tree()
         out_root=Path(self.chinese_output_var.get().strip() or str(OUTPUT_ROOT/"中国語基準翻訳")); out_root.mkdir(parents=True,exist_ok=True)
         self.chinese_log.config(state="normal"); self.chinese_log.delete("1.0","end"); self.chinese_log.config(state="disabled")
         self.chinese_progress["value"]=0; self.chinese_progress_var.set("キュー翻訳準備中…"); self.llm_operation="中国語基準翻訳"
@@ -3172,6 +3187,74 @@ Mod更新後だけ追加翻訳:
         # 旧UI互換。調査機能は翻訳状況タブの選択場所調査へ統合済み。
         self.research_monitor_targets()
 
+    def _mod_classification_key(self, mod_root: Path) -> str:
+        try:
+            return str(Path(mod_root).expanduser().resolve())
+        except Exception:
+            return str(Path(mod_root).expanduser())
+
+    def _current_mod_has_japanese(self, mod_root: Path) -> bool:
+        loc = core.mod_localization_root(Path(mod_root))
+        if not loc:
+            return False
+        for fp in core.gather_yml_files(loc):
+            try:
+                if core.parse_localization_file(fp)[0] == "japanese":
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def _first_seen_japanese_candidate(self, mod_root: Path) -> bool:
+        """Return whether this Mod was Japanese-capable when first classified.
+
+        The value is sticky.  Japanese YAML generated later by this application
+        must not promote an ordinary source/parent/child Mod into an external
+        Japanese translation Mod candidate.  When available, the older Translation
+        Status cache is used as bootstrap evidence so upgrading from an earlier
+        version keeps the pre-generation classification.
+        """
+        root = Path(mod_root)
+        key = self._mod_classification_key(root)
+        with self.mod_classification_lock:
+            mods = self.mod_classification_cache.setdefault("mods", {})
+            row = mods.get(key)
+            if isinstance(row, dict) and "had_japanese_at_first_seen" in row:
+                return bool(row.get("had_japanese_at_first_seen"))
+
+        historical = None
+        try:
+            with self.mod_status_cache_lock:
+                old = (self.mod_status_cache.get("items") or {}).get(key)
+            old_result = old.get("result") if isinstance(old, dict) else None
+            if isinstance(old_result, dict) and "japanese_files" in old_result:
+                historical = bool(int(old_result.get("japanese_files", 0) or 0))
+        except Exception:
+            historical = None
+        initial_has_japanese = self._current_mod_has_japanese(root) if historical is None else historical
+        row = {
+            "path": key,
+            "mod": core.detect_mod_name(root),
+            "first_seen_at": datetime.now().isoformat(timespec="seconds"),
+            "had_japanese_at_first_seen": bool(initial_has_japanese),
+            "initial_role": "japanese_candidate" if initial_has_japanese else "source_mod",
+        }
+        with self.mod_classification_lock:
+            self.mod_classification_cache.setdefault("mods", {})[key] = row
+            self.mod_classification_cache["updated_at"] = datetime.now().isoformat(timespec="seconds")
+            core.save_json(MOD_CLASSIFICATION_CACHE_PATH, self.mod_classification_cache)
+        return bool(initial_has_japanese)
+
+    def _build_stable_translation_mod_index(self, pool_roots):
+        eligible = []
+        for root in pool_roots:
+            try:
+                if self._first_seen_japanese_candidate(Path(root)):
+                    eligible.append(Path(root))
+            except Exception as exc:
+                record_error("Mod初期分類", exc, str(root))
+        return core.build_translation_mod_index(eligible)
+
     def _start_mod_research(self, roots, replace=True, translation_pool=None):
         if self.mod_research_thread and self.mod_research_thread.is_alive():
             messagebox.showinfo(APP_NAME,"すでに調査中です。")
@@ -3198,7 +3281,7 @@ Mod更新後だけ追加翻訳:
             results=[]
             check_external = bool(self.monitor_check_translation_mods_var.get())
             pool_roots = list(translation_pool or roots)
-            translation_index = core.build_translation_mod_index(pool_roots) if check_external else None
+            translation_index = self._build_stable_translation_mod_index(pool_roots) if check_external else None
             pool_signature = ""
             if check_external:
                 h = hashlib.sha256()
@@ -3441,7 +3524,8 @@ Mod更新後だけ追加翻訳:
         mod_root = Path(result.get("path", ""))
         if not loc.is_dir():
             return None
-        self._append_queue(loc)
+        isolated_out = self._isolated_output_path(loc, Path(self.normal_output_var.get().strip() or str(OUTPUT_ROOT)), result.get("mod", mod_root.name))
+        self._append_queue(loc, out=isolated_out)
         item = self.queue_items[-1]
         item["mod_root"] = str(mod_root)
         item["mod_localization"] = str(loc)
@@ -3862,6 +3946,7 @@ Mod更新後だけ追加翻訳:
                 f"⚠ 別の日本語化Modへ不足分だけを書き込みます。\n\n"
                 f"元Mod: {src_name}\n日本語化Mod: {ext_name}\n対象: {ext_root}\n"
                 f"差分キー: {len(patch_values)}件\n\n"
+                "このModと上書き先が、適切な日本語化Modの関係になっているか確認してください。\n\n"
                 "既存の日本語訳は維持し、欠損・未翻訳と判定されたキーだけ更新/追加します。\n"
                 "変更対象ファイルは実行前にバックアップします。\n続行しますか？")
             if not messagebox.askyesno("警告 — 日本語化Modへ差分上書き", warning, icon="warning"):
@@ -3958,7 +4043,14 @@ Mod更新後だけ追加翻訳:
                 rel=src.relative_to(out_root)
             except ValueError:
                 continue
-            mappings.append((src,target_base / rel,rel))
+            # Safety invariant: direct Mod overwrite may only create/update Japanese
+            # localization files.  Even a stale/legacy output tree is remapped into
+            # a Japanese directory so English/Simplified-Chinese files can never be
+            # selected as destinations.
+            safe_parent = core.remap_rel_dir(rel.parent, "japanese")
+            safe_name = core.rename_for_target(src, "japanese", "japanese")
+            safe_rel = safe_parent / safe_name
+            mappings.append((src,target_base / safe_rel,safe_rel))
         if not mappings:
             return False,"上書き対象を特定できません"
 
@@ -4068,10 +4160,14 @@ Mod更新後だけ追加翻訳:
             policy="external" if choice else "source"
 
         policy_text="既存日本語化Modを優先" if policy=="external" else "すべて元Modへ上書き"
+        relationship_warning = ""
+        if policy == "external":
+            relationship_warning = "\n日本語化Modへ上書きする項目について、元Modと上書き先が適切な日本語化Modの関係になっているか確認してください。\n"
         if not messagebox.askyesno(
             "一括上書きの確認",
             f"対象: {len(eligible)}件\n方針: {policy_text}\n"
-            f"未完了のためスキップ予定: {skipped_unfinished}件\n\n"
+            f"未完了のためスキップ予定: {skipped_unfinished}件\n"
+            f"{relationship_warning}\n"
             "各Modについて既存ファイルのバックアップを作成してから書き込みます。\n続行しますか？",
             icon="warning"):
             return
@@ -4444,12 +4540,55 @@ Mod更新後だけ追加翻訳:
         self.refresh_profiles_ui()
 
     # ---------------- queue ----------------
+    def _output_identity_source(self, p: Path) -> Path:
+        p = Path(p)
+        if p.is_dir() and p.name.lower() == "localization":
+            return p.parent
+        if p.is_dir() and (p / "localization").is_dir():
+            return p
+        return p
+
+    def _isolated_output_path(self, p: Path, root: Path, mod_name: str = "") -> Path:
+        """Return a stable Mod/job-specific output directory.
+
+        ``localization`` is the basename of almost every Mod localization folder,
+        so using it directly caused unrelated Mods to share one output tree.
+        Include the source identity hash to keep parent/child and same-name Mods
+        completely isolated even before a Japanese file exists.
+        """
+        identity = self._output_identity_source(Path(p))
+        try:
+            source_id = str(identity.expanduser().resolve())
+        except Exception:
+            source_id = str(identity.expanduser())
+        label = mod_name or (identity.stem if identity.is_file() else identity.name) or "translation"
+        safe = re.sub(r'[^0-9A-Za-zぁ-んァ-ヶ一-龯_\-]+', '_', label).strip('_')[:64] or "translation"
+        digest = hashlib.sha256(source_id.encode("utf-8", "ignore")).hexdigest()[:10]
+        root = Path(root)
+        root.mkdir(parents=True, exist_ok=True)
+        return root / f"{safe}_{digest}_japanese"
+
     def _default_output(self,p:Path):
         raw = self.normal_output_var.get().strip() if hasattr(self, "normal_output_var") else ""
         root = Path(raw) if raw else _automatic_output_root()
-        root.mkdir(parents=True, exist_ok=True)
-        name = p.stem + "_japanese" if p.is_file() else p.name + "_japanese"
-        return root / name
+        return self._isolated_output_path(Path(p), root)
+
+    def _ensure_isolated_item_output(self, item: dict, mode: str = "normal"):
+        if item.get("custom_output"):
+            return
+        inp = Path(item.get("input", ""))
+        if not inp:
+            return
+        if mode == "chinese":
+            raw = self.chinese_output_var.get().strip() if hasattr(self, "chinese_output_var") else ""
+            root = Path(raw) if raw else OUTPUT_ROOT / "中国語基準翻訳"
+        else:
+            raw = self.normal_output_var.get().strip() if hasattr(self, "normal_output_var") else ""
+            root = Path(raw) if raw else OUTPUT_ROOT
+        expected = self._isolated_output_path(inp, root, item.get("mod_name", ""))
+        if item.get("output") != str(expected) or not item.get("output_isolated_v2"):
+            item["output"] = str(expected)
+            item["output_isolated_v2"] = True
 
     def pick_normal_output(self):
         raw=filedialog.askdirectory(title="通常翻訳の出力先ルートを選択")
@@ -4752,7 +4891,7 @@ Mod更新後だけ追加翻訳:
             return
         out=out or self._default_output(p)
         cache_path = cache or self._new_cache_path(p)
-        item={"input":str(p),"output":str(out),"status":status,"cache":str(cache_path)}
+        item={"input":str(p),"output":str(out),"status":status,"cache":str(cache_path),"output_isolated_v2":True}
         self.queue_items.append(item)
         self._refresh_queue_tree(); self._save_workspace_state("normal_queue_changed")
 
@@ -5020,6 +5159,7 @@ Mod更新後だけ追加翻訳:
         p=filedialog.askdirectory(title="選択項目の出力先", initialdir=initial)
         if p:
             self.queue_items[int(sel[0])]["output"]=p
+            self.queue_items[int(sel[0])]["custom_output"]=True
             self._refresh_queue_tree()
             self.save_session(active=bool(self.worker and self.worker.is_alive()))
 
@@ -5150,6 +5290,9 @@ Mod更新後だけ追加翻訳:
         selected_indices = sorted(set(int(x) for x in selected_indices if 0 <= int(x) < len(self.queue_items)))
         if not selected_indices:
             messagebox.showinfo(APP_NAME, "翻訳する項目を選択してください."); return
+        for idx in selected_indices:
+            self._ensure_isolated_item_output(self.queue_items[idx], mode="normal")
+        self._refresh_queue_tree()
         self._clear_log(); self.progress["value"]=0
         self.llm_operation = "翻訳"
         self.controller=core.TranslationController(progress_callback=lambda x:self.events.put(("progress",x)), checkpoint_callback=self._checkpoint)
