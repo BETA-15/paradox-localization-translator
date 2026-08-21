@@ -2598,10 +2598,15 @@ def _external_gap_candidates(source_entries: Dict[str, str], japanese_entries: D
 def _translation_mod_weight(source_name: str, source_keys: set, row: dict) -> dict:
     """Score one Japanese Mod candidate using two-stage exact-key evidence.
 
-    v0.11.45 tightens the source-side relationship gate for ordinary/large Mods:
-    * source has 100+ exact localization keys -> Japanese candidate must cover >=50%
+    v0.11.51 uses a fixed evidence threshold for ordinary/large Mods:
+    * source has 100+ exact localization keys -> at least 50 exact keys must match
     * source has fewer than 100 keys -> >=20% remains sufficient so small Mods and
       recently-added localization fragments are not rejected too aggressively.
+
+    A pure Japanese-localization package receives substantially stronger structural
+    evidence.  For such packages, a strong candidate-side match can serve as an
+    alternate relationship gate so partial translation Mods are not rejected merely
+    because the source Mod itself is very large.
 
     Other localization languages are evaluated separately.  Their mere existence is
     not a penalty: only poor exact-key relationship with the same source Mod reduces
@@ -2618,14 +2623,26 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict) -> di
     dependencies = list(row.get("dependencies") or [])
     source_norm = _normalize_mod_name_for_match(source_name)
 
-    # Dynamic relationship gate.  The denominator deliberately remains the source
-    # Mod so comprehensive translation packs can match several source Mods.
-    required_coverage = 0.50 if source_count >= 100 else 0.20
-    gate = coverage >= required_coverage
+    # Relationship gate.  Large Mods use a fixed 50-key requirement rather than
+    # demanding 50% of the whole source Mod.  This keeps a 10,000-key Mod from
+    # requiring 5,000 translated keys merely to prove a relationship.
+    if source_count >= 100:
+        required_match_count = 50
+        required_coverage = min(1.0, required_match_count / max(1, source_count))
+        ordinary_gate = overlap_n >= required_match_count
+    else:
+        required_match_count = max(1, int((source_count * 0.20) + 0.999999))
+        required_coverage = 0.20
+        ordinary_gate = coverage >= required_coverage
     # Reaching the exact-key gate must provide meaningful positive evidence even for
-    # small Mods; otherwise a 20% small-Mod match could never become an automatic
-    # translation-only relation without descriptor metadata.
-    key_points = max(15.0, coverage * 45.0) if gate else 0.0
+    # small Mods.  Large Mods scale toward 45 points once 50 exact keys are reached.
+    if ordinary_gate:
+        if source_count >= 100:
+            key_points = min(45.0, max(15.0, 15.0 + (overlap_n - 50) * 0.30))
+        else:
+            key_points = max(15.0, coverage * 45.0)
+    else:
+        key_points = 0.0
 
     # Weighted structural evidence for a translation-only Mod. descriptor.mod,
     # thumbnail and readme files are ignored by the profiler.  v0.11.46 makes a
@@ -2642,9 +2659,15 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict) -> di
     non_japanese_loc_files = sum(
         int(v or 0) for lang, v in language_files.items() if lang != "japanese"
     )
-    if japanese_file_count > 0 and non_japanese_loc_files == 0 and non_loc == 0:
-        translation_only_points = 35.0
-        structure_label = "日本語localization専用（最高評価）"
+    pure_japanese_localization = bool(
+        japanese_file_count > 0 and non_japanese_loc_files == 0 and non_loc == 0
+    )
+    if pure_japanese_localization:
+        # v0.11.51: Japanese-only localization packages are much stronger evidence
+        # than ordinary localization-heavy Mods.  This intentionally separates a
+        # dedicated translation package from a gameplay Mod that merely ships JP text.
+        translation_only_points = 60.0
+        structure_label = "日本語localization専用（大幅加点）"
     elif non_loc == 0:
         translation_only_points = 30.0
         structure_label = "localization専用（他言語を含む）"
@@ -2720,6 +2743,15 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict) -> di
     folder_evidence = _localization_folder_name_evidence(source_name, row)
     localization_folder_points = float(folder_evidence.get("points", 0.0) or 0.0)
 
+    # Alternate gate for partial translation Mods.  Pure Japanese localization plus
+    # a strong candidate-side match is sufficiently specific to establish a relation
+    # even when fewer than 50 keys exist in the translation package.  Requiring at
+    # least 10 exact keys prevents one or two generic keys from producing false links.
+    pure_japanese_relation_gate = bool(
+        pure_japanese_localization and overlap_n >= 10 and precision >= 0.50
+    )
+    gate = ordinary_gate or pure_japanese_relation_gate
+
     raw_score = (key_points + translation_only_points + dependency_points +
                  low_gameplay_points + localization_folder_points + other_language_penalty)
     score = max(0.0, min(100.0, raw_score))
@@ -2732,11 +2764,11 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict) -> di
     else:
         classification = "rejected"
 
-    threshold_label = "100キー以上 → 50%" if source_count >= 100 else "100キー未満 → 20%"
+    threshold_label = "100キー以上 → 50キー一致" if source_count >= 100 else "100キー未満 → 20%"
     reasons = [
         f"元Modキー完全一致率 {coverage*100:.1f}% ({overlap_n}/{source_count}) / 判定基準 {threshold_label} → {key_points:.1f}点",
         f"参考: 日本語化Mod側一致率 {precision*100:.1f}% ({overlap_n}/{len(ja_keys)})",
-        f"構成評価 {structure_label}: 日本語YAML {japanese_file_count} / 他言語YAML {non_japanese_loc_files} / localization比率 {loc_ratio*100:.1f}% / 非localization {non_loc}ファイル → {translation_only_points:.1f}/35点",
+        f"構成評価 {structure_label}: 日本語YAML {japanese_file_count} / 他言語YAML {non_japanese_loc_files} / localization比率 {loc_ratio*100:.1f}% / 非localization {non_loc}ファイル → {translation_only_points:.1f}点",
         (f"localizationフォルダ名一致『{folder_evidence.get('matched_folder')}』 → +{localization_folder_points:.1f}点"
          if localization_folder_points > 0 else "localizationフォルダ名一致なし → 0.0点"),
         (f"dependencies一致『{matched_dependency}』 → 20.0点" if dependency_match else "dependencies一致なし → 0.0点"),
@@ -2750,12 +2782,22 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict) -> di
         reasons.append(f"他言語localizationの元Mod関連度: {details} / 基準充足度平均 {avg_other_quality*100:.1f}% → {other_language_penalty:.1f}点")
     else:
         reasons.append("他言語localizationなし → 減点なし")
+    if pure_japanese_relation_gate and not ordinary_gate:
+        reasons.append(
+            f"日本語localization専用の例外ゲート: 日本語化Mod側一致率 {precision*100:.1f}% / "
+            f"完全一致 {overlap_n}キー → 関係判定対象"
+        )
     if not gate:
-        reasons.append(f"元Modキーの完全一致率が必要値 {required_coverage*100:.0f}% 未満のため関係判定対象外")
+        if source_count >= 100:
+            reasons.append(f"元Modとの完全一致が必要値 50キー未満のため関係判定対象外")
+        else:
+            reasons.append(f"元Modキーの完全一致率が必要値 {required_coverage*100:.0f}% 未満のため関係判定対象外")
     return {
         "score": score, "raw_score": raw_score, "classification": classification,
         "precision": precision, "coverage": coverage, "source_match_ratio": coverage, "overlap_keys": overlap_n,
         "source_keys": source_count, "japanese_keys": len(ja_keys), "required_coverage": required_coverage,
+        "required_match_count": required_match_count, "ordinary_gate": ordinary_gate,
+        "pure_japanese_relation_gate": pure_japanese_relation_gate,
         "key_points": key_points, "translation_only_points": translation_only_points,
         "dependency_points": dependency_points, "low_gameplay_points": low_gameplay_points,
         "localization_folder_points": localization_folder_points,

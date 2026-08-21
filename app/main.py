@@ -36,8 +36,8 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.50"
-MOD_STATUS_CACHE_VERSION = 10
+APP_VERSION = "0.11.51"
+MOD_STATUS_CACHE_VERSION = 11
 
 
 def _app_container_dir() -> Path:
@@ -678,6 +678,12 @@ class App(BaseTk):
         self.diagnostic_relation_choices = {}
         self.diagnostic_last_analyses = []
 
+        # Backup restore / rollback
+        self.backup_restore_entries = []
+        self.backup_restore_entry_map = {}
+        self.backup_restore_summary_var = tk.StringVar(value="バックアップ未読込")
+        self.backup_restore_detail_var = tk.StringVar(value="一覧からバックアップを選択してください。")
+
         self.mod_research_results = []
         self.mod_research_thread = None
         self.mod_research_stop_event = threading.Event()
@@ -826,6 +832,7 @@ class App(BaseTk):
         self.tab_monitor = ttk.Frame(nb, padding=10)
         self.tab_status = ttk.Frame(nb, padding=10)
         self.tab_diagnostic = ttk.Frame(nb, padding=10)
+        self.tab_backup_restore = ttk.Frame(nb, padding=10)
         self.tab_settings = ttk.Frame(nb, padding=10)
         self.tab_help = ttk.Frame(nb, padding=10)
         nb.add(self.tab_translate, text="翻訳 / キュー")
@@ -838,6 +845,7 @@ class App(BaseTk):
         nb.add(self.tab_monitor, text="未翻訳監視")
         nb.add(self.tab_status, text="翻訳状況")
         nb.add(self.tab_diagnostic, text="総合診断")
+        nb.add(self.tab_backup_restore, text="バックアップ復元")
         nb.add(self.tab_settings, text="設定")
         nb.add(self.tab_help, text="使い方")
         self._build_translate_tab()
@@ -850,6 +858,7 @@ class App(BaseTk):
         self._build_monitor_tab()
         self._build_status_tab()
         self._build_diagnostic_tab()
+        self._build_backup_restore_tab()
         self._build_settings_tab()
         self._build_help_tab()
 
@@ -2833,7 +2842,7 @@ Mod更新後だけ追加翻訳:
             f"翻訳状況Mod数: {len(rows)} / 現在参照可能: {len(roots)} / 現在日本語を持つ監査候補: {len(audit_index)}",
             "",
             "判定基準:",
-            "  ・元Mod原文キー100個以上: 日本語完全一致50%以上が必須",
+            "  ・元Mod原文キー100個以上: 日本語完全一致50キー以上が基本ゲート",
             "  ・元Mod原文キー100個未満: 日本語完全一致20%以上が必須",
             "  ・日本語localization専用構成は構成点35/35",
             "  ・他言語localizationは存在自体では減点せず、元Modとの関連性が低い場合のみ減点",
@@ -2868,7 +2877,7 @@ Mod更新後だけ追加翻訳:
                 out += [f"原文キー取得失敗: {exc}", ""]
                 continue
             threshold=0.50 if len(source_keys)>=100 else 0.20
-            out += [f"原文キー数: {len(source_keys)}", f"適用ゲート: {'100キー以上 → 50%' if len(source_keys)>=100 else '100キー未満 → 20%'}"]
+            out += [f"原文キー数: {len(source_keys)}", f"適用ゲート: {'100キー以上 → 50キー一致' if len(source_keys)>=100 else '100キー未満 → 20%'}"]
             if not source_keys:
                 out += ["原文キーがないため、このModを元Modとした関連判定は行いません。", ""]
                 continue
@@ -3041,6 +3050,303 @@ Mod更新後だけ追加翻訳:
         dsy=ttk.Scrollbar(detail,orient="vertical",command=self.diagnostic_detail.yview); self.diagnostic_detail.configure(yscrollcommand=dsy.set)
         dsy.pack(side="right",fill="y"); self.diagnostic_detail.pack(side="left",fill="both",expand=True)
         self._refresh_diagnostic_targets()
+
+
+    # ---------------- Backup restore / rollback ----------------
+    def _safe_backup_mod_token(self, text):
+        return re.sub(r'[^0-9A-Za-zぁ-んァ-ヶ一-龯_\-]+', '_', str(text or '')).strip('_')[:70] or 'Mod'
+
+    def _known_mod_roots_for_restore(self):
+        roots=[]
+        seen=set()
+        for row in list(getattr(self, 'mod_research_results', []) or []):
+            raw=row.get('mod_root') or row.get('path') or row.get('root')
+            if not raw:
+                continue
+            p=Path(raw)
+            try: key=str(p.resolve())
+            except Exception: key=str(p)
+            if key in seen or not p.exists():
+                continue
+            seen.add(key); roots.append(p)
+        for raw in list(getattr(self, 'monitor_target_paths', []) or []):
+            p=Path(raw)
+            if p.name.lower() == 'localization': p=p.parent
+            try: key=str(p.resolve())
+            except Exception: key=str(p)
+            if key in seen or not p.exists():
+                continue
+            seen.add(key); roots.append(p)
+        return roots
+
+    def _backup_manifest_records(self):
+        records=[]
+        if not BACKUP_ROOT.exists():
+            return records
+        for mf in BACKUP_ROOT.rglob('backup_manifest.json'):
+            try:
+                data=json.loads(mf.read_text(encoding='utf-8'))
+                if isinstance(data, dict):
+                    data['_manifest_path']=str(mf)
+                    data['_entry_root']=str(mf.parent)
+                    records.append(data)
+            except Exception:
+                continue
+        return records
+
+    def _next_overwrite_backup_generation(self, target_root, mod_name):
+        try: target_key=str(Path(target_root).resolve())
+        except Exception: target_key=str(Path(target_root))
+        highest=0
+        for rec in self._backup_manifest_records():
+            if rec.get('category') != '上書き':
+                continue
+            raw=rec.get('target_root') or ''
+            try: raw_key=str(Path(raw).resolve()) if raw else ''
+            except Exception: raw_key=raw
+            if raw_key == target_key:
+                try: highest=max(highest, int(rec.get('generation') or 0))
+                except Exception: pass
+        # Legacy pre-v0.11.51 backups had no manifest. Count likely matching top-level
+        # overwrite folders so the first new generation does not misleadingly restart at 1.
+        safe=self._safe_backup_mod_token(mod_name)
+        legacy=0
+        try:
+            for d in BACKUP_ROOT.iterdir():
+                if not d.is_dir() or d.name in {'総合診断','上書き','復元前退避'}:
+                    continue
+                if safe and safe in d.name:
+                    legacy += 1
+        except Exception:
+            pass
+        return max(highest, legacy) + 1
+
+    def _create_full_localization_snapshot(self, target_root, backup_kind, *, category='上書き', source_mod_name='', state_label='', stamp=None):
+        target_root=Path(target_root)
+        if target_root.name.lower() == 'localization':
+            loc=target_root
+            target_root=target_root.parent
+        else:
+            loc=target_root / 'localization'
+        mod_name=core.detect_mod_name(target_root) if target_root.exists() else target_root.name
+        stamp=stamp or datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+        generation=None
+        if category == '上書き':
+            generation=self._next_overwrite_backup_generation(target_root, mod_name)
+            folder=f"第{generation:04d}回_{stamp}"
+            root=BACKUP_ROOT / '上書き' / f"{self._safe_backup_mod_token(mod_name)}_{hashlib.sha1(str(target_root).encode()).hexdigest()[:8]}" / folder
+        elif category == '復元前退避':
+            root=BACKUP_ROOT / '復元前退避' / stamp / f"{self._safe_backup_mod_token(mod_name)}_{hashlib.sha1(str(target_root).encode()).hexdigest()[:8]}"
+        else:
+            root=BACKUP_ROOT / category / stamp / f"{self._safe_backup_mod_token(mod_name)}_{hashlib.sha1(str(target_root).encode()).hexdigest()[:8]}"
+        root.mkdir(parents=True, exist_ok=True)
+        dst=root / 'localization'
+        existed=loc.exists() and loc.is_dir()
+        if existed:
+            if dst.exists(): shutil.rmtree(dst)
+            shutil.copytree(loc, dst)
+        else:
+            dst.mkdir(parents=True, exist_ok=True)
+        manifest={
+            'schema_version': 1,
+            'app_version': APP_VERSION,
+            'created_at': datetime.now().isoformat(timespec='seconds'),
+            'timestamp': stamp,
+            'category': category,
+            'backup_kind': backup_kind,
+            'generation': generation,
+            'target_mod_name': mod_name,
+            'target_root': str(target_root),
+            'target_localization': str(loc),
+            'source_mod_name': source_mod_name or '',
+            'snapshot_type': 'full_localization',
+            'localization_existed': bool(existed),
+            'state_label': state_label or ('上書き直前の原文（既存localization全体）' if category == '上書き' else '操作直前のlocalization全体'),
+        }
+        (root / 'backup_manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8')
+        return root, manifest
+
+    def _build_backup_restore_tab(self):
+        t=self.tab_backup_restore
+        head=ttk.Frame(t); head.pack(fill='x')
+        ttk.Label(head,text='バックアップ復元 — Modごとに過去のlocalizationへロールバック',font=('',14,'bold')).pack(side='left')
+        ttk.Label(head,textvariable=self.backup_restore_summary_var).pack(side='right')
+        ttk.Label(t,text=(
+            '上書き・総合診断・復元前退避で作成したバックアップを個別に選択して復元します。'
+            ' v0.11.51以降の上書きバックアップは第何回かを記録し、上書き直前の原文状態を明示します。'
+            ' 復元そのものを取り消せるよう、復元前にも現在のlocalization全体を退避します。'
+        ),foreground='#555',wraplength=1150,justify='left').pack(fill='x',pady=(6,8))
+        bar=ttk.Frame(t); bar.pack(fill='x')
+        ttk.Button(bar,text='バックアップ一覧を再読込',command=self._refresh_backup_restore_entries).pack(side='left')
+        self.backup_restore_btn=ttk.Button(bar,text='選択バックアップを復元',command=self._restore_selected_backup,state='disabled')
+        self.backup_restore_btn.pack(side='left',padx=(8,0))
+        treebox=ttk.Frame(t); treebox.pack(fill='both',expand=True,pady=(8,0))
+        cols=('generation','time','mod','kind','state','target','format')
+        self.backup_restore_tree=ttk.Treeview(treebox,columns=cols,show='headings',selectmode='browse',height=18)
+        for c,txt,w in (
+            ('generation','作成回数',110),('time','作成日時',160),('mod','対象Mod',250),('kind','バックアップ種別',180),
+            ('state','保存されている状態 / 原文',330),('target','復元先',480),('format','形式',120)):
+            self.backup_restore_tree.heading(c,text=txt); self.backup_restore_tree.column(c,width=w,minwidth=w,stretch=False,anchor='w')
+        sy=ttk.Scrollbar(treebox,orient='vertical',command=self.backup_restore_tree.yview)
+        sx=ttk.Scrollbar(treebox,orient='horizontal',command=self.backup_restore_tree.xview)
+        self.backup_restore_tree.configure(yscrollcommand=sy.set,xscrollcommand=sx.set)
+        treebox.rowconfigure(0,weight=1); treebox.columnconfigure(0,weight=1)
+        self.backup_restore_tree.grid(row=0,column=0,sticky='nsew'); sy.grid(row=0,column=1,sticky='ns'); sx.grid(row=1,column=0,sticky='ew')
+        self.backup_restore_tree.bind('<<TreeviewSelect>>',self._on_backup_restore_selected)
+        self._enable_tree_sort(self.backup_restore_tree)
+        detail=ttk.LabelFrame(t,text='選択バックアップの詳細',padding=6); detail.pack(fill='x',pady=(8,0))
+        ttk.Label(detail,textvariable=self.backup_restore_detail_var,foreground='#555',wraplength=1120,justify='left').pack(anchor='w')
+        self._refresh_backup_restore_entries()
+
+    def _infer_legacy_backup_target(self, backup_name):
+        token=str(backup_name or '')
+        token=re.sub(r'^\d{8}_\d{6}(?:_\d+)?_?', '', token)
+        token=re.sub(r'_(?:不足分上書き|差分上書き)$','',token)
+        token_norm=core._normalize_mod_name_for_match(token.replace('_',' '))
+        candidates=[]
+        for root in self._known_mod_roots_for_restore():
+            name=core.detect_mod_name(root)
+            norm=core._normalize_mod_name_for_match(name)
+            if token_norm and norm and (token_norm == norm or token_norm in norm or norm in token_norm):
+                candidates.append((root,name))
+        return candidates[0] if len(candidates)==1 else (None,'')
+
+    def _refresh_backup_restore_entries(self):
+        if not hasattr(self,'backup_restore_tree'):
+            return
+        for iid in self.backup_restore_tree.get_children(): self.backup_restore_tree.delete(iid)
+        entries=[]; seen=set()
+        for rec in self._backup_manifest_records():
+            root=Path(rec.get('_entry_root',''))
+            if not root.exists(): continue
+            seen.add(str(root.resolve()))
+            target=Path(rec.get('target_root') or '') if rec.get('target_root') else None
+            entries.append({
+                'entry_root':root,'snapshot':root/'localization','manifest':rec,
+                'generation':rec.get('generation'),'created_at':rec.get('created_at') or rec.get('timestamp',''),
+                'mod':rec.get('target_mod_name') or (target.name if target else root.name),
+                'kind':rec.get('backup_kind') or rec.get('category') or 'バックアップ',
+                'state':rec.get('state_label') or 'localizationバックアップ',
+                'target_root':target,'format':'完全スナップショット','exact':True,
+            })
+        # Legacy comprehensive-diagnostic backups are complete localization snapshots.
+        diag=BACKUP_ROOT/'総合診断'
+        if diag.exists():
+            for loc in diag.glob('*/*/localization'):
+                entry_root=loc.parent
+                try: key=str(entry_root.resolve())
+                except Exception: key=str(entry_root)
+                if key in seen: continue
+                mod_guess=re.sub(r'_[0-9a-fA-F]{8}$','',entry_root.name).replace('_',' ')
+                target=None; target_name=''
+                norm=core._normalize_mod_name_for_match(mod_guess)
+                matches=[]
+                for r in self._known_mod_roots_for_restore():
+                    n=core.detect_mod_name(r); rn=core._normalize_mod_name_for_match(n)
+                    if norm and rn and (norm==rn or norm in rn or rn in norm): matches.append((r,n))
+                if len(matches)==1: target,target_name=matches[0]
+                stamp=entry_root.parent.name
+                entries.append({'entry_root':entry_root,'snapshot':loc,'manifest':None,'generation':None,'created_at':stamp,
+                    'mod':target_name or mod_guess,'kind':'総合診断修復','state':'総合診断の修復直前localization全体',
+                    'target_root':target,'format':'旧形式・完全','exact':True})
+                seen.add(key)
+        # Legacy overwrite backups only contain files that were overwritten.  They are
+        # still useful, but restoration cannot safely infer newly-created files to remove.
+        try:
+            top_dirs=list(BACKUP_ROOT.iterdir()) if BACKUP_ROOT.exists() else []
+        except Exception:
+            top_dirs=[]
+        legacy_by_mod={}
+        for d in sorted(top_dirs,key=lambda x:x.name):
+            if not d.is_dir() or d.name in {'総合診断','上書き','復元前退避'}: continue
+            if not re.match(r'^\d{8}_\d{6}',d.name): continue
+            target,target_name=self._infer_legacy_backup_target(d.name)
+            kind='差分上書き' if d.name.endswith('_差分上書き') else '不足分上書き' if d.name.endswith('_不足分上書き') else '元Mod上書き'
+            key=target_name or re.sub(r'^\d{8}_\d{6}(?:_\d+)?_?','',d.name)
+            legacy_by_mod.setdefault(key,[]).append(d)
+            entries.append({'entry_root':d,'snapshot':d,'manifest':None,'generation':None,'created_at':d.name[:22],
+                'mod':target_name or key,'kind':kind,'state':'上書き直前に保存された既存ファイル（旧形式・部分バックアップ）',
+                'target_root':target,'format':'旧形式・部分','exact':False})
+        # Give legacy overwrite backups an inferred sequence number per displayed Mod.
+        for mod, dirs in legacy_by_mod.items():
+            order={str(d):i+1 for i,d in enumerate(sorted(dirs,key=lambda x:x.name))}
+            for e in entries:
+                if e['manifest'] is None and e['entry_root'] in dirs:
+                    e['generation']=order.get(str(e['entry_root']))
+        def sortkey(e):
+            return str(e.get('created_at') or e['entry_root'].name)
+        entries.sort(key=sortkey,reverse=True)
+        self.backup_restore_entries=entries; self.backup_restore_entry_map={}
+        for idx,e in enumerate(entries):
+            iid=f'b{idx}'
+            self.backup_restore_entry_map[iid]=e
+            gen=(f"第{int(e['generation'])}回" if e.get('generation') else '—')
+            created=str(e.get('created_at') or '')
+            target=str(e.get('target_root') or '復元先未特定')
+            self.backup_restore_tree.insert('', 'end', iid=iid, values=(gen,created,e['mod'],e['kind'],e['state'],target,e['format']))
+        self.backup_restore_summary_var.set(f'バックアップ: {len(entries)}件')
+        self.backup_restore_detail_var.set('一覧からバックアップを選択してください。')
+        self.backup_restore_btn.config(state='disabled')
+
+    def _on_backup_restore_selected(self, _event=None):
+        sel=self.backup_restore_tree.selection() if hasattr(self,'backup_restore_tree') else ()
+        e=self.backup_restore_entry_map.get(sel[0]) if sel else None
+        if not e:
+            self.backup_restore_btn.config(state='disabled'); return
+        gen=f"第{int(e['generation'])}回" if e.get('generation') else '回数記録なし'
+        target=e.get('target_root')
+        exact='localization全体をその時点へ戻せます。' if e.get('exact') else '旧形式の部分バックアップです。保存済みファイルだけを戻し、新規作成ファイルは自動削除しません。'
+        self.backup_restore_detail_var.set(
+            f"{e['mod']} / {gen} / {e['kind']}\n保存状態: {e['state']}\nバックアップ: {e['entry_root']}\n復元先: {target or '未特定'}\n{exact}"
+        )
+        self.backup_restore_btn.config(state='normal' if target and Path(target).exists() else 'disabled')
+
+    def _restore_selected_backup(self):
+        sel=self.backup_restore_tree.selection() if hasattr(self,'backup_restore_tree') else ()
+        e=self.backup_restore_entry_map.get(sel[0]) if sel else None
+        if not e: return
+        target=Path(e.get('target_root') or '')
+        if not target.exists():
+            messagebox.showerror(APP_NAME,'復元先Modを特定できません。翻訳状況タブでMod調査を実行してから一覧を再読込してください。')
+            return
+        gen=f"第{int(e['generation'])}回" if e.get('generation') else '回数記録なし'
+        warning=(
+            f"バックアップを復元します。\n\n対象Mod: {e['mod']}\nバックアップ: {gen} / {e['kind']}\n"
+            f"保存状態: {e['state']}\n復元先: {target}\n\n"
+            "復元前に現在のlocalization全体を『復元前退避』へ保存します。\n"
+        )
+        if not e.get('exact'):
+            warning += "\n⚠ 旧形式の部分バックアップなので、当時存在していた保存済みファイルだけを戻します。後から新規作成されたファイルは削除しません。\n"
+        if not messagebox.askyesno('バックアップ復元の確認',warning+'\n続行しますか？',icon='warning'):
+            return
+        try:
+            safety_root,_=self._create_full_localization_snapshot(target,'復元前退避',category='復元前退避',state_label='バックアップ復元を実行する直前のlocalization全体')
+            target_loc=target/'localization'
+            if e.get('exact'):
+                snapshot=Path(e['snapshot'])
+                if target_loc.exists(): shutil.rmtree(target_loc)
+                if snapshot.exists(): shutil.copytree(snapshot,target_loc)
+                else: target_loc.mkdir(parents=True,exist_ok=True)
+            else:
+                src=Path(e['snapshot'])
+                # Legacy partial backups preserve paths relative to the Mod root in most
+                # cases. If the old backup itself starts at japanese/, restore below
+                # localization instead.
+                for fp in src.rglob('*'):
+                    if not fp.is_file() or fp.name == 'backup_manifest.json': continue
+                    rel=fp.relative_to(src)
+                    if rel.parts and rel.parts[0].lower() in {'japanese','english','simp_chinese','replace'}:
+                        dst=target_loc/rel
+                    else:
+                        dst=target/rel
+                    dst.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(fp,dst)
+            self._invalidate_mod_status_cache_paths([str(target)])
+            self._refresh_diagnostic_targets()
+            self._refresh_backup_restore_entries()
+            messagebox.showinfo(APP_NAME,f"復元しました。\n\n対象: {target}\n復元前退避: {safety_root}\n\n翻訳状況は次回の再調査で再判定されます。")
+        except Exception as exc:
+            record_error('バックアップ復元',exc,str(target))
+            messagebox.showerror(APP_NAME,f"バックアップ復元に失敗しました。\n{exc}")
 
     def _set_diagnostic_repair_busy(self, busy):
         """修復実行中は診断対象・競合設定を固定して途中操作を防ぐ。"""
@@ -3457,12 +3763,11 @@ Mod更新後だけ追加翻訳:
     def _backup_localization_for_repair(self, mod_root, stamp):
         mod_root=Path(mod_root); loc=core.mod_localization_root(mod_root)
         if not loc or not loc.exists(): raise FileNotFoundError("localizationフォルダがありません")
-        safe=re.sub(r'[^0-9A-Za-zぁ-んァ-ヶ一-龠._-]+','_',core.detect_mod_name(mod_root)).strip('_') or mod_root.name or "Mod"
-        try: suffix=hashlib.sha1(str(mod_root.resolve()).encode('utf-8')).hexdigest()[:8]
-        except Exception: suffix=hashlib.sha1(str(mod_root).encode('utf-8')).hexdigest()[:8]
-        dst=BACKUP_ROOT / "総合診断" / stamp / f"{safe}_{suffix}" / "localization"
-        dst.parent.mkdir(parents=True,exist_ok=True)
-        shutil.copytree(loc,dst)
+        root,_=self._create_full_localization_snapshot(
+            mod_root, "総合診断修復", category="総合診断", stamp=stamp,
+            state_label="総合診断の修復直前localization全体"
+        )
+        dst=root / "localization"
         if not dst.exists(): raise OSError("バックアップの作成確認に失敗しました")
         return dst
 
@@ -5270,8 +5575,10 @@ Mod更新後だけ追加翻訳:
             if not messagebox.askyesno("不足翻訳の上書き", f"不足していた翻訳 {len(patch_values)}件だけを既存日本語本文へ追加します。\n\n対象: {target_root}\n\n既存の他キーは置き換えません。続行しますか？", icon="warning"):
                 return False, "キャンセル"
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        safe = re.sub(r'[^0-9A-Za-zぁ-んァ-ヶ一-龯_\-]+','_', item.get("mod_name", "Mod")).strip('_')[:60] or "Mod"
-        backup_root = BACKUP_ROOT / f"{stamp}_{safe}_不足分上書き"
+        backup_root, backup_meta = self._create_full_localization_snapshot(
+            target_root, "不足分上書き", category="上書き", source_mod_name=item.get("mod_name", ""),
+            state_label="不足分上書き直前の原文（既存localization全体）", stamp=stamp
+        )
         try:
             # Existing Japanese keys are updated in place. Truly absent keys are
             # collected in the dedicated patch file, so unrelated files are never replaced.
@@ -5484,8 +5791,10 @@ Mod更新後だけ追加翻訳:
             except Exception:
                 continue
         stamp=datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        safe=re.sub(r'[^0-9A-Za-zぁ-んァ-ヶ一-龯_\-]+','_',ext_name).strip('_')[:60] or "JapaneseMod"
-        backup_root=BACKUP_ROOT / f"{stamp}_{safe}_差分上書き"
+        backup_root, backup_meta = self._create_full_localization_snapshot(
+            ext_root, "日本語化Mod差分上書き", category="上書き", source_mod_name=src_name,
+            state_label="日本語化Modへの差分上書き直前の原文（既存localization全体）", stamp=stamp
+        )
         backed=set(); updated=0; added=0
         patch_file = ext_loc / "japanese" / "paradox_localization_translator_missing_l_japanese.yml"
         try:
@@ -5590,8 +5899,10 @@ Mod更新後だけ追加翻訳:
                 return False,"キャンセル"
 
         stamp=datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        safe=re.sub(r'[^0-9A-Za-zぁ-んァ-ヶ一-龯_\-]+','_',mod_name).strip('_')[:60] or "Mod"
-        backup_root=BACKUP_ROOT / f"{stamp}_{safe}"
+        backup_root, backup_meta = self._create_full_localization_snapshot(
+            mod_root, "元Mod上書き", category="上書き", source_mod_name=mod_name,
+            state_label="元Modへの直接上書き直前の原文（既存localization全体）", stamp=stamp
+        )
         copied=0; backed=0
         try:
             for src,dst,rel in mappings:
