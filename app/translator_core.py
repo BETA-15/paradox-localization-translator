@@ -2486,6 +2486,22 @@ def build_translation_mod_index(mod_roots: Iterable[Path]) -> List[dict]:
         other_language_files = sum(int(v or 0) for k, v in language_files.items()
                                    if k not in {"japanese", "english", "simp_chinese"})
         language_keys = {lang: set(entries or {}) for lang, entries in (data.get("languages") or {}).items()}
+        loc_root = Path(data.get("localization") or root / "localization")
+        localization_folder_names = []
+        seen_folder_names = set()
+        for raw_file in data.get("japanese_files") or []:
+            try:
+                rel_parent = Path(raw_file).parent.relative_to(loc_root)
+                parts = list(rel_parent.parts)
+            except Exception:
+                parts = list(Path(raw_file).parent.parts)
+            for part in parts:
+                low = part.lower()
+                if low in {"localization", "japanese", "ja"}:
+                    continue
+                if part and low not in seen_folder_names:
+                    seen_folder_names.add(low)
+                    localization_folder_names.append(part)
         rows.append({
             "path": str(root),
             "mod": detect_mod_name(root),
@@ -2493,6 +2509,8 @@ def build_translation_mod_index(mod_roots: Iterable[Path]) -> List[dict]:
             "japanese": ja,
             "japanese_keys": set(ja),
             "japanese_files": jp_files,
+            "japanese_file_paths": list(data.get("japanese_files") or []),
+            "localization_folder_names": localization_folder_names,
             "english_files": en_files,
             "chinese_files": zh_files,
             "other_language_files": other_language_files,
@@ -2509,6 +2527,40 @@ def _normalize_mod_name_for_match(name: str) -> str:
     for token in ["japanese", "日本語化", "日本語", "translation", "localization", "localisation", "jp", "ja"]:
         text = text.replace(token, " ")
     return re.sub(r'[^0-9a-z\u3040-\u30ff\u4e00-\u9fff]+', '', text)
+
+
+def _normalize_localization_folder_for_match(name: str) -> str:
+    """Normalize a localization subfolder for supplementary Mod-name evidence."""
+    text = (name or "").strip().lower()
+    # Comprehensive translation packs commonly keep an explicit empty marker to
+    # remember supported Mods even when the current translation payload is empty.
+    text = re.sub(r'(?i)(?:[\s_\-\.]+)(?:empty|emptied|no[_\- ]?translation)$', '', text)
+    return _normalize_mod_name_for_match(text)
+
+
+def _localization_folder_name_evidence(source_name: str, row: dict) -> dict:
+    """Return additive evidence when Japanese localization folders name the source Mod.
+
+    This is intentionally supplementary only: the source-side exact-key gate remains
+    mandatory, so a folder-name coincidence can improve ranking but cannot establish a
+    relationship by itself.
+    """
+    source_norm = _normalize_mod_name_for_match(source_name)
+    if not source_norm:
+        return {"points": 0.0, "matched_folder": "", "match_type": "none"}
+    best = {"points": 0.0, "matched_folder": "", "match_type": "none"}
+    for folder in row.get("localization_folder_names") or []:
+        folder_norm = _normalize_localization_folder_for_match(str(folder))
+        if not folder_norm:
+            continue
+        if folder_norm == source_norm:
+            return {"points": 15.0, "matched_folder": str(folder), "match_type": "exact"}
+        # Allow a conservative contained-name bonus for pack layouts such as
+        # "Battle Graphics compatibility" while avoiding tiny/common-name matches.
+        if len(source_norm) >= 6 and len(folder_norm) >= 6 and (source_norm in folder_norm or folder_norm in source_norm):
+            if best["points"] < 8.0:
+                best = {"points": 8.0, "matched_folder": str(folder), "match_type": "contains"}
+    return best
 
 
 def _external_gap_candidates(source_entries: Dict[str, str], japanese_entries: Dict[str, str],
@@ -2665,7 +2717,11 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict) -> di
         avg_other_quality = 1.0
         other_language_penalty = 0.0
 
-    raw_score = key_points + translation_only_points + dependency_points + low_gameplay_points + other_language_penalty
+    folder_evidence = _localization_folder_name_evidence(source_name, row)
+    localization_folder_points = float(folder_evidence.get("points", 0.0) or 0.0)
+
+    raw_score = (key_points + translation_only_points + dependency_points +
+                 low_gameplay_points + localization_folder_points + other_language_penalty)
     score = max(0.0, min(100.0, raw_score))
     if not gate:
         classification = "rejected"
@@ -2681,6 +2737,8 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict) -> di
         f"元Modキー完全一致率 {coverage*100:.1f}% ({overlap_n}/{source_count}) / 判定基準 {threshold_label} → {key_points:.1f}点",
         f"参考: 日本語化Mod側一致率 {precision*100:.1f}% ({overlap_n}/{len(ja_keys)})",
         f"構成評価 {structure_label}: 日本語YAML {japanese_file_count} / 他言語YAML {non_japanese_loc_files} / localization比率 {loc_ratio*100:.1f}% / 非localization {non_loc}ファイル → {translation_only_points:.1f}/35点",
+        (f"localizationフォルダ名一致『{folder_evidence.get('matched_folder')}』 → +{localization_folder_points:.1f}点"
+         if localization_folder_points > 0 else "localizationフォルダ名一致なし → 0.0点"),
         (f"dependencies一致『{matched_dependency}』 → 20.0点" if dependency_match else "dependencies一致なし → 0.0点"),
         f"ゲーム内容 {gameplay_files}ファイル / {len(gameplay_dirs)}分類 → {low_gameplay_points:.1f}点",
     ]
@@ -2700,6 +2758,9 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict) -> di
         "source_keys": source_count, "japanese_keys": len(ja_keys), "required_coverage": required_coverage,
         "key_points": key_points, "translation_only_points": translation_only_points,
         "dependency_points": dependency_points, "low_gameplay_points": low_gameplay_points,
+        "localization_folder_points": localization_folder_points,
+        "localization_folder_match": folder_evidence.get("matched_folder", ""),
+        "localization_folder_match_type": folder_evidence.get("match_type", "none"),
         "source_language_penalty": other_language_penalty,
         "other_language_penalty": other_language_penalty,
         "other_language_relation": avg_other_relation,
