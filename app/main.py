@@ -34,7 +34,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.10"
+APP_VERSION = "0.11.14"
 MOD_STATUS_CACHE_VERSION = 2
 
 
@@ -860,10 +860,10 @@ class App(BaseTk):
             result=core.qa_chinese_basis_translation(inp,out,self.glossary_path_var.get().strip() or None)
             report_path=out / "chinese_basis_qa_report.json"
             core.save_json(report_path,{"source_language":"simp_chinese",**result})
-            self._append_chinese_log(f"翻訳語QA: error {result['errors']} / warning {result['warnings']} / 確認 {result['checked_files']}ファイル")
+            self._append_chinese_log(f"翻訳語QA: error {result['errors']} / warning {result['warnings']} / syntax自動修正 {result['syntax_repaired']} / 未修正 {result['syntax_unresolved']} / 確認 {result['checked_files']}ファイル")
             if result.get("missing_outputs"):
                 self._append_chinese_log(f"翻訳語QA: 対応する日本語出力がないファイル {result['missing_outputs']}件")
-            messagebox.showinfo(APP_NAME,f"中国語翻訳語QAが完了しました。\n\nエラー: {result['errors']}\n警告: {result['warnings']}\n確認ファイル: {result['checked_files']}\n\nレポート: {report_path}")
+            messagebox.showinfo(APP_NAME,f"中国語翻訳語QAが完了しました。\n\nエラー: {result['errors']}\n警告: {result['warnings']}\nsyntax検出: {result['syntax_detected']}\n自動修正: {result['syntax_repaired']}\n未修正: {result['syntax_unresolved']}\n確認ファイル: {result['checked_files']}\n\nレポート: {report_path}")
         except Exception as exc:
             record_error("中国語翻訳語QA",exc)
             messagebox.showerror(APP_NAME,str(exc))
@@ -1233,7 +1233,8 @@ class App(BaseTk):
         self.issue_text=tk.StringVar(value="")
         ttk.Label(right,textvariable=self.issue_text,wraplength=550).pack(fill="x",pady=(0,6))
         eb=ttk.Frame(right); eb.pack(fill="x")
-        ttk.Button(eb,text="この訳を保存",command=self.save_review_value).pack(side="left")
+        ttk.Button(eb,text="この訳を日本語ファイルへ保存",command=self.save_review_value).pack(side="left")
+        ttk.Button(eb,text="この訳を用語集へ保存",command=self.save_review_glossary_term).pack(side="left",padx=(6,0))
         ttk.Button(eb,text="AIで誤字脱字校正",command=self.ai_proofread_selected).pack(side="left",padx=(6,0))
         ttk.Button(eb,text="原文に戻す",command=self.restore_source_to_target).pack(side="left",padx=(6,0))
         self._register_dnd_widgets([pf,self.review_src_entry,self.review_dst_entry,self.review_drop_hint,self.review_tree,self.src_text,self.dst_text],self.on_review_drop_paths)
@@ -4180,10 +4181,10 @@ Mod更新後だけ追加翻訳:
             result = core.qa_translation_output(inp, out, self.glossary_path_var.get().strip() or None)
             report_path = out / "translation_qa_report.json"
             core.save_json(report_path, {"target_language": "japanese", **result})
-            self._log(f"翻訳語QA: error {result['errors']} / warning {result['warnings']} / 確認 {result['checked_files']}ファイル")
+            self._log(f"翻訳語QA: error {result['errors']} / warning {result['warnings']} / syntax自動修正 {result['syntax_repaired']} / 未修正 {result['syntax_unresolved']} / 確認 {result['checked_files']}ファイル")
             if result.get("missing_outputs"):
                 self._log(f"翻訳語QA: 対応する日本語出力がないファイル {result['missing_outputs']}件")
-            messagebox.showinfo(APP_NAME, f"翻訳語QAが完了しました。\n\nエラー: {result['errors']}\n警告: {result['warnings']}\n確認ファイル: {result['checked_files']}\n\nレポート: {report_path}")
+            messagebox.showinfo(APP_NAME, f"翻訳語QAが完了しました。\n\nエラー: {result['errors']}\n警告: {result['warnings']}\nsyntax検出: {result['syntax_detected']}\n自動修正: {result['syntax_repaired']}\n未修正: {result['syntax_unresolved']}\n確認ファイル: {result['checked_files']}\n\nレポート: {report_path}")
         except Exception as exc:
             record_error("通常翻訳語QA", exc)
             messagebox.showerror(APP_NAME, str(exc))
@@ -4730,6 +4731,39 @@ Mod更新後だけ追加翻訳:
                 if k==key and self.review_tree.exists(iid):
                     self.review_tree.selection_set(iid); self.review_tree.see(iid); break
 
+    def save_review_glossary_term(self):
+        key=self._selected_review_key()
+        if not key:
+            messagebox.showinfo(APP_NAME, "用語集へ保存する項目をQA / 比較編集の一覧から選択してください。")
+            return
+        src=(self.review_source_entries.get(key,"") or "").strip()
+        dst=self.dst_text.get("1.0","end-1c").strip()
+        if not src:
+            messagebox.showinfo(APP_NAME, "選択した項目に原文がありません。")
+            return
+        if not dst:
+            messagebox.showinfo(APP_NAME, "日本語訳を入力してから用語集へ保存してください。")
+            return
+        p=Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY)
+        gl=core.load_glossary(p)
+        old=gl.get(src)
+        if old is not None and old != dst:
+            if not messagebox.askyesno(
+                APP_NAME,
+                f"この原文はすでに用語集に登録されています。\n\n原文: {src}\n現在: {old}\n新規: {dst}\n\n手動用語として上書きしますか？",
+            ):
+                return
+        gl[src]=dst
+        core.save_glossary(p,gl)
+        self.glossary_path_var.set(str(p))
+        # QA / 比較編集から明示的に保存した語は「手動用語」として扱う。
+        variants=self._glossary_variant_metadata()
+        variants.pop(src,None)
+        core.save_json(core.glossary_variants_path(p),variants)
+        self.load_glossary_ui(silent=True)
+        self.progress_text.set(f"手動用語を保存: {src} → {dst}")
+        messagebox.showinfo(APP_NAME, f"手動用語として用語集へ保存しました。\n\n{src} → {dst}")
+
     def restore_source_to_target(self):
         key=self._selected_review_key()
         if key:
@@ -4892,19 +4926,160 @@ Mod更新後だけ追加翻訳:
         chosen=filedialog.askdirectory(title=f"{game} のゲーム本体 localization / localisation フォルダを選択")
         return Path(chosen) if chosen else None
 
-    def _save_imported_glossary_pairs(self, pairs, source_kind, label):
+    def _choose_glossary_import_mode(self):
+        result={"mode":None}
+        win=tk.Toplevel(self); win.title("用語取り込みモード"); win.transient(self); win.grab_set(); win.resizable(False,False)
+        frm=ttk.Frame(win,padding=12); frm.pack(fill="both",expand=True)
+        ttk.Label(frm,text="取り込む用語の範囲を選択してください。",font=("TkDefaultFont",10,"bold")).pack(anchor="w")
+        var=tk.StringVar(value="common")
+        ttk.Radiobutton(frm,text="共通名のみ取り込み",variable=var,value="common").pack(anchor="w",pady=(10,0))
+        ttk.Label(frm,text="制度名・官職名・UI語など再利用しやすい短い用語を取り込み、人物名・地名・王朝名・「〇〇公爵」「〇〇軍管区長官」のような固有名詞付き候補を除外します。",wraplength=560,justify="left",foreground="#555").pack(anchor="w",padx=(22,0),pady=(2,6))
+        ttk.Radiobutton(frm,text="すべて取り込み",variable=var,value="all").pack(anchor="w")
+        ttk.Label(frm,text="英語または簡体字中国語と対応付けできた項目を、長い文や固有名詞を含め原則すべて候補にします。",wraplength=560,justify="left",foreground="#555").pack(anchor="w",padx=(22,0),pady=(2,8))
+        ttk.Label(frm,text="※ 日本語だけでは原語→日本語の用語集を作れないため、英語または簡体字中国語の対応原文が必要です。",wraplength=560,justify="left",foreground="#8a5a00").pack(anchor="w",pady=(4,8))
+        row=ttk.Frame(frm); row.pack(fill="x",pady=(4,0))
+        def ok(): result["mode"]=var.get(); win.destroy()
+        ttk.Button(row,text="キャンセル",command=win.destroy).pack(side="right")
+        ttk.Button(row,text="取り込み",command=ok).pack(side="right",padx=(0,6))
+        win.wait_window()
+        return result["mode"]
+
+    def _collect_japanese_entries_from_target(self, target: Path):
+        target=Path(target)
+        files=[target] if target.is_file() else core.gather_yml_files(target)
+        entries={}
+        used_files=0
+        for f in files:
+            try:
+                lang, data, _ = core.parse_localization_file(f)
+            except Exception:
+                continue
+            if lang != "japanese":
+                continue
+            used_files += 1
+            entries.update(data)
+        return entries, used_files
+
+    def _collect_base_source_maps(self, root: Path):
+        maps={"english":{},"simp_chinese":{}}
+        files={"english":0,"simp_chinese":0}
+        for f in core.gather_yml_files(Path(root)):
+            try:
+                lang, data, _ = core.parse_localization_file(f)
+            except Exception:
+                continue
+            if lang in maps:
+                maps[lang].update(data)
+                files[lang] += 1
+        return maps, files
+
+    def _align_japanese_with_base_game(self, japanese_targets, game):
+        root=self._find_base_game_localization_root(game)
+        if not root or not Path(root).exists():
+            return None
+        source_maps, source_files=self._collect_base_source_maps(Path(root))
+        jp_entries={}
+        jp_files=0
+        for target in japanese_targets:
+            data, count=self._collect_japanese_entries_from_target(Path(target))
+            jp_entries.update(data); jp_files += count
+
+        records=[]; english_count=0; chinese_count=0; unmatched=0
+        # Prefer English when both exist, then fall back to Simplified Chinese.
+        for key, dst in jp_entries.items():
+            if key in source_maps["english"]:
+                records.append({"key":key,"source_text":source_maps["english"][key],"target_text":dst,"source_lang":"english"})
+                english_count += 1
+            elif key in source_maps["simp_chinese"]:
+                records.append({"key":key,"source_text":source_maps["simp_chinese"][key],"target_text":dst,"source_lang":"simp_chinese"})
+                chinese_count += 1
+            else:
+                unmatched += 1
+        return {
+            "records":records,"japanese_keys":len(jp_entries),"japanese_files":jp_files,
+            "english":english_count,"chinese":chinese_count,"unmatched":unmatched,
+            "source_files":source_files,"root":Path(root),
+        }
+
+    def _save_imported_glossary_candidates(self, candidates, label, stats=None):
+        if not candidates:
+            msg="取り込み可能な用語候補が見つかりませんでした。"
+            if stats:
+                msg += f"\n\n日本語キー: {stats.get('japanese_keys',0)}件\n英語対応: {stats.get('english',0)}件\n中国語対応: {stats.get('chinese',0)}件\n対応なし: {stats.get('unmatched',0)}件"
+            messagebox.showinfo(APP_NAME,msg)
+            return
+        result=core.save_auto_glossary_candidates(Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY),candidates,preserve_existing=True)
+        self.load_glossary_ui(silent=True)
+        self.auto_glossary_status_var.set(f"{label}: {result.get('added',0)}件追加 / 候補 {result.get('total',0)}件")
+        lines=[f"{label}が完了しました。",f"候補: {result.get('total',0)}件",f"新規追加: {result.get('added',0)}件"]
+        if stats:
+            lines += ["",f"日本語キー: {stats.get('japanese_keys',0)}件",f"英語対応: {stats.get('english',0)}件",f"中国語対応: {stats.get('chinese',0)}件",f"対応なし: {stats.get('unmatched',0)}件"]
+            if stats.get('unmatched',0):
+                lines.append(f"ゲーム本体に対応原文がないため {stats.get('unmatched',0)}件をスキップしました。")
+        messagebox.showinfo(APP_NAME,"\n".join(lines))
+
+    def _save_imported_glossary_pairs(self, pairs, source_kind, label, mode="common"):
         if not pairs:
-            messagebox.showinfo(APP_NAME,"原文（英語/簡体字中国語）と日本語を対応付けられるlocalizationが見つかりませんでした。")
+            messagebox.showinfo(APP_NAME,"原文（英語/簡体字中国語）と日本語を対応付けられるlocalizationが見つかりませんでした。\n\n日本語だけでは原語→日本語の用語集を作れません。英語または簡体字中国語の対応原文が必要です。")
             return
         try:
-            candidates=core.build_import_glossary_candidates(pairs,source_kind=source_kind)
-            if not candidates:
-                messagebox.showinfo(APP_NAME,"取り込み可能な短い用語候補が見つかりませんでした。")
-                return
-            result=core.save_auto_glossary_candidates(Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY),candidates,preserve_existing=True)
-            self.load_glossary_ui(silent=True)
-            self.auto_glossary_status_var.set(f"{label}: {result.get('added',0)}件追加 / 候補 {result.get('total',0)}件")
-            messagebox.showinfo(APP_NAME,f"{label}が完了しました。\n候補: {result.get('total',0)}件\n新規追加: {result.get('added',0)}件")
+            candidates=core.build_import_glossary_candidates(pairs,source_kind=source_kind,mode=mode)
+            self._save_imported_glossary_candidates(candidates,label)
+        except Exception as exc:
+            record_error("用語集取り込み",exc)
+            messagebox.showerror(APP_NAME,str(exc))
+
+    def _import_japanese_targets_with_fallback(self, targets, source_kind, label):
+        targets=[Path(x) for x in targets if Path(x).exists()]
+        if not targets:
+            return
+        mode=self._choose_glossary_import_mode()
+        if not mode:
+            return
+
+        # First use source files beside the Japanese localization when available.
+        all_pairs=[]; seen=set()
+        for target in targets:
+            if target.is_file():
+                source_root=target.parent; cur=target.parent
+                for _ in range(8):
+                    if cur.name.lower()=="japanese": source_root=cur.parent; break
+                    if cur.parent==cur: break
+                    cur=cur.parent
+                pairs=self._collect_qa_diff_pairs(source_root,target,source_langs=("english","simp_chinese"))
+            else:
+                loc=core.mod_localization_root(target) or target
+                pairs=self._collect_qa_diff_pairs(loc,loc,source_langs=("english","simp_chinese"))
+            for pair in pairs:
+                ident=(str(pair.get("source","")),str(pair.get("target","")))
+                if ident not in seen:
+                    seen.add(ident); all_pairs.append(pair)
+
+        if all_pairs:
+            self._save_imported_glossary_pairs(all_pairs,source_kind,label,mode=mode)
+            return
+
+        messagebox.showinfo(APP_NAME,
+            "選択した日本語localizationの近くに、対応する英語 / 簡体字中国語原文が見つかりませんでした。\n\n"
+            "日本語だけでは原語→日本語の用語集を作れないため、対象ゲーム本体の英語または簡体字中国語localizationを同じローカライズキーで照合します。\n"
+            "ゲーム本体に存在しないMod独自キーはスキップされます。")
+        game=self._choose_game_for_glossary_import()
+        if not game:
+            return
+        aligned=self._align_japanese_with_base_game(targets,game)
+        if not aligned:
+            return
+        stats={k:aligned[k] for k in ("japanese_keys","english","chinese","unmatched")}
+        if not aligned["records"]:
+            messagebox.showinfo(APP_NAME,
+                f"対応する英語 / 簡体字中国語localizationが見つからなかったため、すべてスキップしました。\n\n"
+                f"日本語キー: {aligned['japanese_keys']}件\n英語対応: 0件\n中国語対応: 0件\n対応なし: {aligned['unmatched']}件\n\n"
+                "日本語ファイルだけでは原語→日本語の用語集を作成できません。")
+            return
+        try:
+            candidates=core.build_import_glossary_candidates_from_records(aligned["records"],source_kind=source_kind,mode=mode)
+            suffix="共通名のみ" if mode=="common" else "すべて"
+            self._save_imported_glossary_candidates(candidates,f"{label}（{game} / {suffix}）",stats=stats)
         except Exception as exc:
             record_error("用語集取り込み",exc)
             messagebox.showerror(APP_NAME,str(exc))
@@ -4912,10 +5087,12 @@ Mod更新後だけ追加翻訳:
     def import_glossary_from_base_game(self):
         game=self._choose_game_for_glossary_import()
         if not game: return
+        mode=self._choose_glossary_import_mode()
+        if not mode: return
         root=self._find_base_game_localization_root(game)
         if not root or not Path(root).exists(): return
         pairs=self._collect_qa_diff_pairs(Path(root),Path(root),source_langs=("english","simp_chinese"))
-        self._save_imported_glossary_pairs(pairs,f"base:{game}",f"{game} 本体からの用語取り込み")
+        self._save_imported_glossary_pairs(pairs,f"base:{game}",f"{game} 本体からの用語取り込み",mode=mode)
 
     def import_glossary_from_japanese_source(self, kind):
         if kind=="file":
@@ -4923,81 +5100,49 @@ Mod更新後だけ追加翻訳:
         else:
             raw=filedialog.askdirectory(title="日本語化Modまたは localization フォルダを選択")
         if not raw: return
-        target=Path(raw)
-        if kind=="file":
-            source_root=target.parent
-            cur=target.parent
-            for _ in range(6):
-                if cur.name.lower()=="japanese":
-                    source_root=cur.parent; break
-                if cur.parent==cur: break
-                cur=cur.parent
-            pairs=self._collect_qa_diff_pairs(source_root,target,source_langs=("english","simp_chinese"))
-            source_kind="import:file"
-            label="日本語YAMLからの用語取り込み"
-        else:
-            loc=core.mod_localization_root(target) or target
-            pairs=self._collect_qa_diff_pairs(loc,loc,source_langs=("english","simp_chinese"))
-            source_kind="import:mod"
-            label="日本語化Modからの用語取り込み"
-        self._save_imported_glossary_pairs(pairs,source_kind,label)
+        source_kind="import:file" if kind=="file" else "import:mod"
+        label="日本語YAMLからの用語取り込み" if kind=="file" else "日本語化Modからの用語取り込み"
+        self._import_japanese_targets_with_fallback([Path(raw)],source_kind,label)
 
     def _collect_glossary_import_pairs_from_path(self, target: Path):
-        """DnDされた日本語YAML / Mod / localizationフォルダから原文-日本語ペアを集める。"""
+        """Backward-compatible local pairing helper used by older workflows."""
         target=Path(target)
-        if not target.exists():
-            return []
+        if not target.exists(): return []
         if target.is_file():
-            if target.suffix.lower() not in {".yml",".yaml"}:
-                return []
-            try:
-                lang,_,_=core.parse_localization_file(target)
-            except Exception:
-                return []
-            if lang != "japanese":
-                return []
-            source_root=target.parent
-            cur=target.parent
+            if target.suffix.lower() not in {".yml",".yaml"}: return []
+            try: lang,_,_=core.parse_localization_file(target)
+            except Exception: return []
+            if lang != "japanese": return []
+            source_root=target.parent; cur=target.parent
             for _ in range(8):
-                if cur.name.lower()=="japanese":
-                    source_root=cur.parent
-                    break
-                if cur.parent==cur:
-                    break
+                if cur.name.lower()=="japanese": source_root=cur.parent; break
+                if cur.parent==cur: break
                 cur=cur.parent
             return self._collect_qa_diff_pairs(source_root,target,source_langs=("english","simp_chinese"))
-
         loc=core.mod_localization_root(target) or target
         return self._collect_qa_diff_pairs(loc,loc,source_langs=("english","simp_chinese"))
 
     def on_glossary_import_drop_paths(self,event):
         raw_paths=self._raw_drop_paths(event)
-        all_pairs=[]
-        seen=set()
-        accepted=[]
-        ignored=[]
+        targets=[]; ignored=[]
         for target in raw_paths:
-            try:
-                pairs=self._collect_glossary_import_pairs_from_path(target)
-            except Exception as exc:
-                record_error("用語集DnD取り込み",exc,str(target))
-                pairs=[]
-            if not pairs:
-                ignored.append(target.name or str(target))
-                continue
-            accepted.append(target.name or str(target))
-            for pair in pairs:
-                key=(str(pair.get("source","")),str(pair.get("target","")))
-                if key in seen:
-                    continue
-                seen.add(key)
-                all_pairs.append(pair)
-        if all_pairs:
-            label=f"ドラッグ＆ドロップからの用語取り込み（{len(accepted)}項目）"
-            self._save_imported_glossary_pairs(all_pairs,"import:dnd",label)
+            target=Path(target)
+            if target.is_file():
+                if target.suffix.lower() not in {".yml",".yaml"}:
+                    ignored.append(target.name or str(target)); continue
+                try: lang,_,_=core.parse_localization_file(target)
+                except Exception:
+                    ignored.append(target.name or str(target)); continue
+                if lang != "japanese":
+                    ignored.append(target.name or str(target)); continue
+            elif not target.is_dir():
+                ignored.append(target.name or str(target)); continue
+            targets.append(target)
+        if targets:
+            self._import_japanese_targets_with_fallback(targets,"import:dnd",f"ドラッグ＆ドロップからの用語取り込み（{len(targets)}項目）")
         else:
             messagebox.showinfo(APP_NAME,"取り込み可能な日本語YAML / 日本語化Mod / localizationフォルダを確認できませんでした。")
-        if ignored and all_pairs:
+        if ignored and targets:
             self.auto_glossary_status_var.set(f"DnD取り込み完了 / 対象外 {len(ignored)}件")
         return event.action if hasattr(event,"action") else None
 
