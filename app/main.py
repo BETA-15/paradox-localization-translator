@@ -12,6 +12,7 @@ import zipfile
 import subprocess
 import sys
 import threading
+import time
 import urllib.request
 from urllib.parse import urlparse, unquote
 import uuid
@@ -34,7 +35,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.23"
+APP_VERSION = "0.11.25"
 MOD_STATUS_CACHE_VERSION = 3
 
 
@@ -126,7 +127,7 @@ def _configure_data_root(root: Path):
     global DATA_ROOT, APP_HOME, OUTPUT_ROOT, SESSION_PATH, DEFAULT_GLOSSARY
     global STATS_PATH, PROFILES_PATH, CACHE_ROOT, CACHE_REGISTRY_PATH, BACKUP_ROOT
     global SAVED_STEAM_ROOTS_PATH, LOG_ROOT, MOD_STATUS_CACHE_PATH, APP_PREFS_PATH
-    global RESUME_STATE_PATH, RESUME_HISTORY_PATH, WORK_STATE_ROOT, MIGRATION_STATE_PATH
+    global RESUME_STATE_PATH, RESUME_HISTORY_PATH, WORK_STATE_ROOT, MIGRATION_STATE_PATH, WORKSPACE_STATE_PATH
     DATA_ROOT = root.expanduser().resolve()
     APP_HOME = DATA_ROOT / "設定"
     OUTPUT_ROOT = DATA_ROOT / "翻訳結果"
@@ -148,6 +149,7 @@ def _configure_data_root(root: Path):
     # never beside the executable/app bundle.
     WORK_STATE_ROOT = DATA_ROOT / "作業データ"
     MIGRATION_STATE_PATH = APP_HOME / "storage_migration.json"
+    WORKSPACE_STATE_PATH = APP_HOME / "workspace_state.json"
     for d in (DATA_ROOT, APP_HOME, OUTPUT_ROOT, CACHE_ROOT, BACKUP_ROOT, LOG_ROOT, WORK_STATE_ROOT):
         d.mkdir(parents=True, exist_ok=True)
 
@@ -239,6 +241,7 @@ def _migrate_legacy_generated_data() -> dict:
         "steam_library_roots.json": SAVED_STEAM_ROOTS_PATH,
         "mod_translation_status_cache.json": MOD_STATUS_CACHE_PATH,
         "app_preferences.json": APP_PREFS_PATH,
+        "workspace_state.json": WORKSPACE_STATE_PATH,
         "cache_registry.json": CACHE_REGISTRY_PATH,
     }
     for legacy in _legacy_data_roots():
@@ -508,6 +511,13 @@ class App(BaseTk):
         self.mod_status_cache = core.load_json(MOD_STATUS_CACHE_PATH, {"version": MOD_STATUS_CACHE_VERSION, "items": {}})
         if not isinstance(self.mod_status_cache, dict) or self.mod_status_cache.get("version") != MOD_STATUS_CACHE_VERSION:
             self.mod_status_cache = {"version": MOD_STATUS_CACHE_VERSION, "items": {}}
+        # Cross-version workspace persistence. This is broader than the active
+        # translation session and stores the last visible/working state of every
+        # major tab. API keys are intentionally excluded.
+        self.workspace_revision = 0
+        self._workspace_restore_data = {}
+        self._workspace_selected_location_paths = []
+        self._workspace_save_in_progress = False
         self.report_callback_exception = self._tk_callback_exception
         sys.excepthook = self._sys_excepthook
         if hasattr(threading, "excepthook"):
@@ -517,12 +527,14 @@ class App(BaseTk):
         for actual, display in ((self.review_src_var,self.review_src_display_var),(self.review_dst_var,self.review_dst_display_var),(self.diff_src_var,self.diff_src_display_var),(self.diff_dst_var,self.diff_dst_display_var)):
             actual.trace_add("write", lambda *_args, a=actual, d=display: d.set(self._localization_display_path(a.get())))
             display.set(self._localization_display_path(actual.get()))
+        self._restore_workspace_state()
         self.after(100, self._poll_events)
         self.after(300, self.refresh_models)
         self.after(450, self.refresh_monitor_models)
-        self.after(500, self._offer_restore_session)
-        self.after(600, self._restore_cached_mod_status)
-        self.after(700, self.discover_mod_locations)
+        self.after(550, self._offer_restore_session)
+        self.after(650, self._restore_cached_mod_status)
+        self.after(750, self.discover_mod_locations)
+        self.after(15000, self._workspace_autosave_tick)
 
     # ---------------- UI ----------------
     def _build_ui(self):
@@ -958,7 +970,7 @@ class App(BaseTk):
             item["mod_localization"]=str(path); item["mod_root"]=str(path.parent)
         elif path.is_dir() and (path/"localization").is_dir():
             item["mod_root"]=str(path); item["mod_localization"]=str(path/"localization")
-        self.chinese_queue_items.append(item); self._refresh_chinese_queue_tree()
+        self.chinese_queue_items.append(item); self._refresh_chinese_queue_tree(); self._save_workspace_state("chinese_queue_changed")
         return item,msg
 
     def remove_chinese_queue_selected(self):
@@ -969,10 +981,10 @@ class App(BaseTk):
             except Exception: pass
         for i in sorted(set(idx),reverse=True):
             if 0<=i<len(self.chinese_queue_items): self.chinese_queue_items.pop(i)
-        self._refresh_chinese_queue_tree()
+        self._refresh_chinese_queue_tree(); self._save_workspace_state("chinese_queue_changed")
 
     def clear_chinese_queue(self):
-        self.chinese_queue_items.clear(); self._refresh_chinese_queue_tree()
+        self.chinese_queue_items.clear(); self._refresh_chinese_queue_tree(); self._save_workspace_state("chinese_queue_cleared")
 
     def _selected_chinese_queue_item(self):
         if not hasattr(self,"chinese_queue_tree"):
@@ -1118,12 +1130,12 @@ class App(BaseTk):
                 if item.get("diff_mode"):
                     self._reset_item_for_full_translation(item)
             self._refresh_queue_tree()
-            messagebox.showinfo(APP_NAME, "差分スナップショットがなく、現在の日本語にも補完対象の欠損がないため、差分を判定できない項目があります。\n\n" + "\n".join(unavailable[:10]))
+            messagebox.showinfo(APP_NAME, "差分スナップショットがなく、翻訳状況にも補完対象の欠損がないため、差分を判定できない項目があります。\n\n" + "\n".join(unavailable[:10]))
             return
         if any(not self._queue_item_is_completed(x) for x in targets):
             self.start_chinese_basis_translation(_diff_requested=True)
         else:
-            messagebox.showinfo(APP_NAME, "原文差分も現在の日本語の欠損もありません。")
+            messagebox.showinfo(APP_NAME, "原文差分も翻訳状況の欠損もありません。")
 
     def start_chinese_basis_translation(self, _diff_requested=False):
         if self.chinese_worker and self.chinese_worker.is_alive(): return
@@ -1189,6 +1201,7 @@ class App(BaseTk):
             self.chinese_progress_var.set("一時停止中 — 現在のLLM応答完了後に停止します")
 
     def save_and_stop_chinese_translation(self):
+        self._save_workspace_state("chinese_save_stop")
         if self.chinese_controller:
             self.chinese_controller.request_stop(save=True)
             self.chinese_progress_var.set("セーブして中断中 — 現在のLLM応答完了を待っています")
@@ -1797,6 +1810,7 @@ class App(BaseTk):
     def _perform_app_exit(self):
         """終了時の保存規則を一箇所に固定してからUIを閉じる。"""
         self._save_llm_preferences()
+        self._save_workspace_state("app_exit")
         if self.monitor_thread and self.monitor_thread.is_alive():
             self.monitor_stop_event.set()
             if self.monitor_llm_controller:
@@ -2766,6 +2780,8 @@ Mod更新後だけ追加翻訳:
             })
             core.save_json(APP_PREFS_PATH, data)
             self.app_preferences = data
+            if threading.current_thread() is threading.main_thread() and hasattr(self,"notebook"):
+                self._save_workspace_state("settings_changed")
         except Exception as e:
             record_error("LLM設定保存", e)
 
@@ -3341,6 +3357,9 @@ Mod更新後だけ追加翻訳:
         item["external_translation_path"] = result.get("external_translation_path", "")
         item["external_translation_localization"] = result.get("external_translation_localization", "")
         item["external_gap_keys"] = [c.get("key") for c in result.get("external_translation_gaps", []) if c.get("key")]
+        # Preserve the exact gap set shown in the Translation Status tab for diagnostics/session restore.
+        item["status_gap_candidates"] = list(result.get("candidates", []))
+        item["status_gap_count"] = int(result.get("gap_count", 0) or 0)
         return item
 
     def _status_results_except_selected(self):
@@ -3399,6 +3418,8 @@ Mod更新後だけ追加翻訳:
                 item["external_translation_path"]=result.get("external_translation_path","")
                 item["external_translation_localization"]=result.get("external_translation_localization","")
                 item["external_gap_keys"]=[c.get("key") for c in result.get("external_translation_gaps",[]) if c.get("key")]
+                item["status_gap_candidates"] = list(result.get("candidates", []))
+                item["status_gap_count"] = int(result.get("gap_count", 0) or 0)
                 added += 1
         self._refresh_chinese_queue_tree()
         if added:
@@ -3696,6 +3717,27 @@ Mod更新後だけ追加翻訳:
     def _set_overwritten_status(self, item):
         item["status"]="上書き済み"
 
+    def _invalidate_status_cache_for_item(self, item):
+        """Drop cached translation-status rows touched by an overwrite.
+
+        This prevents a pre-overwrite result from being restored on the next
+        launch before a fresh status scan has a chance to run.
+        """
+        roots=[]
+        for raw in (item.get("mod_root"), item.get("external_translation_path")):
+            if raw:
+                try: roots.append(str(Path(raw).expanduser().resolve()))
+                except Exception: roots.append(str(raw))
+        if not roots:
+            return
+        with self.mod_status_cache_lock:
+            items=self.mod_status_cache.setdefault("items",{})
+            for key in roots: items.pop(key,None)
+            self.mod_status_cache["version"]=MOD_STATUS_CACHE_VERSION
+            self.mod_status_cache["updated_at"]=datetime.now().isoformat(timespec="seconds")
+            self.mod_status_cache["updated_at_ns"]=time.time_ns()
+            core.save_json(MOD_STATUS_CACHE_PATH,self.mod_status_cache)
+
     def _perform_external_gap_overwrite(self, item, confirm=True, notify=True):
         """Write only translated gap keys into a detected external Japanese mod."""
         ext_root = Path(item.get("external_translation_path", ""))
@@ -3799,8 +3841,10 @@ Mod更新後だけ追加翻訳:
         ok,_=self._perform_external_gap_overwrite(item,confirm=True,notify=True)
         if ok:
             self._set_overwritten_status(item)
+            self._invalidate_status_cache_for_item(item)
             self._refresh_queue_tree()
             self._refresh_chinese_queue_tree()
+            self._save_workspace_state("overwrite_completed")
         return ok
 
     def _perform_source_mod_overwrite(self, item, confirm=True, notify=True):
@@ -3896,7 +3940,9 @@ Mod更新後だけ追加翻訳:
             ok,reason=self._perform_source_mod_overwrite(item,confirm=True,notify=True)
         if ok:
             self._set_overwritten_status(item)
+            self._invalidate_status_cache_for_item(item)
             self._refresh_queue_tree(); self._refresh_chinese_queue_tree()
+            self._save_workspace_state("overwrite_completed")
         elif reason not in {"キャンセル"}:
             messagebox.showinfo(APP_NAME,f"上書きできませんでした。\n{reason}")
         return ok
@@ -3956,7 +4002,7 @@ Mod更新後だけ追加翻訳:
                 else:
                     ok,reason=self._perform_source_mod_overwrite(item,confirm=False,notify=False)
                 if ok:
-                    self._set_overwritten_status(item); success += 1
+                    self._set_overwritten_status(item); self._invalidate_status_cache_for_item(item); success += 1
                     if "⚠" in str(reason):
                         details.append(f"{name}: {reason}")
                 else:
@@ -3966,6 +4012,7 @@ Mod更新後だけ追加翻訳:
                 record_error("一括上書き",exc,name)
 
         self._refresh_queue_tree(); self._refresh_chinese_queue_tree()
+        self._save_workspace_state("bulk_overwrite_completed")
         if self.queue_items and all(self._queue_item_is_completed(x) for x in self.queue_items):
             self._delete_session()
         summary=f"一括上書きが完了しました。\n\n上書き成功: {success}件\nスキップ: {skipped}件\n失敗: {failed}件"
@@ -4424,18 +4471,85 @@ Mod更新後だけ追加翻訳:
         item["cache"] = str(cache_path)
         return item["cache"]
 
+    def _translation_status_missing_for_item(self, item: dict, source_language: str) -> dict:
+        """Return differential targets from the same gap logic used by Translation Status.
+
+        The Translation Status view judges Japanese coverage against the English +
+        Simplified-Chinese union. Differential translation reuses that judgement, then
+        selects only keys that the current queue language can actually translate.
+        """
+        p = Path(item.get("input", ""))
+        loc, mod_root = self._infer_mod_target_for_item(item)
+        if not loc or not Path(loc).is_dir():
+            if p.is_dir() and p.name.lower() == "localization":
+                loc, mod_root = p, p
+            elif p.is_dir() and (p / "localization").is_dir():
+                loc, mod_root = p / "localization", p
+            else:
+                loc, mod_root = p, p
+
+        candidates = []
+        status_label = ""
+        try:
+            ext_root = Path(item.get("external_translation_path", "")) if item.get("external_translation_path") else None
+            if ext_root and ext_root.is_dir() and Path(mod_root).exists():
+                result = core.analyze_external_translation_coverage(Path(mod_root), ext_root)
+                candidates = list(result.get("gaps", []))
+                status_label = "別Mod翻訳・欠損" if candidates else "別Modで完全翻訳"
+            elif Path(mod_root).exists():
+                result = core.analyze_mod_translation_status(Path(mod_root), preferred_source=source_language)
+                candidates = list(result.get("candidates", []))
+                status_label = result.get("status", "")
+        except Exception as exc:
+            record_error("差分翻訳 翻訳状況欠損判定", exc, str(mod_root))
+            candidates = list(item.get("status_gap_candidates", []))
+            status_label = "保存済み翻訳状況"
+
+        wanted = {str(c.get("key")) for c in candidates if c.get("key")}
+        files = core.gather_yml_files(p) if p.exists() else []
+        base_dir = p if p.is_dir() else p.parent
+        details = []
+        selected = set()
+        for source_file in files:
+            try:
+                lang, entries, _ = core.parse_localization_file(source_file)
+            except Exception:
+                continue
+            if lang != source_language:
+                continue
+            keys = [k for k in entries if k in wanted and entries.get(k) and not core.looks_untranslatable(entries.get(k, ""))]
+            if not keys:
+                continue
+            selected.update(keys)
+            rel_dir = source_file.parent.relative_to(base_dir) if p.is_dir() else Path('.')
+            details.append({
+                "source_file": str(source_file),
+                "target_file": str(Path(item.get("output", "")) / core.remap_rel_dir(rel_dir, core.DEFAULT_TARGET_LANG) / core.rename_for_target(source_file, core.DEFAULT_TARGET_LANG, source_language)),
+                "keys": keys,
+            })
+        return {
+            "count": len(selected),
+            "details": details,
+            "source_language": source_language,
+            "status_gap_total": len(candidates),
+            "status": status_label,
+            "candidate_keys": sorted(wanted),
+            "selected_keys": sorted(selected),
+        }
+
     def _prepare_differential_cache(self, item: dict, silent: bool = True, mode: str = "normal") -> dict | None:
         p = Path(item["input"])
         output_root = Path(item.get("output", ""))
         current_cache = Path(self._ensure_item_cache(item))
         source_language = "simp_chinese" if mode == "chinese" else "english"
 
-        # 現在の日本語出力そのものも確認する。スナップショットがなくても、
-        # 日本語側に必要キーが欠けていれば差分翻訳の対象にできる。
+        # 欠損は独自計算せず、翻訳状況タブと同じ判定ロジックから取得する。
+        # スナップショットがなくても、翻訳状況で欠損と判断されたキーを差分対象にできる。
         try:
-            missing = core.collect_missing_translation_keys(p, output_root, source_language)
-        except Exception:
-            missing = {"count": 0, "details": [], "source_language": source_language}
+            missing = self._translation_status_missing_for_item(item, source_language)
+        except Exception as exc:
+            record_error("差分翻訳 翻訳状況欠損取得", exc, str(p))
+            missing = {"count": 0, "details": [], "source_language": source_language, "status_gap_total": 0}
 
         previous = self._find_previous_cache(p, exclude=current_cache, mode=mode)
         old_manifest = core.load_source_manifest(previous) if previous else {}
@@ -4501,7 +4615,7 @@ Mod更新後だけ追加翻訳:
         if not silent:
             snapshot_note = "あり" if old_manifest else "なし（現在の欠損から判定）"
             messagebox.showinfo(APP_NAME,
-                f"差分翻訳対象を確認しました。\n\nスナップショット: {snapshot_note}\n新規キー: {c['added']}\n変更キー: {c['changed']}\n削除キー: {c['removed']}\n現在の欠損: {missing_total}\n新規ファイル: {c['added_files']}\n削除ファイル: {c['removed_files']}\n\n原文差分と現在の欠損だけを補完します。")
+                f"差分翻訳対象を確認しました。\n\nスナップショット: {snapshot_note}\n新規キー: {c['added']}\n変更キー: {c['changed']}\n削除キー: {c['removed']}\n翻訳状況の欠損（このキューで補完可能）: {missing_total}\n新規ファイル: {c['added_files']}\n削除ファイル: {c['removed_files']}\n\n原文差分と翻訳状況の欠損だけを補完します。")
         return diff
 
     def _append_queue(self,p:Path,out:Path|None=None,status="待機",cache:Path|None=None):
@@ -4512,7 +4626,7 @@ Mod更新後だけ追加翻訳:
         cache_path = cache or self._new_cache_path(p)
         item={"input":str(p),"output":str(out),"status":status,"cache":str(cache_path)}
         self.queue_items.append(item)
-        self._refresh_queue_tree()
+        self._refresh_queue_tree(); self._save_workspace_state("normal_queue_changed")
 
     def detect_diff_for_selected(self):
         item = self._selected_queue_item()
@@ -4668,10 +4782,11 @@ Mod更新後だけ追加翻訳:
             self._delete_session()
         elif not (self.worker and self.worker.is_alive()):
             self._write_session_file(active=False,restore_on_launch=False)
+        self._save_workspace_state("normal_queue_changed")
 
     def clear_queue(self):
         if self.worker and self.worker.is_alive(): return
-        self.queue_items.clear(); self._refresh_queue_tree(); self._delete_session()
+        self.queue_items.clear(); self._refresh_queue_tree(); self._delete_session(); self._save_workspace_state("normal_queue_cleared")
 
     def _selected_queue_item(self):
         sel = self.queue_tree.selection()
@@ -4835,12 +4950,12 @@ Mod更新後だけ追加翻訳:
                 if item.get("diff_mode"):
                     self._reset_item_for_full_translation(item)
             self._refresh_chinese_queue_tree()
-            messagebox.showinfo(APP_NAME, "差分スナップショットがなく、現在の日本語にも補完対象の欠損がないため、差分を判定できない項目があります。\n\n" + "\n".join(unavailable[:10]))
+            messagebox.showinfo(APP_NAME, "差分スナップショットがなく、翻訳状況にも補完対象の欠損がないため、差分を判定できない項目があります。\n\n" + "\n".join(unavailable[:10]))
             return
         if prepared:
             self.start_queue(_diff_requested=True)
         else:
-            messagebox.showinfo(APP_NAME, "原文差分も現在の日本語の欠損もありません。")
+            messagebox.showinfo(APP_NAME, "原文差分も翻訳状況の欠損もありません。")
 
     def start_queue(self, _diff_requested=False):
         if self.worker and self.worker.is_alive(): return
@@ -4918,6 +5033,193 @@ Mod更新後だけ追加翻訳:
             self.progress_text.set("保存して中断中… 現在のリクエスト完了を待っています")
             self.stop_btn.config(state="disabled")
 
+    # ---------------- workspace persistence ----------------
+    def _workspace_scalar(self, var, default=None):
+        try:
+            return var.get()
+        except Exception:
+            return default
+
+    def _workspace_selected_paths(self):
+        paths=[]
+        try:
+            for iid in self.discovered_mod_tree.selection():
+                idx=int(str(iid).replace("loc_", ""))
+                if 0 <= idx < len(self.detected_mod_locations):
+                    raw=self.detected_mod_locations[idx].get("path")
+                    if raw and raw not in paths: paths.append(str(raw))
+        except Exception:
+            pass
+        if not paths:
+            paths=[str(x) for x in (self.monitor_target_paths or []) if x]
+        return paths
+
+    def _collect_workspace_state(self, reason="autosave"):
+        """Collect user-visible working state from all major tabs.
+
+        Must be called on the Tk/main thread. API keys and transient controller/
+        thread objects are deliberately excluded.
+        """
+        self.workspace_revision = max(0, int(getattr(self,"workspace_revision",0))) + 1
+        try:
+            tab_index=int(self.notebook.index(self.notebook.select()))
+        except Exception:
+            tab_index=0
+        now_ns=time.time_ns()
+        return {
+            "schema_version":2,
+            "app_version":APP_VERSION,
+            "saved_at":datetime.now().isoformat(timespec="seconds"),
+            "saved_at_ns":now_ns,
+            "revision":self.workspace_revision,
+            "reason":reason,
+            "data_root":str(DATA_ROOT),
+            "active_tab":tab_index,
+            "normal_translation":{
+                "input":self._workspace_scalar(self.normal_input_var,""),
+                "output":self._workspace_scalar(self.normal_output_var,str(OUTPUT_ROOT)),
+                "queue":self.queue_items,
+                "queue_index":self.current_queue_index,
+            },
+            "chinese_translation":{
+                "input":self._workspace_scalar(self.chinese_input_var,""),
+                "output":self._workspace_scalar(self.chinese_output_var,str(OUTPUT_ROOT/"中国語基準翻訳")),
+                "queue":self.chinese_queue_items,
+                "queue_index":self.chinese_queue_index,
+            },
+            "qa_review":{
+                "source":self._workspace_scalar(self.review_src_var,""),
+                "target":self._workspace_scalar(self.review_dst_var,""),
+            },
+            "diff":{
+                "source":self._workspace_scalar(self.diff_src_var,""),
+                "target":self._workspace_scalar(self.diff_dst_var,""),
+            },
+            "glossary":{
+                "path":self._workspace_scalar(self.glossary_path_var,str(DEFAULT_GLOSSARY)),
+            },
+            "models":{
+                "provider":self._workspace_scalar(self.provider_var,"Ollama"),
+                "url":self._workspace_scalar(self.url_var,""),
+                "model":self._workspace_scalar(self.model_var,""),
+                "preset":self._workspace_scalar(self.preset_var,"CK3"),
+                "batch":self._workspace_scalar(self.batch_var,40),
+                "workers":self._workspace_scalar(self.workers_var,1),
+                "performance_preset":self._workspace_scalar(self.performance_preset_var,"標準（40 / 1）"),
+                "repair":bool(self._workspace_scalar(self.repair_var,True)),
+                "dual":bool(self._workspace_scalar(self.dual_var,False)),
+                "autoqa":bool(self._workspace_scalar(self.autoqa_var,True)),
+                "chinese_autoqa":bool(self._workspace_scalar(self.chinese_autoqa_var,True)),
+                "profile":self._workspace_scalar(self.profile_var,""),
+            },
+            "monitor":{
+                "target_paths":[str(x) for x in (self.monitor_target_paths or [])],
+                "interval":self._workspace_scalar(self.monitor_interval_var,15),
+                "use_llm":bool(self._workspace_scalar(self.monitor_use_llm_var,True)),
+                "check_translation_mods":bool(self._workspace_scalar(self.monitor_check_translation_mods_var,True)),
+                "provider":self._workspace_scalar(self.monitor_provider_var,"Ollama"),
+                "url":self._workspace_scalar(self.monitor_url_var,""),
+                "model":self._workspace_scalar(self.monitor_model_var,""),
+            },
+            "translation_status":{
+                "selected_location_paths":self._workspace_selected_paths(),
+                "multi_select":bool(self._workspace_scalar(self.discovery_multi_select_var,False)),
+                "search":self._workspace_scalar(self.mod_status_search_var,""),
+            },
+            "translation_search":{
+                "game":self._workspace_scalar(self.search_game_var,"Crusader Kings III"),
+                "query":self._workspace_scalar(self.search_query_var,""),
+            },
+        }
+
+    def _save_workspace_state(self, reason="autosave"):
+        if threading.current_thread() is not threading.main_thread():
+            try: self.after(0, lambda r=reason:self._save_workspace_state(r))
+            except Exception: pass
+            return
+        try:
+            data=self._collect_workspace_state(reason)
+            core.save_json(WORKSPACE_STATE_PATH,data)
+        except Exception as e:
+            record_error("ワークスペース状態保存",e)
+
+    def _workspace_autosave_tick(self):
+        try:
+            self._save_workspace_state("periodic")
+        finally:
+            try: self.after(15000,self._workspace_autosave_tick)
+            except Exception: pass
+
+    def _restore_workspace_state(self):
+        data=core.load_json(WORKSPACE_STATE_PATH,{})
+        if not isinstance(data,dict) or not data:
+            return
+        self._workspace_restore_data=data
+        try: self.workspace_revision=max(0,int(data.get("revision",0) or 0))
+        except Exception: self.workspace_revision=0
+        saved_root=data.get("data_root")
+        def remap(raw):
+            return _remap_saved_data_path(raw,saved_root) if raw else raw
+        try:
+            n=data.get("normal_translation") or {}
+            self.normal_input_var.set(remap(n.get("input","")) or "")
+            self.normal_output_var.set(remap(n.get("output",str(OUTPUT_ROOT))) or str(OUTPUT_ROOT))
+            self.queue_items=list(n.get("queue") or [])
+            self.current_queue_index=int(n.get("queue_index",-1) or -1)
+            for item in self.queue_items:
+                if isinstance(item,dict):
+                    for k in ("input","output","cache","previous_cache"):
+                        if item.get(k): item[k]=remap(item[k])
+                    if item.get("status")=="翻訳中": item["status"]="中断（再開可）"
+            self._refresh_queue_tree()
+
+            z=data.get("chinese_translation") or {}
+            self.chinese_input_var.set(remap(z.get("input","")) or "")
+            self.chinese_output_var.set(remap(z.get("output",str(OUTPUT_ROOT/"中国語基準翻訳"))) or str(OUTPUT_ROOT/"中国語基準翻訳"))
+            self.chinese_queue_items=list(z.get("queue") or [])
+            self.chinese_queue_index=int(z.get("queue_index",-1) or -1)
+            for item in self.chinese_queue_items:
+                if isinstance(item,dict):
+                    for k in ("input","output","cache","previous_cache"):
+                        if item.get(k): item[k]=remap(item[k])
+                    if item.get("status")=="翻訳中": item["status"]="中断（再開可）"
+            self._refresh_chinese_queue_tree()
+
+            q=data.get("qa_review") or {}; self.review_src_var.set(remap(q.get("source","")) or ""); self.review_dst_var.set(remap(q.get("target","")) or "")
+            d=data.get("diff") or {}; self.diff_src_var.set(remap(d.get("source","")) or ""); self.diff_dst_var.set(remap(d.get("target","")) or "")
+            g=data.get("glossary") or {}; self.glossary_path_var.set(remap(g.get("path",str(DEFAULT_GLOSSARY))) or str(DEFAULT_GLOSSARY))
+
+            m=data.get("models") or {}
+            self.provider_var.set(m.get("provider",self.provider_var.get())); self.url_var.set(m.get("url",self.url_var.get())); self.model_var.set(m.get("model",self.model_var.get()))
+            self.preset_var.set(m.get("preset",self.preset_var.get())); self.batch_var.set(max(1,int(m.get("batch",self.batch_var.get()) or 40))); self.workers_var.set(max(1,int(m.get("workers",self.workers_var.get()) or 1)))
+            self.performance_preset_var.set(m.get("performance_preset",self.performance_preset_var.get())); self.repair_var.set(bool(m.get("repair",self.repair_var.get()))); self.dual_var.set(bool(m.get("dual",self.dual_var.get())))
+            self.autoqa_var.set(bool(m.get("autoqa",self.autoqa_var.get()))); self.chinese_autoqa_var.set(bool(m.get("chinese_autoqa",self.chinese_autoqa_var.get()))); self.profile_var.set(m.get("profile",self.profile_var.get()))
+
+            mon=data.get("monitor") or {}
+            self.monitor_target_paths=[str(x) for x in (mon.get("target_paths") or []) if x]
+            self.monitor_path_var.set(self.monitor_target_paths[0] if self.monitor_target_paths else "")
+            self.monitor_interval_var.set(max(3,int(mon.get("interval",self.monitor_interval_var.get()) or 15))); self.monitor_use_llm_var.set(bool(mon.get("use_llm",self.monitor_use_llm_var.get())))
+            self.monitor_check_translation_mods_var.set(bool(mon.get("check_translation_mods",self.monitor_check_translation_mods_var.get()))); self.monitor_provider_var.set(mon.get("provider",self.monitor_provider_var.get())); self.monitor_url_var.set(mon.get("url",self.monitor_url_var.get())); self.monitor_model_var.set(mon.get("model",self.monitor_model_var.get()))
+            if self.monitor_target_paths: self.monitor_target_summary_var.set(f"監視対象: {len(self.monitor_target_paths)}か所（前回状態を復元）")
+
+            st=data.get("translation_status") or {}
+            self._workspace_selected_location_paths=[str(x) for x in (st.get("selected_location_paths") or []) if x]
+            self.discovery_multi_select_var.set(bool(st.get("multi_select",False))); self.mod_status_search_var.set(st.get("search","") or "")
+            sr=data.get("translation_search") or {}; self.search_game_var.set(sr.get("game",self.search_game_var.get())); self.search_query_var.set(sr.get("query","") or "")
+            try:
+                idx=int(data.get("active_tab",0) or 0)
+                if 0 <= idx < self.notebook.index("end"): self.notebook.select(idx)
+            except Exception: pass
+        except Exception as e:
+            record_error("ワークスペース状態復元",e)
+
+    def _workspace_saved_at_ns(self):
+        try:
+            data=core.load_json(WORKSPACE_STATE_PATH,{})
+            return int(data.get("saved_at_ns",0) or 0) if isinstance(data,dict) else 0
+        except Exception:
+            return 0
+
     # ---------------- session ----------------
     def _settings_dict(self):
         # Worker checkpoints must not read Tk variables directly.
@@ -4961,6 +5263,8 @@ Mod更新後だけ追加翻訳:
             "app_version":APP_VERSION,
             "version":APP_VERSION,
             "saved_at":datetime.now().isoformat(timespec="seconds"),
+            "saved_at_ns":time.time_ns(),
+            "state_revision":max(0,int(getattr(self,"workspace_revision",0))),
             "data_root":str(DATA_ROOT),
             "active":bool(active),
             "restore_on_launch":bool(restore_on_launch),
@@ -4975,6 +5279,8 @@ Mod更新後だけ追加翻訳:
         # Checkpoints may occur every batch; keep the human-readable history compact.
         if checkpoint is None:
             self._append_resume_history("state_saved",data)
+            if threading.current_thread() is threading.main_thread():
+                self._save_workspace_state("session_state_saved")
 
     def save_session(self,active=False,restore_on_launch=None):
         # 手動保存は次回起動時の強制復元対象にはしない。終了時保存だけ明示的にTrueを渡す。
@@ -4988,28 +5294,36 @@ Mod更新後だけ追加翻訳:
         self._write_session_file(active=True,restore_on_launch=True,checkpoint=payload)
 
     def _load_resume_candidate(self):
-        """Load a restorable snapshot without requiring the same app version."""
+        """Load only the newest restorable translation snapshot.
+
+        A stale session file must never override a newer workspace state. Active
+        checkpoints saved after the last workspace autosave remain eligible.
+        """
+        workspace_ns=self._workspace_saved_at_ns()
+        candidates=[]
         for path in (SESSION_PATH,RESUME_STATE_PATH):
-            try:
-                data=core.load_json(path,{})
-            except Exception:
-                data={}
-            if not isinstance(data,dict) or not data.get("queue"):
+            try: data=core.load_json(path,{})
+            except Exception: data={}
+            if not isinstance(data,dict) or not data.get("queue"): continue
+            if not (data.get("active") or data.get("restore_on_launch")): continue
+            try: saved_ns=int(data.get("saved_at_ns",0) or 0)
+            except Exception: saved_ns=0
+            # New workspace snapshots are authoritative over older transient state.
+            if workspace_ns and saved_ns and saved_ns < workspace_ns:
                 continue
-            if data.get("active") or data.get("restore_on_launch"):
-                # Saved queue paths from old app-adjacent data roots must follow
-                # the migrated copy under Documents/Paradox Localization Translator.
-                saved_root = data.get("data_root")
-                for item in data.get("queue", []) or []:
-                    if isinstance(item, dict):
-                        for key in ("cache", "output", "previous_cache"):
-                            if item.get(key):
-                                item[key] = _remap_saved_data_path(item.get(key), saved_root)
-                settings = data.get("settings") or {}
-                if isinstance(settings, dict) and settings.get("glossary"):
-                    settings["glossary"] = _remap_saved_data_path(settings.get("glossary"), saved_root)
-                return data,path
-        return {},None
+            candidates.append((saved_ns,path,data))
+        if not candidates:
+            return {},None
+        _,path,data=max(candidates,key=lambda x:x[0])
+        saved_root=data.get("data_root")
+        for item in data.get("queue",[]) or []:
+            if isinstance(item,dict):
+                for key in ("input","cache","output","previous_cache"):
+                    if item.get(key): item[key]=_remap_saved_data_path(item.get(key),saved_root)
+        settings=data.get("settings") or {}
+        if isinstance(settings,dict) and settings.get("glossary"):
+            settings["glossary"]=_remap_saved_data_path(settings.get("glossary"),saved_root)
+        return data,path
 
     def restore_session(self, data=None):
         if data is None:
@@ -5028,6 +5342,7 @@ Mod更新後だけ追加翻訳:
         # 復元直後は古いactiveフラグを解除し、新バージョン形式へ移行して保存する。
         self._write_session_file(active=False,restore_on_launch=False)
         self._refresh_queue_tree()
+        self._save_workspace_state("session_restored")
         self.progress_text.set(f"作業を復元しました（保存元 v{previous_version}）。翻訳開始で続きから再開します。")
 
     def _offer_restore_session(self):
@@ -6273,6 +6588,7 @@ Mod更新後だけ追加翻訳:
                     if 0 <= idx < len(self.chinese_queue_items):
                         self.chinese_queue_items[idx]["status"]=status
                         self._refresh_chinese_queue_tree()
+                        self._save_workspace_state("chinese_progress")
                 elif kind=="chinese_queue_current":
                     i,total,name=payload
                     self.chinese_queue_index=i-1
@@ -6357,11 +6673,20 @@ Mod更新後だけ追加翻訳:
                         self.discovered_mod_tree.insert("","end",iid=f"loc_{i}",values=(row.get("game",""),row.get("kind",""),row.get("mod_count",0),row.get("path","")))
                     if self.detected_mod_locations:
                         self.mod_discovery_status_var.set(f"{len(self.detected_mod_locations)}か所検出")
-                        preferred_idx=next((i for i,row in enumerate(self.detected_mod_locations) if int(row.get("mod_count",0) or 0)>0),0)
-                        first=f"loc_{preferred_idx}"
-                        if self.discovered_mod_tree.exists(first):
-                            self.discovered_mod_tree.selection_set(first); self.discovered_mod_tree.focus(first); self.discovered_mod_tree.see(first)
-                            self._sync_monitor_targets_from_discovery_selection()
+                        restored=[]
+                        wanted=set(getattr(self,"_workspace_selected_location_paths",[]) or [])
+                        for i,row in enumerate(self.detected_mod_locations):
+                            if str(row.get("path","")) in wanted:
+                                restored.append(f"loc_{i}")
+                        if restored:
+                            self.discovered_mod_tree.selection_set(restored)
+                            self.discovered_mod_tree.focus(restored[0]); self.discovered_mod_tree.see(restored[0])
+                        else:
+                            preferred_idx=next((i for i,row in enumerate(self.detected_mod_locations) if int(row.get("mod_count",0) or 0)>0),0)
+                            first=f"loc_{preferred_idx}"
+                            if self.discovered_mod_tree.exists(first):
+                                self.discovered_mod_tree.selection_set(first); self.discovered_mod_tree.focus(first); self.discovered_mod_tree.see(first)
+                        self._sync_monitor_targets_from_discovery_selection()
                     else:
                         self.mod_discovery_status_var.set("自動検出できませんでした — 手動選択を使用してください")
                 elif kind=="mod_locations_error":
