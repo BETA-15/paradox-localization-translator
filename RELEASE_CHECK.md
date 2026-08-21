@@ -1,3 +1,16 @@
+# v0.11.41 追加確認
+
+- [x] `VERSION` / `APP_VERSION` を 0.11.41 に統一
+- [x] `python -m py_compile app/main.py app/translator_core.py` PASS
+- [x] 共通「Mod分類・関連付け」の選択中Mod再クリックで選択解除できるGUI合成テスト PASS
+- [x] 未選択Modのクリックで再選択できるトグル動作テスト PASS
+- [x] 共通「Mod分類・関連付け」に「選択解除」ボタンを追加し、GUI smoke test PASS
+- [x] 総合診断左側に「全体選択」 / 「全選択解除」を再追加
+- [x] 総合診断で3件の全体選択 / 0件への全選択解除GUI smoke test PASS
+- [x] Mod分類判定・関連付け・総合診断ロジック本体は変更なし
+
+---
+
 # v0.11.40 追加確認
 
 - [x] `VERSION` / `APP_VERSION` を 0.11.40 に統一
