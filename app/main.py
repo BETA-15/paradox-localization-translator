@@ -34,7 +34,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.7"
+APP_VERSION = "0.11.8"
 
 
 def _app_container_dir() -> Path:
@@ -591,12 +591,12 @@ class App(BaseTk):
         ttk.Button(qbar,text="キャッシュを追加",command=self.import_cache_to_selected).pack(side="left",padx=(5,0))
 
         qbar2=ttk.Frame(qbox); qbar2.pack(fill="x",pady=(0,5))
-        ttk.Button(qbar2,text="上書き",command=self.overwrite_selected_translation_to_mod).pack(side="left")
+        ttk.Button(qbar2,text="選択項目を一括上書き",command=self.overwrite_selected_translation_to_mod).pack(side="left")
         ttk.Button(qbar2,text="選択項目の翻訳語QAを実行",command=self.run_selected_translation_qa).pack(side="left",padx=(6,0))
         ttk.Button(qbar2,text="用語集を自動作成",command=lambda:self.start_auto_glossary_generation("normal")).pack(side="left",padx=(6,0))
         ttk.Button(qbar2,text="QA / 比較編集へ",command=lambda:self._send_pair_to_qa_or_diff("normal","review")).pack(side="left",padx=(6,0))
         ttk.Button(qbar2,text="差分調査へ",command=lambda:self._send_pair_to_qa_or_diff("normal","diff")).pack(side="left",padx=(6,0))
-        ttk.Label(qbox,text="上書き: 既存の日本語化Modが見つかった場合は、その日本語化Modへ反映するか元Modへ反映するかを確認します。実行前にバックアップを作成します。",foreground="#8a5a00",wraplength=900,justify="left").pack(fill="x",anchor="w",pady=(0,5))
+        ttk.Label(qbox,text="上書き: 複数選択に対応。最初に上書き方針を1回だけ選び、完了済み項目をまとめて処理します。成功した項目は「上書き済み」と表示します。",foreground="#8a5a00",wraplength=900,justify="left").pack(fill="x",anchor="w",pady=(0,5))
 
         self.drop_hint=ttk.Label(qbox,textvariable=self.dnd_status_var,foreground="#666")
         self.drop_hint.pack(fill="x",pady=(0,5))
@@ -683,12 +683,12 @@ class App(BaseTk):
         ttk.Button(qbar,text="キャッシュを追加",command=self.import_cache_to_selected_chinese).pack(side="left",padx=(5,0))
 
         qbar2=ttk.Frame(qbox); qbar2.pack(fill="x",pady=(0,5))
-        ttk.Button(qbar2,text="上書き",command=self.overwrite_selected_chinese_translation).pack(side="left")
+        ttk.Button(qbar2,text="選択項目を一括上書き",command=self.overwrite_selected_chinese_translation).pack(side="left")
         ttk.Button(qbar2,text="選択項目の翻訳語QAを実行",command=self.run_selected_chinese_qa).pack(side="left",padx=(6,0))
         ttk.Button(qbar2,text="用語集を自動作成",command=lambda:self.start_auto_glossary_generation("chinese")).pack(side="left",padx=(6,0))
         ttk.Button(qbar2,text="QA / 比較編集へ",command=lambda:self._send_pair_to_qa_or_diff("chinese","review")).pack(side="left",padx=(6,0))
         ttk.Button(qbar2,text="差分調査へ",command=lambda:self._send_pair_to_qa_or_diff("chinese","diff")).pack(side="left",padx=(6,0))
-        ttk.Label(qbox,text="上書き: 既存の日本語化Modが見つかった場合は、その日本語化Modへ反映するか元Modへ反映するかを確認します。実行前にバックアップを作成します。",foreground="#8a5a00",wraplength=900,justify="left").pack(fill="x",anchor="w",pady=(0,5))
+        ttk.Label(qbox,text="上書き: 複数選択に対応。最初に上書き方針を1回だけ選び、完了済み項目をまとめて処理します。成功した項目は「上書き済み」と表示します。",foreground="#8a5a00",wraplength=900,justify="left").pack(fill="x",anchor="w",pady=(0,5))
         cols=("mod","input","output","status")
         self.chinese_queue_tree=ttk.Treeview(qbox,columns=cols,show="headings",height=10,selectmode="extended")
         for c,txt,w in (("mod","Mod / 項目",190),("input","中国語localization",330),("output","出力",300),("status","状態",90)):
@@ -840,41 +840,12 @@ class App(BaseTk):
             messagebox.showerror(APP_NAME,f"キャッシュを追加できませんでした。\n{exc}")
 
     def overwrite_selected_chinese_translation(self):
-        """中国語基準翻訳の上書き先を1つの操作に統一する。
-
-        別の日本語化Modが関連付いている場合は、ユーザーに
-        「はい=日本語化Mod」「いいえ=元Mod」「キャンセル=中止」
-        を選んでもらう。日本語化Modが無い場合は通常どおり元Modへ上書きする。
-        """
-        item=self._selected_chinese_queue_item()
-        if not item: return
-        if item.get("status","").startswith("翻訳中"):
-            messagebox.showinfo(APP_NAME,"翻訳中の項目は上書きできません。")
+        """Overwrite all selected completed Chinese-basis jobs in one batch."""
+        entries=self._selected_chinese_queue_entries()
+        if not entries:
+            messagebox.showinfo(APP_NAME,"中国語基準翻訳キューから上書きする項目を選択してください。")
             return
-
-        ext_path=item.get("external_translation_path","")
-        ext_name=item.get("external_translation_mod","") or (Path(ext_path).name if ext_path else "")
-        if ext_path:
-            choice=messagebox.askyesnocancel(
-                "上書き先の確認",
-                f"日本語化Mod『{ext_name}』が見つかっています。\n\n"
-                "この日本語化Modへ不足分を差分上書きしますか？\n\n"
-                "はい: 日本語化Modへ差分上書き\n"
-                "いいえ: 元Modへ上書き\n"
-                "キャンセル: 何もしない",
-                icon="question")
-            if choice is None:
-                return
-            if choice:
-                if item.get("external_gap_keys"):
-                    if self._merge_translation_gaps_into_external_mod(item):
-                        return
-                messagebox.showinfo(APP_NAME,"日本語化Modへ反映できる不足分の差分情報がありません。")
-                return
-            self.overwrite_selected_translation_to_mod(item_override=item, prefer_external=False)
-            return
-
-        self.overwrite_selected_translation_to_mod(item_override=item, prefer_external=False)
+        self._bulk_overwrite_queue_entries(entries, queue_kind="chinese")
 
     def run_selected_chinese_qa(self):
         item=self._selected_chinese_queue_item()
@@ -949,6 +920,9 @@ class App(BaseTk):
                 total=len(snapshot); completed=0; qa_errors=0; qa_warnings=0
                 for i,item in enumerate(snapshot):
                     if self.chinese_controller.stop_event.is_set(): break
+                    if self._queue_item_is_completed(item):
+                        completed += 1
+                        continue
                     self.events.put(("chinese_queue_status",(i,"翻訳中")))
                     self.events.put(("chinese_queue_current",(i+1,total,item.get("mod_name",""))))
                     inp=Path(item["input"]); safe=re.sub(r'[^0-9A-Za-z_\-\u3040-\u30ff\u4e00-\u9fff]+','_',item.get("mod_name") or inp.name).strip("_") or f"item_{i+1}"
@@ -1573,7 +1547,7 @@ class App(BaseTk):
                 self.monitor_llm_controller.request_stop(save=False)
 
         running=bool(self.worker and self.worker.is_alive())
-        unfinished=any(not str(item.get("status", "")).startswith("完了") for item in self.queue_items)
+        unfinished=any(not self._queue_item_is_completed(item) for item in self.queue_items)
         if running:
             # 翻訳中の終了は必ず復元可能状態として保存する。
             self._write_session_file(active=True,restore_on_launch=True)
@@ -3165,7 +3139,9 @@ Mod更新後だけ追加翻訳:
         root = Path(item.get("mod_root", "")) if item.get("mod_root") else None
         inp = Path(item.get("input", ""))
         if loc and loc.is_dir():
-            return loc, loc
+            if root and root.is_dir():
+                return loc, root
+            return loc, loc.parent
         if inp.is_dir() and inp.name.lower() == "localization":
             return inp, inp
         if inp.is_dir() and (inp / "localization").is_dir():
@@ -3178,7 +3154,7 @@ Mod更新後だけ追加翻訳:
             return files
         for p in sorted(output_root.rglob("*.yml")):
             try:
-                head=p.read_text(encoding="utf-8-sig",errors="ignore").splitlines()[:5]
+                head=core.read_localization_text(p).splitlines()[:5]
                 lang=core.detect_source_lang(p,head)
             except Exception:
                 lang=""
@@ -3186,14 +3162,49 @@ Mod更新後だけ追加翻訳:
                 files.append(p)
         return files
 
-    def _merge_translation_gaps_into_external_mod(self, item):
-        """Merge only missing/foreign keys into an existing separate Japanese translation mod."""
+    def _queue_item_is_completed(self, item):
+        status=str(item.get("status", ""))
+        return status.startswith("完了") or status == "上書き済み"
+
+    def _selected_normal_queue_entries(self):
+        if not hasattr(self,"queue_tree"):
+            return []
+        out=[]
+        for iid in self.queue_tree.selection():
+            try:
+                idx=int(iid)
+            except Exception:
+                continue
+            if 0 <= idx < len(self.queue_items):
+                out.append((idx,self.queue_items[idx]))
+        return out
+
+    def _selected_chinese_queue_entries(self):
+        if not hasattr(self,"chinese_queue_tree"):
+            return []
+        out=[]
+        for iid in self.chinese_queue_tree.selection():
+            try:
+                idx=int(str(iid).split("_",1)[1])
+            except Exception:
+                continue
+            if 0 <= idx < len(self.chinese_queue_items):
+                out.append((idx,self.chinese_queue_items[idx]))
+        return out
+
+    def _set_overwritten_status(self, item):
+        item["status"]="上書き済み"
+
+    def _perform_external_gap_overwrite(self, item, confirm=True, notify=True):
+        """Write only translated gap keys into a detected external Japanese mod."""
         ext_root = Path(item.get("external_translation_path", ""))
         ext_loc = Path(item.get("external_translation_localization", ""))
         gap_keys = {k for k in item.get("external_gap_keys", []) if k}
         out_root = Path(item.get("output", ""))
-        if not ext_root.is_dir() or not ext_loc.is_dir() or not gap_keys:
-            return False
+        if not ext_root.is_dir() or not ext_loc.is_dir():
+            return False,"日本語化Modの場所を特定できません"
+        if not gap_keys:
+            return False,"日本語化Modへ反映する差分情報がありません"
         generated = self._generated_japanese_files(out_root)
         translations = {}
         for fp in generated:
@@ -3205,26 +3216,21 @@ Mod更新後だけ追加翻訳:
                 continue
         patch_values = {k: translations[k] for k in gap_keys if k in translations}
         if not patch_values:
-            messagebox.showinfo(APP_NAME, "日本語化Modへ追加できる差分訳が完成済み出力から見つかりませんでした。")
-            return True
+            return False,"完成済み出力に差分訳が見つかりません"
 
         ext_name = item.get("external_translation_mod") or ext_root.name
         src_name = item.get("mod_name") or Path(item.get("mod_root", "")).name
-        warning=(
-            f"⚠ 別の日本語化Modへ不足分だけを書き込みます。\n\n"
-            f"元Mod: {src_name}\n"
-            f"日本語化Mod: {ext_name}\n"
-            f"★ 今回の上書き先: 日本語化Mod『{ext_name}』\n"
-            f"対象: {ext_root}\n"
-            f"差分キー: {len(patch_values)}件\n\n"
-            "既存の日本語訳は維持し、欠損・未翻訳と判定されたキーだけ更新/追加します。\n"
-            "変更対象ファイルは実行前にバックアップします。\n"
-            "Steam Workshop更新時には変更が失われる可能性があります。\n\n続行しますか？"
-        )
-        if not messagebox.askyesno("警告 — 日本語化Modへ差分上書き", warning, icon="warning"):
-            return True
-        if not messagebox.askyesno("最終確認", "日本語化Modへ不足分だけを書き込みます。本当に続行しますか？", icon="warning"):
-            return True
+        if confirm:
+            warning=(
+                f"⚠ 別の日本語化Modへ不足分だけを書き込みます。\n\n"
+                f"元Mod: {src_name}\n日本語化Mod: {ext_name}\n対象: {ext_root}\n"
+                f"差分キー: {len(patch_values)}件\n\n"
+                "既存の日本語訳は維持し、欠損・未翻訳と判定されたキーだけ更新/追加します。\n"
+                "変更対象ファイルは実行前にバックアップします。\n続行しますか？")
+            if not messagebox.askyesno("警告 — 日本語化Modへ差分上書き", warning, icon="warning"):
+                return False,"キャンセル"
+            if not messagebox.askyesno("最終確認", "日本語化Modへ不足分だけを書き込みます。本当に続行しますか？", icon="warning"):
+                return False,"キャンセル"
 
         existing_key_file = {}
         for fp in self._generated_japanese_files(ext_loc):
@@ -3234,13 +3240,12 @@ Mod更新後だけ追加翻訳:
                     existing_key_file.setdefault(key, fp)
             except Exception:
                 continue
-        stamp=datetime.now().strftime("%Y%m%d_%H%M%S")
+        stamp=datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         safe=re.sub(r'[^0-9A-Za-zぁ-んァ-ヶ一-龯_\-]+','_',ext_name).strip('_')[:60] or "JapaneseMod"
         backup_root=BACKUP_ROOT / f"{stamp}_{safe}_差分上書き"
         backed=set(); updated=0; added=0
         patch_file = ext_loc / "japanese" / "paradox_localization_translator_missing_l_japanese.yml"
         try:
-            # Existing keys are updated in-place so duplicate localization keys are avoided.
             for key, value in patch_values.items():
                 target = existing_key_file.get(key)
                 if not target:
@@ -3259,7 +3264,7 @@ Mod更新後だけ追加翻訳:
                     shutil.copy2(patch_file,bdst); backed.add(patch_file)
                 patch_file.parent.mkdir(parents=True,exist_ok=True)
                 if patch_file.exists():
-                    text=patch_file.read_text(encoding="utf-8-sig")
+                    text=core.read_localization_text(patch_file)
                     if not text.endswith("\n"): text += "\n"
                 else:
                     text="l_japanese:\n"
@@ -3268,89 +3273,60 @@ Mod更新後だけ追加翻訳:
                     text += f' {key}: "{escaped_value}"\n'
                     added += 1
                 patch_file.write_text("\ufeff"+text.lstrip("\ufeff"),encoding="utf-8")
-            messagebox.showinfo(APP_NAME,
-                f"日本語化Modへ差分を反映しました。\n\n既存キー更新: {updated}件\n新規キー追加: {added}件\nバックアップ: {len(backed)}ファイル\nバックアップ先: {backup_root if backed else '変更前ファイルなし'}")
-            return True
+            if notify:
+                messagebox.showinfo(APP_NAME,
+                    f"日本語化Modへ差分を反映しました。\n\n既存キー更新: {updated}件\n新規キー追加: {added}件\nバックアップ: {len(backed)}ファイル\nバックアップ先: {backup_root if backed else '変更前ファイルなし'}")
+            return True,f"既存キー更新 {updated} / 新規キー追加 {added}"
         except Exception as e:
             record_error("日本語化Mod差分上書き", e, str(ext_root))
-            messagebox.showerror(APP_NAME, f"日本語化Modへの差分上書き中にエラーが発生しました。\n{e}\n\nバックアップ先: {backup_root}")
-            return True
+            if notify:
+                messagebox.showerror(APP_NAME, f"日本語化Modへの差分上書き中にエラーが発生しました。\n{e}\n\nバックアップ先: {backup_root}")
+            return False,str(e)
 
-    def overwrite_selected_translation_to_mod(self, item_override=None, prefer_external=True):
-        item = item_override or self._selected_queue_item()
-        if not item:
-            return
-        if item.get("status", "").startswith("翻訳中"):
-            messagebox.showinfo(APP_NAME, "翻訳中の項目は上書きできません。翻訳完了後に実行してください。")
-            return
-        if prefer_external and item.get("external_translation_path"):
-            ext_path=item.get("external_translation_path","")
-            ext_name=item.get("external_translation_mod","") or Path(ext_path).name
-            choice=messagebox.askyesnocancel(
-                "上書き先の確認",
-                f"日本語化Mod『{ext_name}』が見つかっています。\n\n"
-                "この日本語化Modへ翻訳差分を上書きしますか？\n\n"
-                "はい: 日本語化Modへ差分上書き\n"
-                "いいえ: 元Modへ上書き\n"
-                "キャンセル: 何もしない",
-                icon="question")
-            if choice is None:
-                return
-            if choice:
-                if item.get("external_gap_keys"):
-                    if self._merge_translation_gaps_into_external_mod(item):
-                        return
-                messagebox.showinfo(APP_NAME,"日本語化Modへ反映できる不足分の差分情報がありません。")
-                return
-            # いいえの場合はこのまま元Modへの上書き処理へ進む。
+    def _merge_translation_gaps_into_external_mod(self, item):
+        ok,_=self._perform_external_gap_overwrite(item,confirm=True,notify=True)
+        if ok:
+            self._set_overwritten_status(item)
+            self._refresh_queue_tree()
+            self._refresh_chinese_queue_tree()
+        return ok
+
+    def _perform_source_mod_overwrite(self, item, confirm=True, notify=True):
         loc_root, mod_root = self._infer_mod_target_for_item(item)
         if not loc_root:
-            messagebox.showerror(APP_NAME, "元のModのlocalizationフォルダを特定できません。\n翻訳状況タブからModを追加した場合は自動特定できます。")
-            return
+            return False,"元のModのlocalizationフォルダを特定できません"
         out_root = Path(item.get("output", ""))
         generated = self._generated_japanese_files(out_root)
         if not generated:
-            messagebox.showinfo(APP_NAME, "上書きできる完成済み日本語YAMLが出力先に見つかりません。")
-            return
+            return False,"完成済み日本語YAMLが出力先に見つかりません"
 
         input_path = Path(item.get("input", ""))
-        # Status-tab direct jobs use localization as input, so output paths are relative to localization.
-        if input_path.is_dir() and input_path.name.lower() == "localization":
-            target_base = loc_root
-        else:
-            # For a mod-root job, generated files keep localization/... in their relative path.
-            target_base = mod_root
-
+        target_base = loc_root if input_path.is_dir() and input_path.name.lower() == "localization" else mod_root
         mappings=[]
         for src in generated:
             try:
                 rel=src.relative_to(out_root)
             except ValueError:
                 continue
-            dst=target_base / rel
-            mappings.append((src,dst,rel))
+            mappings.append((src,target_base / rel,rel))
         if not mappings:
-            messagebox.showinfo(APP_NAME, "上書き対象を特定できませんでした。")
-            return
+            return False,"上書き対象を特定できません"
 
         existing=sum(1 for _,dst,_ in mappings if dst.exists())
         mod_name=item.get("mod_name") or Path(mod_root).name
-        warning=(
-            f"⚠ 元のModへ日本語化ファイルを直接書き込みます。\n\n"
-            f"Mod: {mod_name}\n"
-            f"対象: {mod_root}\n"
-            f"日本語YAML: {len(mappings)}件\n"
-            f"既存ファイルの上書き: {existing}件\n\n"
-            "既存ファイルは実行前にバックアップされます。\n"
-            "Mod更新・Steam Workshop更新時には上書き内容が失われる可能性があります。\n\n"
-            "続行しますか？"
-        )
-        if not messagebox.askyesno("警告 — Modへ直接上書き", warning, icon="warning"):
-            return
-        if not messagebox.askyesno("最終確認", "本当に元のModへ書き込みますか？\nこの操作は対象ファイルを置き換えます。", icon="warning"):
-            return
+        if confirm:
+            warning=(
+                f"⚠ 元のModへ日本語化ファイルを直接書き込みます。\n\n"
+                f"Mod: {mod_name}\n対象: {mod_root}\n日本語YAML: {len(mappings)}件\n"
+                f"既存ファイルの上書き: {existing}件\n\n"
+                "既存ファイルは実行前にバックアップされます。\n"
+                "Mod更新・Steam Workshop更新時には上書き内容が失われる可能性があります。\n\n続行しますか？")
+            if not messagebox.askyesno("警告 — Modへ直接上書き", warning, icon="warning"):
+                return False,"キャンセル"
+            if not messagebox.askyesno("最終確認", "本当に元のModへ書き込みますか？\nこの操作は対象ファイルを置き換えます。", icon="warning"):
+                return False,"キャンセル"
 
-        stamp=datetime.now().strftime("%Y%m%d_%H%M%S")
+        stamp=datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         safe=re.sub(r'[^0-9A-Za-zぁ-んァ-ヶ一-龯_\-]+','_',mod_name).strip('_')[:60] or "Mod"
         backup_root=BACKUP_ROOT / f"{stamp}_{safe}"
         copied=0; backed=0
@@ -3362,10 +3338,113 @@ Mod更新後だけ追加翻訳:
                     shutil.copy2(dst,bdst); backed += 1
                 dst.parent.mkdir(parents=True,exist_ok=True)
                 shutil.copy2(src,dst); copied += 1
-            messagebox.showinfo(APP_NAME,
-                f"Modへ日本語化ファイルを上書きしました。\n\n書き込み: {copied}件\nバックアップ: {backed}件\nバックアップ先: {backup_root if backed else '既存ファイルなし'}")
+            if notify:
+                messagebox.showinfo(APP_NAME,
+                    f"Modへ日本語化ファイルを上書きしました。\n\n書き込み: {copied}件\nバックアップ: {backed}件\nバックアップ先: {backup_root if backed else '既存ファイルなし'}")
+            return True,f"書き込み {copied} / バックアップ {backed}"
         except Exception as e:
-            messagebox.showerror(APP_NAME, f"上書き中にエラーが発生しました。\n{e}\n\nバックアップ先: {backup_root}")
+            record_error("Mod直接上書き", e, str(mod_root))
+            if notify:
+                messagebox.showerror(APP_NAME, f"上書き中にエラーが発生しました。\n{e}\n\nバックアップ先: {backup_root}")
+            return False,str(e)
+
+    def _overwrite_single_item_interactive(self, item, prefer_external=True):
+        if not self._queue_item_is_completed(item):
+            messagebox.showinfo(APP_NAME,"上書きできるのは翻訳完了済みの項目です。")
+            return False
+        use_external=False
+        if prefer_external and item.get("external_translation_path"):
+            ext_name=item.get("external_translation_mod","") or Path(item.get("external_translation_path","")).name
+            choice=messagebox.askyesnocancel(
+                "上書き先の確認",
+                f"日本語化Mod『{ext_name}』が見つかっています。\n\n"
+                "はい: 日本語化Modへ差分上書き\nいいえ: 元Modへ上書き\nキャンセル: 何もしない",
+                icon="question")
+            if choice is None:
+                return False
+            use_external=bool(choice)
+        if use_external:
+            ok,reason=self._perform_external_gap_overwrite(item,confirm=True,notify=True)
+        else:
+            ok,reason=self._perform_source_mod_overwrite(item,confirm=True,notify=True)
+        if ok:
+            self._set_overwritten_status(item)
+            self._refresh_queue_tree(); self._refresh_chinese_queue_tree()
+        elif reason not in {"キャンセル"}:
+            messagebox.showinfo(APP_NAME,f"上書きできませんでした。\n{reason}")
+        return ok
+
+    def _bulk_overwrite_queue_entries(self, entries, queue_kind="normal"):
+        eligible=[]; skipped_unfinished=0
+        for idx,item in entries:
+            if self._queue_item_is_completed(item):
+                eligible.append((idx,item))
+            else:
+                skipped_unfinished += 1
+        if not eligible:
+            messagebox.showinfo(APP_NAME,"選択項目に翻訳完了済みの項目がありません。")
+            return
+
+        has_external=any(item.get("external_translation_path") for _,item in eligible)
+        policy="source"
+        if has_external:
+            choice=messagebox.askyesnocancel(
+                "一括上書き先の方針",
+                f"翻訳完了済み {len(eligible)}件を一括上書きします。\n\n"
+                "はい: 既存日本語化Modがある項目は日本語化Modへ差分上書き\n"
+                "      日本語化Modがない項目は元Modへ上書き\n"
+                "いいえ: すべて元Modへ上書き\n"
+                "キャンセル: 何もしない",
+                icon="question")
+            if choice is None:
+                return
+            policy="external" if choice else "source"
+
+        policy_text="既存日本語化Modを優先" if policy=="external" else "すべて元Modへ上書き"
+        if not messagebox.askyesno(
+            "一括上書きの確認",
+            f"対象: {len(eligible)}件\n方針: {policy_text}\n"
+            f"未完了のためスキップ予定: {skipped_unfinished}件\n\n"
+            "各Modについて既存ファイルのバックアップを作成してから書き込みます。\n続行しますか？",
+            icon="warning"):
+            return
+
+        success=0; skipped=skipped_unfinished; failed=0; details=[]
+        for _,item in eligible:
+            name=item.get("mod_name") or Path(item.get("input","")).name or "項目"
+            try:
+                if policy=="external" and item.get("external_translation_path"):
+                    ok,reason=self._perform_external_gap_overwrite(item,confirm=False,notify=False)
+                    if not ok and reason in {"日本語化Modへ反映する差分情報がありません","完成済み出力に差分訳が見つかりません"}:
+                        skipped += 1; details.append(f"{name}: スキップ ({reason})"); continue
+                else:
+                    ok,reason=self._perform_source_mod_overwrite(item,confirm=False,notify=False)
+                if ok:
+                    self._set_overwritten_status(item); success += 1
+                else:
+                    failed += 1; details.append(f"{name}: 失敗 ({reason})")
+            except Exception as exc:
+                failed += 1; details.append(f"{name}: 失敗 ({exc})")
+                record_error("一括上書き",exc,name)
+
+        self._refresh_queue_tree(); self._refresh_chinese_queue_tree()
+        if self.queue_items and all(self._queue_item_is_completed(x) for x in self.queue_items):
+            self._delete_session()
+        summary=f"一括上書きが完了しました。\n\n上書き成功: {success}件\nスキップ: {skipped}件\n失敗: {failed}件"
+        if details:
+            summary += "\n\n詳細:\n" + "\n".join(details[:12])
+            if len(details)>12:
+                summary += f"\n…ほか {len(details)-12}件"
+        messagebox.showinfo(APP_NAME,summary)
+
+    def overwrite_selected_translation_to_mod(self, item_override=None, prefer_external=True):
+        if item_override is not None:
+            return self._overwrite_single_item_interactive(item_override,prefer_external=prefer_external)
+        entries=self._selected_normal_queue_entries()
+        if not entries:
+            messagebox.showinfo(APP_NAME,"通常翻訳キューから上書きする項目を選択してください。")
+            return
+        self._bulk_overwrite_queue_entries(entries,queue_kind="normal")
 
     def overwrite_selected_status_mod(self):
         result=self._selected_mod_status_result()
@@ -4145,7 +4224,7 @@ Mod更新後だけ追加翻訳:
         try:
             for i,item in enumerate(self.queue_items):
                 self.current_queue_index=i
-                if str(item.get("status", "")).startswith("完了"): continue
+                if self._queue_item_is_completed(item): continue
                 item["status"]="翻訳中"; self.events.put(("queue_refresh",None))
                 self._checkpoint({"queue_index":i})
                 out=Path(item["output"]); cache_file=Path(self._ensure_item_cache(item))
