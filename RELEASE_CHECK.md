@@ -1,4 +1,4 @@
-# Release Check — v0.8.9
+# Release Check — v0.11.28
 
 ## 主な変更
 
