@@ -36,7 +36,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.51"
+APP_VERSION = "0.11.52"
 MOD_STATUS_CACHE_VERSION = 11
 
 
@@ -683,6 +683,8 @@ class App(BaseTk):
         self.backup_restore_entry_map = {}
         self.backup_restore_summary_var = tk.StringVar(value="バックアップ未読込")
         self.backup_restore_detail_var = tk.StringVar(value="一覧からバックアップを選択してください。")
+        self.backup_restore_game_var = tk.StringVar(value="すべてのゲーム")
+        self.backup_restore_mod_var = tk.StringVar(value="すべてのMod")
 
         self.mod_research_results = []
         self.mod_research_thread = None
@@ -3011,7 +3013,7 @@ Mod更新後だけ追加翻訳:
         actions = ttk.LabelFrame(left, text="操作", padding=6); actions.pack(fill="x", pady=(8,0))
         self.diagnostic_scan_btn=ttk.Button(actions,text="選択Modを診断",command=lambda:self._start_localization_diagnostic(False)); self.diagnostic_scan_btn.pack(fill="x")
         self.diagnostic_repair_btn=ttk.Button(actions,text="設定した内容で修復を実行",command=lambda:self._start_localization_diagnostic(True)); self.diagnostic_repair_btn.pack(fill="x",pady=(6,0))
-        ttk.Label(actions,text="修復時のバックアップ先:\nDocuments/Paradox Localization Translator/バックアップ/総合診断/日時/Mod名/localization/",foreground="#666",wraplength=340,justify="left").pack(anchor="w",pady=(7,0))
+        ttk.Label(actions,text="修復時のバックアップ先:\nDocuments/Paradox Localization Translator/バックアップ/ゲーム/Mod/総合診断/日時/localization/",foreground="#666",wraplength=340,justify="left").pack(anchor="w",pady=(7,0))
 
         resultbox=ttk.LabelFrame(right,text="診断結果",padding=6); resultbox.pack(fill="both",expand=True)
         rw=ttk.Frame(resultbox); rw.pack(fill="both",expand=True)
@@ -3054,7 +3056,36 @@ Mod更新後だけ追加翻訳:
 
     # ---------------- Backup restore / rollback ----------------
     def _safe_backup_mod_token(self, text):
-        return re.sub(r'[^0-9A-Za-zぁ-んァ-ヶ一-龯_\-]+', '_', str(text or '')).strip('_')[:70] or 'Mod'
+        return re.sub(r'[^0-9A-Za-zぁ-んァ-ヶ一-龯 _\-().\[\]]+', '_', str(text or '')).strip(' ._')[:90] or 'Mod'
+
+    def _backup_game_name_for_root(self, target_root):
+        """Infer the owning Paradox game without requiring a fresh Mod scan."""
+        p=Path(target_root)
+        raw=str(p).replace('\\','/').lower()
+        # Steam Workshop paths are the strongest signal and work on every OS.
+        for game, meta in core.PARADOX_STEAM_GAMES.items():
+            appid=str(meta.get('appid') or '')
+            if appid and f'/workshop/content/{appid}/' in raw:
+                return game
+        # Local launcher Mods normally live below Documents/Paradox Interactive/<game>/mod.
+        for game, meta in core.PARADOX_STEAM_GAMES.items():
+            for docs_name in meta.get('docs', []):
+                needle='/' + str(docs_name).replace('\\','/').strip('/').lower() + '/mod/'
+                if needle in raw:
+                    return game
+        # Reuse a game label already discovered by Translation Status when available.
+        try:
+            target_key=str(p.resolve())
+        except Exception:
+            target_key=str(p)
+        for row in list(getattr(self,'mod_research_results',[]) or []):
+            rr=row.get('mod_root') or row.get('path') or row.get('root')
+            if not rr: continue
+            try: rr_key=str(Path(rr).resolve())
+            except Exception: rr_key=str(Path(rr))
+            if rr_key == target_key and row.get('game'):
+                return str(row.get('game'))
+        return 'ゲーム未特定'
 
     def _known_mod_roots_for_restore(self):
         roots=[]
@@ -3129,16 +3160,20 @@ Mod更新後だけ追加翻訳:
         else:
             loc=target_root / 'localization'
         mod_name=core.detect_mod_name(target_root) if target_root.exists() else target_root.name
+        game_name=self._backup_game_name_for_root(target_root)
         stamp=stamp or datetime.now().strftime('%Y%m%d_%H%M%S_%f')
         generation=None
+        mod_hash=hashlib.sha1(str(target_root).encode()).hexdigest()[:8]
+        game_dir=BACKUP_ROOT / self._safe_backup_mod_token(game_name)
+        mod_dir=game_dir / f"{self._safe_backup_mod_token(mod_name)}__{mod_hash}"
         if category == '上書き':
             generation=self._next_overwrite_backup_generation(target_root, mod_name)
             folder=f"第{generation:04d}回_{stamp}"
-            root=BACKUP_ROOT / '上書き' / f"{self._safe_backup_mod_token(mod_name)}_{hashlib.sha1(str(target_root).encode()).hexdigest()[:8]}" / folder
+            root=mod_dir / '上書き' / folder
         elif category == '復元前退避':
-            root=BACKUP_ROOT / '復元前退避' / stamp / f"{self._safe_backup_mod_token(mod_name)}_{hashlib.sha1(str(target_root).encode()).hexdigest()[:8]}"
+            root=mod_dir / '復元前退避' / stamp
         else:
-            root=BACKUP_ROOT / category / stamp / f"{self._safe_backup_mod_token(mod_name)}_{hashlib.sha1(str(target_root).encode()).hexdigest()[:8]}"
+            root=mod_dir / self._safe_backup_mod_token(category) / stamp
         root.mkdir(parents=True, exist_ok=True)
         dst=root / 'localization'
         existed=loc.exists() and loc.is_dir()
@@ -3148,10 +3183,11 @@ Mod更新後だけ追加翻訳:
         else:
             dst.mkdir(parents=True, exist_ok=True)
         manifest={
-            'schema_version': 1,
+            'schema_version': 2,
             'app_version': APP_VERSION,
             'created_at': datetime.now().isoformat(timespec='seconds'),
             'timestamp': stamp,
+            'game_name': game_name,
             'category': category,
             'backup_kind': backup_kind,
             'generation': generation,
@@ -3169,23 +3205,36 @@ Mod更新後だけ追加翻訳:
     def _build_backup_restore_tab(self):
         t=self.tab_backup_restore
         head=ttk.Frame(t); head.pack(fill='x')
-        ttk.Label(head,text='バックアップ復元 — Modごとに過去のlocalizationへロールバック',font=('',14,'bold')).pack(side='left')
+        ttk.Label(head,text='バックアップ復元 — ゲーム → Mod → 履歴からロールバック',font=('',14,'bold')).pack(side='left')
         ttk.Label(head,textvariable=self.backup_restore_summary_var).pack(side='right')
         ttk.Label(t,text=(
-            '上書き・総合診断・復元前退避で作成したバックアップを個別に選択して復元します。'
-            ' v0.11.51以降の上書きバックアップは第何回かを記録し、上書き直前の原文状態を明示します。'
-            ' 復元そのものを取り消せるよう、復元前にも現在のlocalization全体を退避します。'
+            'バックアップはゲームごと・Modごとに整理して表示します。ゲームを選び、次にModを選ぶと、そのModの上書き・総合診断・復元前退避の履歴だけを確認できます。'
+            ' v0.11.52以降の新規バックアップも「ゲーム / Mod / 種別 / 履歴」の階層へ保存します。既存バックアップは移動せず、この画面で可能な範囲を自動分類します。'
         ),foreground='#555',wraplength=1150,justify='left').pack(fill='x',pady=(6,8))
-        bar=ttk.Frame(t); bar.pack(fill='x')
-        ttk.Button(bar,text='バックアップ一覧を再読込',command=self._refresh_backup_restore_entries).pack(side='left')
-        self.backup_restore_btn=ttk.Button(bar,text='選択バックアップを復元',command=self._restore_selected_backup,state='disabled')
+
+        filters=ttk.LabelFrame(t,text='1. ゲームとModを選択',padding=6); filters.pack(fill='x')
+        ttk.Label(filters,text='ゲーム:').grid(row=0,column=0,sticky='w')
+        self.backup_restore_game_combo=ttk.Combobox(filters,textvariable=self.backup_restore_game_var,state='readonly',width=28)
+        self.backup_restore_game_combo.grid(row=0,column=1,sticky='w',padx=(6,18))
+        ttk.Label(filters,text='Mod:').grid(row=0,column=2,sticky='w')
+        self.backup_restore_mod_combo=ttk.Combobox(filters,textvariable=self.backup_restore_mod_var,state='readonly',width=42)
+        self.backup_restore_mod_combo.grid(row=0,column=3,sticky='ew',padx=(6,18))
+        filters.columnconfigure(3,weight=1)
+        self.backup_restore_game_combo.bind('<<ComboboxSelected>>',self._on_backup_restore_game_changed)
+        self.backup_restore_mod_combo.bind('<<ComboboxSelected>>',lambda _e:self._render_backup_restore_entries())
+        ttk.Button(filters,text='バックアップ一覧を再読込',command=self._refresh_backup_restore_entries).grid(row=0,column=4,sticky='e')
+
+        action=ttk.Frame(t); action.pack(fill='x',pady=(8,0))
+        ttk.Label(action,text='2. 履歴を選択して復元:').pack(side='left')
+        self.backup_restore_btn=ttk.Button(action,text='選択バックアップを復元',command=self._restore_selected_backup,state='disabled')
         self.backup_restore_btn.pack(side='left',padx=(8,0))
+
         treebox=ttk.Frame(t); treebox.pack(fill='both',expand=True,pady=(8,0))
-        cols=('generation','time','mod','kind','state','target','format')
+        cols=('generation','time','kind','state','target','format')
         self.backup_restore_tree=ttk.Treeview(treebox,columns=cols,show='headings',selectmode='browse',height=18)
         for c,txt,w in (
-            ('generation','作成回数',110),('time','作成日時',160),('mod','対象Mod',250),('kind','バックアップ種別',180),
-            ('state','保存されている状態 / 原文',330),('target','復元先',480),('format','形式',120)):
+            ('generation','作成回数',110),('time','作成日時',165),('kind','バックアップ種別',180),
+            ('state','保存されている状態 / 原文',380),('target','復元先',460),('format','形式',120)):
             self.backup_restore_tree.heading(c,text=txt); self.backup_restore_tree.column(c,width=w,minwidth=w,stretch=False,anchor='w')
         sy=ttk.Scrollbar(treebox,orient='vertical',command=self.backup_restore_tree.yview)
         sx=ttk.Scrollbar(treebox,orient='horizontal',command=self.backup_restore_tree.xview)
@@ -3214,17 +3263,18 @@ Mod更新後だけ追加翻訳:
     def _refresh_backup_restore_entries(self):
         if not hasattr(self,'backup_restore_tree'):
             return
-        for iid in self.backup_restore_tree.get_children(): self.backup_restore_tree.delete(iid)
         entries=[]; seen=set()
         for rec in self._backup_manifest_records():
             root=Path(rec.get('_entry_root',''))
             if not root.exists(): continue
-            seen.add(str(root.resolve()))
+            try: seen.add(str(root.resolve()))
+            except Exception: seen.add(str(root))
             target=Path(rec.get('target_root') or '') if rec.get('target_root') else None
+            game=rec.get('game_name') or (self._backup_game_name_for_root(target) if target else 'ゲーム未特定')
             entries.append({
                 'entry_root':root,'snapshot':root/'localization','manifest':rec,
                 'generation':rec.get('generation'),'created_at':rec.get('created_at') or rec.get('timestamp',''),
-                'mod':rec.get('target_mod_name') or (target.name if target else root.name),
+                'game':game,'mod':rec.get('target_mod_name') or (target.name if target else root.name),
                 'kind':rec.get('backup_kind') or rec.get('category') or 'バックアップ',
                 'state':rec.get('state_label') or 'localizationバックアップ',
                 'target_root':target,'format':'完全スナップショット','exact':True,
@@ -3246,45 +3296,82 @@ Mod更新後だけ追加翻訳:
                     if norm and rn and (norm==rn or norm in rn or rn in norm): matches.append((r,n))
                 if len(matches)==1: target,target_name=matches[0]
                 stamp=entry_root.parent.name
+                game=self._backup_game_name_for_root(target) if target else 'ゲーム未特定'
                 entries.append({'entry_root':entry_root,'snapshot':loc,'manifest':None,'generation':None,'created_at':stamp,
-                    'mod':target_name or mod_guess,'kind':'総合診断修復','state':'総合診断の修復直前localization全体',
+                    'game':game,'mod':target_name or mod_guess,'kind':'総合診断修復','state':'総合診断の修復直前localization全体',
                     'target_root':target,'format':'旧形式・完全','exact':True})
                 seen.add(key)
-        # Legacy overwrite backups only contain files that were overwritten.  They are
-        # still useful, but restoration cannot safely infer newly-created files to remove.
+        # Legacy overwrite backups only contain files that were overwritten.
         try:
             top_dirs=list(BACKUP_ROOT.iterdir()) if BACKUP_ROOT.exists() else []
         except Exception:
             top_dirs=[]
         legacy_by_mod={}
+        reserved={'総合診断','上書き','復元前退避'} | {self._safe_backup_mod_token(g) for g in core.PARADOX_STEAM_GAMES} | {'ゲーム未特定'}
         for d in sorted(top_dirs,key=lambda x:x.name):
-            if not d.is_dir() or d.name in {'総合診断','上書き','復元前退避'}: continue
+            if not d.is_dir() or d.name in reserved: continue
             if not re.match(r'^\d{8}_\d{6}',d.name): continue
             target,target_name=self._infer_legacy_backup_target(d.name)
             kind='差分上書き' if d.name.endswith('_差分上書き') else '不足分上書き' if d.name.endswith('_不足分上書き') else '元Mod上書き'
             key=target_name or re.sub(r'^\d{8}_\d{6}(?:_\d+)?_?','',d.name)
             legacy_by_mod.setdefault(key,[]).append(d)
+            game=self._backup_game_name_for_root(target) if target else 'ゲーム未特定'
             entries.append({'entry_root':d,'snapshot':d,'manifest':None,'generation':None,'created_at':d.name[:22],
-                'mod':target_name or key,'kind':kind,'state':'上書き直前に保存された既存ファイル（旧形式・部分バックアップ）',
+                'game':game,'mod':target_name or key,'kind':kind,'state':'上書き直前に保存された既存ファイル（旧形式・部分バックアップ）',
                 'target_root':target,'format':'旧形式・部分','exact':False})
-        # Give legacy overwrite backups an inferred sequence number per displayed Mod.
         for mod, dirs in legacy_by_mod.items():
             order={str(d):i+1 for i,d in enumerate(sorted(dirs,key=lambda x:x.name))}
             for e in entries:
                 if e['manifest'] is None and e['entry_root'] in dirs:
                     e['generation']=order.get(str(e['entry_root']))
-        def sortkey(e):
-            return str(e.get('created_at') or e['entry_root'].name)
-        entries.sort(key=sortkey,reverse=True)
-        self.backup_restore_entries=entries; self.backup_restore_entry_map={}
-        for idx,e in enumerate(entries):
+        entries.sort(key=lambda e:str(e.get('created_at') or e['entry_root'].name),reverse=True)
+        self.backup_restore_entries=entries
+
+        games=sorted({str(e.get('game') or 'ゲーム未特定') for e in entries},key=str.casefold)
+        game_values=['すべてのゲーム']+games
+        self.backup_restore_game_combo['values']=game_values
+        if self.backup_restore_game_var.get() not in game_values:
+            self.backup_restore_game_var.set(game_values[0])
+        self._refresh_backup_restore_mod_filter()
+        self._render_backup_restore_entries()
+
+    def _refresh_backup_restore_mod_filter(self):
+        game=self.backup_restore_game_var.get() or 'すべてのゲーム'
+        mods=sorted({str(e.get('mod') or 'Mod') for e in self.backup_restore_entries
+                     if game == 'すべてのゲーム' or str(e.get('game')) == game},key=str.casefold)
+        values=['すべてのMod']+mods
+        self.backup_restore_mod_combo['values']=values
+        if self.backup_restore_mod_var.get() not in values:
+            self.backup_restore_mod_var.set(values[0])
+
+    def _on_backup_restore_game_changed(self, _event=None):
+        self.backup_restore_mod_var.set('すべてのMod')
+        self._refresh_backup_restore_mod_filter()
+        self._render_backup_restore_entries()
+
+    def _render_backup_restore_entries(self):
+        if not hasattr(self,'backup_restore_tree'): return
+        for iid in self.backup_restore_tree.get_children(): self.backup_restore_tree.delete(iid)
+        self.backup_restore_entry_map={}
+        game=self.backup_restore_game_var.get() or 'すべてのゲーム'
+        mod=self.backup_restore_mod_var.get() or 'すべてのMod'
+        visible=[]
+        for e in self.backup_restore_entries:
+            if game != 'すべてのゲーム' and str(e.get('game')) != game: continue
+            if mod != 'すべてのMod' and str(e.get('mod')) != mod: continue
+            visible.append(e)
+        for idx,e in enumerate(visible):
             iid=f'b{idx}'
             self.backup_restore_entry_map[iid]=e
             gen=(f"第{int(e['generation'])}回" if e.get('generation') else '—')
             created=str(e.get('created_at') or '')
             target=str(e.get('target_root') or '復元先未特定')
-            self.backup_restore_tree.insert('', 'end', iid=iid, values=(gen,created,e['mod'],e['kind'],e['state'],target,e['format']))
-        self.backup_restore_summary_var.set(f'バックアップ: {len(entries)}件')
+            self.backup_restore_tree.insert('', 'end', iid=iid, values=(gen,created,e['kind'],e['state'],target,e['format']))
+        scope=[]
+        if game != 'すべてのゲーム': scope.append(game)
+        if mod != 'すべてのMod': scope.append(mod)
+        suffix=(' / ' + ' → '.join(scope)) if scope else ''
+        self.backup_restore_summary_var.set(f'バックアップ: {len(visible)}件（全{len(self.backup_restore_entries)}件）{suffix}')
         self.backup_restore_detail_var.set('一覧からバックアップを選択してください。')
         self.backup_restore_btn.config(state='disabled')
 
@@ -3297,7 +3384,7 @@ Mod更新後だけ追加翻訳:
         target=e.get('target_root')
         exact='localization全体をその時点へ戻せます。' if e.get('exact') else '旧形式の部分バックアップです。保存済みファイルだけを戻し、新規作成ファイルは自動削除しません。'
         self.backup_restore_detail_var.set(
-            f"{e['mod']} / {gen} / {e['kind']}\n保存状態: {e['state']}\nバックアップ: {e['entry_root']}\n復元先: {target or '未特定'}\n{exact}"
+            f"ゲーム: {e.get('game','ゲーム未特定')}\nMod: {e['mod']} / {gen} / {e['kind']}\n保存状態: {e['state']}\nバックアップ: {e['entry_root']}\n復元先: {target or '未特定'}\n{exact}"
         )
         self.backup_restore_btn.config(state='normal' if target and Path(target).exists() else 'disabled')
 
@@ -3311,7 +3398,7 @@ Mod更新後だけ追加翻訳:
             return
         gen=f"第{int(e['generation'])}回" if e.get('generation') else '回数記録なし'
         warning=(
-            f"バックアップを復元します。\n\n対象Mod: {e['mod']}\nバックアップ: {gen} / {e['kind']}\n"
+            f"バックアップを復元します。\n\nゲーム: {e.get('game','ゲーム未特定')}\n対象Mod: {e['mod']}\nバックアップ: {gen} / {e['kind']}\n"
             f"保存状態: {e['state']}\n復元先: {target}\n\n"
             "復元前に現在のlocalization全体を『復元前退避』へ保存します。\n"
         )
@@ -3329,9 +3416,6 @@ Mod更新後だけ追加翻訳:
                 else: target_loc.mkdir(parents=True,exist_ok=True)
             else:
                 src=Path(e['snapshot'])
-                # Legacy partial backups preserve paths relative to the Mod root in most
-                # cases. If the old backup itself starts at japanese/, restore below
-                # localization instead.
                 for fp in src.rglob('*'):
                     if not fp.is_file() or fp.name == 'backup_manifest.json': continue
                     rel=fp.relative_to(src)
@@ -3347,6 +3431,7 @@ Mod更新後だけ追加翻訳:
         except Exception as exc:
             record_error('バックアップ復元',exc,str(target))
             messagebox.showerror(APP_NAME,f"バックアップ復元に失敗しました。\n{exc}")
+
 
     def _set_diagnostic_repair_busy(self, busy):
         """修復実行中は診断対象・競合設定を固定して途中操作を防ぐ。"""

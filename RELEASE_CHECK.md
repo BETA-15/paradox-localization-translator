@@ -1,3 +1,17 @@
+# v0.11.52 追加確認
+
+- [x] `VERSION` / `APP_VERSION` を 0.11.52 に統一
+- [x] 新規バックアップ保存先をゲーム → Mod → 種別 → 履歴へ変更
+- [x] Steam Workshop App IDからゲーム名を自動判定
+- [x] 新manifestへ `game_name` を保存
+- [x] バックアップ復元タブへゲーム選択・Mod選択フィルタを追加
+- [x] ゲーム変更時にMod候補をそのゲーム内だけへ絞り込み
+- [x] v0.11.51以前のmanifest付きバックアップを移動せず読込
+- [x] 旧総合診断 / 旧上書きバックアップを可能な範囲でゲーム分類
+- [x] ゲーム判定不能バックアップは「ゲーム未特定」へ表示
+- [x] `python -m py_compile app/main.py app/translator_core.py` PASS
+- [x] 合成テストで CK3 → Test Mod → 上書き → 第1回/第2回 の階層保存を確認
+
 # v0.11.51 追加確認
 
 - [x] `VERSION` / `APP_VERSION` を 0.11.51 に統一
