@@ -34,8 +34,8 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.14"
-MOD_STATUS_CACHE_VERSION = 2
+APP_VERSION = "0.11.17"
+MOD_STATUS_CACHE_VERSION = 3
 
 
 def _app_container_dir() -> Path:
@@ -126,6 +126,7 @@ def _configure_data_root(root: Path):
     global DATA_ROOT, APP_HOME, OUTPUT_ROOT, SESSION_PATH, DEFAULT_GLOSSARY
     global STATS_PATH, PROFILES_PATH, CACHE_ROOT, CACHE_REGISTRY_PATH, BACKUP_ROOT
     global SAVED_STEAM_ROOTS_PATH, LOG_ROOT, MOD_STATUS_CACHE_PATH, APP_PREFS_PATH
+    global RESUME_STATE_PATH, RESUME_HISTORY_PATH, WORK_STATE_ROOT, MIGRATION_STATE_PATH
     DATA_ROOT = root.expanduser().resolve()
     APP_HOME = DATA_ROOT / "設定"
     OUTPUT_ROOT = DATA_ROOT / "翻訳結果"
@@ -140,12 +141,182 @@ def _configure_data_root(root: Path):
     SAVED_STEAM_ROOTS_PATH = APP_HOME / "steam_library_roots.json"
     MOD_STATUS_CACHE_PATH = APP_HOME / "mod_translation_status_cache.json"
     APP_PREFS_PATH = APP_HOME / "app_preferences.json"
-    for d in (DATA_ROOT, APP_HOME, OUTPUT_ROOT, CACHE_ROOT, BACKUP_ROOT, LOG_ROOT):
+    # Stable, version-independent resume files. APP_VERSION is metadata only.
+    RESUME_STATE_PATH = APP_HOME / "resume_state.json"
+    RESUME_HISTORY_PATH = LOG_ROOT / "resume_history.jsonl"
+    # Version-independent runtime/work state belongs under the user data root,
+    # never beside the executable/app bundle.
+    WORK_STATE_ROOT = DATA_ROOT / "作業データ"
+    MIGRATION_STATE_PATH = APP_HOME / "storage_migration.json"
+    for d in (DATA_ROOT, APP_HOME, OUTPUT_ROOT, CACHE_ROOT, BACKUP_ROOT, LOG_ROOT, WORK_STATE_ROOT):
         d.mkdir(parents=True, exist_ok=True)
 
 
 DATA_ROOT = _automatic_data_root()
 _configure_data_root(DATA_ROOT)
+
+
+def _legacy_data_roots() -> list[Path]:
+    """Known locations used by older builds for generated/runtime data."""
+    app_dir = _app_container_dir()
+    candidates = [
+        app_dir / "ParadoxLocalizationTranslator_Data",
+        app_dir / ".paradox_localization_translator",
+        Path.home() / ".paradox_localization_translator",
+    ]
+    # Source runs from a repository directory. Very old development builds could
+    # leave generated state directly beside main.py/project root. Treat the
+    # project root itself as a source only for explicitly recognised loose files.
+    unique = []
+    seen = set()
+    for path in candidates:
+        try:
+            key = str(path.expanduser().resolve())
+        except Exception:
+            key = str(path.expanduser())
+        if key == str(DATA_ROOT):
+            continue
+        if key not in seen:
+            seen.add(key); unique.append(path)
+    return unique
+
+
+def _copy_newer_file(src: Path, dst: Path) -> bool:
+    """Copy a legacy file when missing or newer. Never delete the source."""
+    try:
+        if not src.is_file():
+            return False
+        if dst.exists():
+            try:
+                if dst.stat().st_mtime >= src.stat().st_mtime:
+                    return False
+            except Exception:
+                return False
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+        return True
+    except Exception:
+        return False
+
+
+def _merge_legacy_tree(src_root: Path, dst_root: Path) -> int:
+    copied = 0
+    if not src_root.is_dir():
+        return copied
+    for src in src_root.rglob("*"):
+        if not src.is_file():
+            continue
+        try:
+            rel = src.relative_to(src_root)
+        except Exception:
+            continue
+        if _copy_newer_file(src, dst_root / rel):
+            copied += 1
+    return copied
+
+
+def _migrate_legacy_generated_data() -> dict:
+    """Copy recognised generated data away from executable-dependent locations.
+
+    Migration is deliberately non-destructive. Old app-adjacent data is left in
+    place, so a failed/new build can still be rolled back safely.
+    """
+    result = {"copied": 0, "sources": [], "timestamp": datetime.now().isoformat(timespec="seconds")}
+    recognised_dirs = {
+        "翻訳結果": OUTPUT_ROOT,
+        "キャッシュ": CACHE_ROOT,
+        "バックアップ": BACKUP_ROOT,
+        "ログ": LOG_ROOT,
+        "設定": APP_HOME,
+        "作業データ": WORK_STATE_ROOT,
+    }
+    recognised_loose = {
+        "session.json": SESSION_PATH,
+        "resume_state.json": RESUME_STATE_PATH,
+        "glossary.json": DEFAULT_GLOSSARY,
+        "model_stats.json": STATS_PATH,
+        "model_profiles.json": PROFILES_PATH,
+        "steam_library_roots.json": SAVED_STEAM_ROOTS_PATH,
+        "mod_translation_status_cache.json": MOD_STATUS_CACHE_PATH,
+        "app_preferences.json": APP_PREFS_PATH,
+        "cache_registry.json": CACHE_REGISTRY_PATH,
+    }
+    for legacy in _legacy_data_roots():
+        if not legacy.exists():
+            continue
+        copied_here = 0
+        for name, dst in recognised_dirs.items():
+            copied_here += _merge_legacy_tree(legacy / name, dst)
+        # Some older builds stored config/cache files directly in their data dir.
+        for name, dst in recognised_loose.items():
+            if _copy_newer_file(legacy / name, dst):
+                copied_here += 1
+        if copied_here:
+            result["sources"].append(str(legacy))
+            result["copied"] += copied_here
+
+    # Pre-v0.5 model statistics were stored under ~/.paradox_localization_translator.
+    # The loop above handles known loose files there; preserve any cache/history
+    # subdirectories too if they exist under familiar English names.
+    old_home = Path.home() / ".paradox_localization_translator"
+    for dirname, dst in (("cache", CACHE_ROOT), ("logs", LOG_ROOT), ("backup", BACKUP_ROOT)):
+        n = _merge_legacy_tree(old_home / dirname, dst)
+        if n:
+            result["copied"] += n
+            if str(old_home) not in result["sources"]:
+                result["sources"].append(str(old_home))
+    try:
+        previous = core.load_json(MIGRATION_STATE_PATH, {})
+        result["previous_run"] = previous.get("timestamp") if isinstance(previous, dict) else None
+        core.save_json(MIGRATION_STATE_PATH, result)
+        if result["copied"]:
+            LOG_ROOT.mkdir(parents=True, exist_ok=True)
+            with (LOG_ROOT / "storage_migration.log").open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(result, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+    return result
+
+
+def _remap_legacy_data_path(value):
+    """Map saved absolute paths from an old executable-local data root to DATA_ROOT."""
+    if not value or not isinstance(value, str):
+        return value
+    try:
+        candidate = Path(value).expanduser()
+    except Exception:
+        return value
+    roots = _legacy_data_roots()
+    # Include the historic output/.cache layout as a special case elsewhere.
+    for legacy in roots:
+        try:
+            rel = candidate.resolve().relative_to(legacy.resolve())
+        except Exception:
+            continue
+        mapped = DATA_ROOT / rel
+        # Old root subdirectory names match the current root for the main trees.
+        # If migration copied it, prefer the portable location even when the old
+        # executable is still present.
+        return str(mapped)
+    return value
+
+
+def _remap_saved_data_path(value, saved_root=None):
+    """Remap a path saved under another app-data root to the current DATA_ROOT."""
+    if not value or not isinstance(value, str):
+        return value
+    if saved_root:
+        try:
+            candidate = Path(value).expanduser().resolve()
+            old_root = Path(saved_root).expanduser().resolve()
+            rel = candidate.relative_to(old_root)
+            return str(DATA_ROOT / rel)
+        except Exception:
+            pass
+    return _remap_legacy_data_path(value)
+
+
+LEGACY_MIGRATION_RESULT = _migrate_legacy_generated_data()
 
 
 def _error_log_path() -> Path:
@@ -258,6 +429,8 @@ class App(BaseTk):
         self.glossary_path_var = tk.StringVar(value=str(DEFAULT_GLOSSARY))
         self.auto_glossary_status_var = tk.StringVar(value="自動用語作成: 待機中")
         self.auto_glossary_controller = None
+        self.glossary_import_thread = None
+        self.glossary_import_busy = False
         self.connection_var = tk.StringVar(value="LLM接続確認中…")
         self.profile_var = tk.StringVar(value="")
         self.data_root_var = tk.StringVar(value=str(DATA_ROOT))
@@ -597,6 +770,9 @@ class App(BaseTk):
         ttk.Button(qbar2,text="用語集を自動作成",command=lambda:self.start_auto_glossary_generation("normal")).pack(side="left",padx=(6,0))
         ttk.Button(qbar2,text="QA / 比較編集へ",command=lambda:self._send_pair_to_qa_or_diff("normal","review")).pack(side="left",padx=(6,0))
         ttk.Button(qbar2,text="差分調査へ",command=lambda:self._send_pair_to_qa_or_diff("normal","diff")).pack(side="left",padx=(6,0))
+        qbar3=ttk.Frame(qbox); qbar3.pack(fill="x",pady=(0,5))
+        ttk.Button(qbar3,text="中国語基準キューへ渡す",command=lambda:self.transfer_selected_queue_to_opposite("normal",False)).pack(side="left")
+        ttk.Button(qbar3,text="中国語不足分だけをキューへ追加",command=lambda:self.transfer_selected_queue_to_opposite("normal",True)).pack(side="left",padx=(6,0))
         ttk.Label(qbox,text="上書き: 複数選択に対応。最初に上書き方針を1回だけ選び、完了済み項目をまとめて処理します。成功した項目は「上書き済み」と表示します。",foreground="#8a5a00",wraplength=900,justify="left").pack(fill="x",anchor="w",pady=(0,5))
 
         self.drop_hint=ttk.Label(qbox,textvariable=self.dnd_status_var,foreground="#666")
@@ -689,6 +865,9 @@ class App(BaseTk):
         ttk.Button(qbar2,text="用語集を自動作成",command=lambda:self.start_auto_glossary_generation("chinese")).pack(side="left",padx=(6,0))
         ttk.Button(qbar2,text="QA / 比較編集へ",command=lambda:self._send_pair_to_qa_or_diff("chinese","review")).pack(side="left",padx=(6,0))
         ttk.Button(qbar2,text="差分調査へ",command=lambda:self._send_pair_to_qa_or_diff("chinese","diff")).pack(side="left",padx=(6,0))
+        qbar3=ttk.Frame(qbox); qbar3.pack(fill="x",pady=(0,5))
+        ttk.Button(qbar3,text="通常翻訳キューへ渡す",command=lambda:self.transfer_selected_queue_to_opposite("chinese",False)).pack(side="left")
+        ttk.Button(qbar3,text="英語不足分だけをキューへ追加",command=lambda:self.transfer_selected_queue_to_opposite("chinese",True)).pack(side="left",padx=(6,0))
         ttk.Label(qbox,text="上書き: 複数選択に対応。最初に上書き方針を1回だけ選び、完了済み項目をまとめて処理します。成功した項目は「上書き済み」と表示します。",foreground="#8a5a00",wraplength=900,justify="left").pack(fill="x",anchor="w",pady=(0,5))
         cols=("mod","input","output","status")
         self.chinese_queue_tree=ttk.Treeview(qbox,columns=cols,show="headings",height=10,selectmode="extended")
@@ -1254,11 +1433,6 @@ class App(BaseTk):
         ttk.Button(pf, text="差分を調査", command=self.load_diff_inspector).grid(row=0, column=3, rowspan=2, padx=(8,0))
         self.diff_drop_hint=ttk.Label(pf,text="英語または簡体字中国語の原文YAMLと日本語YAMLをここへドラッグ＆ドロップできます" if DND_AVAILABLE else "ドラッグ＆ドロップはこのビルドでは利用できません",foreground="#555")
         self.diff_drop_hint.grid(row=2,column=0,columnspan=4,sticky="ew",pady=(7,0))
-        importbar=ttk.Frame(pf); importbar.grid(row=3,column=0,columnspan=4,sticky="w",pady=(6,0))
-        ttk.Label(importbar,text="翻訳結果から:",foreground="#555").pack(side="left")
-        ttk.Button(importbar,text="通常翻訳",command=lambda:self._send_pair_to_qa_or_diff("normal","diff")).pack(side="left",padx=(6,0))
-        ttk.Button(importbar,text="中国語基準翻訳",command=lambda:self._send_pair_to_qa_or_diff("chinese","diff")).pack(side="left",padx=(6,0))
-        ttk.Button(importbar,text="翻訳状況",command=lambda:self._send_pair_to_qa_or_diff("status","diff")).pack(side="left",padx=(6,0))
 
         bar = ttk.Frame(t); bar.pack(fill="x", pady=(8,5))
         ttk.Button(bar, text="選択項目を翻訳", command=lambda:self.translate_diff_items(False)).pack(side="left")
@@ -1362,11 +1536,14 @@ class App(BaseTk):
         self.glossary_tree.bind("<Double-1>",lambda e:self.edit_glossary_term())
 
         gbar=ttk.Frame(generated); gbar.pack(fill="x",pady=(0,6))
-        ttk.Button(gbar,text="ゲーム本体から取り込む",command=self.import_glossary_from_base_game).pack(side="left")
-        import_menu=tk.Menu(gbar,tearoff=False)
-        import_menu.add_command(label="日本語YAMLファイルから取り込む",command=lambda:self.import_glossary_from_japanese_source("file"))
-        import_menu.add_command(label="日本語化Mod / localizationフォルダから取り込む",command=lambda:self.import_glossary_from_japanese_source("folder"))
-        ttk.Menubutton(gbar,text="日本語化ファイル / Modから取り込む",menu=import_menu).pack(side="left",padx=(6,0))
+        self.glossary_base_import_btn=ttk.Button(gbar,text="ゲーム本体から取り込む",command=self.import_glossary_from_base_game)
+        self.glossary_base_import_btn.pack(side="left")
+        self.glossary_import_menu=tk.Menu(gbar,tearoff=False)
+        self.glossary_import_menu.add_command(label="日本語YAMLファイルから取り込む",command=lambda:self.import_glossary_from_japanese_source("file"))
+        self.glossary_import_menu.add_command(label="日本語化Mod / localizationフォルダから取り込む",command=lambda:self.import_glossary_from_japanese_source("folder"))
+        self.glossary_jp_import_btn=ttk.Menubutton(gbar,text="日本語化ファイル / Modから取り込む",menu=self.glossary_import_menu)
+        self.glossary_jp_import_btn.pack(side="left",padx=(6,0))
+        ttk.Label(generated,text="※ ゲーム本体の日本語訳は［ゲーム本体から取り込む］を使うと、英語 / 簡体字中国語の対応原文を自動照合して用語集を作成できます。",foreground="#8a5a00",wraplength=560,justify="left").pack(fill="x",anchor="w",pady=(0,4))
         ttk.Label(generated,text="通常翻訳・中国語基準翻訳・QA・差分調査で作成した用語と、ゲーム本体や既存日本語化から取り込んだ用語を表示します。自動生成は各作業タブから実行します。",foreground="#666",wraplength=560,justify="left").pack(fill="x",anchor="w",pady=(0,4))
         self.auto_glossary_drop_hint=ttk.Label(generated,text=("ドラッグ＆ドロップ対応 — 日本語YAML / 日本語化Mod / localizationフォルダ" if DND_AVAILABLE else "ドラッグ＆ドロップはこのビルドでは利用できません"),foreground="#555")
         self.auto_glossary_drop_hint.pack(fill="x",anchor="w",pady=(0,6))
@@ -1423,9 +1600,14 @@ class App(BaseTk):
             "├── バックアップ/\n"
             "├── ログ/\n"
             "│   ├── errors_YYYYMMDD.log\n"
+            "│   ├── resume_history.jsonl\n"
+            "│   ├── storage_migration.log\n"
             "│   └── ParadoxLocalizationTranslator_diagnostics_*.zip\n"
+            "├── 作業データ/  ← バージョン非依存の一時・作業状態用\n"
             "└── 設定/\n"
             "    ├── session.json\n"
+            "    ├── resume_state.json\n"
+            "    ├── storage_migration.json\n"
             "    ├── glossary.json\n"
             "    ├── model_stats.json\n"
             "    ├── model_profiles.json\n"
@@ -1467,8 +1649,30 @@ class App(BaseTk):
                 shutil.copytree(old_root, new_root, dirs_exist_ok=True)
             _save_data_root_preference(new_root)
             _configure_data_root(new_root)
+            # Active queue/state must follow the data-root move as well; otherwise
+            # a running session could keep writing cache/output paths under old_root.
+            for item in self.queue_items:
+                if not isinstance(item, dict):
+                    continue
+                for key in ("cache", "output", "previous_cache"):
+                    raw = item.get(key)
+                    if not raw:
+                        continue
+                    try:
+                        rel = Path(raw).expanduser().resolve().relative_to(old_root.resolve())
+                        item[key] = str(DATA_ROOT / rel)
+                    except Exception:
+                        pass
             self.data_root_var.set(str(DATA_ROOT))
-            self.glossary_path_var.set(str(DEFAULT_GLOSSARY))
+            current_glossary = self.glossary_path_var.get().strip()
+            try:
+                rel = Path(current_glossary).expanduser().resolve().relative_to(old_root.resolve()) if current_glossary else None
+                self.glossary_path_var.set(str(DATA_ROOT / rel) if rel is not None else str(DEFAULT_GLOSSARY))
+            except Exception:
+                # External user-selected glossaries remain external; only the old
+                # default location is replaced by the new default.
+                if not current_glossary or current_glossary == str(old_root / "設定" / "glossary.json"):
+                    self.glossary_path_var.set(str(DEFAULT_GLOSSARY))
             self.model_stats = core.load_json(STATS_PATH, {})
             self.model_profiles = core.load_json(PROFILES_PATH, {})
             self.mod_status_cache = core.load_json(MOD_STATUS_CACHE_PATH, {"version":MOD_STATUS_CACHE_VERSION,"items":{}})
@@ -1862,7 +2066,10 @@ Paradox Localization Translator/
 ├── キャッシュ/
 ├── バックアップ/
 ├── ログ/
+├── 作業データ/
 └── 設定/
+
+旧バージョンの実行ファイル横にある ParadoxLocalizationTranslator_Data は起動時に検出し、必要なデータをこの保存先へ非破壊で引き継ぎます。再開セッション内の旧絶対パスも現在の保存先へ読み替えます。
 
 ［設定］タブの［保存場所を変更］から別SSDや任意フォルダへ変更できます。既存データをコピーして移行することもできます。
 
@@ -2265,7 +2472,7 @@ Mod更新後だけ追加翻訳:
         jpmod = r.get("external_translation_mod", "")
         jp_path = r.get("external_translation_path", "")
         zh_count = r.get("simp_chinese_files", 0)
-        lines = [f"Mod: {mod_name}", f"状態: {r.get('status','')}　欠損: {r.get('gap_count',0)}件", f"簡体字中国語: {'あり（' + str(zh_count) + 'ファイル）' if zh_count else 'なし'}", "", r.get("message", "")]
+        lines = [f"Mod: {mod_name}", f"状態: {r.get('status','')}　欠損: {r.get('gap_count',0)}件", f"英語キー: {r.get('english_keys',0)}　簡体字中国語キー: {r.get('simp_chinese_keys',0)}　日本語キー: {r.get('japanese_keys',0)}", f"言語固有キー: 英語のみ {r.get('english_only_keys',0)} / 中国語のみ {r.get('chinese_only_keys',0)}", f"簡体字中国語: {'あり（' + str(zh_count) + 'ファイル）' if zh_count else 'なし'}", "", r.get("message", "")]
         if hasattr(self, "status_chinese_queue_btn"):
             # 複数選択時は、中国語localizationを持つModが1件でもあれば利用可。
             has_zh = any(x.get("simp_chinese_files", 0) for x in selected)
@@ -2713,6 +2920,15 @@ Mod更新後だけ追加翻訳:
                         zf.writestr("session_sanitized.json", json.dumps(session, ensure_ascii=False, indent=2))
                     except Exception:
                         pass
+                if RESUME_STATE_PATH.exists():
+                    try:
+                        resume_state=core.load_json(RESUME_STATE_PATH,{})
+                        zf.writestr("resume_state_sanitized.json",json.dumps(resume_state,ensure_ascii=False,indent=2))
+                    except Exception:
+                        pass
+                if RESUME_HISTORY_PATH.exists():
+                    try: zf.write(RESUME_HISTORY_PATH,"logs/resume_history.jsonl")
+                    except Exception: pass
             messagebox.showinfo(APP_NAME, f"診断ログを収集しました。\n\n{target}\n\nAPIキーや翻訳本文は収集しません。")
         except Exception as e:
             record_error("診断ログ収集", e)
@@ -2845,6 +3061,9 @@ Mod更新後だけ追加翻訳:
                     try:
                         refined=self._refine_candidates_with_monitor_llm(candidates)
                         result["candidates"]=refined
+                        result["gap_count"]=len(refined)
+                        result["gap_origin_counts"]=core.gap_origin_counts(refined)
+                        result["gap_reason"]=core.gap_reason_text(refined)
                         # For a separate Japanese translation mod, refined candidates are that mod's missing/foreign entries.
                         if result.get("external_translation_mod") and not result.get("external_translation_complete"):
                             result["external_translation_gaps"] = refined
@@ -2852,7 +3071,7 @@ Mod更新後だけ追加翻訳:
                             result["gap_count"] = len(refined)
                             if refined:
                                 result["status"]="別Mod翻訳・欠損"
-                                result["message"]=f"{result['mod']}には日本語化Mod『{result['external_translation_mod']}』がありますが、翻訳に欠損があります（{len(refined)}件）。"
+                                result["message"]=f"{result['mod']}には日本語化Mod『{result['external_translation_mod']}』がありますが、翻訳に欠損があります（{len(refined)}件）。 {core.gap_reason_text(refined)}。"
                             else:
                                 result["status"]="別Modで完全翻訳"
                                 result["external_translation_complete"] = True
@@ -2868,7 +3087,7 @@ Mod更新後だけ追加翻訳:
                         elif refined:
                             result["status"]="欠損あり"
                             result["gap_count"] = len(refined)
-                            result["message"]=f"{result['mod']}のModに翻訳の欠損箇所があります（{len(refined)}件）。"
+                            result["message"]=f"{result['mod']}のModに翻訳の欠損箇所があります（{len(refined)}件）。 {core.gap_reason_text(refined)}。"
                         elif not result.get("external_translation_mod"):
                             result["status"]="翻訳あり"
                             result["gap_count"] = 0
@@ -3156,6 +3375,231 @@ Mod更新後だけ追加翻訳:
             return inp / "localization", inp
         return None, None
 
+    def _selected_queue_items_for_kind(self, queue_kind):
+        if queue_kind == "chinese":
+            return [item for _, item in self._selected_chinese_queue_entries()]
+        return [item for _, item in self._selected_normal_queue_entries()]
+
+    def _write_missing_source_subset(self, loc_root: Path, source_lang: str, keys, mod_name: str):
+        """Create a persistent sparse source tree containing only requested missing keys."""
+        loc_root = Path(loc_root)
+        wanted = {str(k) for k in keys if k}
+        if not wanted:
+            return None
+        values = {}
+        for fp in core.gather_yml_files(loc_root):
+            try:
+                lang, entries, _ = core.parse_localization_file(fp)
+            except Exception:
+                continue
+            if lang != source_lang:
+                continue
+            for key in wanted:
+                if key in entries:
+                    values[key] = entries[key]
+        if not values:
+            return None
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        safe = re.sub(r'[^0-9A-Za-zぁ-んァ-ヶ一-龯_\-]+', '_', mod_name or "Mod").strip('_')[:60] or "Mod"
+        work = WORK_STATE_ROOT / "不足翻訳キュー" / f"{stamp}_{safe}_{source_lang}"
+        lang_dir = work / source_lang
+        lang_dir.mkdir(parents=True, exist_ok=True)
+        out = lang_dir / f"paradox_localization_translator_missing_l_{source_lang}.yml"
+        lines = [f"l_{source_lang}:"]
+        for key in sorted(values):
+            lines.append(f' {key}: "{core.escape_localization_value(values[key])}"')
+        out.write_text("\ufeff" + "\n".join(lines) + "\n", encoding="utf-8")
+        return work
+
+    def transfer_selected_queue_to_opposite(self, queue_kind="normal", missing_only=False):
+        """Transfer selected jobs to the opposite source-language queue, optionally only real missing keys."""
+        items = self._selected_queue_items_for_kind(queue_kind)
+        if not items:
+            label = "中国語基準" if queue_kind == "chinese" else "通常"
+            messagebox.showinfo(APP_NAME, f"{label}翻訳キューから項目を選択してください。")
+            return
+        added = 0
+        skipped = 0
+        details = []
+        for item in items:
+            loc, mod_root = self._infer_mod_target_for_item(item)
+            if not loc or not Path(loc).is_dir():
+                skipped += 1; details.append(f"{item.get('mod_name','項目')}: localizationを特定できません")
+                continue
+            mod_name = item.get("mod_name") or (Path(mod_root).name if mod_root else Path(loc).name)
+            source_lang = "english" if queue_kind == "chinese" else "simp_chinese"
+            target_kind = "normal" if queue_kind == "chinese" else "chinese"
+            input_path = Path(loc)
+            missing_keys = []
+            if missing_only:
+                preferred = "simp_chinese" if queue_kind == "chinese" else "english"
+                gaps = core.scan_translation_gaps(Path(loc), preferred_source=preferred)
+                origin = "english_only" if source_lang == "english" else "chinese_only"
+                missing_keys = [g.get("key") for g in gaps if g.get("source_origin") == origin and g.get("key")]
+                if not missing_keys:
+                    skipped += 1; details.append(f"{mod_name}: {source_lang}固有の不足翻訳なし")
+                    continue
+                sparse = self._write_missing_source_subset(Path(loc), source_lang, missing_keys, mod_name)
+                if not sparse:
+                    skipped += 1; details.append(f"{mod_name}: 不足原文を作成できません")
+                    continue
+                input_path = sparse
+            if target_kind == "chinese":
+                new_item, msg = self._append_chinese_queue(input_path, mod_name + ("（不足分）" if missing_only else ""))
+            else:
+                before = len(self.queue_items)
+                self._append_queue(input_path)
+                new_item = self.queue_items[-1] if len(self.queue_items) > before else None
+                msg = ""
+            if not new_item:
+                skipped += 1; details.append(f"{mod_name}: {msg or 'キュー追加できませんでした'}")
+                continue
+            new_item["mod_name"] = mod_name + ("（不足分）" if missing_only else "")
+            new_item["mod_root"] = str(mod_root or Path(loc).parent)
+            new_item["mod_localization"] = str(loc)
+            for key in ("external_translation_mod","external_translation_path","external_translation_localization","external_gap_keys"):
+                if item.get(key):
+                    new_item[key] = item.get(key)
+            if missing_only:
+                new_item["missing_only"] = True
+                new_item["missing_source_lang"] = source_lang
+                new_item["missing_keys"] = list(missing_keys)
+            added += 1
+        self._refresh_queue_tree(); self._refresh_chinese_queue_tree()
+        self.save_session(active=False)
+        if added:
+            target_label = "通常翻訳" if queue_kind == "chinese" else "中国語基準翻訳"
+            mode = "不足している翻訳だけを" if missing_only else "選択項目を"
+            text = f"{mode}{target_label}キューへ追加しました。\n追加: {added}件 / スキップ: {skipped}件"
+        else:
+            text = f"キューへ追加できる項目がありませんでした。\nスキップ: {skipped}件"
+        if details:
+            text += "\n\n" + "\n".join(details[:8])
+        messagebox.showinfo(APP_NAME, text)
+
+    def _merge_missing_only_output(self, item, target_loc: Path, target_root: Path, confirm=True, notify=True):
+        """Merge sparse missing-only translation output without replacing unrelated Japanese text."""
+        out_root = Path(item.get("output", ""))
+        generated = self._generated_japanese_files(out_root)
+        if not generated:
+            return False, "不足分の完成済み日本語YAMLが見つかりません"
+        translations = {}
+        for fp in generated:
+            try:
+                lang, entries, _ = core.parse_localization_file(fp)
+                if lang == "japanese":
+                    translations.update(entries)
+            except Exception:
+                continue
+        wanted = {k for k in item.get("missing_keys", []) if k}
+        patch_values = {k: v for k, v in translations.items() if not wanted or k in wanted}
+        if not patch_values:
+            return False, "不足分の翻訳結果が見つかりません"
+        target_loc = Path(target_loc); target_root = Path(target_root)
+        patch_file = target_loc / "japanese" / "paradox_localization_translator_missing_l_japanese.yml"
+        if confirm:
+            if not messagebox.askyesno("不足翻訳の上書き", f"不足していた翻訳 {len(patch_values)}件だけを既存日本語本文へ追加します。\n\n対象: {target_root}\n\n既存の他キーは置き換えません。続行しますか？", icon="warning"):
+                return False, "キャンセル"
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        safe = re.sub(r'[^0-9A-Za-zぁ-んァ-ヶ一-龯_\-]+','_', item.get("mod_name", "Mod")).strip('_')[:60] or "Mod"
+        backup_root = BACKUP_ROOT / f"{stamp}_{safe}_不足分上書き"
+        try:
+            # Existing Japanese keys are updated in place. Truly absent keys are
+            # collected in the dedicated patch file, so unrelated files are never replaced.
+            existing_key_file = {}
+            for fp in self._generated_japanese_files(target_loc):
+                try:
+                    _, entries, _ = core.parse_localization_file(fp)
+                    for key in entries:
+                        existing_key_file.setdefault(key, fp)
+                except Exception:
+                    continue
+            backed = set(); updated = 0; added_values = {}
+            for key, value in patch_values.items():
+                target = existing_key_file.get(key)
+                if target:
+                    if target not in backed and target.exists():
+                        try:
+                            rel = target.relative_to(target_root)
+                        except ValueError:
+                            rel = Path(target.name)
+                        bdst = backup_root / rel
+                        bdst.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(target, bdst); backed.add(target)
+                    if core.update_localization_value(target, key, value):
+                        updated += 1
+                else:
+                    added_values[key] = value
+            if added_values:
+                patch_entries = {}
+                if patch_file.exists():
+                    try:
+                        _, patch_entries, _ = core.parse_localization_file(patch_file)
+                    except Exception:
+                        patch_entries = {}
+                    if patch_file not in backed:
+                        try:
+                            rel = patch_file.relative_to(target_root)
+                        except ValueError:
+                            rel = Path(patch_file.name)
+                        bdst = backup_root / rel
+                        bdst.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(patch_file, bdst); backed.add(patch_file)
+                patch_entries.update(added_values)
+                patch_file.parent.mkdir(parents=True, exist_ok=True)
+                lines = ["l_japanese:"]
+                for key in sorted(patch_entries):
+                    lines.append(f' {key}: "{core.escape_localization_value(patch_entries[key])}"')
+                patch_file.write_text("\ufeff" + "\n".join(lines) + "\n", encoding="utf-8")
+            source_mod_root = Path(item.get("mod_root", ""))
+            validation_text = "上書き後確認: 判定対象を特定できません"
+            if source_mod_root.is_dir():
+                if target_root.resolve() == source_mod_root.resolve():
+                    post = core.analyze_mod_translation_status(source_mod_root)
+                    validation_text = "上書き後確認: 欠損なし" if not post.get("gap_count") else f"⚠ 本文自体に欠落があります。\n{post.get('gap_reason') or core.gap_reason_text(post.get('candidates', []))}"
+                else:
+                    post = core.analyze_external_translation_coverage(source_mod_root, target_root)
+                    validation_text = "上書き後確認: 欠損なし" if post.get("complete") else f"⚠ 本文自体に欠落があります。\n{post.get('gap_reason','翻訳不足があります')}"
+            if notify:
+                messagebox.showinfo(APP_NAME, f"不足していた翻訳だけを反映しました。\n\n既存キー更新: {updated}件\n新規キー追加: {len(added_values)}件\nバックアップ: {len(backed)}ファイル\n\n{validation_text}")
+            return True, f"既存キー更新 {updated} / 新規キー追加 {len(added_values)} / {validation_text}"
+        except Exception as exc:
+            record_error("不足翻訳上書き", exc, str(target_root))
+            if notify:
+                messagebox.showerror(APP_NAME, f"不足翻訳の上書きに失敗しました。\n{exc}")
+            return False, str(exc)
+
+    def _source_gap_notice_for_items(self, items):
+        """Return a completion notice when English/Chinese source files disagree."""
+        notices=[]
+        for item in items or []:
+            loc, _ = self._infer_mod_target_for_item(item)
+            root = loc if loc and Path(loc).is_dir() else Path(item.get("input", ""))
+            if root.is_file():
+                root = root.parent
+            # Direct Chinese/English folder selection may point below localization.
+            # Walk upward so the sibling source language can still be compared.
+            for candidate in [root, *root.parents]:
+                if candidate.name.lower() == "localization":
+                    root = candidate
+                    break
+            if not root.exists():
+                continue
+            try:
+                result = core.analyze_source_language_gaps(root)
+            except Exception:
+                continue
+            if result.get("has_gaps"):
+                name=item.get("mod_name") or Path(item.get("input", "")).name or "項目"
+                notices.append(f"{name}: {core.source_language_gap_reason_text(result)}")
+        if not notices:
+            return ""
+        text = "⚠ 原文に欠落あり\n英語・簡体字中国語の原文を比較したところ、片方にのみ存在する翻訳対象キーがあります。\n"
+        text += "\n".join(notices[:10])
+        if len(notices) > 10:
+            text += f"\n…ほか {len(notices)-10}件"
+        return text
+
     def _generated_japanese_files(self, output_root: Path):
         files=[]
         if not output_root.exists():
@@ -3281,10 +3725,21 @@ Mod更新後だけ追加翻訳:
                     text += f' {key}: "{escaped_value}"\n'
                     added += 1
                 patch_file.write_text("\ufeff"+text.lstrip("\ufeff"),encoding="utf-8")
+            _, source_mod_root = self._infer_mod_target_for_item(item)
+            validation_text = "上書き後確認: 判定対象を特定できません"
+            validation_warning = False
+            if source_mod_root and Path(source_mod_root).is_dir():
+                coverage = core.analyze_external_translation_coverage(source_mod_root, ext_root)
+                if coverage.get("complete"):
+                    validation_text = "上書き後確認: 欠損なし"
+                else:
+                    validation_warning = True
+                    validation_text = f"⚠ 本文自体に欠落があります。\n{coverage.get('gap_reason','翻訳不足があります')}"
             if notify:
                 messagebox.showinfo(APP_NAME,
-                    f"日本語化Modへ差分を反映しました。\n\n既存キー更新: {updated}件\n新規キー追加: {added}件\nバックアップ: {len(backed)}ファイル\nバックアップ先: {backup_root if backed else '変更前ファイルなし'}")
-            return True,f"既存キー更新 {updated} / 新規キー追加 {added}"
+                    f"日本語化Modへ差分を反映しました。\n\n既存キー更新: {updated}件\n新規キー追加: {added}件\nバックアップ: {len(backed)}ファイル\nバックアップ先: {backup_root if backed else '変更前ファイルなし'}\n\n{validation_text}")
+            reason=f"既存キー更新 {updated} / 新規キー追加 {added} / {validation_text}"
+            return True,reason
         except Exception as e:
             record_error("日本語化Mod差分上書き", e, str(ext_root))
             if notify:
@@ -3346,10 +3801,15 @@ Mod更新後だけ追加翻訳:
                     shutil.copy2(dst,bdst); backed += 1
                 dst.parent.mkdir(parents=True,exist_ok=True)
                 shutil.copy2(src,dst); copied += 1
+            post = core.analyze_mod_translation_status(mod_root)
+            if post.get("gap_count", 0):
+                validation_text = f"⚠ 本文自体に欠落があります。\n{post.get('gap_reason') or core.gap_reason_text(post.get('candidates', []))}"
+            else:
+                validation_text = "上書き後確認: 欠損なし"
             if notify:
                 messagebox.showinfo(APP_NAME,
-                    f"Modへ日本語化ファイルを上書きしました。\n\n書き込み: {copied}件\nバックアップ: {backed}件\nバックアップ先: {backup_root if backed else '既存ファイルなし'}")
-            return True,f"書き込み {copied} / バックアップ {backed}"
+                    f"Modへ日本語化ファイルを上書きしました。\n\n書き込み: {copied}件\nバックアップ: {backed}件\nバックアップ先: {backup_root if backed else '既存ファイルなし'}\n\n{validation_text}")
+            return True,f"書き込み {copied} / バックアップ {backed} / {validation_text}"
         except Exception as e:
             record_error("Mod直接上書き", e, str(mod_root))
             if notify:
@@ -3371,7 +3831,17 @@ Mod更新後だけ追加翻訳:
             if choice is None:
                 return False
             use_external=bool(choice)
-        if use_external:
+        if item.get("missing_only"):
+            if use_external:
+                target_root = Path(item.get("external_translation_path", ""))
+                target_loc = Path(item.get("external_translation_localization", ""))
+            else:
+                target_loc, target_root = self._infer_mod_target_for_item(item)
+            if not target_loc or not target_root:
+                ok, reason = False, "不足翻訳の上書き先を特定できません"
+            else:
+                ok,reason=self._merge_missing_only_output(item, Path(target_loc), Path(target_root), confirm=True, notify=True)
+        elif use_external:
             ok,reason=self._perform_external_gap_overwrite(item,confirm=True,notify=True)
         else:
             ok,reason=self._perform_source_mod_overwrite(item,confirm=True,notify=True)
@@ -3421,7 +3891,16 @@ Mod更新後だけ追加翻訳:
         for _,item in eligible:
             name=item.get("mod_name") or Path(item.get("input","")).name or "項目"
             try:
-                if policy=="external" and item.get("external_translation_path"):
+                if item.get("missing_only"):
+                    if policy=="external" and item.get("external_translation_path"):
+                        target_root=Path(item.get("external_translation_path", "")); target_loc=Path(item.get("external_translation_localization", ""))
+                    else:
+                        target_loc,target_root=self._infer_mod_target_for_item(item)
+                    if not target_loc or not target_root:
+                        ok,reason=False,"不足翻訳の上書き先を特定できません"
+                    else:
+                        ok,reason=self._merge_missing_only_output(item,Path(target_loc),Path(target_root),confirm=False,notify=False)
+                elif policy=="external" and item.get("external_translation_path"):
                     ok,reason=self._perform_external_gap_overwrite(item,confirm=False,notify=False)
                     if not ok and reason in {"日本語化Modへ反映する差分情報がありません","完成済み出力に差分訳が見つかりません"}:
                         skipped += 1; details.append(f"{name}: スキップ ({reason})"); continue
@@ -3429,6 +3908,8 @@ Mod更新後だけ追加翻訳:
                     ok,reason=self._perform_source_mod_overwrite(item,confirm=False,notify=False)
                 if ok:
                     self._set_overwritten_status(item); success += 1
+                    if "⚠" in str(reason):
+                        details.append(f"{name}: {reason}")
                 else:
                     failed += 1; details.append(f"{name}: 失敗 ({reason})")
             except Exception as exc:
@@ -3872,6 +4353,8 @@ Mod更新後だけ追加翻訳:
     def _ensure_item_cache(self, item: dict) -> str:
         existing = item.get("cache")
         if existing:
+            existing = _remap_legacy_data_path(existing)
+            item["cache"] = existing
             path = Path(existing)
             path.parent.mkdir(parents=True, exist_ok=True)
             return str(path)
@@ -4275,17 +4758,48 @@ Mod更新後だけ追加翻訳:
 
     # ---------------- session ----------------
     def _settings_dict(self):
+        # Worker checkpoints must not read Tk variables directly.
+        if threading.current_thread() is not threading.main_thread():
+            st=dict(getattr(self,"translation_start_settings",{}) or {})
+            return {"provider":st.get("provider",""),"url":st.get("url",""),"model":st.get("model",""),"preset":st.get("preset","CK3"),
+                    "batch":st.get("batch",40),"workers":st.get("workers",1),"repair":st.get("repair",True),
+                    "dual":st.get("dual",False),"autoqa":st.get("autoqa",True),"glossary":st.get("glossary") or str(DEFAULT_GLOSSARY)}
         return {"provider":self.provider_var.get(),"url":self.url_var.get(),"model":self.model_var.get(),"preset":self.preset_var.get(),
                 "batch":self.batch_var.get(),"workers":self.workers_var.get(),"repair":self.repair_var.get(),
                 "dual":self.dual_var.get(),"autoqa":self.autoqa_var.get(),"glossary":self.glossary_path_var.get()}
 
-    def _write_session_file(self, active=False, restore_on_launch=False, checkpoint=None):
-        """Tk表示を触らずにセッションファイルだけを書き込む。
+    def _append_resume_history(self, event: str, data: dict):
+        """Append a compact, version-independent work history entry."""
+        try:
+            RESUME_HISTORY_PATH.parent.mkdir(parents=True,exist_ok=True)
+            row={
+                "timestamp":datetime.now().isoformat(timespec="seconds"),
+                "event":event,
+                "app_version":APP_VERSION,
+                "schema_version":1,
+                "active":bool(data.get("active")),
+                "restore_on_launch":bool(data.get("restore_on_launch")),
+                "queue_index":data.get("queue_index",0),
+                "queue_count":len(data.get("queue",[]) or []),
+            }
+            with RESUME_HISTORY_PATH.open("a",encoding="utf-8") as fh:
+                fh.write(json.dumps(row,ensure_ascii=False)+"\n")
+        except Exception:
+            pass
 
-        worker threadからも安全に呼べるよう、UI更新はここでは行わない。
+    def _write_session_file(self, active=False, restore_on_launch=False, checkpoint=None):
+        """Persist the current work state independently of the application version.
+
+        session.json is kept for backward compatibility. resume_state.json is the
+        stable cross-version source used when a newly installed version cannot find
+        or use the older transient session file.
         """
         data={
+            "schema_version":1,
+            "app_version":APP_VERSION,
             "version":APP_VERSION,
+            "saved_at":datetime.now().isoformat(timespec="seconds"),
+            "data_root":str(DATA_ROOT),
             "active":bool(active),
             "restore_on_launch":bool(restore_on_launch),
             "queue":self.queue_items,
@@ -4295,6 +4809,10 @@ Mod更新後だけ追加翻訳:
         if checkpoint is not None:
             data["checkpoint"]=checkpoint
         core.save_json(SESSION_PATH,data)
+        core.save_json(RESUME_STATE_PATH,data)
+        # Checkpoints may occur every batch; keep the human-readable history compact.
+        if checkpoint is None:
+            self._append_resume_history("state_saved",data)
 
     def save_session(self,active=False,restore_on_launch=None):
         # 手動保存は次回起動時の強制復元対象にはしない。終了時保存だけ明示的にTrueを渡す。
@@ -4302,36 +4820,78 @@ Mod更新後だけ追加翻訳:
             restore_on_launch=bool(active)
         self._write_session_file(active=active,restore_on_launch=restore_on_launch)
         if not active:
-            self.progress_text.set(f"セッション保存: {SESSION_PATH}")
+            self.progress_text.set(f"セッション保存: {RESUME_STATE_PATH}")
 
     def _checkpoint(self,payload):
         self._write_session_file(active=True,restore_on_launch=True,checkpoint=payload)
 
-    def restore_session(self):
-        data=core.load_json(SESSION_PATH,{})
+    def _load_resume_candidate(self):
+        """Load a restorable snapshot without requiring the same app version."""
+        for path in (SESSION_PATH,RESUME_STATE_PATH):
+            try:
+                data=core.load_json(path,{})
+            except Exception:
+                data={}
+            if not isinstance(data,dict) or not data.get("queue"):
+                continue
+            if data.get("active") or data.get("restore_on_launch"):
+                # Saved queue paths from old app-adjacent data roots must follow
+                # the migrated copy under Documents/Paradox Localization Translator.
+                saved_root = data.get("data_root")
+                for item in data.get("queue", []) or []:
+                    if isinstance(item, dict):
+                        for key in ("cache", "output", "previous_cache"):
+                            if item.get(key):
+                                item[key] = _remap_saved_data_path(item.get(key), saved_root)
+                settings = data.get("settings") or {}
+                if isinstance(settings, dict) and settings.get("glossary"):
+                    settings["glossary"] = _remap_saved_data_path(settings.get("glossary"), saved_root)
+                return data,path
+        return {},None
+
+    def restore_session(self, data=None):
+        if data is None:
+            data,_=self._load_resume_candidate()
         if not data:
-            messagebox.showinfo(APP_NAME,"保存されたセッションはありません。"); return
+            messagebox.showinfo(APP_NAME,"保存された再開可能な作業はありません。"); return
         self.queue_items=data.get("queue",[])
+        self.current_queue_index=max(0,int(data.get("queue_index",0) or 0))
         s=data.get("settings",{})
         self.provider_var.set(s.get("provider",self.provider_var.get())); self.url_var.set(s.get("url",self.url_var.get())); self.model_var.set(s.get("model",self.model_var.get())); self.preset_var.set(s.get("preset",self.preset_var.get()))
         self.batch_var.set(s.get("batch",40)); self.workers_var.set(s.get("workers",1)); self.repair_var.set(s.get("repair",True)); self.dual_var.set(s.get("dual",False)); self.autoqa_var.set(s.get("autoqa",True)); self.glossary_path_var.set(s.get("glossary",str(DEFAULT_GLOSSARY)))
         for item in self.queue_items:
             self._ensure_item_cache(item)
             if item.get("status") == "翻訳中": item["status"]="中断（再開可）"
-        # 復元した時点で古いactiveフラグを解除する。再度翻訳開始/終了したときに新しい状態で保存される。
+        previous_version=data.get("app_version") or data.get("version") or "不明"
+        # 復元直後は古いactiveフラグを解除し、新バージョン形式へ移行して保存する。
         self._write_session_file(active=False,restore_on_launch=False)
-        self._refresh_queue_tree(); self.progress_text.set("セッションを復元しました。翻訳開始で続きから再開します。")
+        self._refresh_queue_tree()
+        self.progress_text.set(f"作業を復元しました（保存元 v{previous_version}）。翻訳開始で続きから再開します。")
 
     def _offer_restore_session(self):
-        data=core.load_json(SESSION_PATH,{})
-        should_offer=bool(data.get("queue")) and bool(data.get("active") or data.get("restore_on_launch"))
-        if not should_offer:
+        data,path=self._load_resume_candidate()
+        if not data:
             return
-        if messagebox.askyesno(APP_NAME,"前回終了時の翻訳セッションが残っています。復元しますか？"):
-            self.restore_session()
+        previous_version=data.get("app_version") or data.get("version") or "不明"
+        source_note=""
+        if path==RESUME_STATE_PATH:
+            source_note="\n\nバージョン共通の再開ログから復元します。"
+        if messagebox.askyesno(APP_NAME,f"前回の未完了作業が残っています（保存元 v{previous_version}）。\n続きから復元しますか？{source_note}"):
+            self.restore_session(data)
         else:
-            # 「いいえ」を選んだセッションが毎回復活しないよう、その場で破棄する。
+            self._disable_resume_offer()
             self._delete_session()
+
+    def _disable_resume_offer(self):
+        try:
+            data=core.load_json(RESUME_STATE_PATH,{})
+            if isinstance(data,dict) and data:
+                data["active"]=False; data["restore_on_launch"]=False
+                data["saved_at"]=datetime.now().isoformat(timespec="seconds")
+                core.save_json(RESUME_STATE_PATH,data)
+                self._append_resume_history("restore_declined",data)
+        except Exception:
+            pass
 
     def _delete_session(self):
         try: SESSION_PATH.unlink(missing_ok=True)
@@ -4849,6 +5409,9 @@ Mod更新後だけ追加翻訳:
         return []
 
     def start_auto_glossary_generation(self, origin):
+        if self.glossary_import_busy:
+            messagebox.showinfo(APP_NAME, "用語取り込み中です。完了してから自動用語作成を実行してください。")
+            return
         if self.auto_glossary_controller is not None:
             messagebox.showinfo(APP_NAME, "自動用語作成はすでに実行中です。")
             return
@@ -4936,13 +5499,126 @@ Mod更新後だけ追加翻訳:
         ttk.Label(frm,text="制度名・官職名・UI語など再利用しやすい短い用語を取り込み、人物名・地名・王朝名・「〇〇公爵」「〇〇軍管区長官」のような固有名詞付き候補を除外します。",wraplength=560,justify="left",foreground="#555").pack(anchor="w",padx=(22,0),pady=(2,6))
         ttk.Radiobutton(frm,text="すべて取り込み",variable=var,value="all").pack(anchor="w")
         ttk.Label(frm,text="英語または簡体字中国語と対応付けできた項目を、長い文や固有名詞を含め原則すべて候補にします。",wraplength=560,justify="left",foreground="#555").pack(anchor="w",padx=(22,0),pady=(2,8))
-        ttk.Label(frm,text="※ 日本語だけでは原語→日本語の用語集を作れないため、英語または簡体字中国語の対応原文が必要です。",wraplength=560,justify="left",foreground="#8a5a00").pack(anchor="w",pady=(4,8))
+        ttk.Label(frm,text="※ ゲーム本体の日本語訳なら、［ゲーム本体から取り込む］で英語 / 簡体字中国語の対応原文を自動照合して用語集を作成できます。\n日本語化Mod単独の場合も、対応原文が近くになければゲーム本体との照合を案内します。",wraplength=560,justify="left",foreground="#8a5a00").pack(anchor="w",pady=(4,8))
         row=ttk.Frame(frm); row.pack(fill="x",pady=(4,0))
         def ok(): result["mode"]=var.get(); win.destroy()
         ttk.Button(row,text="キャンセル",command=win.destroy).pack(side="right")
         ttk.Button(row,text="取り込み",command=ok).pack(side="right",padx=(0,6))
         win.wait_window()
         return result["mode"]
+
+    def _set_glossary_import_busy(self, busy: bool, status: str | None = None):
+        """Update only Tk-side state for glossary imports."""
+        self.glossary_import_busy=bool(busy)
+        state="disabled" if busy else "normal"
+        for name in ("glossary_base_import_btn","glossary_jp_import_btn"):
+            widget=getattr(self,name,None)
+            if widget is not None:
+                try: widget.config(state=state)
+                except Exception: pass
+        if status:
+            self.auto_glossary_status_var.set(status)
+
+    def _start_glossary_import_thread(self, worker, status="用語取り込みをバックグラウンドで開始しました…"):
+        if self.auto_glossary_controller is not None:
+            messagebox.showinfo(APP_NAME,"自動用語作成中です。完了してから用語取り込みを実行してください。")
+            return False
+        if self.glossary_import_busy or (self.glossary_import_thread and self.glossary_import_thread.is_alive()):
+            messagebox.showinfo(APP_NAME,"用語取り込みはすでにバックグラウンドで実行中です。")
+            return False
+        self._set_glossary_import_busy(True,status)
+        self.glossary_import_target_path=str(self.glossary_path_var.get() or DEFAULT_GLOSSARY)
+        def run():
+            try:
+                worker()
+            except Exception as exc:
+                record_error("用語集バックグラウンド取り込み",exc)
+                self.events.put(("glossary_import_error",str(exc)))
+        self.glossary_import_thread=threading.Thread(target=run,daemon=True)
+        self.glossary_import_thread.start()
+        return True
+
+    def _finish_import_candidates_in_worker(self, candidates, label, stats=None):
+        if not candidates:
+            self.events.put(("glossary_import_done",{"label":label,"empty":True,"stats":stats or {}}))
+            return
+        glossary_path=Path(getattr(self,"glossary_import_target_path",str(DEFAULT_GLOSSARY)))
+        result=core.save_auto_glossary_candidates(glossary_path,candidates,preserve_existing=True)
+        self.events.put(("glossary_import_done",{"label":label,"result":result,"stats":stats or {}}))
+
+    def _align_japanese_with_base_root(self, japanese_targets, root: Path):
+        source_maps, source_files=self._collect_base_source_maps(Path(root))
+        jp_entries={}; jp_files=0
+        for target in japanese_targets:
+            data,count=self._collect_japanese_entries_from_target(Path(target))
+            jp_entries.update(data); jp_files += count
+        records=[]; english_count=0; chinese_count=0; unmatched=0
+        for key,dst in jp_entries.items():
+            if key in source_maps["english"]:
+                records.append({"key":key,"source_text":source_maps["english"][key],"target_text":dst,"source_lang":"english"}); english_count += 1
+            elif key in source_maps["simp_chinese"]:
+                records.append({"key":key,"source_text":source_maps["simp_chinese"][key],"target_text":dst,"source_lang":"simp_chinese"}); chinese_count += 1
+            else:
+                unmatched += 1
+        return {"records":records,"japanese_keys":len(jp_entries),"japanese_files":jp_files,"english":english_count,"chinese":chinese_count,"unmatched":unmatched,"source_files":source_files,"root":Path(root)}
+
+    def _start_japanese_glossary_import(self, targets, source_kind, label, mode):
+        targets=[Path(x) for x in targets if Path(x).exists()]
+        if not targets:
+            return
+        def worker():
+            self.events.put(("glossary_import_status","用語取り込み中: 日本語localizationを確認しています…"))
+            valid=[]
+            for target in targets:
+                if target.is_file():
+                    if target.suffix.lower() not in {".yml",".yaml"}: continue
+                    try: lang,_,_=core.parse_localization_file(target)
+                    except Exception: continue
+                    if lang != "japanese": continue
+                elif not target.is_dir():
+                    continue
+                valid.append(target)
+            if not valid:
+                self.events.put(("glossary_import_done",{"label":label,"invalid":True}))
+                return
+            all_pairs=[]; seen=set()
+            total=len(valid)
+            for idx,target in enumerate(valid,1):
+                self.events.put(("glossary_import_status",f"用語取り込み中: {idx}/{total} — {target.name}"))
+                if target.is_file():
+                    source_root=target.parent; cur=target.parent
+                    for _ in range(8):
+                        if cur.name.lower()=="japanese": source_root=cur.parent; break
+                        if cur.parent==cur: break
+                        cur=cur.parent
+                    pairs=self._collect_qa_diff_pairs(source_root,target,source_langs=("english","simp_chinese"))
+                else:
+                    loc=core.mod_localization_root(target) or target
+                    pairs=self._collect_qa_diff_pairs(loc,loc,source_langs=("english","simp_chinese"))
+                for pair in pairs:
+                    ident=(str(pair.get("source","")),str(pair.get("target","")))
+                    if ident not in seen:
+                        seen.add(ident); all_pairs.append(pair)
+            if all_pairs:
+                self.events.put(("glossary_import_status",f"用語候補を作成中: {len(all_pairs)}ファイル組"))
+                candidates=core.build_import_glossary_candidates(all_pairs,source_kind=source_kind,mode=mode)
+                self._finish_import_candidates_in_worker(candidates,label)
+                return
+            self.events.put(("glossary_import_needs_fallback",{"targets":[str(x) for x in valid],"source_kind":source_kind,"label":label,"mode":mode}))
+        self._start_glossary_import_thread(worker)
+
+    def _start_japanese_base_fallback(self, targets, root, game, source_kind, label, mode):
+        def worker():
+            self.events.put(("glossary_import_status",f"{game} 本体の原文と日本語キーを照合中…"))
+            aligned=self._align_japanese_with_base_root(targets,Path(root))
+            stats={k:aligned[k] for k in ("japanese_keys","english","chinese","unmatched")}
+            if not aligned["records"]:
+                self.events.put(("glossary_import_done",{"label":label,"empty":True,"stats":stats,"all_unmatched":True}))
+                return
+            candidates=core.build_import_glossary_candidates_from_records(aligned["records"],source_kind=source_kind,mode=mode)
+            suffix="共通名のみ" if mode=="common" else "すべて"
+            self._finish_import_candidates_in_worker(candidates,f"{label}（{game} / {suffix}）",stats=stats)
+        self._start_glossary_import_thread(worker,status=f"{game} 本体と照合する用語取り込みを開始しました…")
 
     def _collect_japanese_entries_from_target(self, target: Path):
         target=Path(target)
@@ -5033,68 +5709,38 @@ Mod更新後だけ追加翻訳:
         targets=[Path(x) for x in targets if Path(x).exists()]
         if not targets:
             return
+        if self.glossary_import_busy:
+            messagebox.showinfo(APP_NAME,"用語取り込みはすでにバックグラウンドで実行中です。")
+            return
         mode=self._choose_glossary_import_mode()
         if not mode:
             return
-
-        # First use source files beside the Japanese localization when available.
-        all_pairs=[]; seen=set()
-        for target in targets:
-            if target.is_file():
-                source_root=target.parent; cur=target.parent
-                for _ in range(8):
-                    if cur.name.lower()=="japanese": source_root=cur.parent; break
-                    if cur.parent==cur: break
-                    cur=cur.parent
-                pairs=self._collect_qa_diff_pairs(source_root,target,source_langs=("english","simp_chinese"))
-            else:
-                loc=core.mod_localization_root(target) or target
-                pairs=self._collect_qa_diff_pairs(loc,loc,source_langs=("english","simp_chinese"))
-            for pair in pairs:
-                ident=(str(pair.get("source","")),str(pair.get("target","")))
-                if ident not in seen:
-                    seen.add(ident); all_pairs.append(pair)
-
-        if all_pairs:
-            self._save_imported_glossary_pairs(all_pairs,source_kind,label,mode=mode)
-            return
-
-        messagebox.showinfo(APP_NAME,
-            "選択した日本語localizationの近くに、対応する英語 / 簡体字中国語原文が見つかりませんでした。\n\n"
-            "日本語だけでは原語→日本語の用語集を作れないため、対象ゲーム本体の英語または簡体字中国語localizationを同じローカライズキーで照合します。\n"
-            "ゲーム本体に存在しないMod独自キーはスキップされます。")
-        game=self._choose_game_for_glossary_import()
-        if not game:
-            return
-        aligned=self._align_japanese_with_base_game(targets,game)
-        if not aligned:
-            return
-        stats={k:aligned[k] for k in ("japanese_keys","english","chinese","unmatched")}
-        if not aligned["records"]:
-            messagebox.showinfo(APP_NAME,
-                f"対応する英語 / 簡体字中国語localizationが見つからなかったため、すべてスキップしました。\n\n"
-                f"日本語キー: {aligned['japanese_keys']}件\n英語対応: 0件\n中国語対応: 0件\n対応なし: {aligned['unmatched']}件\n\n"
-                "日本語ファイルだけでは原語→日本語の用語集を作成できません。")
-            return
-        try:
-            candidates=core.build_import_glossary_candidates_from_records(aligned["records"],source_kind=source_kind,mode=mode)
-            suffix="共通名のみ" if mode=="common" else "すべて"
-            self._save_imported_glossary_candidates(candidates,f"{label}（{game} / {suffix}）",stats=stats)
-        except Exception as exc:
-            record_error("用語集取り込み",exc)
-            messagebox.showerror(APP_NAME,str(exc))
+        self._start_japanese_glossary_import(targets,source_kind,label,mode)
 
     def import_glossary_from_base_game(self):
+        if self.glossary_import_busy:
+            messagebox.showinfo(APP_NAME,"用語取り込みはすでにバックグラウンドで実行中です。")
+            return
         game=self._choose_game_for_glossary_import()
         if not game: return
         mode=self._choose_glossary_import_mode()
         if not mode: return
         root=self._find_base_game_localization_root(game)
         if not root or not Path(root).exists(): return
-        pairs=self._collect_qa_diff_pairs(Path(root),Path(root),source_langs=("english","simp_chinese"))
-        self._save_imported_glossary_pairs(pairs,f"base:{game}",f"{game} 本体からの用語取り込み",mode=mode)
+        source_kind=f"base:{game}"
+        label=f"{game} 本体からの用語取り込み"
+        def worker():
+            self.events.put(("glossary_import_status",f"{game} 本体localizationを走査中…"))
+            pairs=self._collect_qa_diff_pairs(Path(root),Path(root),source_langs=("english","simp_chinese"))
+            self.events.put(("glossary_import_status",f"用語候補を作成中: {len(pairs)}ファイル組"))
+            candidates=core.build_import_glossary_candidates(pairs,source_kind=source_kind,mode=mode) if pairs else []
+            self._finish_import_candidates_in_worker(candidates,label)
+        self._start_glossary_import_thread(worker,status=f"{game} 本体からの用語取り込みを開始しました…")
 
     def import_glossary_from_japanese_source(self, kind):
+        if self.glossary_import_busy:
+            messagebox.showinfo(APP_NAME,"用語取り込みはすでにバックグラウンドで実行中です。")
+            return
         if kind=="file":
             raw=filedialog.askopenfilename(title="日本語localization YAMLを選択",filetypes=[("YAML","*.yml *.yaml"),("All files","*")])
         else:
@@ -5123,17 +5769,15 @@ Mod更新後だけ追加翻訳:
         return self._collect_qa_diff_pairs(loc,loc,source_langs=("english","simp_chinese"))
 
     def on_glossary_import_drop_paths(self,event):
+        if self.glossary_import_busy:
+            self.auto_glossary_status_var.set("用語取り込みはすでにバックグラウンドで実行中です。")
+            return event.action if hasattr(event,"action") else None
         raw_paths=self._raw_drop_paths(event)
         targets=[]; ignored=[]
         for target in raw_paths:
             target=Path(target)
             if target.is_file():
                 if target.suffix.lower() not in {".yml",".yaml"}:
-                    ignored.append(target.name or str(target)); continue
-                try: lang,_,_=core.parse_localization_file(target)
-                except Exception:
-                    ignored.append(target.name or str(target)); continue
-                if lang != "japanese":
                     ignored.append(target.name or str(target)); continue
             elif not target.is_dir():
                 ignored.append(target.name or str(target)); continue
@@ -5143,7 +5787,7 @@ Mod更新後だけ追加翻訳:
         else:
             messagebox.showinfo(APP_NAME,"取り込み可能な日本語YAML / 日本語化Mod / localizationフォルダを確認できませんでした。")
         if ignored and targets:
-            self.auto_glossary_status_var.set(f"DnD取り込み完了 / 対象外 {len(ignored)}件")
+            self.auto_glossary_status_var.set(f"DnD: 対象 {len(targets)}件 / 対象外 {len(ignored)}件")
         return event.action if hasattr(event,"action") else None
 
     def pick_glossary(self):
@@ -5495,7 +6139,11 @@ Mod更新後だけ追加翻訳:
                         self._append_chinese_log(f"翻訳語QA: error {qa_e} / warning {qa_w}")
                         self._append_chinese_log(f"出力先: {payload.get('output',self.chinese_output_var.get())}")
                         self._set_llm_idle("LLM 待機中","中国語基準翻訳が完了しました")
-                        messagebox.showinfo(APP_NAME,f"中国語基準翻訳が完了しました。\n翻訳語QA: error {qa_e} / warning {qa_w}")
+                        source_notice=self._source_gap_notice_for_items(self.chinese_queue_items)
+                        msg=f"中国語基準翻訳が完了しました。\n翻訳語QA: error {qa_e} / warning {qa_w}"
+                        if source_notice:
+                            msg += "\n\n" + source_notice
+                        messagebox.showinfo(APP_NAME,msg)
                 elif kind=="chinese_error":
                     record_error("中国語基準翻訳", detail=str(payload)); self.chinese_worker=None; self.chinese_controller=None
                     self.chinese_start_btn.config(state="normal"); self.chinese_pause_btn.config(state="disabled", text="一時停止"); self.chinese_stop_btn.config(state="disabled")
@@ -5625,7 +6273,12 @@ Mod更新後だけ追加翻訳:
                 elif kind=="done":
                     self.worker=None
                     self._delete_session()
-                    self._finish_controls(); self._set_llm_idle("LLM 待機中","翻訳が完了しました"); self.progress["value"]=100; self.progress_text.set("すべての翻訳が完了しました"); self._refresh_queue_tree(); messagebox.showinfo(APP_NAME,"翻訳キューが完了しました。")
+                    self._finish_controls(); self._set_llm_idle("LLM 待機中","翻訳が完了しました"); self.progress["value"]=100; self.progress_text.set("すべての翻訳が完了しました"); self._refresh_queue_tree()
+                    source_notice=self._source_gap_notice_for_items(self.queue_items)
+                    msg="翻訳キューが完了しました。"
+                    if source_notice:
+                        msg += "\n\n" + source_notice
+                    messagebox.showinfo(APP_NAME,msg)
                 elif kind=="fatal":
                     self.worker=None
                     record_error("翻訳処理 fatal", detail=str(payload)); self._finish_controls(); self._set_llm_idle("LLM 待機中","翻訳処理でエラーが発生しました"); messagebox.showerror(APP_NAME,payload)
@@ -5656,6 +6309,44 @@ Mod更新後だけ追加翻訳:
                     self._set_llm_idle("LLM 待機中","自動用語作成を終了しました")
                     self.auto_glossary_status_var.set("自動用語作成: "+str(payload))
                     if str(payload)!="停止しました": messagebox.showerror(APP_NAME,"自動用語作成エラー: "+str(payload))
+                elif kind=="glossary_import_status":
+                    self.auto_glossary_status_var.set(str(payload))
+                elif kind=="glossary_import_needs_fallback":
+                    self.glossary_import_thread=None
+                    self._set_glossary_import_busy(False,"対応原文をゲーム本体から探せます")
+                    messagebox.showinfo(APP_NAME,
+                        "選択した日本語localizationの近くに、対応する英語 / 簡体字中国語原文が見つかりませんでした。\n\n"
+                        "対象ゲーム本体のlocalizationを同じキーで自動照合できます。ゲーム本体に存在しないMod独自キーはスキップされます。")
+                    game=self._choose_game_for_glossary_import()
+                    if game:
+                        root=self._find_base_game_localization_root(game)
+                        if root and Path(root).exists():
+                            self._start_japanese_base_fallback(
+                                [Path(x) for x in payload.get("targets",[])],root,game,
+                                payload.get("source_kind","import:mod"),payload.get("label","日本語localizationからの用語取り込み"),payload.get("mode","common"))
+                elif kind=="glossary_import_done":
+                    self.glossary_import_thread=None
+                    self._set_glossary_import_busy(False,"用語取り込み完了")
+                    if payload.get("invalid"):
+                        messagebox.showinfo(APP_NAME,"取り込み可能な日本語localizationを確認できませんでした。")
+                    else:
+                        label=payload.get("label","用語取り込み")
+                        result=payload.get("result") or {}
+                        stats=payload.get("stats") or {}
+                        if not result:
+                            lines=[f"{label}が完了しました。","取り込み可能な用語候補はありませんでした。"]
+                        else:
+                            self.load_glossary_ui(silent=True)
+                            self.auto_glossary_status_var.set(f"{label}: {result.get('added',0)}件追加 / 候補 {result.get('total',0)}件")
+                            lines=[f"{label}が完了しました。",f"候補: {result.get('total',0)}件",f"新規追加: {result.get('added',0)}件"]
+                        if stats:
+                            lines += ["",f"日本語キー: {stats.get('japanese_keys',0)}件",f"英語対応: {stats.get('english',0)}件",f"中国語対応: {stats.get('chinese',0)}件",f"対応なし: {stats.get('unmatched',0)}件"]
+                            if stats.get("unmatched",0): lines.append(f"ゲーム本体に対応原文がないため {stats.get('unmatched',0)}件をスキップしました。")
+                        messagebox.showinfo(APP_NAME,"\n".join(lines))
+                elif kind=="glossary_import_error":
+                    self.glossary_import_thread=None
+                    self._set_glossary_import_busy(False,"用語取り込みエラー")
+                    messagebox.showerror(APP_NAME,"用語取り込みエラー: "+str(payload))
                 elif kind=="proofread_progress":
                     if payload.get("kind")=="llm_activity": self._handle_llm_activity(payload,"AI誤字脱字校正")
                     elif payload.get("kind")=="llm_response": self._show_llm_response(payload, monitor=False)
