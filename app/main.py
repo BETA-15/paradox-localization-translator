@@ -5147,8 +5147,10 @@ Mod更新後だけ追加翻訳:
         self.save_session(active=True)
 
     def _queue_worker(self):
+        interrupted = False
+        completed = 0
+        active = list(getattr(self, "_active_normal_indices", range(len(self.queue_items))))
         try:
-            active = list(getattr(self, "_active_normal_indices", range(len(self.queue_items))))
             for pos,i in enumerate(active):
                 if not (0 <= i < len(self.queue_items)):
                     continue
@@ -5167,7 +5169,12 @@ Mod更新後だけ追加翻訳:
                     provider=st.get("provider",self.provider_var.get()), api_key=st.get("api_key",self.api_key_var.get().strip()))
                 self._register_cache_job(item)
                 if result.get("interrupted"):
-                    item["status"]="中断（再開可）"; self.events.put(("queue_refresh",None)); self.save_session(active=True); break
+                    interrupted = True
+                    item["status"]="中断（再開可）"
+                    self.events.put(("queue_refresh",None))
+                    self._write_session_file(active=True,restore_on_launch=True)
+                    break
+                completed += 1
                 if item.get("diff_mode"):
                     lang_done = self._differential_language_completion(item, "english")
                     if lang_done.get("language_complete"):
@@ -5183,11 +5190,16 @@ Mod更新後だけ追加翻訳:
                 self.events.put(("queue_refresh",None))
                 if pos < len(active)-1:
                     self._write_session_file(active=True,restore_on_launch=True)
-            else:
+            if not interrupted:
                 self._write_session_file(active=False,restore_on_launch=False)
+            self.events.put(("done", {
+                "interrupted": interrupted,
+                "processed_items": completed,
+                "selected_total": len(active),
+            }))
         except Exception as exc:
             record_error("翻訳処理 fatal", exc)
-            self.events.put(("fatal_error",str(exc)))
+            self.events.put(("fatal",str(exc)))
 
     def toggle_pause(self):
         if not self.controller: return
@@ -6929,13 +6941,24 @@ Mod更新後だけ追加翻訳:
                 elif kind=="queue_refresh": self._refresh_queue_tree()
                 elif kind=="done":
                     self.worker=None
-                    self._delete_session()
-                    self._finish_controls(); self._set_llm_idle("LLM 待機中","翻訳が完了しました"); self.progress["value"]=100; self.progress_text.set("すべての翻訳が完了しました"); self._refresh_queue_tree()
-                    source_notice=self._source_gap_notice_for_items(self.queue_items)
-                    msg="翻訳キューが完了しました。"
-                    if source_notice:
-                        msg += "\n\n" + source_notice
-                    messagebox.showinfo(APP_NAME,msg)
+                    info = payload if isinstance(payload, dict) else {}
+                    interrupted = bool(info.get("interrupted", False))
+                    if not interrupted:
+                        self._delete_session()
+                    self._finish_controls()
+                    self._refresh_queue_tree()
+                    if interrupted:
+                        self._set_llm_idle("LLM 待機中","翻訳を中断しました")
+                        self.progress_text.set("中断しました（キャッシュ保存済み）")
+                    else:
+                        self._set_llm_idle("LLM 待機中","翻訳が完了しました")
+                        self.progress["value"]=100
+                        self.progress_text.set("選択した翻訳が完了しました")
+                        source_notice=self._source_gap_notice_for_items(self.queue_items)
+                        msg=f"選択した翻訳が完了しました。\n完了: {info.get('processed_items', 0)}/{info.get('selected_total', 0)}項目"
+                        if source_notice:
+                            msg += "\n\n" + source_notice
+                        messagebox.showinfo(APP_NAME,msg)
                 elif kind=="fatal":
                     self.worker=None
                     record_error("翻訳処理 fatal", detail=str(payload)); self._finish_controls(); self._set_llm_idle("LLM 待機中","翻訳処理でエラーが発生しました"); messagebox.showerror(APP_NAME,payload)
