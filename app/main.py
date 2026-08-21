@@ -35,8 +35,8 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.30"
-MOD_STATUS_CACHE_VERSION = 3
+APP_VERSION = "0.11.31"
+MOD_STATUS_CACHE_VERSION = 4
 
 
 def _app_container_dir() -> Path:
@@ -521,12 +521,35 @@ class App(BaseTk):
         self.mod_status_cache_lock = threading.Lock()
         self.mod_status_cache = core.load_json(MOD_STATUS_CACHE_PATH, {"version": MOD_STATUS_CACHE_VERSION, "items": {}})
         if not isinstance(self.mod_status_cache, dict) or self.mod_status_cache.get("version") != MOD_STATUS_CACHE_VERSION:
-            self.mod_status_cache = {"version": MOD_STATUS_CACHE_VERSION, "items": {}}
-        self.mod_classification_cache = core.load_json(MOD_CLASSIFICATION_CACHE_PATH, {"schema": 1, "mods": {}})
-        if not isinstance(self.mod_classification_cache, dict):
-            self.mod_classification_cache = {"schema": 1, "mods": {}}
-        self.mod_classification_cache.setdefault("schema", 1)
-        self.mod_classification_cache.setdefault("mods", {})
+            self.mod_status_cache = {
+                "version": MOD_STATUS_CACHE_VERSION,
+                "items": {},
+                "reset_for_version": APP_VERSION,
+                "reset_at": datetime.now().isoformat(timespec="seconds"),
+            }
+            try:
+                core.save_json(MOD_STATUS_CACHE_PATH, self.mod_status_cache)
+            except Exception as exc:
+                record_error("旧翻訳状況キャッシュ自動リセット", exc)
+        # v0.11.31 migrates the first-seen role cache without discarding it.
+        # The role cache is safety data (for example, a source Mod that originally
+        # had no Japanese YAML must stay a source Mod after we generate Japanese).
+        # False *relationships* live in the Translation Status/workspace caches and
+        # are reset separately below.
+        _classification = core.load_json(MOD_CLASSIFICATION_CACHE_PATH, {})
+        if not isinstance(_classification, dict):
+            _classification = {}
+        self.mod_classification_cache = {
+            "schema": 2,
+            "migrated_for_version": APP_VERSION,
+            "mods": dict(_classification.get("mods") or {}),
+        }
+        if _classification.get("updated_at"):
+            self.mod_classification_cache["previous_updated_at"] = _classification.get("updated_at")
+        try:
+            core.save_json(MOD_CLASSIFICATION_CACHE_PATH, self.mod_classification_cache)
+        except Exception as exc:
+            record_error("Mod初回分類キャッシュ移行", exc)
         self.mod_classification_lock = threading.Lock()
         # Cross-version workspace persistence. This is broader than the active
         # translation session and stores the last visible/working state of every
@@ -5504,11 +5527,31 @@ Mod更新後だけ追加翻訳:
             try: self.after(15000,self._workspace_autosave_tick)
             except Exception: pass
 
+    @staticmethod
+    def _clear_stale_external_translation_relation(item):
+        """Drop external-Japanese-Mod links saved by pre-v0.11.31 detection.
+
+        Translation output/cache paths remain untouched.  Only auto-detected external
+        relation metadata is cleared so a fresh Translation Status scan can rebuild
+        it under the 20% rule.
+        """
+        if not isinstance(item, dict):
+            return
+        for key in (
+            "external_translation_mod", "external_translation_path",
+            "external_translation_localization", "external_translation_gap_count",
+            "external_translation_complete", "external_translation_gaps",
+            "external_translation_coverage", "external_translation_precision",
+            "external_gap_keys",
+        ):
+            item.pop(key, None)
+
     def _restore_workspace_state(self):
         data=core.load_json(WORKSPACE_STATE_PATH,{})
         if not isinstance(data,dict) or not data:
             return
         self._workspace_restore_data=data
+        stale_external_relations = str(data.get("app_version", "")) != APP_VERSION
         try: self.workspace_revision=max(0,int(data.get("revision",0) or 0))
         except Exception: self.workspace_revision=0
         saved_root=data.get("data_root")
@@ -5522,6 +5565,8 @@ Mod更新後だけ追加翻訳:
             self.current_queue_index=int(n.get("queue_index",-1) or -1)
             for item in self.queue_items:
                 if isinstance(item,dict):
+                    if stale_external_relations:
+                        self._clear_stale_external_translation_relation(item)
                     for k in ("input","output","cache","previous_cache"):
                         if item.get(k): item[k]=remap(item[k])
                     if item.get("status")=="翻訳中": item["status"]="中断（再開可）"
@@ -5534,6 +5579,8 @@ Mod更新後だけ追加翻訳:
             self.chinese_queue_index=int(z.get("queue_index",-1) or -1)
             for item in self.chinese_queue_items:
                 if isinstance(item,dict):
+                    if stale_external_relations:
+                        self._clear_stale_external_translation_relation(item)
                     for k in ("input","output","cache","previous_cache"):
                         if item.get(k): item[k]=remap(item[k])
                     if item.get("status")=="翻訳中": item["status"]="中断（再開可）"
@@ -5672,8 +5719,11 @@ Mod更新後だけ追加翻訳:
             return {},None
         _,path,data=max(candidates,key=lambda x:x[0])
         saved_root=data.get("data_root")
+        stale_external_relations = str(data.get("app_version") or data.get("version") or "") != APP_VERSION
         for item in data.get("queue",[]) or []:
             if isinstance(item,dict):
+                if stale_external_relations:
+                    self._clear_stale_external_translation_relation(item)
                 for key in ("input","cache","output","previous_cache"):
                     if item.get(key): item[key]=_remap_saved_data_path(item.get(key),saved_root)
         settings=data.get("settings") or {}
