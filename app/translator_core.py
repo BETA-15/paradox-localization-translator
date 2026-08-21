@@ -132,11 +132,58 @@ class TranslationController:
             return dict(self.runtime_settings)
 
 
+def decode_text_bytes(data: bytes) -> tuple[str, str]:
+    """Decode text bytes with BOM-aware UTF detection.
+
+    Returns ``(text, encoding_name)``.  UTF-32 BOMs are checked before
+    UTF-16 because UTF-32 LE begins with the same ``FF FE`` prefix.
+    """
+    if data.startswith(b"\xef\xbb\xbf"):
+        return data.decode("utf-8-sig"), "utf-8-sig"
+    if data.startswith(b"\xff\xfe\x00\x00"):
+        return data.decode("utf-32-le").lstrip("\ufeff"), "utf-32-le"
+    if data.startswith(b"\x00\x00\xfe\xff"):
+        return data.decode("utf-32-be").lstrip("\ufeff"), "utf-32-be"
+    if data.startswith(b"\xff\xfe"):
+        return data.decode("utf-16-le").lstrip("\ufeff"), "utf-16-le"
+    if data.startswith(b"\xfe\xff"):
+        return data.decode("utf-16-be").lstrip("\ufeff"), "utf-16-be"
+    # BOM-less UTF-16 can also be valid UTF-8 bytes because NUL is legal in
+    # UTF-8. Detect the common alternating-NUL pattern before accepting UTF-8.
+    if len(data) >= 4:
+        even_nuls = data[0::2].count(0)
+        odd_nuls = data[1::2].count(0)
+        half = max(1, len(data) // 2)
+        if odd_nuls >= half * 0.30 and even_nuls <= half * 0.05:
+            try:
+                return data.decode("utf-16-le").lstrip("\ufeff"), "utf-16-le"
+            except UnicodeDecodeError:
+                pass
+        if even_nuls >= half * 0.30 and odd_nuls <= half * 0.05:
+            try:
+                return data.decode("utf-16-be").lstrip("\ufeff"), "utf-16-be"
+            except UnicodeDecodeError:
+                pass
+    try:
+        return data.decode("utf-8"), "utf-8"
+    except UnicodeDecodeError as utf8_error:
+        # Final conservative fallback for uncommon BOM-less UTF-16 text.
+        for enc in ("utf-16-le", "utf-16-be"):
+            try:
+                text = data.decode(enc)
+            except UnicodeDecodeError:
+                continue
+            if text.count("\x00") <= max(1, len(text) // 20):
+                return text.lstrip("\ufeff"), enc
+        raise utf8_error
+
+
 def load_json(path: Path, default):
     if not path.exists():
         return default
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        text, _encoding = decode_text_bytes(path.read_bytes())
+        return json.loads(text)
     except Exception:
         return default
 
@@ -170,34 +217,21 @@ def save_glossary(path: Path, glossary: dict):
 
 
 def read_localization_text(path: Path) -> str:
-    """Read a Paradox localization text file with BOM-aware encoding detection.
+    """Read a Paradox localization file with BOM-aware encoding detection.
 
-    Paradox/community mods are normally UTF-8 with BOM, but some mods contain
-    UTF-16 LE/BE files. Detect the BOM first and fall back conservatively so a
-    single differently encoded YAML does not abort an entire translation queue.
+    UTF-8/UTF-8 BOM and UTF-16 LE/BE are supported, with a conservative
+    BOM-less UTF-16 fallback.  If decoding still fails, include the exact path
+    in the exception so diagnostics identify the offending file immediately.
     """
     path = Path(path)
-    data = path.read_bytes()
-    if data.startswith(b"\xef\xbb\xbf"):
-        return data.decode("utf-8-sig")
-    if data.startswith(b"\xff\xfe"):
-        return data.decode("utf-16-le").lstrip("\ufeff")
-    if data.startswith(b"\xfe\xff"):
-        return data.decode("utf-16-be").lstrip("\ufeff")
     try:
-        return data.decode("utf-8")
-    except UnicodeDecodeError:
-        # UTF-16 without a BOM is uncommon, but this gives legacy/community
-        # files a safe fallback while still raising if neither variant is valid.
-        for enc in ("utf-16-le", "utf-16-be"):
-            try:
-                text = data.decode(enc)
-                # A plausible localization file should not be dominated by NULs.
-                if text.count("\x00") <= max(1, len(text) // 20):
-                    return text.lstrip("\ufeff")
-            except UnicodeDecodeError:
-                pass
-        raise
+        text, _encoding = decode_text_bytes(path.read_bytes())
+        return text
+    except UnicodeDecodeError as exc:
+        raise UnicodeDecodeError(
+            exc.encoding, exc.object, exc.start, exc.end,
+            f"{exc.reason}; file={path}"
+        ) from exc
 
 
 def text_hash(s: str) -> str:
@@ -275,6 +309,29 @@ def looks_foreign_in_target(value: str, target_lang: str) -> bool:
     return len(words) >= 2 or (len(words[0]) >= 4 and any(c.islower() for c in words[0]))
 
 
+def _looks_like_untranslated_chinese_sentence(text: str) -> bool:
+    """Conservatively detect an unchanged Simplified-Chinese sentence.
+
+    Short Han-only labels are valid Japanese surprisingly often (皇帝, 西域, 王朝,
+    都護府, ...), so exact source/target equality alone must not make them an error.
+    We only flag stronger Chinese-language signals or sentence-like Han strings.
+    """
+    plain = PROTECT_RE.sub('', text or '').strip()
+    if not plain:
+        return False
+    # Characters/function words that are strong Simplified-Chinese signals and are
+    # uncommon in normal Japanese localization text.
+    han = re.findall(r'[\u4e00-\u9fff]', plain)
+    if re.search(r'[这为与于个们说从对将让发里么还没并该]', plain):
+        return True
+    if len(han) >= 6 and re.search(r'(的|了|在|是|被|把|对|为|与|将|可以|能够|如果|因为|所以|以及)', plain):
+        return True
+    kana = re.findall(r'[\u3040-\u30ff]', plain)
+    # Long Han-only prose is much less likely to be an intentionally identical
+    # Japanese term.  Keep the threshold conservative to protect short labels.
+    return not kana and len(han) >= 12
+
+
 def looks_untranslated(original: str, translated: str, source_lang: str) -> bool:
     if not original or not translated:
         return False
@@ -289,7 +346,7 @@ def looks_untranslated(original: str, translated: str, source_lang: str) -> bool
             words = re.findall(r"[A-Za-z]+(?:'[A-Za-z]+)?", orig_plain)
             if sum(len(w) for w in words) >= 4 and any(len(w) >= 4 for w in words):
                 return True
-        if source_lang == "simp_chinese" and re.search(r'[\u4e00-\u9fff]', orig_plain):
+        if source_lang == "simp_chinese" and _looks_like_untranslated_chinese_sentence(orig_plain):
             return True
     if source_lang == "english":
         english_chars = len(re.findall(r'[A-Za-z]', trans_plain))
@@ -1207,10 +1264,12 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
             processed += 1; total_jobs += stats["jobs"]; total_failed += stats["failed"]
             save_cache(cache_file, cache)
             if auto_qa and out.exists():
-                issues = qa_file(out, f if source_lang != target_lang else None, source_lang=source_lang, glossary=glossary)
+                source_ref = f if source_lang != target_lang else None
+                qa_result = qa_file_with_syntax_repair(out, source_ref, source_lang=source_lang, glossary=glossary)
+                issues = qa_result["issues"]
                 severe = sum(1 for x in issues if x["severity"] == "error")
                 warn = sum(1 for x in issues if x["severity"] == "warning")
-                print(f"  QA: error {severe} / warning {warn}")
+                print(f"  QA: error {severe} / warning {warn} / syntax自動修正 {qa_result['syntax_repaired']}件 / 未修正 {qa_result['syntax_unresolved']}件")
             if controller:
                 controller.notify(kind="file_done", file=str(f), file_no=i, file_total=len(files))
                 if controller.stop_event.is_set():
@@ -1312,6 +1371,83 @@ def qa_file(target_path: Path, source_path: Optional[Path] = None, source_lang: 
     return qa_entries(target_entries, source_entries, detected_lang, glossary)
 
 
+def _edge_token_counts(source: str) -> Tuple[int, int]:
+    """Return how many protected tokens are safely anchored at source edges."""
+    matches = list(PROTECT_RE.finditer(source or ""))
+    if not matches:
+        return 0, 0
+    protected = [False] * len(source)
+    for m in matches:
+        for i in range(m.start(), m.end()):
+            protected[i] = True
+    plain_positions = [i for i, ch in enumerate(source) if not protected[i] and not ch.isspace()]
+    if not plain_positions:
+        return len(matches), 0
+    first_plain, last_plain = plain_positions[0], plain_positions[-1]
+    prefix = sum(1 for m in matches if m.end() <= first_plain)
+    suffix = sum(1 for m in matches if m.start() > last_plain)
+    return prefix, suffix
+
+
+def repair_syntax_tokens(source: str, target: str) -> Tuple[str, bool]:
+    """Restore only protected tokens whose insertion point is mechanically safe.
+
+    A repair is allowed only when the target token sequence equals the source token
+    sequence after removing some source-edge tokens.  Internal-token mismatches,
+    reordered tokens and target-only tokens are deliberately left untouched.
+    """
+    src_tokens = extract_protected_tokens(source)
+    dst_tokens = extract_protected_tokens(target)
+    if src_tokens == dst_tokens:
+        return target, False
+    prefix_cap, suffix_cap = _edge_token_counts(source)
+    candidates = []
+    n = len(src_tokens)
+    for prefix_missing in range(prefix_cap + 1):
+        for suffix_missing in range(suffix_cap + 1):
+            if prefix_missing + suffix_missing == 0 or prefix_missing + suffix_missing > n:
+                continue
+            end = n - suffix_missing if suffix_missing else n
+            if src_tokens[prefix_missing:end] == dst_tokens:
+                candidates.append((prefix_missing, suffix_missing))
+    # More than one valid placement means duplicates made the position ambiguous.
+    if len(candidates) != 1:
+        return target, False
+    prefix_missing, suffix_missing = candidates[0]
+    prefix = ''.join(src_tokens[:prefix_missing])
+    suffix = ''.join(src_tokens[len(src_tokens) - suffix_missing:]) if suffix_missing else ''
+    return prefix + target + suffix, True
+
+
+def qa_file_with_syntax_repair(target_path: Path, source_path: Optional[Path] = None,
+                               source_lang: Optional[str] = None, glossary: Optional[dict] = None) -> dict:
+    """Run QA, safely repair missing edge tokens, persist, then QA again."""
+    target_path = Path(target_path)
+    initial = qa_file(target_path, source_path, source_lang=source_lang, glossary=glossary)
+    syntax_initial = [x for x in initial if x.get("type") == "syntax"]
+    repaired = 0
+    if syntax_initial and source_path and Path(source_path).exists():
+        _, source_entries, _ = parse_localization_file(Path(source_path))
+        _, target_entries, _ = parse_localization_file(target_path)
+        updates = {}
+        for issue in syntax_initial:
+            key = issue.get("key")
+            if key not in source_entries or key not in target_entries:
+                continue
+            new_value, changed = repair_syntax_tokens(source_entries[key], target_entries[key])
+            if changed:
+                updates[key] = new_value
+        if updates:
+            repaired = upsert_localization_values(target_path, updates)
+    final = qa_file(target_path, source_path, source_lang=source_lang, glossary=glossary)
+    syntax_unresolved = sum(1 for x in final if x.get("type") == "syntax")
+    return {
+        "issues": final,
+        "syntax_detected": len(syntax_initial),
+        "syntax_repaired": repaired,
+        "syntax_unresolved": syntax_unresolved,
+    }
+
 
 
 def _is_auto_glossary_source_candidate(text: str, source_lang: str) -> bool:
@@ -1379,17 +1515,105 @@ def build_auto_glossary_candidates(pairs: Iterable[dict]) -> List[dict]:
     return out
 
 
-def build_import_glossary_candidates(pairs: Iterable[dict], source_kind: str = "import") -> List[dict]:
-    """Build glossary candidates from aligned localization pairs, including one-off terms.
+def _is_probable_specific_glossary_term(key: str, source: str, target: str, source_lang: str) -> bool:
+    """Conservative heuristic for names/titles that should not enter common-term mode.
 
-    This is intended for importing terminology from official/base-game Japanese
-    localization or a specific Japanese localization file/Mod. Short source labels
-    are aligned by localization key and every usable pair is retained.
+    The filter intentionally errs on the side of keeping reusable terminology.  It
+    mainly rejects obvious "proper-name + rank/title" forms such as "York Duke" /
+    "ヨーク公爵" and name-like localization keys.
+    """
+    key_l = (key or "").lower()
+    src = PROTECT_RE.sub('', source or '').strip()
+    dst = PROTECT_RE.sub('', target or '').strip()
+
+    # Explicit name-bearing keys. Avoid broad `_name` because many reusable UI
+    # concepts also use that suffix; only reject strongly name-specific patterns.
+    strong_key_markers = (
+        'character_name', 'house_name', 'dynasty_name', 'title_name',
+        'county_name', 'duchy_name', 'kingdom_name', 'empire_name',
+        'barony_name', 'province_name', 'city_name', 'region_name',
+        'nick_', 'nickname_', 'bookmark_character',
+    )
+    if any(m in key_l for m in strong_key_markers):
+        return True
+
+    # Japanese: keep the generic title itself, but reject a non-empty prefix plus
+    # a rank/title suffix (e.g. "〇〇公爵", "〇〇軍管区長官").
+    jp_titles = (
+        '軍管区長官', '総督', '公爵', '女公爵', '侯爵', '伯爵', '女伯爵',
+        '子爵', '男爵', '女男爵', '国王', '女王', '皇帝', '女帝', '族長',
+        '大公', '公', '王子', '王女',
+    )
+    for suffix in jp_titles:
+        if dst != suffix and dst.endswith(suffix):
+            prefix = dst[:-len(suffix)].strip(' ・·-—–')
+            if prefix:
+                return True
+
+    # English equivalents. Generic "Duke" etc. remain; "Duke of X" and "X Duke"
+    # are treated as name-bearing labels.
+    if source_lang == 'english':
+        title_words = r'(?:duke|duchess|count|countess|earl|marquess|marquis|baron|baroness|king|queen|emperor|empress|governor|strategos|satrap)'
+        if re.search(rf'(?i)^\s*{title_words}\s+of\s+.+$', src):
+            return True
+
+    return False
+
+
+def build_import_glossary_candidates_from_records(records: Iterable[dict], source_kind: str = "import",
+                                                   mode: str = "common") -> List[dict]:
+    """Build imported glossary candidates from already key-aligned records.
+
+    mode="common": keep short reusable terms and filter obvious proper-name labels.
+    mode="all": retain every usable aligned source->Japanese pair.
     """
     from collections import Counter, defaultdict
     grouped = defaultdict(Counter)
     langs = {}
     keys_by_source = defaultdict(list)
+    mode = 'all' if mode == 'all' else 'common'
+
+    for rec in records:
+        key = str(rec.get('key', ''))
+        src = str(rec.get('source_text', '') or '').strip()
+        dst = str(rec.get('target_text', '') or '').strip()
+        source_lang = str(rec.get('source_lang', 'english') or 'english')
+        if source_lang not in {'english', 'simp_chinese'}:
+            continue
+        if not src or not dst or looks_untranslated(src, dst, source_lang):
+            continue
+        if mode == 'common':
+            if not _is_auto_glossary_source_candidate(src, source_lang):
+                continue
+            if _is_probable_specific_glossary_term(key, src, dst, source_lang):
+                continue
+        grouped[src][dst] += 1
+        langs[src] = source_lang
+        keys_by_source[src].append(key)
+
+    out = []
+    for src, counts in grouped.items():
+        variants = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        if not variants:
+            continue
+        out.append({
+            'source': src,
+            'source_lang': langs.get(src, 'english'),
+            'preferred': variants[0][0],
+            'occurrences': sum(counts.values()),
+            'variants': [{'text': v, 'count': c} for v, c in variants],
+            'conflict': len(variants) > 1,
+            'keys': keys_by_source[src][:30],
+            'source_kind': source_kind,
+        })
+    out.sort(key=lambda x: (not x['conflict'], -x['occurrences'], x['source']))
+    return out
+
+
+def build_import_glossary_candidates(pairs: Iterable[dict], source_kind: str = "import",
+                                     mode: str = "common") -> List[dict]:
+    """Build glossary candidates from aligned localization file pairs."""
+    records = []
     for pair in pairs:
         source = Path(pair.get("source", ""))
         target = Path(pair.get("target", ""))
@@ -1403,31 +1627,15 @@ def build_import_glossary_candidates(pairs: Iterable[dict], source_kind: str = "
         if source_lang not in {"english", "simp_chinese"}:
             continue
         for key, src in source_entries.items():
-            dst = target_entries.get(key, "").strip()
-            src = (src or "").strip()
-            if not dst or not src or looks_untranslated(src, dst, source_lang):
+            if key not in target_entries:
                 continue
-            if not _is_auto_glossary_source_candidate(src, source_lang):
-                continue
-            grouped[src][dst] += 1
-            langs[src] = source_lang
-            keys_by_source[src].append(key)
-    out = []
-    for src, counts in grouped.items():
-        variants = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
-        if not variants:
-            continue
-        out.append({
-            "source": src, "source_lang": langs.get(src, "english"),
-            "preferred": variants[0][0], "occurrences": sum(counts.values()),
-            "variants": [{"text": v, "count": c} for v, c in variants],
-            "conflict": len(variants) > 1,
-            "keys": keys_by_source[src][:30],
-            "source_kind": source_kind,
-        })
-    out.sort(key=lambda x: (not x["conflict"], -x["occurrences"], x["source"]))
-    return out
-
+            records.append({
+                'key': key,
+                'source_text': src,
+                'target_text': target_entries.get(key, ''),
+                'source_lang': source_lang,
+            })
+    return build_import_glossary_candidates_from_records(records, source_kind=source_kind, mode=mode)
 
 def resolve_auto_glossary_conflicts(provider: str, url: str, model: str, candidates: List[dict],
                                       preset: str = "General", api_key: str = "",
@@ -1596,7 +1804,7 @@ def compare_localization_entries(source_entries: Dict[str, str], target_entries:
         elif key not in source_entries:
             status = "extra"
             message = "日本語側だけに存在するキーです"
-        elif looks_untranslated(src, dst, source_lang) or (src.strip() and src.strip() == dst.strip()):
+        elif looks_untranslated(src, dst, source_lang):
             status = "untranslated"
             message = "原文のまま残っている可能性があります"
         else:
@@ -1662,14 +1870,15 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
             total_failed += stats["failed"]
             save_cache(cache_file, cache)
             if auto_qa and out.exists():
-                issues = qa_file(out, f, source_lang="simp_chinese", glossary=glossary)
+                qa_result = qa_file_with_syntax_repair(out, f, source_lang="simp_chinese", glossary=glossary)
+                issues = qa_result["issues"]
                 severe = sum(1 for x in issues if x["severity"] == "error")
                 warn = sum(1 for x in issues if x["severity"] == "warning")
                 qa_errors += severe
                 qa_warnings += warn
                 for issue in issues:
                     qa_report.append({"source_file": str(f), "target_file": str(out), **issue})
-                print(f"  中国語翻訳語QA: error {severe} / warning {warn}")
+                print(f"  中国語翻訳語QA: error {severe} / warning {warn} / syntax自動修正 {qa_result['syntax_repaired']}件 / 未修正 {qa_result['syntax_unresolved']}件")
             if controller:
                 controller.notify(kind="file_done", file=str(f), file_no=i, file_total=len(chinese_files))
                 if controller.stop_event.is_set():
@@ -1706,6 +1915,9 @@ def qa_translation_output(input_path: Path, output_path: Path, glossary_path=Non
     issues_all = []
     checked = 0
     missing_outputs = 0
+    syntax_detected = 0
+    syntax_repaired = 0
+    syntax_unresolved = 0
     planned = set()
     for f in files:
         try:
@@ -1729,11 +1941,17 @@ def qa_translation_output(input_path: Path, output_path: Path, glossary_path=Non
             continue
         checked += 1
         source_ref = None if source_lang == target_lang else f
-        for issue in qa_file(out, source_ref, source_lang=source_lang, glossary=glossary):
+        qa_result = qa_file_with_syntax_repair(out, source_ref, source_lang=source_lang, glossary=glossary)
+        syntax_detected += qa_result["syntax_detected"]
+        syntax_repaired += qa_result["syntax_repaired"]
+        syntax_unresolved += qa_result["syntax_unresolved"]
+        for issue in qa_result["issues"]:
             issues_all.append({"source_file": str(f), "target_file": str(out), **issue})
     errors = sum(1 for x in issues_all if x.get("severity") == "error")
     warnings = sum(1 for x in issues_all if x.get("severity") == "warning")
-    return {"checked_files": checked, "missing_outputs": missing_outputs, "errors": errors, "warnings": warnings, "issues": issues_all}
+    return {"checked_files": checked, "missing_outputs": missing_outputs, "errors": errors, "warnings": warnings,
+            "syntax_detected": syntax_detected, "syntax_repaired": syntax_repaired, "syntax_unresolved": syntax_unresolved,
+            "issues": issues_all}
 
 
 def qa_chinese_basis_translation(input_path: Path, output_path: Path, glossary_path=None) -> dict:
@@ -1750,6 +1968,9 @@ def qa_chinese_basis_translation(input_path: Path, output_path: Path, glossary_p
     issues_all = []
     checked = 0
     missing_outputs = 0
+    syntax_detected = 0
+    syntax_repaired = 0
+    syntax_unresolved = 0
     for f in files:
         try:
             lang = detect_source_lang(f, read_localization_text(f).splitlines()[:5])
@@ -1769,11 +1990,17 @@ def qa_chinese_basis_translation(input_path: Path, output_path: Path, glossary_p
                 issues_all.append({"source_file": str(f), "target_file": str(out), "key": key, "severity": "error", "type": "missing_output", "message": "対応する日本語出力ファイルがありません", "value": ""})
             continue
         checked += 1
-        for issue in qa_file(out, f, source_lang="simp_chinese", glossary=glossary):
+        qa_result = qa_file_with_syntax_repair(out, f, source_lang="simp_chinese", glossary=glossary)
+        syntax_detected += qa_result["syntax_detected"]
+        syntax_repaired += qa_result["syntax_repaired"]
+        syntax_unresolved += qa_result["syntax_unresolved"]
+        for issue in qa_result["issues"]:
             issues_all.append({"source_file": str(f), "target_file": str(out), **issue})
     errors = sum(1 for x in issues_all if x.get("severity") == "error")
     warnings = sum(1 for x in issues_all if x.get("severity") == "warning")
-    return {"checked_files": checked, "missing_outputs": missing_outputs, "errors": errors, "warnings": warnings, "issues": issues_all}
+    return {"checked_files": checked, "missing_outputs": missing_outputs, "errors": errors, "warnings": warnings,
+            "syntax_detected": syntax_detected, "syntax_repaired": syntax_repaired, "syntax_unresolved": syntax_unresolved,
+            "issues": issues_all}
 
 
 def translate_single_text(url: str, model: str, text: str, source_lang: str = "english",
