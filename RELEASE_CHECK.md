@@ -1,3 +1,18 @@
+# v0.11.50 追加確認
+
+- [x] `VERSION` / `APP_VERSION` を 0.11.50 に統一
+- [x] localization配下の元Mod名フォルダ完全一致を +15点で評価
+- [x] `_Empty` / `_empty` を除去したフォルダ名一致を確認
+- [x] 保守的な包含一致を +8点で評価
+- [x] フォルダ名一致だけでは50% / 20%ゲートを突破できないことを確認
+- [x] 判定理由に一致フォルダ名と加点を表示
+- [x] 統合対象あり・競合0件で「右側設定不要」の案内を表示
+- [x] 競合0件でも修復対象があれば左側修復ボタンが有効
+- [x] `python -m py_compile app/main.py app/translator_core.py` PASS
+- [x] 合成テストで `Battle Graphics_Empty` → `Battle Graphics` の一致加点を確認
+
+---
+
 # v0.11.49 追加確認
 
 - [x] `VERSION` / `APP_VERSION` を 0.11.49 に統一

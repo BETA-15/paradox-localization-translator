@@ -36,8 +36,8 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.49"
-MOD_STATUS_CACHE_VERSION = 9
+APP_VERSION = "0.11.50"
+MOD_STATUS_CACHE_VERSION = 10
 
 
 def _app_container_dir() -> Path:
@@ -3031,8 +3031,11 @@ Mod更新後だけ追加翻訳:
         self.diagnostic_all_translation_btn=ttk.Button(conflict_bar2,text="すべての競合で日本語化Mod訳を採用",command=lambda:self._set_all_diagnostic_conflict_choices("translation")); self.diagnostic_all_translation_btn.pack(side="left",padx=(6,0))
         self.diagnostic_all_auto_btn=ttk.Button(conflict_bar2,text="すべての競合を自動整理",command=lambda:self._set_all_diagnostic_conflict_choices("auto")); self.diagnostic_all_auto_btn.pack(side="left",padx=(6,0))
         conflict_bar3=ttk.Frame(resultbox); conflict_bar3.pack(fill="x",pady=(4,0))
+        self.diagnostic_conflict_help_var = tk.StringVar(value="診断後、修復に必要な操作をここへ表示します。")
+        ttk.Label(conflict_bar3,textvariable=self.diagnostic_conflict_help_var, foreground="#555",wraplength=1000,justify="left").pack(side="left",fill="x",expand=True)
+        conflict_bar4=ttk.Frame(resultbox); conflict_bar4.pack(fill="x",pady=(3,0))
         self.diagnostic_exception_status_var = tk.StringVar(value="自動整理: Mod分類・関連付けの手動指定がある場合はそちらを最優先します。")
-        ttk.Label(conflict_bar3,textvariable=self.diagnostic_exception_status_var, foreground="#555",wraplength=1000,justify="left").pack(side="left",fill="x",expand=True)
+        ttk.Label(conflict_bar4,textvariable=self.diagnostic_exception_status_var, foreground="#555",wraplength=1000,justify="left").pack(side="left",fill="x",expand=True)
         detail=ttk.LabelFrame(right,text="詳細 / 修復ログ",padding=6); detail.pack(fill="both",expand=True,pady=(8,0))
         self.diagnostic_detail=tk.Text(detail,height=9,wrap="word",state="disabled")
         dsy=ttk.Scrollbar(detail,orient="vertical",command=self.diagnostic_detail.yview); self.diagnostic_detail.configure(yscrollcommand=dsy.set)
@@ -3712,13 +3715,22 @@ Mod更新後だけ追加翻訳:
             unresolved=int(integration_summary.get("unresolved",unresolved) or 0)
         if hasattr(self,"diagnostic_integration_status_var"):
             self.diagnostic_integration_status_var.set(f"統合対象: {integrations}キー / 訳文競合: {unique_conflicts} / 未指定: {unresolved}")
+        repairable=bool(extras or integrations)
+        if hasattr(self,"diagnostic_conflict_help_var"):
+            if analyses and unique_conflicts == 0 and repairable:
+                self.diagnostic_conflict_help_var.set("訳文競合なし — 右側の設定は不要です。左側の「設定した内容で修復を実行」を押してください。")
+            elif unique_conflicts > 0:
+                self.diagnostic_conflict_help_var.set(f"訳文競合が {unique_conflicts}件あります。右側で採用訳を指定するか、自動整理を選んでください。")
+            elif analyses:
+                self.diagnostic_conflict_help_var.set("訳文競合はありません。現在の診断結果には本体/日本語化Mod統合の手動設定は不要です。")
+            else:
+                self.diagnostic_conflict_help_var.set("診断後、修復に必要な操作をここへ表示します。")
         conflict_state="normal" if unique_conflicts else "disabled"
         for name in ("diagnostic_keep_source_btn","diagnostic_keep_translation_btn","diagnostic_auto_choice_btn","diagnostic_clear_choice_btn","diagnostic_all_source_btn","diagnostic_all_translation_btn","diagnostic_all_auto_btn"):
             w=getattr(self,name,None)
             if w is not None and not getattr(self,"diagnostic_running_repair",False):
                 try: w.config(state=conflict_state)
                 except Exception: pass
-        repairable=bool(extras or integrations)
         w=getattr(self,"diagnostic_repair_btn",None)
         if w is not None and not getattr(self,"diagnostic_running_repair",False):
             try: w.config(state="normal" if repairable else "disabled")
