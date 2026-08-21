@@ -1115,6 +1115,60 @@ def compare_source_manifests(old: dict, new: dict) -> dict:
     return {"counts": counts, "details": details}
 
 
+def collect_missing_translation_keys(input_path: Path, output_path: Path, source_language: str,
+                                     target_lang: str = DEFAULT_TARGET_LANG) -> dict:
+    """Find translatable source keys that are currently absent from the target output.
+
+    This is intentionally independent from the differential source manifest so a
+    differential run can repair an incomplete Japanese output even when no prior
+    snapshot exists. Only keys with actual translatable text are counted; dynamic
+    references / token-only values continue to follow ``looks_untranslatable``.
+    """
+    input_path = Path(input_path)
+    output_path = Path(output_path)
+    files = gather_yml_files(input_path)
+    base_dir = input_path if input_path.is_dir() else input_path.parent
+    # Paradox loads localization keys across all Japanese YAML files in the
+    # localization tree. Aggregate them so a key already supplied by a
+    # supplemental/missing-key file is not falsely reported as absent.
+    all_target_entries = {}
+    if output_path.exists():
+        target_files = gather_yml_files(output_path) if output_path.is_dir() else [output_path]
+        for target_file in target_files:
+            try:
+                lang, entries, _ = parse_localization_file(target_file)
+            except Exception:
+                continue
+            if lang == target_lang:
+                all_target_entries.update(entries)
+    details = []
+    total = 0
+    for source_file in files:
+        try:
+            lang, source_entries, _ = parse_localization_file(source_file)
+        except Exception:
+            continue
+        if lang != source_language:
+            continue
+        rel_dir = source_file.parent.relative_to(base_dir) if input_path.is_dir() else Path('.')
+        target_file = output_path / remap_rel_dir(rel_dir, target_lang) / rename_for_target(source_file, target_lang, source_language)
+        missing = []
+        for key, value in source_entries.items():
+            if not value or looks_untranslatable(value):
+                continue
+            target_value = all_target_entries.get(key)
+            if target_value is None or not str(target_value).strip():
+                missing.append(key)
+        if missing:
+            total += len(missing)
+            details.append({
+                'source_file': str(source_file),
+                'target_file': str(target_file),
+                'keys': missing,
+            })
+    return {'count': total, 'details': details, 'source_language': source_language}
+
+
 def save_source_manifest(cache_file: Path, manifest: dict):
     save_json(Path(cache_file).parent / SOURCE_MANIFEST_NAME, manifest)
 
