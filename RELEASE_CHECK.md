@@ -1,13 +1,14 @@
-# v0.11.41 追加確認
+# v0.11.42 追加確認
 
-- [x] `VERSION` / `APP_VERSION` を 0.11.41 に統一
+- [x] `VERSION` / `APP_VERSION` を 0.11.42 に統一
 - [x] `python -m py_compile app/main.py app/translator_core.py` PASS
-- [x] 共通「Mod分類・関連付け」の選択中Mod再クリックで選択解除できるGUI合成テスト PASS
-- [x] 未選択Modのクリックで再選択できるトグル動作テスト PASS
-- [x] 共通「Mod分類・関連付け」に「選択解除」ボタンを追加し、GUI smoke test PASS
-- [x] 総合診断左側に「全体選択」 / 「全選択解除」を再追加
-- [x] 総合診断で3件の全体選択 / 0件への全選択解除GUI smoke test PASS
-- [x] Mod分類判定・関連付け・総合診断ロジック本体は変更なし
+- [x] 総合診断の修復ボタン名を「設定した内容で修復を実行」へ変更
+- [x] 右側の個別 / 一括保持先ボタンは設定のみで、修復開始処理を呼ばない構造を維持
+- [x] 修復開始時に対象Mod一覧・診断結果一覧・保持先指定・一括指定・Mod分類関連付けを無効化
+- [x] 修復完了 / 競合未指定停止 / エラー時に関連操作を再有効化
+- [x] Xvfb GUI smoke testで11個の関連ボタンが修復中 `disabled`、2つのTreeviewが `disabled` になることを確認
+- [x] Xvfb GUI smoke testで修復終了後に全操作が `normal` へ戻ることを確認
+- [x] 修復確認ダイアログと競合未指定メッセージを新しい操作フローへ更新
 
 ---
 

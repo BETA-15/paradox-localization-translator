@@ -36,7 +36,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.41"
+APP_VERSION = "0.11.42"
 MOD_STATUS_CACHE_VERSION = 7
 
 
@@ -2776,14 +2776,14 @@ Mod更新後だけ追加翻訳:
         tw.rowconfigure(0,weight=1); tw.columnconfigure(0,weight=1)
         self.diagnostic_target_tree.grid(row=0,column=0,sticky="nsew"); sy.grid(row=0,column=1,sticky="ns"); sx.grid(row=1,column=0,sticky="ew")
         tbtn=ttk.Frame(targets); tbtn.pack(fill="x",pady=(7,0))
-        ttk.Button(tbtn,text="翻訳状況から再取得",command=self._refresh_diagnostic_targets).pack(side="left")
-        ttk.Button(tbtn,text="全体選択",command=self._select_all_diagnostic_targets).pack(side="left",padx=(6,0))
-        ttk.Button(tbtn,text="全選択解除",command=self._clear_diagnostic_target_selection).pack(side="left",padx=(6,0))
-        ttk.Button(tbtn,text="Mod分類・関連付け",command=lambda:self._open_mod_relation_dialog("diagnostic")).pack(side="left",padx=(6,0))
+        self.diagnostic_refresh_btn=ttk.Button(tbtn,text="翻訳状況から再取得",command=self._refresh_diagnostic_targets); self.diagnostic_refresh_btn.pack(side="left")
+        self.diagnostic_select_all_btn=ttk.Button(tbtn,text="全体選択",command=self._select_all_diagnostic_targets); self.diagnostic_select_all_btn.pack(side="left",padx=(6,0))
+        self.diagnostic_clear_selection_btn=ttk.Button(tbtn,text="全選択解除",command=self._clear_diagnostic_target_selection); self.diagnostic_clear_selection_btn.pack(side="left",padx=(6,0))
+        self.diagnostic_relation_btn=ttk.Button(tbtn,text="Mod分類・関連付け",command=lambda:self._open_mod_relation_dialog("diagnostic")); self.diagnostic_relation_btn.pack(side="left",padx=(6,0))
 
         actions = ttk.LabelFrame(left, text="操作", padding=6); actions.pack(fill="x", pady=(8,0))
         self.diagnostic_scan_btn=ttk.Button(actions,text="選択Modを診断",command=lambda:self._start_localization_diagnostic(False)); self.diagnostic_scan_btn.pack(fill="x")
-        self.diagnostic_repair_btn=ttk.Button(actions,text="バックアップして修復",command=lambda:self._start_localization_diagnostic(True)); self.diagnostic_repair_btn.pack(fill="x",pady=(6,0))
+        self.diagnostic_repair_btn=ttk.Button(actions,text="設定した内容で修復を実行",command=lambda:self._start_localization_diagnostic(True)); self.diagnostic_repair_btn.pack(fill="x",pady=(6,0))
         ttk.Label(actions,text="修復時のバックアップ先:\nDocuments/Paradox Localization Translator/バックアップ/総合診断/日時/Mod名/localization/",foreground="#666",wraplength=340,justify="left").pack(anchor="w",pady=(7,0))
 
         resultbox=ttk.LabelFrame(right,text="診断結果",padding=6); resultbox.pack(fill="both",expand=True)
@@ -2801,18 +2801,39 @@ Mod更新後だけ追加翻訳:
         self._enable_tree_sort(self.diagnostic_tree)
         conflict_bar=ttk.Frame(resultbox); conflict_bar.pack(fill="x",pady=(7,0))
         ttk.Label(conflict_bar,text="本体 / 日本語化Modの重複は行を選択して優先先を指定:").pack(side="left")
-        ttk.Button(conflict_bar,text="選択キーは本体を残す",command=lambda:self._set_diagnostic_conflict_choice("source")).pack(side="left",padx=(8,0))
-        ttk.Button(conflict_bar,text="選択キーは日本語化Modを残す",command=lambda:self._set_diagnostic_conflict_choice("translation")).pack(side="left",padx=(6,0))
-        ttk.Button(conflict_bar,text="選択キーの指定を解除",command=lambda:self._set_diagnostic_conflict_choice(None)).pack(side="left",padx=(6,0))
+        self.diagnostic_keep_source_btn=ttk.Button(conflict_bar,text="選択キーは本体を残す",command=lambda:self._set_diagnostic_conflict_choice("source")); self.diagnostic_keep_source_btn.pack(side="left",padx=(8,0))
+        self.diagnostic_keep_translation_btn=ttk.Button(conflict_bar,text="選択キーは日本語化Modを残す",command=lambda:self._set_diagnostic_conflict_choice("translation")); self.diagnostic_keep_translation_btn.pack(side="left",padx=(6,0))
+        self.diagnostic_clear_choice_btn=ttk.Button(conflict_bar,text="選択キーの指定を解除",command=lambda:self._set_diagnostic_conflict_choice(None)); self.diagnostic_clear_choice_btn.pack(side="left",padx=(6,0))
         conflict_bar2=ttk.Frame(resultbox); conflict_bar2.pack(fill="x",pady=(5,0))
         ttk.Label(conflict_bar2,text="一括指定:").pack(side="left")
-        ttk.Button(conflict_bar2,text="すべてのキーを本体Modに",command=lambda:self._set_all_diagnostic_conflict_choices("source")).pack(side="left",padx=(8,0))
-        ttk.Button(conflict_bar2,text="すべてのキーを日本語化Modに",command=lambda:self._set_all_diagnostic_conflict_choices("translation")).pack(side="left",padx=(6,0))
+        self.diagnostic_all_source_btn=ttk.Button(conflict_bar2,text="すべてのキーを本体Modに",command=lambda:self._set_all_diagnostic_conflict_choices("source")); self.diagnostic_all_source_btn.pack(side="left",padx=(8,0))
+        self.diagnostic_all_translation_btn=ttk.Button(conflict_bar2,text="すべてのキーを日本語化Modに",command=lambda:self._set_all_diagnostic_conflict_choices("translation")); self.diagnostic_all_translation_btn.pack(side="left",padx=(6,0))
         detail=ttk.LabelFrame(right,text="詳細 / 修復ログ",padding=6); detail.pack(fill="both",expand=True,pady=(8,0))
         self.diagnostic_detail=tk.Text(detail,height=9,wrap="word",state="disabled")
         dsy=ttk.Scrollbar(detail,orient="vertical",command=self.diagnostic_detail.yview); self.diagnostic_detail.configure(yscrollcommand=dsy.set)
         dsy.pack(side="right",fill="y"); self.diagnostic_detail.pack(side="left",fill="both",expand=True)
         self._refresh_diagnostic_targets()
+
+    def _set_diagnostic_repair_busy(self, busy):
+        """修復実行中は診断対象・競合設定を固定して途中操作を防ぐ。"""
+        state="disabled" if busy else "normal"
+        for name in (
+            "diagnostic_scan_btn","diagnostic_repair_btn","diagnostic_refresh_btn",
+            "diagnostic_select_all_btn","diagnostic_clear_selection_btn","diagnostic_relation_btn",
+            "diagnostic_keep_source_btn","diagnostic_keep_translation_btn","diagnostic_clear_choice_btn",
+            "diagnostic_all_source_btn","diagnostic_all_translation_btn",
+        ):
+            widget=getattr(self,name,None)
+            if widget is not None:
+                try: widget.config(state=state)
+                except Exception: pass
+        for name in ("diagnostic_target_tree","diagnostic_tree"):
+            widget=getattr(self,name,None)
+            if widget is not None:
+                try:
+                    if busy: widget.state(("disabled",))
+                    else: widget.state(("!disabled",))
+                except Exception: pass
 
     def _set_diagnostic_detail(self, text):
         if not hasattr(self,"diagnostic_detail"): return
@@ -3221,12 +3242,16 @@ Mod更新後だけ追加翻訳:
                 "選択Modの localization フォルダを丸ごとバックアップしてから、日本語localizationを原文キー集合に合わせて整理します。\n\n"
                 "・通常Mod: 自身の英語 / 簡体字中国語原文にない日本語キーを削除\n"
                 "・日本語化Mod: 対応する全元Modの原文集合にない日本語キーを削除\n"
-                "・本体 / 日本語化Modの重複は、総合診断で指定した優先側に従います\n"
-                "・英語 / 簡体字中国語は変更しません\n\n修復を実行しますか？"):
+                "・本体 / 日本語化Modの重複は、右側で設定した保持先に従います\n"
+                "・英語 / 簡体字中国語は変更しません\n\n設定した内容で修復を実行しますか？"):
                 return
         self.diagnostic_generation += 1; generation=self.diagnostic_generation
-        self.diagnostic_scan_btn.config(state="disabled"); self.diagnostic_repair_btn.config(state="disabled")
-        self.diagnostic_summary_var.set(("バックアップして修復中" if repair else "バックグラウンド診断中")+f" — {len(roots)} Mod")
+        self.diagnostic_running_repair=bool(repair)
+        if repair:
+            self._set_diagnostic_repair_busy(True)
+        else:
+            self.diagnostic_scan_btn.config(state="disabled"); self.diagnostic_repair_btn.config(state="disabled")
+        self.diagnostic_summary_var.set(("設定した内容で修復実行中" if repair else "バックグラウンド診断中")+f" — {len(roots)} Mod")
         self._set_diagnostic_detail("既知Modの原文キー・日本語化Mod関係・重複キー索引を作成しています…")
         def work():
             try:
@@ -8266,7 +8291,8 @@ Mod更新後だけ追加翻訳:
                 elif kind=="diagnostic_choices_required":
                     if int(payload.get("generation",-1))==self.diagnostic_generation:
                         self.diagnostic_thread=None
-                        self.diagnostic_scan_btn.config(state="normal"); self.diagnostic_repair_btn.config(state="normal")
+                        self._set_diagnostic_repair_busy(False)
+                        self.diagnostic_running_repair=False
                         shown=payload.get("before") or []
                         self.diagnostic_results=list(shown)
                         self._populate_diagnostic_results(shown)
@@ -8274,12 +8300,16 @@ Mod更新後だけ追加翻訳:
                         messagebox.showwarning(APP_NAME,
                             "修復前に本体 / 日本語化Modの重複キーについて優先先の指定が必要です。\n\n"
                             +str(payload.get("message", ""))+
-                            "\n\n総合診断の『本体/日本語化Mod重複』行を選択し、\n『本体を残す』または『日本語化Modを残す』を指定してから、もう一度修復してください。\n"
-                            "複数行を選択して一括指定もできます。")
+                            "\n\n総合診断の『本体/日本語化Mod重複』行を選択し、\n『本体を残す』または『日本語化Modを残す』を設定してください。\n"
+                            "設定後、左側の『設定した内容で修復を実行』を押してください。複数行や一括指定も使用できます。")
                 elif kind=="diagnostic_done":
                     if int(payload.get("generation",-1))==self.diagnostic_generation:
                         self.diagnostic_thread=None
-                        self.diagnostic_scan_btn.config(state="normal"); self.diagnostic_repair_btn.config(state="normal")
+                        if payload.get("repair"):
+                            self._set_diagnostic_repair_busy(False)
+                        else:
+                            self.diagnostic_scan_btn.config(state="normal"); self.diagnostic_repair_btn.config(state="normal")
+                        self.diagnostic_running_repair=False
                         shown=payload.get("after") if payload.get("repair") else payload.get("before")
                         count=self._populate_diagnostic_results(shown or []) or 0
                         issues=sum(1 for a in (shown or []) for x in (a.get("issues") or []) if x.get("severity") in {"ERROR","WARN"})
@@ -8299,7 +8329,11 @@ Mod更新後だけ追加翻訳:
                 elif kind=="diagnostic_error":
                     if int(payload.get("generation",-1))==self.diagnostic_generation:
                         self.diagnostic_thread=None
-                        self.diagnostic_scan_btn.config(state="normal"); self.diagnostic_repair_btn.config(state="normal")
+                        if getattr(self,"diagnostic_running_repair",False):
+                            self._set_diagnostic_repair_busy(False)
+                        else:
+                            self.diagnostic_scan_btn.config(state="normal"); self.diagnostic_repair_btn.config(state="normal")
+                        self.diagnostic_running_repair=False
                         self.diagnostic_summary_var.set("診断エラー")
                         record_error("総合診断",detail=str(payload.get("error","")))
                         messagebox.showerror(APP_NAME,"総合診断エラー: "+str(payload.get("error","")))
