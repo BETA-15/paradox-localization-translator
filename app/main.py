@@ -34,7 +34,8 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.9"
+APP_VERSION = "0.11.10"
+MOD_STATUS_CACHE_VERSION = 2
 
 
 def _app_container_dir() -> Path:
@@ -331,9 +332,9 @@ class App(BaseTk):
         self.mod_discovery_status_var = tk.StringVar(value="ゲーム/Mod場所: 未検出")
         self.discovery_multi_select_var = tk.BooleanVar(value=False)
         self.mod_status_cache_lock = threading.Lock()
-        self.mod_status_cache = core.load_json(MOD_STATUS_CACHE_PATH, {"version": 1, "items": {}})
-        if not isinstance(self.mod_status_cache, dict):
-            self.mod_status_cache = {"version": 1, "items": {}}
+        self.mod_status_cache = core.load_json(MOD_STATUS_CACHE_PATH, {"version": MOD_STATUS_CACHE_VERSION, "items": {}})
+        if not isinstance(self.mod_status_cache, dict) or self.mod_status_cache.get("version") != MOD_STATUS_CACHE_VERSION:
+            self.mod_status_cache = {"version": MOD_STATUS_CACHE_VERSION, "items": {}}
         self.report_callback_exception = self._tk_callback_exception
         sys.excepthook = self._sys_excepthook
         if hasattr(threading, "excepthook"):
@@ -1469,8 +1470,9 @@ class App(BaseTk):
             self.glossary_path_var.set(str(DEFAULT_GLOSSARY))
             self.model_stats = core.load_json(STATS_PATH, {})
             self.model_profiles = core.load_json(PROFILES_PATH, {})
-            self.mod_status_cache = core.load_json(MOD_STATUS_CACHE_PATH, {"version":1,"items":{}})
-            if not isinstance(self.mod_status_cache, dict): self.mod_status_cache={"version":1,"items":{}}
+            self.mod_status_cache = core.load_json(MOD_STATUS_CACHE_PATH, {"version":MOD_STATUS_CACHE_VERSION,"items":{}})
+            if not isinstance(self.mod_status_cache, dict) or self.mod_status_cache.get("version") != MOD_STATUS_CACHE_VERSION:
+                self.mod_status_cache={"version":MOD_STATUS_CACHE_VERSION,"items":{}}
             self.refresh_profiles_ui()
             self._restore_cached_mod_status()
             messagebox.showinfo(APP_NAME,
@@ -2742,6 +2744,8 @@ Mod更新後だけ追加翻訳:
     def _cached_status_for_mod(self, mod_root: Path, signature: str):
         key = str(Path(mod_root).expanduser().resolve())
         with self.mod_status_cache_lock:
+            if self.mod_status_cache.get("version") != MOD_STATUS_CACHE_VERSION:
+                return None
             row = (self.mod_status_cache.get("items") or {}).get(key)
         if row and row.get("signature") == signature and isinstance(row.get("result"), dict):
             result = dict(row["result"])
@@ -2756,14 +2760,17 @@ Mod更新後だけ追加翻訳:
         row = {"signature": signature, "checked_at": datetime.now().isoformat(timespec="seconds"), "result": summary}
         with self.mod_status_cache_lock:
             self.mod_status_cache.setdefault("items", {})[key] = row
-            self.mod_status_cache["version"] = 1
+            self.mod_status_cache["version"] = MOD_STATUS_CACHE_VERSION
             self.mod_status_cache["updated_at"] = datetime.now().isoformat(timespec="seconds")
             core.save_json(MOD_STATUS_CACHE_PATH, self.mod_status_cache)
 
     def _restore_cached_mod_status(self):
         try:
-            data = core.load_json(MOD_STATUS_CACHE_PATH, {"items": {}})
-            items = data.get("items", {}) if isinstance(data, dict) else {}
+            data = core.load_json(MOD_STATUS_CACHE_PATH, {"version": MOD_STATUS_CACHE_VERSION, "items": {}})
+            if not isinstance(data, dict) or data.get("version") != MOD_STATUS_CACHE_VERSION:
+                self.mod_status_cache = {"version": MOD_STATUS_CACHE_VERSION, "items": {}}
+                return
+            items = data.get("items", {})
             rows = []
             for row in items.values():
                 result = row.get("result") if isinstance(row, dict) else None
@@ -3468,7 +3475,7 @@ Mod更新後だけ追加翻訳:
         if hasattr(self,"mod_status_tree"):
             for x in self.mod_status_tree.get_children(): self.mod_status_tree.delete(x)
         with self.mod_status_cache_lock:
-            self.mod_status_cache={"version":1,"items":{},"updated_at":datetime.now().isoformat(timespec="seconds")}
+            self.mod_status_cache={"version":MOD_STATUS_CACHE_VERSION,"items":{},"updated_at":datetime.now().isoformat(timespec="seconds")}
             core.save_json(MOD_STATUS_CACHE_PATH,self.mod_status_cache)
         self.mod_status_summary_var.set("調査結果: 0件")
 
