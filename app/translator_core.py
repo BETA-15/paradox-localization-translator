@@ -2541,11 +2541,11 @@ def _external_gap_candidates(source_entries: Dict[str, str], japanese_entries: D
 def _translation_mod_weight(source_name: str, source_keys: set, row: dict) -> dict:
     """Score one Japanese Mod candidate using a weighted relationship model.
 
-    Candidate-side key precision >=20% remains a hard gate.  Translation-only
-    structure is deliberately strong evidence: Mods that contain essentially
-    only localization plus descriptor/thumbnail/readme files receive a large
-    bonus.  Gameplay-heavy Mods are correspondingly less likely to be treated
-    as external Japanese translations.
+    v0.11.35: the hard relationship gate is based on the *source Mod*.  At
+    least 20% of the source Mod's exact localization keys must exist in the
+    Japanese candidate.  This lets one large comprehensive translation pack
+    legitimately match several source Mods without being penalized merely
+    because the pack also contains many unrelated translations.
     """
     ja_keys = set(row.get("japanese_keys") or set(row.get("japanese", {}) or {}))
     overlap = source_keys & ja_keys
@@ -2557,7 +2557,11 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict) -> di
     source_norm = _normalize_mod_name_for_match(source_name)
 
     # Relationship gate and key evidence.
-    key_points = 0.0 if precision < 0.20 else precision * 45.0
+    # IMPORTANT: coverage uses the source Mod as the denominator.
+    # A comprehensive translation pack can contain tens of thousands of keys;
+    # candidate-side precision would incorrectly reject it even when it fully
+    # translates this particular source Mod.
+    key_points = 0.0 if coverage < 0.20 else coverage * 45.0
 
     # Strong structural evidence for a translation-only Mod.  descriptor.mod,
     # thumbnail and readme files are ignored by the profiler; therefore zero
@@ -2607,7 +2611,7 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict) -> di
 
     raw_score = key_points + translation_only_points + dependency_points + low_gameplay_points + source_language_penalty
     score = max(0.0, min(100.0, raw_score))
-    gate = precision >= 0.20
+    gate = coverage >= 0.20
     if not gate:
         classification = "rejected"
     elif score >= 60.0:
@@ -2618,7 +2622,8 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict) -> di
         classification = "rejected"
 
     reasons = [
-        f"日本語キー一致率 {precision*100:.1f}% ({overlap_n}/{len(ja_keys)}) → {key_points:.1f}点",
+        f"元Modキー完全一致率 {coverage*100:.1f}% ({overlap_n}/{len(source_keys)}) → {key_points:.1f}点",
+        f"参考: 日本語化Mod側一致率 {precision*100:.1f}% ({overlap_n}/{len(ja_keys)})",
         f"翻訳専用構成 localize比率 {loc_ratio*100:.1f}% / 非localization {non_loc}ファイル → {translation_only_points:.1f}点",
         (f"dependencies一致『{matched_dependency}』 → 20.0点" if dependency_match else "dependencies一致なし → 0.0点"),
         f"ゲーム内容 {gameplay_files}ファイル / {len(gameplay_dirs)}分類 → {low_gameplay_points:.1f}点",
@@ -2628,10 +2633,10 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict) -> di
     else:
         reasons.append("英語・中国語localizationなし → 減点なし")
     if not gate:
-        reasons.append("20%一致未満のため関係判定対象外")
+        reasons.append("元Modキーの完全一致率が20%未満のため関係判定対象外")
     return {
         "score": score, "raw_score": raw_score, "classification": classification,
-        "precision": precision, "coverage": coverage, "overlap_keys": overlap_n,
+        "precision": precision, "coverage": coverage, "source_match_ratio": coverage, "overlap_keys": overlap_n,
         "source_keys": len(source_keys), "japanese_keys": len(ja_keys),
         "key_points": key_points, "translation_only_points": translation_only_points,
         "dependency_points": dependency_points, "low_gameplay_points": low_gameplay_points,
@@ -2642,46 +2647,14 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict) -> di
 
 
 def assign_translation_candidate_owners(source_roots: Iterable[Path], translation_index: Optional[List[dict]]) -> List[dict]:
-    """Assign each Japanese translation candidate to its best matching source Mod.
+    """Compatibility wrapper for v0.11.34 callers.
 
-    This prevents one translation-only Mod from being automatically attached to
-    several unrelated Mods merely because each clears the score threshold.  The
-    candidate remains visible for its single best source only.
+    v0.11.35 deliberately does *not* assign a Japanese candidate to only one
+    source Mod.  Comprehensive translation packs are expected to translate
+    several independent Mods.  Relationship safety is instead enforced by the
+    source-side exact-key gate (>=20%) plus the weighted structure score.
     """
-    if not translation_index:
-        return []
-    source_rows = []
-    for root in source_roots:
-        root = Path(root)
-        data = _collect_mod_language_entries(root)
-        source_entries = data.get("source", {})
-        if source_entries:
-            source_rows.append((str(root.resolve()), detect_mod_name(root), set(source_entries)))
-
-    out = [dict(row) for row in translation_index]
-    for row in out:
-        best = None
-        for source_path, source_name, source_keys in source_rows:
-            try:
-                if Path(row.get("path", "")).resolve() == Path(source_path).resolve():
-                    continue
-            except Exception:
-                continue
-            weight = _translation_mod_weight(source_name, source_keys, row)
-            if weight.get("precision", 0.0) < 0.20:
-                continue
-            cand = (float(weight.get("score", 0.0)), float(weight.get("precision", 0.0)), float(weight.get("coverage", 0.0)), source_path, source_name)
-            if best is None or cand[:3] > best[:3]:
-                best = cand
-        if best is not None:
-            row["assigned_source_path"] = best[3]
-            row["assigned_source_mod"] = best[4]
-            row["assigned_source_score"] = best[0]
-        else:
-            row["assigned_source_path"] = ""
-            row["assigned_source_mod"] = ""
-            row["assigned_source_score"] = 0.0
-    return out
+    return [dict(row) for row in (translation_index or [])]
 
 def rank_external_japanese_translations(mod_root: Path, translation_index: Optional[List[dict]]) -> List[dict]:
     """Return weighted Japanese-translation candidates ordered by score."""
@@ -2702,13 +2675,6 @@ def rank_external_japanese_translations(mod_root: Path, translation_index: Optio
                 continue
         except Exception:
             continue
-        assigned = str(row.get("assigned_source_path", "") or "")
-        if assigned:
-            try:
-                if Path(assigned).resolve() != mod_root.resolve():
-                    continue
-            except Exception:
-                continue
         weight = _translation_mod_weight(source_name, source_keys, row)
         if weight.get("overlap_keys", 0) <= 0:
             continue
@@ -2799,6 +2765,7 @@ def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "engl
         "translation_candidate_path": "",
         "translation_candidate_score": 0.0,
         "translation_candidate_precision": 0.0,
+        "translation_candidate_coverage": 0.0,
         "translation_candidate_reasons": [],
     }
     if not loc:
@@ -2859,6 +2826,7 @@ def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "engl
             "translation_candidate_path": review_candidate.get("path", ""),
             "translation_candidate_score": review_candidate.get("score", 0.0),
             "translation_candidate_precision": review_candidate.get("precision", 0.0),
+            "translation_candidate_coverage": review_candidate.get("coverage", 0.0),
             "translation_candidate_reasons": list(review_candidate.get("reasons") or []),
         })
     if external:
