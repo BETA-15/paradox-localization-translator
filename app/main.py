@@ -37,8 +37,8 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.61"
-MOD_STATUS_CACHE_VERSION = 13
+APP_VERSION = "0.11.62"
+MOD_STATUS_CACHE_VERSION = 14
 
 
 def _translation_status_snapshot_is_current(snapshot) -> bool:
@@ -3070,6 +3070,7 @@ Mod更新後だけ追加翻訳:
             "  ・総合和訳は2つ以上の元Modで各200件以上、候補有効キー和集合率70%以上を別ゲートとして使用",
             "  ・構成点・名前・dependenciesは実データ関係ゲート通過後の順位付けだけに使用",
             "  ・手動の日本語化Mod / 通常Mod / 対応元指定は自動判定より優先",
+            "  ・l_english内に日本語文を収録する旧式日本語化と、対応元未特定の日本語化Mod形式は警告のみ表示",
             "  ・監査ログでは、初回分類で候補外になった現在の日本語Modも比較対象として表示",
             "",
         ]
@@ -3085,6 +3086,18 @@ Mod更新後だけ追加翻訳:
                 out.append(f"現在の関連付け: 候補『{r.get('translation_candidate_mod')}』（自動関連付けなし）")
             else:
                 out.append("現在の関連付け: なし")
+            warnings=list(r.get("translation_warnings") or [])
+            if warnings:
+                out.append("警告:")
+                out.extend([f"  ・{warning}" for warning in warnings])
+                profile=dict(r.get("translation_format_profile") or {})
+                out.append(
+                    "警告根拠: l_english内の日本語文 "
+                    f"{int(profile.get('english_japanese_text_keys',0) or 0)}/"
+                    f"{int(profile.get('english_key_count',0) or 0)} = "
+                    f"{float(profile.get('english_japanese_text_rate',0) or 0)*100:.1f}% / "
+                    f"Translation系名前・タグ {'あり' if profile.get('translation_hint') else 'なし'}"
+                )
             source_override=self._mod_relation_override(root)
             if source_override.get("role","auto") != "auto":
                 out.append(f"このMod自身の手動分類: {source_override.get('role')}")
@@ -4820,6 +4833,7 @@ Mod更新後だけ追加翻訳:
             result.get("external_translation_mod", ""),
             result.get("translation_candidate_mod", ""),
             result.get("message", ""),
+            " ".join(result.get("translation_warnings") or []),
             result.get("path", ""),
         ]
         return any(q in str(v).casefold() for v in fields)
@@ -4918,6 +4932,16 @@ Mod更新後だけ追加翻訳:
         jp_path = r.get("external_translation_path", "")
         zh_count = r.get("simp_chinese_files", 0)
         lines = [f"Mod: {mod_name}", f"状態: {r.get('status','')}　欠損: {r.get('gap_count',0)}件", f"英語キー: {r.get('english_keys',0)}　簡体字中国語キー: {r.get('simp_chinese_keys',0)}　日本語キー: {r.get('japanese_keys',0)}", f"言語固有キー: 英語のみ {r.get('english_only_keys',0)} / 中国語のみ {r.get('chinese_only_keys',0)}", f"簡体字中国語: {'あり（' + str(zh_count) + 'ファイル）' if zh_count else 'なし'}", "", r.get("message", "")]
+        warnings=list(r.get("translation_warnings") or [])
+        if warnings:
+            profile=dict(r.get("translation_format_profile") or {})
+            lines += ["", "警告:"] + [f"・{warning}" for warning in warnings]
+            lines.append(
+                "判定根拠: l_english内の日本語文 "
+                f"{int(profile.get('english_japanese_text_keys',0) or 0)}/"
+                f"{int(profile.get('english_key_count',0) or 0)} "
+                f"({float(profile.get('english_japanese_text_rate',0) or 0)*100:.1f}%)"
+            )
         if hasattr(self, "status_chinese_queue_btn"):
             # 複数選択時は、中国語localizationを持つModが1件でもあれば利用可。
             has_zh = any(x.get("simp_chinese_files", 0) for x in selected)
@@ -5992,6 +6016,7 @@ Mod更新後だけ追加翻訳:
                     except Exception as e:
                         record_error("Mod翻訳状況 LLM精査", e, str(mod_root))
                         self.events.put(("monitor_log",f"{result.get('mod','Mod')} のLLM精査をスキップ: {e}"))
+                    core.apply_translation_warning_status(result)
                     self._cache_mod_status_result(Path(mod_root), signature, result)
                 else:
                     self.events.put(("monitor_log", f"{result.get('mod', Path(mod_root).name)}: 前回調査結果をキャッシュから再利用"))

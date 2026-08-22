@@ -2401,6 +2401,101 @@ def _descriptor_dependency_names(mod_root: Path) -> List[str]:
     return names
 
 
+def _descriptor_tag_names(mod_root: Path) -> List[str]:
+    """Return descriptor tags without treating descriptor text as instructions."""
+    root = Path(mod_root)
+    files = [root / "descriptor.mod"]
+    try:
+        files.extend(sorted(root.glob("*.mod"))[:5])
+    except OSError:
+        pass
+    tags = []
+    seen = set()
+    for fp in files:
+        if not fp.is_file():
+            continue
+        try:
+            text = read_localization_text(fp)
+        except Exception:
+            continue
+        for match in re.finditer(r'\btags\s*=\s*\{(.*?)\}', text, flags=re.I | re.S):
+            for raw in re.findall(r'["\']([^"\']+)["\']', match.group(1)):
+                value = raw.strip()
+                if value and value.casefold() not in seen:
+                    seen.add(value.casefold())
+                    tags.append(value)
+    return tags
+
+
+def translation_localization_format_profile(mod_root: Path, english_entries: Optional[dict] = None) -> dict:
+    """Detect legacy Japanese-in-l_english translation layouts conservatively."""
+    root = Path(mod_root)
+    name = detect_mod_name(root)
+    tags = _descriptor_tag_names(root)
+    hint_text = " ".join([name, *tags]).casefold()
+    translation_hint = bool(re.search(
+        r'japanese|translation|locali[sz]ation|日本語|(?:^|[^a-z0-9])\+?jp(?:[^a-z0-9]|$)',
+        hint_text,
+    ))
+    if english_entries is None:
+        english_entries = (_collect_mod_language_entries(root).get("english") or {})
+    english_entries = dict(english_entries or {})
+    kana_keys = sum(
+        1 for value in english_entries.values()
+        if re.search(r'[\u3041-\u3096\u30a1-\u30faー]', str(value or ""))
+    )
+    english_count = len(english_entries)
+    kana_rate = kana_keys / max(1, english_count)
+    legacy_layout = bool(
+        (translation_hint and kana_keys >= 5 and kana_rate >= 0.20)
+        or (kana_keys >= 50 and kana_rate >= 0.50)
+    )
+    return {
+        "translation_hint": translation_hint,
+        "descriptor_tags": tags,
+        "english_key_count": english_count,
+        "english_japanese_text_keys": kana_keys,
+        "english_japanese_text_rate": kana_rate,
+        "legacy_english_japanese_layout": legacy_layout,
+    }
+
+
+def translation_localization_warnings(profile: dict, *, japanese_files: int,
+                                      has_review_candidate: bool,
+                                      has_external_translation: bool) -> List[str]:
+    warnings = []
+    if profile.get("legacy_english_japanese_layout"):
+        warnings.append(
+            "古い日本語化方式の可能性があります。日本語文が英語localization（l_english）として収録されています。"
+        )
+    if (profile.get("translation_hint")
+            and (profile.get("legacy_english_japanese_layout") or japanese_files > 0)
+            and has_review_candidate
+            and not has_external_translation):
+        warnings.append(
+            "日本語化Mod形式ですが対応元Modを自動特定できません。対応元Modの未導入、古いバージョン、またはキーの大幅な変更が考えられます。"
+        )
+    return warnings
+
+
+def apply_translation_warning_status(result: dict) -> dict:
+    """Keep format warnings visible after later status/message refinement."""
+    warnings = list(result.get("translation_warnings") or [])
+    if not warnings:
+        return result
+    profile = dict(result.get("translation_format_profile") or {})
+    result["status"] = (
+        "要確認（旧式日本語化）"
+        if profile.get("legacy_english_japanese_layout")
+        else "要確認（関連元未特定）"
+    )
+    warning_text = "警告: " + " ".join(warnings)
+    message = str(result.get("message") or "")
+    if warning_text not in message:
+        result["message"] = (message + " " + warning_text).strip()
+    return result
+
+
 def _mod_content_profile(mod_root: Path, japanese_files: int = 0,
                          english_files: int = 0, chinese_files: int = 0,
                          other_language_files: int = 0) -> dict:
@@ -3464,11 +3559,14 @@ def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "engl
         "translation_candidate_precision": 0.0,
         "translation_candidate_coverage": 0.0,
         "translation_candidate_reasons": [],
+        "translation_format_profile": {},
+        "translation_warnings": [],
     }
     if not loc:
         return result
 
     english_keys = set()
+    english_entries = {}
     simp_chinese_keys = set()
     japanese_keys = set()
     english_files = 0
@@ -3485,6 +3583,7 @@ def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "engl
         elif lang == "english":
             english_files += 1
             english_keys.update(entries.keys())
+            english_entries.update(entries)
         elif lang == "simp_chinese":
             simp_chinese_files += 1
             simp_chinese_keys.update(entries.keys())
@@ -3508,6 +3607,8 @@ def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "engl
         "gap_reason": gap_reason_text(candidates),
         "candidates": candidates,
     })
+    format_profile = translation_localization_format_profile(mod_root, english_entries)
+    result["translation_format_profile"] = format_profile
 
     external = find_external_japanese_translation(mod_root, translation_index)
     review_candidate = None
@@ -3574,7 +3675,14 @@ def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "engl
     if review_candidate and not external:
         result["message"] += (f" 日本語化Mod候補『{review_candidate.get('mod','')}』を検出しましたが、"
                               f"関連度 {float(review_candidate.get('score',0.0) or 0.0):.1f}/100 のため自動関連付けしていません。")
-    return result
+    warnings = translation_localization_warnings(
+        format_profile,
+        japanese_files=japanese_files,
+        has_review_candidate=bool(review_candidate),
+        has_external_translation=bool(external),
+    )
+    result["translation_warnings"] = warnings
+    return apply_translation_warning_status(result)
 
 # ---------------------------------------------------------------------------
 # Automatic Paradox / Steam mod-location discovery

@@ -309,3 +309,94 @@ def test_multi_translation_contributor_requires_200_effective_keys(tmp_path):
     assigned = core.assign_translation_candidate_owners(source_roots, [row])[0]
 
     assert assigned.get("multi_translation_source_paths") == []
+
+
+def _write_legacy_english_translation(root: Path, values, *, name="Legacy Japanese Translation", translation_tag=True):
+    root.mkdir(parents=True, exist_ok=True)
+    tags = 'tags={\n "Translation"\n}\n' if translation_tag else ""
+    (root / "descriptor.mod").write_text(
+        f'name="{name}"\n{tags}',
+        encoding="utf-8",
+    )
+    loc = root / "localization" / "english"
+    loc.mkdir(parents=True)
+    lines = ["l_english:"]
+    lines.extend(f' legacy_{index}:0 "{value}"' for index, value in enumerate(values))
+    (loc / "legacy_l_english.yml").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def test_legacy_japanese_in_l_english_is_reported_as_warning(tmp_path):
+    root = tmp_path / "LegacyJapanese"
+    _write_legacy_english_translation(root, ["これは古い日本語化です"] * 20)
+
+    result = core.analyze_mod_translation_status(root)
+
+    profile = result["translation_format_profile"]
+    assert profile["legacy_english_japanese_layout"] is True
+    assert profile["english_japanese_text_keys"] == 20
+    assert result["status"] == "要確認（旧式日本語化）"
+    assert len(result["translation_warnings"]) == 1
+
+
+def test_chinese_text_is_not_mistaken_for_legacy_japanese(tmp_path):
+    root = tmp_path / "ChineseTranslation"
+    _write_legacy_english_translation(root, ["这是中文翻译文本"] * 20, name="Chinese Translation")
+
+    profile = core.translation_localization_format_profile(root)
+
+    assert profile["english_japanese_text_keys"] == 0
+    assert profile["legacy_english_japanese_layout"] is False
+
+
+def test_normal_english_mod_has_no_translation_warning(tmp_path):
+    root = tmp_path / "NormalMod"
+    _write_legacy_english_translation(
+        root,
+        ["Ordinary English text"] * 20,
+        name="Normal Gameplay Mod",
+        translation_tag=False,
+    )
+
+    result = core.analyze_mod_translation_status(root)
+
+    assert result["translation_format_profile"]["translation_hint"] is False
+    assert result["translation_warnings"] == []
+
+
+def test_outdated_native_japanese_candidate_gets_unresolved_source_warning():
+    profile = {
+        "translation_hint": True,
+        "legacy_english_japanese_layout": False,
+    }
+
+    warnings = core.translation_localization_warnings(
+        profile,
+        japanese_files=1,
+        has_review_candidate=True,
+        has_external_translation=False,
+    )
+    linked = core.translation_localization_warnings(
+        profile,
+        japanese_files=1,
+        has_review_candidate=True,
+        has_external_translation=True,
+    )
+
+    assert len(warnings) == 1
+    assert "対応元Mod" in warnings[0]
+    assert linked == []
+
+
+def test_warning_status_is_restored_after_later_status_refinement():
+    result = {
+        "status": "翻訳なし",
+        "message": "後段で再計算された状態です。",
+        "translation_format_profile": {"legacy_english_japanese_layout": True},
+        "translation_warnings": ["古い日本語化方式です。"],
+    }
+
+    core.apply_translation_warning_status(result)
+    core.apply_translation_warning_status(result)
+
+    assert result["status"] == "要確認（旧式日本語化）"
+    assert result["message"].count("警告:") == 1

@@ -1,3 +1,18 @@
+# v0.11.62 追加確認
+
+- [x] `VERSION` / `APP_VERSION` / `pyproject.toml` / `uv.lock` を 0.11.62 に統一
+- [x] `l_english`内の日本語文による旧式日本語化警告を追加
+- [x] 日本語化Mod形式の対応元未特定警告を追加
+- [x] 中国語文と通常英語Modを誤警告しないテストを追加
+- [x] 警告をLLM精査後にも再適用
+- [x] 翻訳状況一覧・詳細・検索・判定ログへ警告を追加
+- [x] 88 Modで旧式5件・関連元未特定1件を確認
+- [x] 既存自動関連14件とUnified総合和訳6元Modを維持
+- [x] ERCF ← DITNが有効0・関連なしを維持
+- [x] pytest 31件 PASS
+- [ ] GUI実画面で警告表示を確認
+- [ ] GitHub Actions 3OSビルドを確認
+
 # v0.11.61 追加確認
 
 - [x] `VERSION` / `APP_VERSION` / `pyproject.toml` を 0.11.61 に統一
