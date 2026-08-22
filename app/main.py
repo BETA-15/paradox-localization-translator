@@ -36,7 +36,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.57"
+APP_VERSION = "0.11.58"
 MOD_STATUS_CACHE_VERSION = 12
 
 
@@ -550,6 +550,13 @@ class App(BaseTk):
         self.review_target_entries = {}
         self.review_issues = []
         self.review_issue_by_key = {}
+        self.review_worker = None
+        self.diff_load_worker = None
+        self.differential_prepare_thread = None
+        self.bulk_overwrite_thread = None
+        self.single_overwrite_thread = None
+        self.backup_restore_operation_thread = None
+        self.data_root_move_thread = None
         self.model_stats = core.load_json(STATS_PATH, {})
         self.model_profiles = core.load_json(PROFILES_PATH, {})
         self.benchmark_controller: core.TranslationController | None = None
@@ -691,6 +698,14 @@ class App(BaseTk):
         # once for every backup entry.
         self._restore_status_snapshot_cache = None
         self._restore_status_rows_cache = None
+        self.backup_restore_refresh_thread = None
+        self.backup_restore_refresh_generation = 0
+        self.backup_restore_refresh_pending = False
+        self.status_restore_thread = None
+        self.diagnostic_restore_thread = None
+        self.judgement_log_thread = None
+        self._judgement_log_window = None
+        self._status_search_after_id = None
 
         self.mod_research_results = []
         self.mod_research_thread = None
@@ -705,18 +720,10 @@ class App(BaseTk):
         self.mod_discovery_status_var = tk.StringVar(value="ゲーム/Mod場所: 未検出")
         self.discovery_multi_select_var = tk.BooleanVar(value=False)
         self.mod_status_cache_lock = threading.Lock()
-        self.mod_status_cache = core.load_json(MOD_STATUS_CACHE_PATH, {"version": MOD_STATUS_CACHE_VERSION, "items": {}})
-        if not isinstance(self.mod_status_cache, dict) or self.mod_status_cache.get("version") != MOD_STATUS_CACHE_VERSION:
-            self.mod_status_cache = {
-                "version": MOD_STATUS_CACHE_VERSION,
-                "items": {},
-                "reset_for_version": APP_VERSION,
-                "reset_at": datetime.now().isoformat(timespec="seconds"),
-            }
-            try:
-                core.save_json(MOD_STATUS_CACHE_PATH, self.mod_status_cache)
-            except Exception as exc:
-                record_error("旧翻訳状況キャッシュ自動リセット", exc)
+        # v0.11.58: do not decode the potentially large status cache while Tk is
+        # still constructing the first window. _restore_cached_mod_status() loads it
+        # on a worker after the GUI has become responsive.
+        self.mod_status_cache = {"version": MOD_STATUS_CACHE_VERSION, "items": {}}
         # v0.11.31 migrates the first-seen role cache without discarding it.
         # The role cache is safety data (for example, a source Mod that originally
         # had no Japanese YAML must stay a source Mod after we generate Japanese).
@@ -770,6 +777,7 @@ class App(BaseTk):
         self.after(550, self._offer_restore_session)
         self.after(650, self._restore_cached_mod_status)
         self.after(760, self._restore_diagnostic_state)
+        self.after(900, self._refresh_backup_restore_entries)
         self.after(750, self.discover_mod_locations)
         self.after(15000, self._workspace_autosave_tick)
 
@@ -1386,50 +1394,8 @@ class App(BaseTk):
             item["status"] = "待機"
 
     def start_chinese_differential_translation(self, entries=None):
-        if self.chinese_worker and self.chinese_worker.is_alive():
-            return
-        entries = entries if entries is not None else self._selected_chinese_queue_entries()
-        if not entries:
-            messagebox.showinfo(APP_NAME, "差分翻訳する項目を選択してください。")
-            return
-        targets = [item for _idx, item in entries]
-        unavailable = []
-        language_complete_notices = []
-        prepared_indices = []
-        for idx, item in entries:
-            self._ensure_item_cache(item)
-            diff = self._prepare_differential_cache(item, silent=True, mode="chinese")
-            if diff is None:
-                unavailable.append(item.get("mod_name") or Path(item.get("input", "")).name)
-            else:
-                item["diff_mode"] = True
-                counts = diff.get("counts", {})
-                changed_total = sum(int(counts.get(k, 0) or 0) for k in ("added", "changed", "removed", "added_files", "removed_files", "missing"))
-                if changed_total == 0 and diff.get("language_complete"):
-                    n = int(diff.get("opposite_only_count", 0) or 0)
-                    item["status"] = self._language_complete_status_text("simp_chinese", n)
-                    language_complete_notices.append(
-                        f"{item.get('mod_name') or Path(item.get('input', '')).name}: " + self._language_complete_notice_text("simp_chinese", n)
-                    )
-                elif changed_total == 0:
-                    item["status"] = "完了（差分なし）"
-                else:
-                    item["status"] = "待機"
-                    prepared_indices.append(idx)
-        self._refresh_chinese_queue_tree()
-        if unavailable:
-            msg = "差分スナップショットがなく、翻訳状況にも判定材料となる欠損がないため、差分を判定できない項目があります。\n\n" + "\n".join(unavailable[:10])
-            if language_complete_notices:
-                msg += "\n\n言語別に完了している項目:\n" + "\n".join(language_complete_notices[:10])
-            messagebox.showinfo(APP_NAME, msg)
-        if prepared_indices:
-            if language_complete_notices:
-                messagebox.showinfo(APP_NAME, "一部項目は現在の言語で翻訳が完了しています。\n\n" + "\n".join(language_complete_notices[:10]))
-            self._start_chinese_selected(prepared_indices, diff_requested=True)
-        elif language_complete_notices and not unavailable:
-            messagebox.showinfo(APP_NAME, "\n".join(language_complete_notices[:10]))
-        elif not unavailable:
-            messagebox.showinfo(APP_NAME, "原文差分も翻訳状況の欠損もありません。")
+        entries=entries if entries is not None else self._selected_chinese_queue_entries()
+        self._start_differential_prepare(entries, mode='chinese')
 
     def start_chinese_basis_translation(self):
         if self.chinese_worker and self.chinese_worker.is_alive():
@@ -2021,81 +1987,61 @@ class App(BaseTk):
         text.config(state="disabled")
 
     def change_data_root(self):
-        old_root = DATA_ROOT
-        chosen = filedialog.askdirectory(title="Paradox Localization Translator フォルダの保存先を選択", initialdir=str(old_root.parent if old_root.exists() else Path.home()))
-        if not chosen:
-            return
-        selected = Path(chosen).expanduser()
-        new_root = selected if selected.name == DATA_FOLDER_NAME else selected / DATA_FOLDER_NAME
+        if self.data_root_move_thread and self.data_root_move_thread.is_alive():
+            messagebox.showinfo(APP_NAME,'保存場所の変更はすでにバックグラウンドで実行中です。'); return
+        old_root=DATA_ROOT
+        chosen=filedialog.askdirectory(title='Paradox Localization Translator フォルダの保存先を選択',initialdir=str(old_root.parent if old_root.exists() else Path.home()))
+        if not chosen: return
+        selected=Path(chosen).expanduser(); new_root=selected if selected.name==DATA_FOLDER_NAME else selected/DATA_FOLDER_NAME
         try:
-            if new_root.resolve() == old_root.resolve():
-                messagebox.showinfo(APP_NAME, "現在と同じ保存場所です。")
-                return
-        except Exception:
-            pass
-        if not _is_writable_dir(new_root):
-            messagebox.showerror(APP_NAME, f"選択した場所へ書き込めません。\n{new_root}")
-            return
-        ans = messagebox.askyesnocancel(
-            APP_NAME,
-            "自動生成ファイルの保存場所を変更します。\n\n"
-            f"現在: {old_root}\n"
-            f"変更後: {new_root}\n\n"
-            "［はい］: 現在のデータを新しい場所へコピーしてから切り替える\n"
-            "［いいえ］: データは移動せず、今後の生成先だけ変更する\n"
-            "［キャンセル］: 変更しない")
-        if ans is None:
-            return
-        try:
-            if ans and old_root.exists():
-                shutil.copytree(old_root, new_root, dirs_exist_ok=True)
-            _save_data_root_preference(new_root)
-            _configure_data_root(new_root)
-            # Active queue/state must follow the data-root move as well; otherwise
-            # a running session could keep writing cache/output paths under old_root.
-            for item in self.queue_items:
-                if not isinstance(item, dict):
-                    continue
-                for key in ("cache", "output", "previous_cache"):
-                    raw = item.get(key)
-                    if not raw:
-                        continue
-                    try:
-                        rel = Path(raw).expanduser().resolve().relative_to(old_root.resolve())
-                        item[key] = str(DATA_ROOT / rel)
-                    except Exception:
-                        pass
-            self.data_root_var.set(str(DATA_ROOT))
-            current_glossary = self.glossary_path_var.get().strip()
+            if new_root.resolve()==old_root.resolve(): messagebox.showinfo(APP_NAME,'現在と同じ保存場所です。'); return
+        except Exception: pass
+        if not _is_writable_dir(new_root): messagebox.showerror(APP_NAME,f'選択した場所へ書き込めません。\n{new_root}'); return
+        ans=messagebox.askyesnocancel(APP_NAME,'自動生成ファイルの保存場所を変更します。\n\n'+f'現在: {old_root}\n変更後: {new_root}\n\n'+'［はい］: 現在のデータを新しい場所へコピーしてから切り替える\n［いいえ］: データは移動せず、今後の生成先だけ変更する\n［キャンセル］: 変更しない')
+        if ans is None: return
+        current_glossary=self.glossary_path_var.get().strip()
+        queue_snapshot=[dict(x) if isinstance(x,dict) else x for x in self.queue_items]
+        self.progress_text.set('保存場所をバックグラウンドで変更中…' if ans else '保存場所を切り替え中…')
+        def work():
             try:
-                rel = Path(current_glossary).expanduser().resolve().relative_to(old_root.resolve()) if current_glossary else None
-                self.glossary_path_var.set(str(DATA_ROOT / rel) if rel is not None else str(DEFAULT_GLOSSARY))
+                if ans and old_root.exists(): shutil.copytree(old_root,new_root,dirs_exist_ok=True)
+                self.events.put(('data_root_copy_done',(str(old_root),str(new_root),bool(ans),current_glossary,queue_snapshot)))
+            except Exception as exc:
+                self.events.put(('data_root_copy_error',str(exc)))
+        self.data_root_move_thread=threading.Thread(target=work,daemon=True,name='data-root-move'); self.data_root_move_thread.start()
+
+    def _apply_data_root_change(self, old_root_raw, new_root_raw, copied, current_glossary, queue_snapshot):
+        global DATA_ROOT
+        self.data_root_move_thread=None
+        old_root=Path(old_root_raw); new_root=Path(new_root_raw)
+        try:
+            _save_data_root_preference(new_root); _configure_data_root(new_root)
+            for i,item in enumerate(self.queue_items):
+                if not isinstance(item,dict): continue
+                for key in ('cache','output','previous_cache'):
+                    raw=item.get(key)
+                    if not raw: continue
+                    try:
+                        rel=Path(raw).expanduser().resolve().relative_to(old_root.resolve()); item[key]=str(DATA_ROOT/rel)
+                    except Exception: pass
+            self.data_root_var.set(str(DATA_ROOT))
+            try:
+                rel=Path(current_glossary).expanduser().resolve().relative_to(old_root.resolve()) if current_glossary else None
+                self.glossary_path_var.set(str(DATA_ROOT/rel) if rel is not None else str(DEFAULT_GLOSSARY))
             except Exception:
-                # External user-selected glossaries remain external; only the old
-                # default location is replaced by the new default.
-                if not current_glossary or current_glossary == str(old_root / "設定" / "glossary.json"):
-                    self.glossary_path_var.set(str(DEFAULT_GLOSSARY))
-            self.model_stats = core.load_json(STATS_PATH, {})
-            self.model_profiles = core.load_json(PROFILES_PATH, {})
-            self.mod_status_cache = core.load_json(MOD_STATUS_CACHE_PATH, {"version":MOD_STATUS_CACHE_VERSION,"items":{}})
-            if not isinstance(self.mod_status_cache, dict) or self.mod_status_cache.get("version") != MOD_STATUS_CACHE_VERSION:
-                self.mod_status_cache={"version":MOD_STATUS_CACHE_VERSION,"items":{}}
-            _cls = core.load_json(MOD_CLASSIFICATION_CACHE_PATH, {"schema":2,"mods":{}})
-            if not isinstance(_cls, dict): _cls={"schema":2,"mods":{}}
-            self.mod_classification_cache={"schema":2,"mods":dict(_cls.get("mods") or {}),"updated_at":_cls.get("updated_at","")}
-            _ov = core.load_json(MOD_RELATION_OVERRIDES_PATH, {"schema":1,"mods":{}})
-            if not isinstance(_ov, dict): _ov={"schema":1,"mods":{}}
-            self.mod_relation_overrides={"schema":1,"mods":dict(_ov.get("mods") or {}),"updated_at":_ov.get("updated_at","")}
-            self._restore_shared_mod_state_cache()
-            self.refresh_profiles_ui()
-            self._restore_cached_mod_status()
-            self._restore_diagnostic_state()
-            messagebox.showinfo(APP_NAME,
-                "保存場所を変更しました。\n\n"
-                f"{DATA_ROOT}\n\n"
-                + ("既存データもコピーしました。" if ans else "今後作成するデータから新しい場所を使用します。"))
-        except Exception as e:
-            messagebox.showerror(APP_NAME, f"保存場所の変更に失敗しました。\n{e}")
+                if not current_glossary or current_glossary==str(old_root/'設定'/'glossary.json'): self.glossary_path_var.set(str(DEFAULT_GLOSSARY))
+            self.model_stats=core.load_json(STATS_PATH,{}); self.model_profiles=core.load_json(PROFILES_PATH,{})
+            # Large status cache is intentionally not decoded here; its worker does that.
+            self.mod_status_cache={'version':MOD_STATUS_CACHE_VERSION,'items':{}}
+            _cls=core.load_json(MOD_CLASSIFICATION_CACHE_PATH,{'schema':2,'mods':{}}); _cls=_cls if isinstance(_cls,dict) else {'schema':2,'mods':{}}
+            self.mod_classification_cache={'schema':2,'mods':dict(_cls.get('mods') or {}),'updated_at':_cls.get('updated_at','')}
+            _ov=core.load_json(MOD_RELATION_OVERRIDES_PATH,{'schema':1,'mods':{}}); _ov=_ov if isinstance(_ov,dict) else {'schema':1,'mods':{}}
+            self.mod_relation_overrides={'schema':1,'mods':dict(_ov.get('mods') or {}),'updated_at':_ov.get('updated_at','')}
+            self._restore_shared_mod_state_cache(); self.refresh_profiles_ui(); self._restore_cached_mod_status(); self._restore_diagnostic_state(); self._refresh_backup_restore_entries()
+            self.progress_text.set('保存場所を変更しました')
+            messagebox.showinfo(APP_NAME,'保存場所を変更しました。\n\n'+str(DATA_ROOT)+'\n\n'+('既存データもコピーしました。' if copied else '今後作成するデータから新しい場所を使用します。'))
+        except Exception as exc:
+            record_error('保存場所切替適用',exc); messagebox.showerror(APP_NAME,f'保存場所の変更に失敗しました。\n{exc}')
 
     def save_close_behavior_settings(self, silent=False):
         """Save the single × button behavior setting."""
@@ -2723,7 +2669,7 @@ Mod更新後だけ追加翻訳:
         search_entry = ttk.Entry(search, textvariable=self.mod_status_search_var, width=28)
         search_entry.grid(row=0, column=1, sticky="ew", padx=(6,6))
         search_entry.bind("<Return>", lambda e:self.search_mod_status())
-        search_entry.bind("<KeyRelease>", lambda e:self.search_mod_status(live=True))
+        search_entry.bind("<KeyRelease>", self._schedule_mod_status_search)
         ttk.Button(search, text="検索", command=self.search_mod_status).grid(row=0, column=2)
         ttk.Button(search, text="解除", command=self.clear_mod_status_search).grid(row=0, column=3, padx=(6,0))
         ttk.Label(search, textvariable=self.mod_status_search_result_var, foreground="#555", wraplength=300, justify="left").grid(row=1, column=0, columnspan=4, sticky="w", pady=(6,0))
@@ -2962,33 +2908,66 @@ Mod更新後だけ追加翻訳:
         return "\n".join(out).rstrip()+"\n"
 
     def show_translation_judgement_log(self):
-        text=self._translation_judgement_log_text()
-        win=tk.Toplevel(self); win.title("日本語化Mod 判定ログ"); win.geometry("1100x760"); win.transient(self)
-        outer=ttk.Frame(win,padding=8); outer.pack(fill="both",expand=True)
-        ttk.Label(outer,text="現在の翻訳状況データから、自動判定・加重点・除外理由・手動上書きを再計算して表示します。",foreground="#555").pack(fill="x",pady=(0,6))
-        frame=ttk.Frame(outer); frame.pack(fill="both",expand=True)
-        box=tk.Text(frame,wrap="none")
-        sy=ttk.Scrollbar(frame,orient="vertical",command=box.yview); sx=ttk.Scrollbar(frame,orient="horizontal",command=box.xview)
+        if self.judgement_log_thread and self.judgement_log_thread.is_alive():
+            messagebox.showinfo(APP_NAME,'日本語化Mod判定ログをバックグラウンドで作成中です。')
+            return
+        win=tk.Toplevel(self); win.title('日本語化Mod 判定ログ'); win.geometry('1100x760'); win.transient(self)
+        outer=ttk.Frame(win,padding=8); outer.pack(fill='both',expand=True)
+        status=tk.StringVar(value='判定ログをバックグラウンドで再計算中… GUIはそのまま操作できます。')
+        ttk.Label(outer,textvariable=status,foreground='#555').pack(fill='x',pady=(0,6))
+        frame=ttk.Frame(outer); frame.pack(fill='both',expand=True)
+        box=tk.Text(frame,wrap='none')
+        sy=ttk.Scrollbar(frame,orient='vertical',command=box.yview); sx=ttk.Scrollbar(frame,orient='horizontal',command=box.xview)
         box.configure(yscrollcommand=sy.set,xscrollcommand=sx.set)
         frame.rowconfigure(0,weight=1); frame.columnconfigure(0,weight=1)
-        box.grid(row=0,column=0,sticky="nsew"); sy.grid(row=0,column=1,sticky="ns"); sx.grid(row=1,column=0,sticky="ew")
-        box.insert("1.0",text); box.configure(state="disabled")
-        bar=ttk.Frame(outer); bar.pack(fill="x",pady=(7,0))
-        ttk.Button(bar,text="ログを書き出す",command=self.export_translation_judgement_log).pack(side="left")
-        ttk.Button(bar,text="閉じる",command=win.destroy).pack(side="right")
+        box.grid(row=0,column=0,sticky='nsew'); sy.grid(row=0,column=1,sticky='ns'); sx.grid(row=1,column=0,sticky='ew')
+        box.insert('1.0','判定ログを生成しています…')
+        bar=ttk.Frame(outer); bar.pack(fill='x',pady=(7,0))
+        export_btn=ttk.Button(bar,text='ログを書き出す',state='disabled'); export_btn.pack(side='left')
+        ttk.Button(bar,text='閉じる',command=win.destroy).pack(side='right')
+        token=id(win); self._judgement_log_window=(token,win,box,status,export_btn)
+        def work():
+            try: self.events.put(('judgement_log_ready',(token,self._translation_judgement_log_text())))
+            except Exception as exc: self.events.put(('judgement_log_error',(token,str(exc))))
+        self.judgement_log_thread=threading.Thread(target=work,daemon=True,name='judgement-log-build'); self.judgement_log_thread.start()
 
-    def export_translation_judgement_log(self):
+    def _apply_judgement_log_ready(self, token, text):
+        self.judgement_log_thread=None
+        state=self._judgement_log_window
+        if not state or state[0]!=token: return
+        _,win,box,status,export_btn=state
+        if not win.winfo_exists(): return
+        box.delete('1.0','end'); box.insert('1.0',text); box.configure(state='disabled')
+        status.set('判定ログ生成完了。大量Modでも生成処理はGUIとは別スレッドで実行されます。')
+        export_btn.config(state='normal',command=lambda t=text:self._write_translation_judgement_log_text(t))
+
+    def _write_translation_judgement_log_text(self, text):
         try:
-            text=self._translation_judgement_log_text()
             LOG_ROOT.mkdir(parents=True,exist_ok=True)
             target=LOG_ROOT / f"translation_mod_judgement_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-            target.write_text(text,encoding="utf-8")
-            messagebox.showinfo(APP_NAME,f"日本語化Mod判定ログを書き出しました。\n\n{target}")
+            target.write_text(text,encoding='utf-8')
+            messagebox.showinfo(APP_NAME,f'日本語化Mod判定ログを書き出しました。\n\n{target}')
             return target
         except Exception as exc:
-            record_error("日本語化Mod判定ログ書き出し",exc)
-            messagebox.showerror(APP_NAME,f"判定ログの書き出しに失敗しました。\n{exc}")
+            record_error('日本語化Mod判定ログ書き出し',exc); messagebox.showerror(APP_NAME,f'判定ログの書き出しに失敗しました。\n{exc}')
             return None
+
+    def export_translation_judgement_log(self):
+        if self.judgement_log_thread and self.judgement_log_thread.is_alive():
+            messagebox.showinfo(APP_NAME,'判定ログをバックグラウンドで作成中です。完了後に書き出せます。')
+            return None
+        def work():
+            try:
+                text=self._translation_judgement_log_text()
+                LOG_ROOT.mkdir(parents=True,exist_ok=True)
+                target=LOG_ROOT / f"translation_mod_judgement_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+                target.write_text(text,encoding='utf-8')
+                self.events.put(('judgement_log_exported',str(target)))
+            except Exception as exc:
+                self.events.put(('judgement_log_export_error',str(exc)))
+        self.judgement_log_thread=threading.Thread(target=work,daemon=True,name='judgement-log-export'); self.judgement_log_thread.start()
+        self.mod_status_summary_var.set('判定ログをバックグラウンドで生成中…')
+        return None
 
     # ---------------- Comprehensive localization diagnostics / repair ----------------
     def _build_diagnostic_tab(self):
@@ -3439,7 +3418,8 @@ Mod更新後だけ追加翻訳:
         mod_sy.grid(row=0,column=1,sticky='ns')
         mod_sx.grid(row=1,column=0,sticky='ew')
         self.backup_restore_mod_list.bind('<<ListboxSelect>>',self._on_backup_restore_mod_list_selected)
-        ttk.Button(left,text='バックアップ一覧を再読込',command=self._refresh_backup_restore_entries).pack(fill='x')
+        self.backup_restore_reload_btn=ttk.Button(left,text='バックアップ一覧を再読込',command=self._refresh_backup_restore_entries)
+        self.backup_restore_reload_btn.pack(fill='x')
 
         action=ttk.Frame(right); action.pack(fill='x')
         self.backup_restore_selected_mod_label=ttk.Label(action,text='選択Mod: すべてのMod',font=('',11,'bold'))
@@ -3473,7 +3453,7 @@ Mod更新後だけ追加翻訳:
         self.backup_restore_detail_label=ttk.Label(detail,textvariable=self.backup_restore_detail_var,foreground='#555',wraplength=760,justify='left')
         self.backup_restore_detail_label.pack(anchor='w',fill='x')
         right.bind('<Configure>',self._on_backup_restore_right_resize)
-        self._refresh_backup_restore_entries()
+        self.backup_restore_summary_var.set('バックアップをバックグラウンドで読込待機中…')
 
     def _on_backup_restore_right_resize(self, event=None):
         if hasattr(self,'backup_restore_detail_label') and event is not None:
@@ -3516,11 +3496,35 @@ Mod更新後だけ追加翻訳:
         return candidates[0] if len(candidates)==1 else (None,'')
 
     def _refresh_backup_restore_entries(self):
+        """Refresh backup inventory without blocking Tk's main thread."""
         if not hasattr(self,'backup_restore_tree'):
             return
-        # v0.11.56: build the Translation Status restore inventory exactly once for this
-        # refresh.  v0.11.55 rebuilt it for every backup row, reparsing the persisted
-        # JSON hundreds of times and freezing the macOS main thread on startup.
+        if self.backup_restore_refresh_thread and self.backup_restore_refresh_thread.is_alive():
+            # Coalesce repeated startup/status-change requests. Never launch several heavy
+            # backup scans in parallel when hundreds of backup generations exist.
+            self.backup_restore_refresh_pending=True
+            self.backup_restore_summary_var.set('バックアップ読込中…（更新予約あり）')
+            return
+        self.backup_restore_refresh_generation += 1
+        generation=self.backup_restore_refresh_generation
+        self.backup_restore_summary_var.set('バックアップをバックグラウンドで読込中…')
+        try:
+            if hasattr(self,'backup_restore_reload_btn'):
+                self.backup_restore_reload_btn.config(state='disabled')
+        except Exception:
+            pass
+        def work():
+            try:
+                entries=self._collect_backup_restore_entries_background()
+                self.events.put(('backup_restore_loaded',(generation,entries)))
+            except Exception as exc:
+                self.events.put(('backup_restore_load_error',(generation,str(exc))))
+        self.backup_restore_refresh_thread=threading.Thread(target=work,daemon=True,name='backup-restore-refresh')
+        self.backup_restore_refresh_thread.start()
+
+    def _collect_backup_restore_entries_background(self):
+        # No Tk calls are allowed in this function. It can scan hundreds/thousands of
+        # backup records and resolve Translation Status targets entirely off the UI thread.
         self._restore_status_rows_cache = None
         restore_rows = self._translation_status_rows_for_restore(force_rebuild=True)
         known_restore_roots = self._known_mod_roots_for_restore(restore_rows=restore_rows)
@@ -3540,7 +3544,6 @@ Mod更新後だけ追加翻訳:
                 'state':rec.get('state_label') or 'localizationバックアップ',
                 'target_root':target,'format':'完全スナップショット','exact':True,
             })
-        # Legacy comprehensive-diagnostic backups are complete localization snapshots.
         diag=BACKUP_ROOT/'総合診断'
         if diag.exists():
             for loc in diag.glob('*/*/localization'):
@@ -3562,7 +3565,6 @@ Mod更新後だけ追加翻訳:
                     'game':game,'mod':target_name or mod_guess,'kind':'総合診断修復','state':'総合診断の修復直前localization全体',
                     'target_root':target,'format':'旧形式・完全','exact':True})
                 seen.add(key)
-        # Legacy overwrite backups only contain files that were overwritten.
         try:
             top_dirs=list(BACKUP_ROOT.iterdir()) if BACKUP_ROOT.exists() else []
         except Exception:
@@ -3585,20 +3587,31 @@ Mod更新後だけ追加翻訳:
             for e in entries:
                 if e['manifest'] is None and e['entry_root'] in dirs:
                     e['generation']=order.get(str(e['entry_root']))
-        # Old backups often have no usable target path. Resolve them against the current
-        # Translation Status inventory (including its persisted snapshot) before rendering.
         for entry in entries:
             self._apply_translation_status_restore_resolution(entry, restore_rows=restore_rows)
         entries.sort(key=lambda e:str(e.get('created_at') or e['entry_root'].name),reverse=True)
-        self.backup_restore_entries=entries
+        return entries
 
-        games=sorted({str(e.get('game') or 'ゲーム未特定') for e in entries},key=str.casefold)
+    def _apply_backup_restore_loaded(self, generation, entries):
+        if generation != self.backup_restore_refresh_generation:
+            return
+        self.backup_restore_refresh_thread=None
+        self.backup_restore_entries=list(entries or [])
+        games=sorted({str(e.get('game') or 'ゲーム未特定') for e in self.backup_restore_entries},key=str.casefold)
         game_values=['すべてのゲーム']+games
         self.backup_restore_game_combo['values']=game_values
         if self.backup_restore_game_var.get() not in game_values:
             self.backup_restore_game_var.set(game_values[0])
         self._refresh_backup_restore_mod_filter()
         self._render_backup_restore_entries()
+        try:
+            if hasattr(self,'backup_restore_reload_btn'):
+                self.backup_restore_reload_btn.config(state='normal')
+        except Exception:
+            pass
+        if self.backup_restore_refresh_pending:
+            self.backup_restore_refresh_pending=False
+            self.after_idle(self._refresh_backup_restore_entries)
 
     def _backup_restore_entry_matches_search(self, entry, query=None):
         query=(self.backup_restore_search_var.get() if query is None else query).strip().casefold()
@@ -3704,48 +3717,44 @@ Mod更新後だけ追加翻訳:
         self.backup_restore_btn.config(state='normal' if target and Path(target).exists() else 'disabled')
 
     def _restore_selected_backup(self):
+        if self.backup_restore_operation_thread and self.backup_restore_operation_thread.is_alive():
+            messagebox.showinfo(APP_NAME,'バックアップ復元はすでにバックグラウンドで実行中です。'); return
         sel=self.backup_restore_tree.selection() if hasattr(self,'backup_restore_tree') else ()
         e=self.backup_restore_entry_map.get(sel[0]) if sel else None
         if not e: return
         target=Path(e.get('target_root') or '')
         if not target.exists():
-            messagebox.showerror(APP_NAME,'復元先Modを特定できません。翻訳状況タブの現在情報／保存済み情報でも一意に対応するModが見つかりませんでした。Mod調査を実行してから一覧を再読込してください。')
-            return
+            messagebox.showerror(APP_NAME,'復元先Modを特定できません。翻訳状況タブの現在情報／保存済み情報でも一意に対応するModが見つかりませんでした。Mod調査を実行してから一覧を再読込してください。'); return
         gen=f"第{int(e['generation'])}回" if e.get('generation') else '回数記録なし'
-        warning=(
-            f"バックアップを復元します。\n\nゲーム: {e.get('game','ゲーム未特定')}\n対象Mod: {e['mod']}\nバックアップ: {gen} / {e['kind']}\n"
-            f"保存状態: {e['state']}\n復元先: {target}\n\n"
-            "復元前に現在のlocalization全体を『復元前退避』へ保存します。\n"
-        )
+        warning=(f"バックアップを復元します。\n\nゲーム: {e.get('game','ゲーム未特定')}\n対象Mod: {e['mod']}\nバックアップ: {gen} / {e['kind']}\n保存状態: {e['state']}\n復元先: {target}\n\n復元前に現在のlocalization全体を『復元前退避』へ保存します。\n")
         if not e.get('exact'):
-            warning += "\n⚠ 旧形式の部分バックアップなので、当時存在していた保存済みファイルだけを戻します。後から新規作成されたファイルは削除しません。\n"
-        if not messagebox.askyesno('バックアップ復元の確認',warning+'\n続行しますか？',icon='warning'):
-            return
-        try:
-            safety_root,_=self._create_full_localization_snapshot(target,'復元前退避',category='復元前退避',state_label='バックアップ復元を実行する直前のlocalization全体')
-            target_loc=target/'localization'
-            if e.get('exact'):
-                snapshot=Path(e['snapshot'])
-                if target_loc.exists(): shutil.rmtree(target_loc)
-                if snapshot.exists(): shutil.copytree(snapshot,target_loc)
-                else: target_loc.mkdir(parents=True,exist_ok=True)
-            else:
-                src=Path(e['snapshot'])
-                for fp in src.rglob('*'):
-                    if not fp.is_file() or fp.name == 'backup_manifest.json': continue
-                    rel=fp.relative_to(src)
-                    if rel.parts and rel.parts[0].lower() in {'japanese','english','simp_chinese','replace'}:
-                        dst=target_loc/rel
-                    else:
-                        dst=target/rel
-                    dst.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(fp,dst)
-            self._invalidate_mod_status_cache_paths([str(target)])
-            self._refresh_diagnostic_targets()
-            self._refresh_backup_restore_entries()
-            messagebox.showinfo(APP_NAME,f"復元しました。\n\n対象: {target}\n復元前退避: {safety_root}\n\n翻訳状況は次回の再調査で再判定されます。")
-        except Exception as exc:
-            record_error('バックアップ復元',exc,str(target))
-            messagebox.showerror(APP_NAME,f"バックアップ復元に失敗しました。\n{exc}")
+            warning+='\n⚠ 旧形式の部分バックアップなので、当時存在していた保存済みファイルだけを戻します。後から新規作成されたファイルは削除しません。\n'
+        if not messagebox.askyesno('バックアップ復元の確認',warning+'\n続行しますか？',icon='warning'): return
+        self.backup_restore_btn.config(state='disabled')
+        self.backup_restore_summary_var.set(f"復元をバックグラウンドで実行中… {e['mod']}")
+        def work():
+            try:
+                safety_root,_=self._create_full_localization_snapshot(target,'復元前退避',category='復元前退避',state_label='バックアップ復元を実行する直前のlocalization全体')
+                target_loc=target/'localization'
+                if e.get('exact'):
+                    snapshot=Path(e['snapshot'])
+                    if target_loc.exists(): shutil.rmtree(target_loc)
+                    if snapshot.exists(): shutil.copytree(snapshot,target_loc)
+                    else: target_loc.mkdir(parents=True,exist_ok=True)
+                else:
+                    src=Path(e['snapshot'])
+                    for fp in src.rglob('*'):
+                        if not fp.is_file() or fp.name=='backup_manifest.json': continue
+                        rel=fp.relative_to(src)
+                        if rel.parts and rel.parts[0].lower() in {'japanese','english','simp_chinese','replace'}: dst=target_loc/rel
+                        else: dst=target/rel
+                        dst.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(fp,dst)
+                self._invalidate_mod_status_cache_paths([str(target)])
+                self.events.put(('backup_restore_done',(str(target),str(safety_root))))
+            except Exception as exc:
+                record_error('バックアップ復元',exc,str(target)); self.events.put(('backup_restore_error',str(exc)))
+        self.backup_restore_operation_thread=threading.Thread(target=work,daemon=True,name='backup-restore-operation'); self.backup_restore_operation_thread.start()
+
 
 
     def _set_diagnostic_repair_busy(self, busy):
@@ -4520,6 +4529,16 @@ Mod更新後だけ追加翻訳:
         if not visible and query:
             self._set_mod_status_detail_text(f"『{query}』に一致する判定済みModはありません。")
 
+    def _schedule_mod_status_search(self, _event=None):
+        if self._status_search_after_id is not None:
+            try: self.after_cancel(self._status_search_after_id)
+            except Exception: pass
+        self._status_search_after_id=self.after(180, lambda:self._run_debounced_mod_status_search())
+
+    def _run_debounced_mod_status_search(self):
+        self._status_search_after_id=None
+        self.search_mod_status(live=True)
+
     def search_mod_status(self, live=False):
         query = self.mod_status_search_var.get().strip()
         self._populate_mod_status_tree()
@@ -5122,58 +5141,53 @@ Mod更新後だけ追加翻訳:
             pass
 
     def _restore_cached_mod_status(self):
-        try:
-            data = core.load_json(MOD_STATUS_CACHE_PATH, {"version": MOD_STATUS_CACHE_VERSION, "items": {}})
-            if not isinstance(data, dict) or data.get("version") != MOD_STATUS_CACHE_VERSION:
-                self.mod_status_cache = {"version": MOD_STATUS_CACHE_VERSION, "items": {}}
-                data = self.mod_status_cache
-            items = data.get("items", {})
-            rows = []
-            by_path = {}
-            for row in items.values():
-                result = row.get("result") if isinstance(row, dict) else None
-                if isinstance(result, dict) and result.get("path"):
-                    r = dict(result); r["cached"] = True
-                    by_path[str(r.get("path"))] = r
-            # The visible-state snapshot survives deliberate invalidation of the
-            # signature cache (classification change/repair/overwrite). This is
-            # why a restart no longer makes the tab look empty.
-            snap = self._load_translation_status_snapshot()
-            for r in (snap.get("results") or []):
-                if not isinstance(r, dict) or not r.get("path"):
-                    continue
-                path = str(r.get("path"))
-                if path not in by_path:
-                    rr = dict(r); rr["cached"] = True; rr["stale_cached"] = True
-                    by_path[path] = rr
-            rows = list(by_path.values())
-            rows.sort(key=lambda r: str(r.get("mod", "")).lower())
-            if not hasattr(self, "mod_status_tree"):
-                return
-            self.mod_research_results = rows
-            self._populate_mod_status_tree()
-            wanted = {str(x) for x in (snap.get("selected_paths") or []) if x}
-            if wanted:
-                for iid in self.mod_status_tree.get_children():
-                    try:
-                        idx=int(str(iid).replace("mod_", ""))
-                        if 0 <= idx < len(self.mod_research_results) and str(self.mod_research_results[idx].get("path", "")) in wanted:
-                            self.mod_status_tree.selection_add(iid)
-                    except Exception:
-                        continue
-            counts={}
-            for r in rows: counts[r.get("status","")] = counts.get(r.get("status",""),0)+1
-            summary=" / ".join(f"{k}: {v}" for k,v in counts.items())
-            self.mod_status_summary_var.set(f"キャッシュ復元: {len(rows)}件" + (f"　{summary}" if summary else ""))
-            # Backup Restore may have been rendered before Translation Status was restored.
-            # Re-resolve legacy targets now that the current Mod inventory is available.
+        """Restore potentially large Translation Status caches off the Tk thread."""
+        if self.status_restore_thread and self.status_restore_thread.is_alive():
+            return
+        self.mod_status_summary_var.set('前回の翻訳状況をバックグラウンドで復元中…')
+        def work():
             try:
-                if hasattr(self, 'backup_restore_tree'):
-                    self._refresh_backup_restore_entries()
-            except Exception as refresh_exc:
-                record_error("バックアップ復元先の再解決", refresh_exc)
-        except Exception as e:
-            record_error("翻訳状況キャッシュ復元", e)
+                data = core.load_json(MOD_STATUS_CACHE_PATH, {"version": MOD_STATUS_CACHE_VERSION, "items": {}})
+                if not isinstance(data, dict) or data.get("version") != MOD_STATUS_CACHE_VERSION:
+                    data = {"version": MOD_STATUS_CACHE_VERSION, "items": {}}
+                by_path={}
+                for row in (data.get("items", {}) or {}).values():
+                    result = row.get("result") if isinstance(row, dict) else None
+                    if isinstance(result, dict) and result.get("path"):
+                        r=dict(result); r["cached"]=True; by_path[str(r.get("path"))]=r
+                snap=self._load_translation_status_snapshot()
+                for r in (snap.get("results") or []):
+                    if not isinstance(r,dict) or not r.get("path"): continue
+                    path=str(r.get("path"))
+                    if path not in by_path:
+                        rr=dict(r); rr["cached"]=True; rr["stale_cached"]=True; by_path[path]=rr
+                rows=list(by_path.values()); rows.sort(key=lambda r:str(r.get("mod","")).lower())
+                self.events.put(('status_cache_restored',(data,rows,list(snap.get('selected_paths') or []))))
+            except Exception as exc:
+                self.events.put(('status_cache_restore_error',str(exc)))
+        self.status_restore_thread=threading.Thread(target=work,daemon=True,name='status-cache-restore')
+        self.status_restore_thread.start()
+
+    def _apply_restored_mod_status(self, data, rows, selected_paths):
+        self.status_restore_thread=None
+        self.mod_status_cache=data if isinstance(data,dict) else {"version":MOD_STATUS_CACHE_VERSION,"items":{}}
+        self.mod_research_results=list(rows or [])
+        self._populate_mod_status_tree()
+        wanted={str(x) for x in (selected_paths or []) if x}
+        if wanted:
+            for iid in self.mod_status_tree.get_children():
+                try:
+                    idx=int(str(iid).replace('mod_',''))
+                    if 0 <= idx < len(self.mod_research_results) and str(self.mod_research_results[idx].get('path','')) in wanted:
+                        self.mod_status_tree.selection_add(iid)
+                except Exception:
+                    continue
+        counts={}
+        for r in self.mod_research_results: counts[r.get('status','')]=counts.get(r.get('status',''),0)+1
+        summary=' / '.join(f'{k}: {v}' for k,v in counts.items())
+        self.mod_status_summary_var.set(f'キャッシュ復元: {len(self.mod_research_results)}件'+(f'　{summary}' if summary else ''))
+        self._refresh_diagnostic_targets()
+        self._refresh_backup_restore_entries()
 
     def research_selected_mod_background(self):
         # 旧UI互換。調査機能は翻訳状況タブの選択場所調査へ統合済み。
@@ -6401,121 +6415,114 @@ Mod更新後だけ追加翻訳:
             return False,str(e)
 
     def _overwrite_single_item_interactive(self, item, prefer_external=True):
+        if self.single_overwrite_thread and self.single_overwrite_thread.is_alive():
+            messagebox.showinfo(APP_NAME,'上書き処理はすでにバックグラウンドで実行中です。'); return False
         if not self._queue_item_is_completed(item):
-            messagebox.showinfo(APP_NAME,"上書きできるのは翻訳完了済みの項目です。")
-            return False
+            messagebox.showinfo(APP_NAME,'上書きできるのは翻訳完了済みの項目です。'); return False
         use_external=False
-        if prefer_external and item.get("external_translation_path"):
-            ext_name=item.get("external_translation_mod","") or Path(item.get("external_translation_path","")).name
-            choice=messagebox.askyesnocancel(
-                "上書き先の確認",
-                f"日本語化Mod『{ext_name}』が見つかっています。\n\n"
-                "はい: 日本語化Modへ差分上書き\nいいえ: 元Modへ上書き\nキャンセル: 何もしない",
-                icon="question")
-            if choice is None:
-                return False
+        if prefer_external and item.get('external_translation_path'):
+            ext_name=item.get('external_translation_mod','') or Path(item.get('external_translation_path','')).name
+            choice=messagebox.askyesnocancel('上書き先の確認',f"日本語化Mod『{ext_name}』が見つかっています。\n\nはい: 日本語化Modへ差分上書き\nいいえ: 元Modへ上書き\nキャンセル: 何もしない",icon='question')
+            if choice is None: return False
             use_external=bool(choice)
-        if item.get("missing_only"):
-            if use_external:
-                target_root = Path(item.get("external_translation_path", ""))
-                target_loc = Path(item.get("external_translation_localization", ""))
-            else:
-                target_loc, target_root = self._infer_mod_target_for_item(item)
-            if not target_loc or not target_root:
-                ok, reason = False, "不足翻訳の上書き先を特定できません"
-            else:
-                ok,reason=self._merge_missing_only_output(item, Path(target_loc), Path(target_root), confirm=True, notify=True)
-        elif use_external:
-            ok,reason=self._perform_external_gap_overwrite(item,confirm=True,notify=True)
-        else:
-            ok,reason=self._perform_source_mod_overwrite(item,confirm=True,notify=True)
-        if ok:
-            self._set_overwritten_status(item)
-            self._invalidate_status_cache_for_item(item)
-            self._refresh_queue_tree(); self._refresh_chinese_queue_tree()
-            self._save_workspace_state("overwrite_completed")
-        elif reason not in {"キャンセル"}:
-            messagebox.showinfo(APP_NAME,f"上書きできませんでした。\n{reason}")
-        return ok
-
-    def _bulk_overwrite_queue_entries(self, entries, queue_kind="normal"):
-        eligible=[]; skipped_unfinished=0
-        for idx,item in entries:
-            if self._queue_item_is_completed(item):
-                eligible.append((idx,item))
-            else:
-                skipped_unfinished += 1
-        if not eligible:
-            messagebox.showinfo(APP_NAME,"選択項目に翻訳完了済みの項目がありません。")
-            return
-
-        has_external=any(item.get("external_translation_path") for _,item in eligible)
-        policy="source"
-        if has_external:
-            choice=messagebox.askyesnocancel(
-                "一括上書き先の方針",
-                f"翻訳完了済み {len(eligible)}件を一括上書きします。\n\n"
-                "はい: 既存日本語化Modがある項目は日本語化Modへ差分上書き\n"
-                "      日本語化Modがない項目は元Modへ上書き\n"
-                "いいえ: すべて元Modへ上書き\n"
-                "キャンセル: 何もしない",
-                icon="question")
-            if choice is None:
-                return
-            policy="external" if choice else "source"
-
-        policy_text="既存日本語化Modを優先" if policy=="external" else "すべて元Modへ上書き"
-        relationship_warning = ""
-        if policy == "external":
-            relationship_warning = "\n日本語化Modへ上書きする項目について、元Modと上書き先が適切な日本語化Modの関係になっているか確認してください。\n"
-        if not messagebox.askyesno(
-            "一括上書きの確認",
-            f"対象: {len(eligible)}件\n方針: {policy_text}\n"
-            f"未完了のためスキップ予定: {skipped_unfinished}件\n"
-            f"{relationship_warning}\n"
-            "各Modについて既存ファイルのバックアップを作成してから書き込みます。\n続行しますか？",
-            icon="warning"):
-            return
-
-        success=0; skipped=skipped_unfinished; failed=0; details=[]
-        for _,item in eligible:
-            name=item.get("mod_name") or Path(item.get("input","")).name or "項目"
+        target_label=(item.get('external_translation_mod') or '日本語化Mod') if use_external else (item.get('mod_name') or '元Mod')
+        if not messagebox.askyesno('警告 — Modへ上書き',f"対象: {target_label}\n\n既存localizationは実行前にバックアップします。\nファイル走査・バックアップ・書き込みはバックグラウンドで実行します。\n続行しますか？",icon='warning'):
+            return False
+        if not messagebox.askyesno('最終確認','本当に書き込みますか？\nこの操作は対象Modの日本語localizationを変更します。',icon='warning'):
+            return False
+        self.progress_text.set(f'上書きをバックグラウンドで実行中… {target_label}')
+        def work():
             try:
-                if item.get("missing_only"):
-                    if policy=="external" and item.get("external_translation_path"):
-                        target_root=Path(item.get("external_translation_path", "")); target_loc=Path(item.get("external_translation_localization", ""))
+                if item.get('missing_only'):
+                    if use_external:
+                        target_root=Path(item.get('external_translation_path','')); target_loc=Path(item.get('external_translation_localization',''))
                     else:
                         target_loc,target_root=self._infer_mod_target_for_item(item)
-                    if not target_loc or not target_root:
-                        ok,reason=False,"不足翻訳の上書き先を特定できません"
-                    else:
-                        ok,reason=self._merge_missing_only_output(item,Path(target_loc),Path(target_root),confirm=False,notify=False)
-                elif policy=="external" and item.get("external_translation_path"):
+                    if not target_loc or not target_root: ok,reason=False,'不足翻訳の上書き先を特定できません'
+                    else: ok,reason=self._merge_missing_only_output(item,Path(target_loc),Path(target_root),confirm=False,notify=False)
+                elif use_external:
                     ok,reason=self._perform_external_gap_overwrite(item,confirm=False,notify=False)
-                    if not ok and reason in {"日本語化Modへ反映する差分情報がありません","完成済み出力に差分訳が見つかりません"}:
-                        skipped += 1; details.append(f"{name}: スキップ ({reason})"); continue
                 else:
                     ok,reason=self._perform_source_mod_overwrite(item,confirm=False,notify=False)
-                if ok:
-                    self._set_overwritten_status(item); self._invalidate_status_cache_for_item(item); success += 1
-                    if "⚠" in str(reason):
-                        details.append(f"{name}: {reason}")
-                else:
-                    failed += 1; details.append(f"{name}: 失敗 ({reason})")
+                self.events.put(('single_overwrite_done',(item,ok,reason,target_label)))
             except Exception as exc:
-                failed += 1; details.append(f"{name}: 失敗 ({exc})")
-                record_error("一括上書き",exc,name)
+                record_error('単体上書きバックグラウンド処理',exc,target_label); self.events.put(('single_overwrite_done',(item,False,str(exc),target_label)))
+        self.single_overwrite_thread=threading.Thread(target=work,daemon=True,name='single-overwrite'); self.single_overwrite_thread.start()
+        return True
 
-        self._refresh_queue_tree(); self._refresh_chinese_queue_tree()
-        self._save_workspace_state("bulk_overwrite_completed")
-        if self.queue_items and all(self._queue_item_is_completed(x) for x in self.queue_items):
-            self._delete_session()
-        summary=f"一括上書きが完了しました。\n\n上書き成功: {success}件\nスキップ: {skipped}件\n失敗: {failed}件"
+    def _apply_single_overwrite_done(self, item, ok, reason, target_label):
+        self.single_overwrite_thread=None
+        if ok:
+            self._set_overwritten_status(item); self._invalidate_status_cache_for_item(item)
+            self._refresh_queue_tree(); self._refresh_chinese_queue_tree(); self._save_workspace_state('overwrite_completed')
+            self.progress_text.set(f'上書き完了: {target_label}')
+            self._refresh_backup_restore_entries()
+            messagebox.showinfo(APP_NAME,f'上書きが完了しました。\n\n対象: {target_label}\n{reason}')
+        else:
+            self.progress_text.set('上書きできませんでした')
+            if reason not in {'キャンセル'}: messagebox.showinfo(APP_NAME,f'上書きできませんでした。\n{reason}')
+
+    def _bulk_overwrite_queue_entries(self, entries, queue_kind="normal"):
+        if self.bulk_overwrite_thread and self.bulk_overwrite_thread.is_alive():
+            messagebox.showinfo(APP_NAME,'一括上書きはすでにバックグラウンドで実行中です。'); return
+        eligible=[]; skipped_unfinished=0
+        for idx,item in entries:
+            if self._queue_item_is_completed(item): eligible.append((idx,item))
+            else: skipped_unfinished+=1
+        if not eligible:
+            messagebox.showinfo(APP_NAME,'選択項目に翻訳完了済みの項目がありません。'); return
+        has_external=any(item.get('external_translation_path') for _,item in eligible); policy='source'
+        if has_external:
+            choice=messagebox.askyesnocancel('一括上書き先の方針',
+                f'翻訳完了済み {len(eligible)}件を一括上書きします。\n\nはい: 既存日本語化Modがある項目は日本語化Modへ差分上書き\n      日本語化Modがない項目は元Modへ上書き\nいいえ: すべて元Modへ上書き\nキャンセル: 何もしない',icon='question')
+            if choice is None: return
+            policy='external' if choice else 'source'
+        policy_text='既存日本語化Modを優先' if policy=='external' else 'すべて元Modへ上書き'
+        relationship_warning='\n日本語化Modへ上書きする項目について、元Modと上書き先が適切な日本語化Modの関係になっているか確認してください。\n' if policy=='external' else ''
+        if not messagebox.askyesno('一括上書きの確認',
+            f'対象: {len(eligible)}件\n方針: {policy_text}\n未完了のためスキップ予定: {skipped_unfinished}件\n{relationship_warning}\n各Modについて既存ファイルのバックアップを作成してから書き込みます。\n続行しますか？',icon='warning'):
+            return
+        self.progress_text.set(f'一括上書きをバックグラウンドで実行中… 0/{len(eligible)}')
+        def work():
+            success=0; skipped=skipped_unfinished; failed=0; details=[]
+            for pos,(_,item) in enumerate(eligible,1):
+                name=item.get('mod_name') or Path(item.get('input','')).name or '項目'
+                self.events.put(('bulk_overwrite_progress',(pos,len(eligible),name)))
+                try:
+                    if item.get('missing_only'):
+                        if policy=='external' and item.get('external_translation_path'):
+                            target_root=Path(item.get('external_translation_path','')); target_loc=Path(item.get('external_translation_localization',''))
+                        else:
+                            target_loc,target_root=self._infer_mod_target_for_item(item)
+                        if not target_loc or not target_root: ok,reason=False,'不足翻訳の上書き先を特定できません'
+                        else: ok,reason=self._merge_missing_only_output(item,Path(target_loc),Path(target_root),confirm=False,notify=False)
+                    elif policy=='external' and item.get('external_translation_path'):
+                        ok,reason=self._perform_external_gap_overwrite(item,confirm=False,notify=False)
+                        if not ok and reason in {'日本語化Modへ反映する差分情報がありません','完成済み出力に差分訳が見つかりません'}:
+                            skipped+=1; details.append(f'{name}: スキップ ({reason})'); continue
+                    else:
+                        ok,reason=self._perform_source_mod_overwrite(item,confirm=False,notify=False)
+                    if ok:
+                        self._set_overwritten_status(item); self._invalidate_status_cache_for_item(item); success+=1
+                        if '⚠' in str(reason): details.append(f'{name}: {reason}')
+                    else:
+                        failed+=1; details.append(f'{name}: 失敗 ({reason})')
+                except Exception as exc:
+                    failed+=1; details.append(f'{name}: 失敗 ({exc})'); record_error('一括上書き',exc,name)
+            self.events.put(('bulk_overwrite_done',(success,skipped,failed,details,queue_kind)))
+        self.bulk_overwrite_thread=threading.Thread(target=work,daemon=True,name='bulk-overwrite'); self.bulk_overwrite_thread.start()
+
+    def _apply_bulk_overwrite_done(self, success, skipped, failed, details, queue_kind):
+        self.bulk_overwrite_thread=None
+        self._refresh_queue_tree(); self._refresh_chinese_queue_tree(); self._save_workspace_state('bulk_overwrite_completed')
+        if self.queue_items and all(self._queue_item_is_completed(x) for x in self.queue_items): self._delete_session()
+        self.progress_text.set(f'一括上書き完了: 成功 {success} / スキップ {skipped} / 失敗 {failed}')
+        summary=f'一括上書きが完了しました。\n\n上書き成功: {success}件\nスキップ: {skipped}件\n失敗: {failed}件'
         if details:
-            summary += "\n\n詳細:\n" + "\n".join(details[:12])
-            if len(details)>12:
-                summary += f"\n…ほか {len(details)-12}件"
+            summary+='\n\n詳細:\n'+'\n'.join(details[:12])
+            if len(details)>12: summary+=f'\n…ほか {len(details)-12}件'
         messagebox.showinfo(APP_NAME,summary)
+        self._refresh_backup_restore_entries()
 
     def overwrite_selected_translation_to_mod(self, item_override=None, prefer_external=True):
         if item_override is not None:
@@ -7090,7 +7097,7 @@ Mod更新後だけ追加翻訳:
             "other_unavailable_count": len(other_unavailable),
         }
 
-    def _prepare_differential_cache(self, item: dict, silent: bool = True, mode: str = "normal") -> dict | None:
+    def _prepare_differential_cache(self, item: dict, silent: bool = True, mode: str = "normal", repair_enabled=None) -> dict | None:
         p = Path(item["input"])
         output_root = Path(item.get("output", ""))
         current_cache = Path(self._ensure_item_cache(item))
@@ -7110,7 +7117,8 @@ Mod更新後だけ追加翻訳:
             if mode == "chinese":
                 new_manifest = core.build_source_manifest_for_language(p, "simp_chinese")
             else:
-                new_manifest = core.build_source_manifest(p, None if self.repair_var.get() else core.DEFAULT_TARGET_LANG)
+                use_repair = self.repair_var.get() if repair_enabled is None else bool(repair_enabled)
+                new_manifest = core.build_source_manifest(p, None if use_repair else core.DEFAULT_TARGET_LANG)
         except Exception:
             return None
 
@@ -7528,48 +7536,58 @@ Mod更新後だけ追加翻訳:
             item["status"] = "待機"
 
     def start_differential_queue(self, entries=None):
-        if self.worker and self.worker.is_alive():
-            return
-        entries = entries if entries is not None else self._selected_normal_queue_entries()
+        entries=entries if entries is not None else self._selected_normal_queue_entries()
+        self._start_differential_prepare(entries, mode='normal')
+
+    def _start_differential_prepare(self, entries, mode='normal'):
+        active_worker=self.chinese_worker if mode=='chinese' else self.worker
+        if active_worker and active_worker.is_alive(): return
+        if self.differential_prepare_thread and self.differential_prepare_thread.is_alive():
+            messagebox.showinfo(APP_NAME,'差分翻訳の準備はすでにバックグラウンドで実行中です。'); return
+        entries=list(entries or [])
         if not entries:
-            messagebox.showinfo(APP_NAME, "差分翻訳する項目を選択してください。")
-            return
-        unavailable = []
-        language_complete_notices = []
-        prepared_indices = []
-        for idx, item in entries:
-            diff = self._prepare_differential_cache(item, silent=True)
-            if diff is None:
-                unavailable.append(item.get("mod_name") or Path(item.get("input", "")).name)
-            else:
-                item["diff_mode"] = True
-                counts = diff.get("counts", {})
-                changed_total = sum(int(counts.get(k, 0) or 0) for k in ("added", "changed", "removed", "added_files", "removed_files", "missing"))
-                if changed_total == 0 and diff.get("language_complete"):
-                    n = int(diff.get("opposite_only_count", 0) or 0)
-                    item["status"] = self._language_complete_status_text("english", n)
-                    language_complete_notices.append(
-                        f"{item.get('mod_name') or Path(item.get('input', '')).name}: " + self._language_complete_notice_text("english", n)
-                    )
-                elif changed_total == 0:
-                    item["status"] = "完了（差分なし）"
+            messagebox.showinfo(APP_NAME,'差分翻訳する項目を選択してください。'); return
+        repair_enabled=bool(self.repair_var.get())
+        if mode=='chinese': self.chinese_progress_var.set(f'差分をバックグラウンド解析中… 0/{len(entries)}')
+        else: self.progress_text.set(f'差分をバックグラウンド解析中… 0/{len(entries)}')
+        def work():
+            unavailable=[]; notices=[]; prepared=[]
+            source_language='simp_chinese' if mode=='chinese' else 'english'
+            for pos,(idx,item) in enumerate(entries,1):
+                self.events.put(('differential_prepare_progress',(mode,pos,len(entries),item.get('mod_name') or Path(item.get('input','')).name)))
+                if mode=='chinese': self._ensure_item_cache(item)
+                diff=self._prepare_differential_cache(item,silent=True,mode=mode,repair_enabled=repair_enabled)
+                if diff is None:
+                    unavailable.append(item.get('mod_name') or Path(item.get('input','')).name); continue
+                item['diff_mode']=True
+                counts=diff.get('counts',{})
+                changed_total=sum(int(counts.get(k,0) or 0) for k in ('added','changed','removed','added_files','removed_files','missing'))
+                if changed_total==0 and diff.get('language_complete'):
+                    n=int(diff.get('opposite_only_count',0) or 0); item['status']=self._language_complete_status_text(source_language,n)
+                    notices.append(f"{item.get('mod_name') or Path(item.get('input','')).name}: "+self._language_complete_notice_text(source_language,n))
+                elif changed_total==0:
+                    item['status']='完了（差分なし）'
                 else:
-                    item["status"] = "待機"
-                    prepared_indices.append(idx)
-        self._refresh_queue_tree()
+                    item['status']='待機'; prepared.append(idx)
+            self.events.put(('differential_prepare_done',(mode,prepared,unavailable,notices)))
+        self.differential_prepare_thread=threading.Thread(target=work,daemon=True,name=f'differential-prepare-{mode}'); self.differential_prepare_thread.start()
+
+    def _apply_differential_prepare_done(self, mode, prepared_indices, unavailable, language_complete_notices):
+        self.differential_prepare_thread=None
+        if mode=='chinese': self._refresh_chinese_queue_tree()
+        else: self._refresh_queue_tree()
         if unavailable:
-            msg = "差分スナップショットがなく、翻訳状況にも判定材料となる欠損がないため、差分を判定できない項目があります。\n\n" + "\n".join(unavailable[:10])
-            if language_complete_notices:
-                msg += "\n\n言語別に完了している項目:\n" + "\n".join(language_complete_notices[:10])
-            messagebox.showinfo(APP_NAME, msg)
+            msg='差分スナップショットがなく、翻訳状況にも判定材料となる欠損がないため、差分を判定できない項目があります。\n\n'+'\n'.join(unavailable[:10])
+            if language_complete_notices: msg+='\n\n言語別に完了している項目:\n'+'\n'.join(language_complete_notices[:10])
+            messagebox.showinfo(APP_NAME,msg)
         if prepared_indices:
-            if language_complete_notices:
-                messagebox.showinfo(APP_NAME, "一部項目は現在の言語で翻訳が完了しています。\n\n" + "\n".join(language_complete_notices[:10]))
-            self._start_normal_selected(prepared_indices, diff_requested=True)
+            if language_complete_notices: messagebox.showinfo(APP_NAME,'一部項目は現在の言語で翻訳が完了しています。\n\n'+'\n'.join(language_complete_notices[:10]))
+            if mode=='chinese': self._start_chinese_selected(prepared_indices,diff_requested=True)
+            else: self._start_normal_selected(prepared_indices,diff_requested=True)
         elif language_complete_notices and not unavailable:
-            messagebox.showinfo(APP_NAME, "\n".join(language_complete_notices[:10]))
+            messagebox.showinfo(APP_NAME,'\n'.join(language_complete_notices[:10]))
         elif not unavailable:
-            messagebox.showinfo(APP_NAME, "原文差分も翻訳状況の欠損もありません。")
+            messagebox.showinfo(APP_NAME,'原文差分も翻訳状況の欠損もありません。')
 
     def start_queue(self):
         if self.worker and self.worker.is_alive():
@@ -7829,46 +7847,55 @@ Mod更新後だけ追加翻訳:
             record_error("総合診断状態キャッシュ保存", exc)
 
     def _restore_diagnostic_state(self):
+        if self.diagnostic_restore_thread and self.diagnostic_restore_thread.is_alive():
+            return
+        self.diagnostic_summary_var.set('前回診断をバックグラウンドで復元中…')
+        def work():
+            try:
+                data=core.load_json(DIAGNOSTIC_STATE_PATH,{})
+                self.events.put(('diagnostic_state_restored',data if isinstance(data,dict) else {}))
+            except Exception as exc:
+                self.events.put(('diagnostic_state_restore_error',str(exc)))
+        self.diagnostic_restore_thread=threading.Thread(target=work,daemon=True,name='diagnostic-state-restore')
+        self.diagnostic_restore_thread.start()
+
+    def _apply_restored_diagnostic_state(self, data):
+        self.diagnostic_restore_thread=None
         try:
             self._restore_shared_mod_state_cache()
-            data = core.load_json(DIAGNOSTIC_STATE_PATH, {})
-            if not isinstance(data, dict):
-                return
-            choices = data.get("conflict_choices") or {}
-            if isinstance(choices, dict):
-                self.diagnostic_conflict_choices = {str(k): str(v) for k, v in choices.items() if v in {"source", "translation", "auto"}}
-            relation_choices = data.get("relation_choices") or {}
-            if isinstance(relation_choices, dict):
-                self.diagnostic_relation_choices = {str(k): str(v) for k,v in relation_choices.items() if v in {"source","translation"}}
-            analyses = data.get("analyses") or []
-            if isinstance(analyses, list):
-                # Drop only entries whose Mod root no longer exists. One missing Mod
-                # must not prevent every other cached diagnosis from being restored.
-                valid = []
+            if not isinstance(data,dict): return
+            choices=data.get('conflict_choices') or {}
+            if isinstance(choices,dict):
+                self.diagnostic_conflict_choices={str(k):str(v) for k,v in choices.items() if v in {'source','translation','auto'}}
+            relation_choices=data.get('relation_choices') or {}
+            if isinstance(relation_choices,dict):
+                self.diagnostic_relation_choices={str(k):str(v) for k,v in relation_choices.items() if v in {'source','translation'}}
+            analyses=data.get('analyses') or []
+            valid=[]
+            if isinstance(analyses,list):
                 for row in analyses:
-                    if not isinstance(row, dict):
-                        continue
-                    raw = row.get("path")
-                    if raw and not Path(raw).exists():
-                        continue
+                    if not isinstance(row,dict): continue
+                    raw=row.get('path')
+                    if raw and not Path(raw).exists(): continue
                     valid.append(row)
                 if valid:
-                    self.diagnostic_results = list(valid)
+                    self.diagnostic_results=list(valid)
                     self._populate_diagnostic_results(valid)
-            wanted = {str(x) for x in (data.get("target_paths") or []) if x}
-            if wanted and hasattr(self, "diagnostic_target_tree"):
+            wanted={str(x) for x in (data.get('target_paths') or []) if x}
+            if wanted and hasattr(self,'diagnostic_target_tree'):
                 for iid in self.diagnostic_target_tree.get_children():
-                    vals = self.diagnostic_target_tree.item(iid, "values")
-                    if len(vals) >= 3 and str(vals[2]) in wanted:
-                        self.diagnostic_target_tree.selection_add(iid)
-            if 'valid' in locals() and valid:
-                issues = sum(1 for a in valid for x in (a.get("issues") or []) if x.get("severity") in {"ERROR", "WARN"})
-                self.diagnostic_summary_var.set(f"前回診断を復元: {len(valid)} Mod / 要確認 {issues}件")
-                self._set_diagnostic_detail("前回終了時の総合診断結果をキャッシュから復元しました。必要なら再診断してください。")
+                    vals=self.diagnostic_target_tree.item(iid,'values')
+                    if len(vals)>=3 and str(vals[2]) in wanted: self.diagnostic_target_tree.selection_add(iid)
+            if valid:
+                issues=sum(1 for a in valid for x in (a.get('issues') or []) if x.get('severity') in {'ERROR','WARN'})
+                self.diagnostic_summary_var.set(f'前回診断を復元: {len(valid)} Mod / 要確認 {issues}件')
+                self._set_diagnostic_detail('前回終了時の総合診断結果をキャッシュから復元しました。必要なら再診断してください。')
+            elif not analyses:
+                self.diagnostic_summary_var.set('診断待機中')
         except Exception as exc:
-            record_error("総合診断状態キャッシュ復元", exc)
+            record_error('総合診断状態キャッシュ復元',exc)
 
-    # ---------------- workspace persistence ----------------
+
     def _workspace_scalar(self, var, default=None):
         try:
             return var.get()
@@ -8275,35 +8302,47 @@ Mod更新後だけ追加翻訳:
 
     # ---------------- difference inspector / search ----------------
     def load_diff_inspector(self):
-        src = Path(self.diff_src_var.get())
-        dst = Path(self.diff_dst_var.get())
+        src=Path(self.diff_src_var.get()); dst=Path(self.diff_dst_var.get())
         if not src.exists() or not dst.exists():
-            messagebox.showerror(APP_NAME, "英語または簡体字中国語の原文ファイルと日本語ファイルの両方を選択してください。")
-            return
-        try:
-            source_lang, self.diff_source_entries, _ = core.parse_localization_file(src)
-            self.diff_source_lang = source_lang
-            _, self.diff_target_entries, _ = core.parse_localization_file(dst)
-            self.diff_rows = core.compare_localization_entries(self.diff_source_entries, self.diff_target_entries, source_lang)
-            self.diff_row_by_key = {r["key"]: r for r in self.diff_rows}
-            for iid in self.diff_tree.get_children(): self.diff_tree.delete(iid)
-            self.diff_tree_key_map={}
-            labels = {"missing":"欠落", "untranslated":"未翻訳", "extra":"日本語のみ", "ok":"対応あり"}
-            counts = {k:0 for k in labels}
-            parents={}
-            for status in ("missing","untranslated","extra","ok"):
-                parents[status]=self.diff_tree.insert("","end",iid=f"diff_group_{status}",text=labels[status],open=status!="ok",values=("",),tags=(status,))
-            n=0
-            for row in self.diff_rows:
-                status=row["status"]
-                counts[status] = counts.get(status, 0) + 1
-                iid=f"diff_leaf_{n}"; n+=1
-                self.diff_tree.insert(parents[status], "end", iid=iid, text="", values=(row["key"],), tags=(status,))
-                self.diff_tree_key_map[iid]=row["key"]
+            messagebox.showerror(APP_NAME,'英語または簡体字中国語の原文ファイルと日本語ファイルの両方を選択してください。'); return
+        if self.diff_load_worker and self.diff_load_worker.is_alive():
+            self.diff_summary_var.set('差分をバックグラウンド解析中…'); return
+        self.diff_summary_var.set('差分をバックグラウンド解析中… GUIは操作できます')
+        def work():
+            try:
+                source_lang,source_entries,_=core.parse_localization_file(src)
+                _,target_entries,_=core.parse_localization_file(dst)
+                rows=core.compare_localization_entries(source_entries,target_entries,source_lang)
+                self.events.put(('diff_inspector_loaded',(source_lang,source_entries,target_entries,rows)))
+            except Exception as exc:
+                self.events.put(('diff_inspector_load_error',str(exc)))
+        self.diff_load_worker=threading.Thread(target=work,daemon=True,name='diff-inspector-load'); self.diff_load_worker.start()
+
+    def _apply_diff_inspector_loaded(self, source_lang, source_entries, target_entries, rows):
+        self.diff_load_worker=None
+        self.diff_source_lang=source_lang; self.diff_source_entries=source_entries; self.diff_target_entries=target_entries
+        self.diff_rows=list(rows or []); self.diff_row_by_key={r['key']:r for r in self.diff_rows}
+        for iid in self.diff_tree.get_children(): self.diff_tree.delete(iid)
+        self.diff_tree_key_map={}
+        labels={'missing':'欠落','untranslated':'未翻訳','extra':'日本語のみ','ok':'対応あり'}
+        counts={k:0 for k in labels}; parents={}
+        for status in ('missing','untranslated','extra','ok'):
+            parents[status]=self.diff_tree.insert('','end',iid=f'diff_group_{status}',text=labels[status],open=status!='ok',values=('',),tags=(status,))
+        for row in self.diff_rows: counts[row['status']]=counts.get(row['status'],0)+1
+        self.diff_summary_var.set(f"欠落 {counts['missing']} / 未翻訳 {counts['untranslated']} / 日本語のみ {counts['extra']} / 対応あり {counts['ok']} — 表示作成中…")
+        self._populate_diff_rows_chunked(0,parents)
+
+    def _populate_diff_rows_chunked(self, start, parents, chunk=400):
+        end=min(len(self.diff_rows),start+chunk)
+        for n in range(start,end):
+            row=self.diff_rows[n]; status=row['status']; iid=f'diff_leaf_{n}'
+            self.diff_tree.insert(parents[status],'end',iid=iid,text='',values=(row['key'],),tags=(status,)); self.diff_tree_key_map[iid]=row['key']
+        if end < len(self.diff_rows):
+            self.after(1,lambda:self._populate_diff_rows_chunked(end,parents,chunk))
+        else:
+            counts={k:0 for k in ('missing','untranslated','extra','ok')}
+            for row in self.diff_rows: counts[row['status']]=counts.get(row['status'],0)+1
             self.diff_summary_var.set(f"欠落 {counts['missing']} / 未翻訳 {counts['untranslated']} / 日本語のみ {counts['extra']} / 対応あり {counts['ok']}")
-        except Exception as e:
-            record_error("差分調査", e)
-            messagebox.showerror(APP_NAME, str(e))
 
     def _selected_diff_keys(self):
         out=[]
@@ -8350,7 +8389,7 @@ Mod更新後だけ追加翻訳:
             messagebox.showinfo(APP_NAME, "翻訳対象の欠落/未翻訳キーを選択してください。")
             return
         src_path = Path(self.diff_src_var.get()); dst_path = Path(self.diff_dst_var.get())
-        source_lang = core.parse_localization_file(src_path)[0]
+        source_lang = self.diff_source_lang or "english"
         self.diff_controller = core.TranslationController(progress_callback=lambda p:self.events.put(("diff_translate_progress", p)))
         self.llm_operation = "差分翻訳"
         self.diff_message_var.set(f"差分翻訳中… {len(keys)}件")
@@ -8628,66 +8667,82 @@ Mod更新後だけ追加翻訳:
 
     def load_review(self):
         dst=Path(self.review_dst_var.get())
-        if not dst.exists(): messagebox.showerror(APP_NAME,"訳文ファイルを選択してください。"); return
-        try:
-            _,self.review_target_entries,_=core.parse_localization_file(dst)
-            src=Path(self.review_src_var.get()) if self.review_src_var.get() else None
-            if src and src.exists():
-                self.review_source_lang,self.review_source_entries,_=core.parse_localization_file(src)
-            else:
-                self.review_source_lang="english"; self.review_source_entries={}
-            self.run_review_qa()
-        except Exception as e: messagebox.showerror(APP_NAME,str(e))
+        if not dst.exists(): messagebox.showerror(APP_NAME,'訳文ファイルを選択してください。'); return
+        self._start_review_background(load_files=True)
 
     def run_review_qa(self):
-        if not self.review_target_entries and self.review_dst_var.get():
-            try: _,self.review_target_entries,_=core.parse_localization_file(Path(self.review_dst_var.get()))
-            except Exception as e: messagebox.showerror(APP_NAME,str(e)); return
-        self.review_issues=core.qa_entries(self.review_target_entries,self.review_source_entries or None,self.review_source_lang,core.load_glossary(Path(self.glossary_path_var.get())) if self.glossary_path_var.get() else {})
-        self.review_issue_by_key={}
-        for issue in self.review_issues: self.review_issue_by_key.setdefault(issue["key"],[]).append(issue)
-        errs=sum(x["severity"]=="error" for x in self.review_issues); warns=sum(x["severity"]=="warning" for x in self.review_issues)
-        self.qa_summary_var.set(f"QA: エラー {errs} / 警告 {warns} / キー {len(self.review_target_entries)}")
+        self._start_review_background(load_files=not bool(self.review_target_entries))
+
+    def _start_review_background(self, load_files=False):
+        if self.review_worker and self.review_worker.is_alive():
+            self.qa_summary_var.set('QAをバックグラウンド解析中…'); return
+        dst=Path(self.review_dst_var.get()) if self.review_dst_var.get() else None
+        src=Path(self.review_src_var.get()) if self.review_src_var.get() else None
+        glossary_path=Path(self.glossary_path_var.get()) if self.glossary_path_var.get() else None
+        existing_target=dict(self.review_target_entries); existing_source=dict(self.review_source_entries); existing_lang=self.review_source_lang
+        self.qa_summary_var.set('QAをバックグラウンド解析中… GUIは操作できます')
+        def work():
+            try:
+                target=existing_target; source=existing_source; source_lang=existing_lang
+                if load_files or not target:
+                    if not dst or not dst.exists(): raise RuntimeError('訳文ファイルを選択してください。')
+                    _,target,_=core.parse_localization_file(dst)
+                    if src and src.exists(): source_lang,source,_=core.parse_localization_file(src)
+                    else: source_lang='english'; source={}
+                glossary=core.load_glossary(glossary_path) if glossary_path else {}
+                issues=core.qa_entries(target,source or None,source_lang,glossary)
+                self.events.put(('review_qa_loaded',(source_lang,source,target,issues)))
+            except Exception as exc:
+                self.events.put(('review_qa_error',str(exc)))
+        self.review_worker=threading.Thread(target=work,daemon=True,name='review-qa'); self.review_worker.start()
+
+    def _apply_review_qa_loaded(self, source_lang, source_entries, target_entries, issues):
+        self.review_worker=None; self.review_source_lang=source_lang; self.review_source_entries=source_entries; self.review_target_entries=target_entries
+        self.review_issues=list(issues or []); self.review_issue_by_key={}
+        for issue in self.review_issues: self.review_issue_by_key.setdefault(issue['key'],[]).append(issue)
+        errs=sum(x['severity']=='error' for x in self.review_issues); warns=sum(x['severity']=='warning' for x in self.review_issues)
+        self.qa_summary_var.set(f'QA: エラー {errs} / 警告 {warns} / キー {len(self.review_target_entries)}')
         self.populate_review(True)
 
     def populate_review(self,warnings_only):
         for x in self.review_tree.get_children(): self.review_tree.delete(x)
         self.review_tree_key_map={}
-        keys=sorted(self.review_target_entries)
-        if self.review_source_entries:
-            keys=sorted(set(keys)|set(self.review_source_entries))
+        keys=sorted(set(self.review_target_entries) | set(self.review_source_entries or {}))
+        rows=[]
+        for key in keys:
+            issues=self.review_issue_by_key.get(key,[])
+            if warnings_only and not issues: continue
+            if issues:
+                group='error' if any(i['severity']=='error' for i in issues) else 'warning'
+                for typ in (sorted(set(i['type'] for i in issues)) or ['その他']): rows.append((group,typ,key))
+            else:
+                rows.append(('ok','',key))
+        parents={}; type_parents={}
+        self.qa_summary_var.set(self.qa_summary_var.get() + f' / 表示 {len(rows)}件を分割描画中…')
+        self._populate_review_rows_chunked(rows,0,parents,type_parents)
 
-        parents={}
-        type_parents={}
+    def _populate_review_rows_chunked(self, rows, start, parents, type_parents, chunk=350):
         def ensure_parent(group,label):
             if group not in parents:
-                parents[group]=self.review_tree.insert("","end",iid=f"qa_group_{group}",text=label,open=True,values=("",""))
+                parents[group]=self.review_tree.insert('','end',iid=f'qa_group_{group}',text=label,open=True,values=('',''))
             return parents[group]
         def ensure_type(group,typ):
             k=(group,typ)
             if k not in type_parents:
-                parent=ensure_parent(group,{"error":"エラー","warning":"警告","ok":"問題なし"}[group])
-                type_parents[k]=self.review_tree.insert(parent,"end",text=typ,open=True,values=(typ,""))
+                parent=ensure_parent(group,{'error':'エラー','warning':'警告','ok':'問題なし'}[group])
+                type_parents[k]=self.review_tree.insert(parent,'end',text=typ,open=True,values=(typ,''))
             return type_parents[k]
-
-        leaf_no=0
-        for key in keys:
-            issues=self.review_issue_by_key.get(key,[])
-            if warnings_only and not issues:
-                continue
-            if issues:
-                group="error" if any(i["severity"]=="error" for i in issues) else "warning"
-                types=sorted(set(i["type"] for i in issues)) or ["その他"]
-                for typ in types:
-                    parent=ensure_type(group,typ)
-                    iid=f"qa_leaf_{leaf_no}"; leaf_no+=1
-                    self.review_tree.insert(parent,"end",iid=iid,text="",values=(typ,key))
-                    self.review_tree_key_map[iid]=key
-            else:
-                parent=ensure_parent("ok","問題なし")
-                iid=f"qa_leaf_{leaf_no}"; leaf_no+=1
-                self.review_tree.insert(parent,"end",iid=iid,text="",values=("",key))
-                self.review_tree_key_map[iid]=key
+        end=min(len(rows),start+chunk)
+        for n in range(start,end):
+            group,typ,key=rows[n]
+            if group=='ok': parent=ensure_parent('ok','問題なし')
+            else: parent=ensure_type(group,typ)
+            iid=f'qa_leaf_{n}'; self.review_tree.insert(parent,'end',iid=iid,text='',values=(typ,key)); self.review_tree_key_map[iid]=key
+        if end < len(rows):
+            self.after(1,lambda:self._populate_review_rows_chunked(rows,end,parents,type_parents,chunk))
+        else:
+            errs=sum(x['severity']=='error' for x in self.review_issues); warns=sum(x['severity']=='warning' for x in self.review_issues)
+            self.qa_summary_var.set(f'QA: エラー {errs} / 警告 {warns} / キー {len(self.review_target_entries)}')
 
     def _selected_review_key(self):
         for iid in self.review_tree.selection():
@@ -9523,6 +9578,93 @@ Mod更新後だけ追加翻訳:
                     elif p=="LM Studio": msg="LM Studio Local Serverに接続できません"
                     else: msg=f"{p}に接続できません"
                     self.monitor_connection_var.set("監視用LLM: "+msg)
+                elif kind=="backup_restore_loaded":
+                    generation,entries=payload
+                    self._apply_backup_restore_loaded(generation,entries)
+                elif kind=="backup_restore_load_error":
+                    generation,msg=payload
+                    if generation==self.backup_restore_refresh_generation:
+                        self.backup_restore_refresh_thread=None
+                        self.backup_restore_summary_var.set("バックアップ読込エラー")
+                        if hasattr(self,'backup_restore_reload_btn'): self.backup_restore_reload_btn.config(state='normal')
+                        record_error("バックアップ復元一覧バックグラウンド読込",detail=str(msg))
+                elif kind=="status_cache_restored":
+                    data,rows,selected_paths=payload
+                    self._apply_restored_mod_status(data,rows,selected_paths)
+                elif kind=="status_cache_restore_error":
+                    self.status_restore_thread=None
+                    self.mod_status_summary_var.set("前回翻訳状況の復元に失敗")
+                    record_error("翻訳状況キャッシュバックグラウンド復元",detail=str(payload))
+                elif kind=="diagnostic_state_restored":
+                    self._apply_restored_diagnostic_state(payload)
+                elif kind=="diagnostic_state_restore_error":
+                    self.diagnostic_restore_thread=None
+                    self.diagnostic_summary_var.set("診断待機中")
+                    record_error("総合診断キャッシュバックグラウンド復元",detail=str(payload))
+                elif kind=="judgement_log_ready":
+                    token,text=payload
+                    self._apply_judgement_log_ready(token,text)
+                elif kind=="judgement_log_error":
+                    token,msg=payload
+                    self.judgement_log_thread=None
+                    state=self._judgement_log_window
+                    if state and state[0]==token and state[1].winfo_exists():
+                        state[3].set("判定ログ生成エラー")
+                        state[2].delete('1.0','end'); state[2].insert('1.0',str(msg))
+                    record_error("日本語化Mod判定ログ生成",detail=str(msg))
+                elif kind=="judgement_log_exported":
+                    self.judgement_log_thread=None
+                    self.mod_status_summary_var.set("判定ログ書き出し完了")
+                    messagebox.showinfo(APP_NAME,f"日本語化Mod判定ログを書き出しました。\n\n{payload}")
+                elif kind=="judgement_log_export_error":
+                    self.judgement_log_thread=None
+                    self.mod_status_summary_var.set("判定ログ書き出しエラー")
+                    record_error("日本語化Mod判定ログ書き出し",detail=str(payload))
+                    messagebox.showerror(APP_NAME,f"判定ログの書き出しに失敗しました。\n{payload}")
+                elif kind=="diff_inspector_loaded":
+                    self._apply_diff_inspector_loaded(*payload)
+                elif kind=="diff_inspector_load_error":
+                    self.diff_load_worker=None
+                    self.diff_summary_var.set("差分解析エラー")
+                    record_error("差分調査バックグラウンド解析",detail=str(payload))
+                    messagebox.showerror(APP_NAME,str(payload))
+                elif kind=="review_qa_loaded":
+                    self._apply_review_qa_loaded(*payload)
+                elif kind=="review_qa_error":
+                    self.review_worker=None
+                    self.qa_summary_var.set("QA解析エラー")
+                    record_error("QAバックグラウンド解析",detail=str(payload))
+                    messagebox.showerror(APP_NAME,str(payload))
+                elif kind=="single_overwrite_done":
+                    self._apply_single_overwrite_done(*payload)
+                elif kind=="bulk_overwrite_progress":
+                    pos,total,name=payload
+                    self.progress_text.set(f"一括上書き中… {pos}/{total} — {name}")
+                elif kind=="bulk_overwrite_done":
+                    self._apply_bulk_overwrite_done(*payload)
+                elif kind=="backup_restore_done":
+                    self.backup_restore_operation_thread=None
+                    target,safety_root=payload
+                    self._refresh_diagnostic_targets()
+                    self._refresh_backup_restore_entries()
+                    messagebox.showinfo(APP_NAME,f"復元しました。\n\n対象: {target}\n復元前退避: {safety_root}\n\n翻訳状況は次回の再調査で再判定されます。")
+                elif kind=="backup_restore_error":
+                    self.backup_restore_operation_thread=None
+                    self.backup_restore_summary_var.set("バックアップ復元エラー")
+                    messagebox.showerror(APP_NAME,f"バックアップ復元に失敗しました。\n{payload}")
+                elif kind=="differential_prepare_progress":
+                    mode,pos,total,name=payload
+                    if mode=='chinese': self.chinese_progress_var.set(f"差分解析中… {pos}/{total} — {name}")
+                    else: self.progress_text.set(f"差分解析中… {pos}/{total} — {name}")
+                elif kind=="differential_prepare_done":
+                    self._apply_differential_prepare_done(*payload)
+                elif kind=="data_root_copy_done":
+                    self._apply_data_root_change(*payload)
+                elif kind=="data_root_copy_error":
+                    self.data_root_move_thread=None
+                    self.progress_text.set("保存場所変更エラー")
+                    record_error("保存場所バックグラウンドコピー",detail=str(payload))
+                    messagebox.showerror(APP_NAME,f"保存場所の変更に失敗しました。\n{payload}")
                 elif kind=="progress":
                     if payload.get("kind")=="llm_activity":
                         self._handle_llm_activity(payload,"翻訳")
