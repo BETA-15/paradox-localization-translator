@@ -36,7 +36,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.54"
+APP_VERSION = "0.11.55"
 MOD_STATUS_CACHE_VERSION = 11
 
 
@@ -3088,16 +3088,77 @@ Mod更新後だけ追加翻訳:
                 return str(row.get('game'))
         return 'ゲーム未特定'
 
+    def _translation_status_rows_for_restore(self):
+        """Return current + persisted Translation Status rows usable for rollback target resolution.
+
+        The Backup Restore tab is built before the visible Translation Status cache is restored on
+        startup, so reading the persisted snapshot here is important for old backups whose own
+        target metadata is missing.
+        """
+        rows=[]
+        seen=set()
+        sources=[list(getattr(self, 'mod_research_results', []) or [])]
+        try:
+            snap=self._load_translation_status_snapshot()
+            sources.append(list((snap or {}).get('results') or []))
+        except Exception:
+            pass
+        for source in sources:
+            for row in source:
+                if not isinstance(row, dict):
+                    continue
+
+                # The Translation Status row itself is always a restore candidate.
+                # If the row points to a separate Japanese localization Mod, add that
+                # Mod as an independent candidate too.  Older snapshots sometimes only
+                # retain the relation on the source-Mod row, so relying on top-level
+                # rows alone can leave a perfectly known Japanese Mod as "未特定".
+                candidate_specs=[(
+                    row.get('mod_root') or row.get('path') or row.get('root'),
+                    row.get('mod') or row.get('name'),
+                    row.get('game'),
+                    '翻訳状況Mod',
+                )]
+                ext_raw=row.get('external_translation_path') or row.get('external_translation_root')
+                if not ext_raw and row.get('external_translation_localization'):
+                    ext_raw=row.get('external_translation_localization')
+                if ext_raw:
+                    candidate_specs.append((
+                        ext_raw,
+                        row.get('external_translation_mod') or None,
+                        row.get('game'),
+                        '翻訳状況の日本語化Mod',
+                    ))
+
+                for raw, explicit_name, game, inventory_source in candidate_specs:
+                    if not raw:
+                        continue
+                    p=Path(raw)
+                    # external_translation_localization can point directly at localization.
+                    if p.name.lower() == 'localization':
+                        p=p.parent
+                    try: key=str(p.resolve())
+                    except Exception: key=str(p)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    rr=dict(row)
+                    if explicit_name:
+                        rr['mod']=str(explicit_name)
+                    if game:
+                        rr['game']=str(game)
+                    rr['_restore_root']=p
+                    rr['_restore_path_key']=key
+                    rr['_restore_inventory_source']=inventory_source
+                    rows.append(rr)
+        return rows
+
     def _known_mod_roots_for_restore(self):
         roots=[]
         seen=set()
-        for row in list(getattr(self, 'mod_research_results', []) or []):
-            raw=row.get('mod_root') or row.get('path') or row.get('root')
-            if not raw:
-                continue
-            p=Path(raw)
-            try: key=str(p.resolve())
-            except Exception: key=str(p)
+        for row in self._translation_status_rows_for_restore():
+            p=Path(row.get('_restore_root'))
+            key=str(row.get('_restore_path_key') or p)
             if key in seen or not p.exists():
                 continue
             seen.add(key); roots.append(p)
@@ -3110,6 +3171,120 @@ Mod更新後だけ追加翻訳:
                 continue
             seen.add(key); roots.append(p)
         return roots
+
+    def _resolve_backup_target_from_translation_status(self, entry):
+        """Resolve an old/unknown backup target using the Translation Status inventory.
+
+        Priority: existing recorded path -> Workshop/content identifier -> exact normalized Mod
+        name.  Ambiguous name matches are deliberately not auto-selected.
+        """
+        recorded=entry.get('target_root')
+        if recorded:
+            rp=Path(recorded)
+            if rp.exists():
+                return rp, self._backup_game_name_for_root(rp), 'バックアップ記録', 1
+
+        rows=self._translation_status_rows_for_restore()
+        candidates=[]
+        for row in rows:
+            root=Path(row.get('_restore_root'))
+            if not root.exists():
+                continue
+            name=str(row.get('mod') or row.get('name') or '')
+            if not name:
+                try: name=core.detect_mod_name(root)
+                except Exception: name=root.name
+            candidates.append((root,name,row))
+
+        # If an old manifest kept a Workshop/content id but the absolute path changed, use it.
+        recorded_text=str(recorded or '').replace('\\','/')
+        id_match=re.search(r'/workshop/content/(\d+)/(\d+)(?:/|$)', recorded_text)
+        if id_match:
+            appid, modid=id_match.groups()
+            hits=[]
+            for root,name,row in candidates:
+                raw=str(root).replace('\\','/')
+                if f'/workshop/content/{appid}/{modid}' in raw:
+                    hits.append((root,name,row))
+            if len(hits)==1:
+                root,name,row=hits[0]
+                game=str(row.get('game') or self._backup_game_name_for_root(root))
+                return root, game, '翻訳状況から特定（Workshop ID一致）', 1
+            if len(hits)>1:
+                return None, 'ゲーム未特定', '翻訳状況に同一Workshop ID候補が複数', len(hits)
+
+        raw_names=[]
+        for value in (entry.get('mod'), (entry.get('manifest') or {}).get('target_mod_name') if isinstance(entry.get('manifest'),dict) else None):
+            if value and str(value) not in raw_names:
+                raw_names.append(str(value))
+        # First try the displayed Mod name literally (case/space tolerant, but do not
+        # strip words such as Japanese/JP).  Translation-status normalization is
+        # intentionally broad for relation detection and can make a source Mod and its
+        # Japanese companion collapse to the same name; restore target selection must be
+        # stricter than that.
+        exact_names=[]
+        for value in raw_names:
+            cleaned=re.sub(r'_[0-9a-fA-F]{8}$','',value)
+            cleaned=re.sub(r'_(?:差分上書き|不足分上書き)$','',cleaned)
+            cleaned=' '.join(cleaned.replace('_',' ').split()).casefold()
+            if cleaned and cleaned not in exact_names:
+                exact_names.append(cleaned)
+        exact_hits=[]
+        for root,name,row in candidates:
+            cand=' '.join(str(name or '').replace('_',' ').split()).casefold()
+            if cand and cand in exact_names:
+                exact_hits.append((root,name,row))
+        unique={}
+        for root,name,row in exact_hits:
+            try: key=str(root.resolve())
+            except Exception: key=str(root)
+            unique[key]=(root,name,row)
+        exact_hits=list(unique.values())
+        if len(exact_hits)==1:
+            root,name,row=exact_hits[0]
+            game=str(row.get('game') or self._backup_game_name_for_root(root))
+            return root, game, '翻訳状況から特定（Mod名完全一致）', 1
+        if len(exact_hits)>1:
+            return None, 'ゲーム未特定', '翻訳状況にMod名完全一致候補が複数', len(exact_hits)
+
+        normalized=[]
+        for value in raw_names:
+            cleaned=re.sub(r'_[0-9a-fA-F]{8}$','',value)
+            cleaned=re.sub(r'_(?:差分上書き|不足分上書き)$','',cleaned)
+            cleaned=cleaned.replace('_',' ')
+            norm=core._normalize_mod_name_for_match(cleaned)
+            if norm and norm not in normalized:
+                normalized.append(norm)
+
+        hits=[]
+        for root,name,row in candidates:
+            norm=core._normalize_mod_name_for_match(name)
+            if norm and norm in normalized:
+                hits.append((root,name,row))
+        # De-duplicate rows that came from current + persisted status state.
+        unique={}
+        for root,name,row in hits:
+            try: key=str(root.resolve())
+            except Exception: key=str(root)
+            unique[key]=(root,name,row)
+        hits=list(unique.values())
+        if len(hits)==1:
+            root,name,row=hits[0]
+            game=str(row.get('game') or self._backup_game_name_for_root(root))
+            return root, game, '翻訳状況から特定（正規化Mod名一致）', 1
+        if len(hits)>1:
+            return None, 'ゲーム未特定', '翻訳状況に正規化同名Mod候補が複数', len(hits)
+        return None, 'ゲーム未特定', '翻訳状況でも復元先未特定', 0
+
+    def _apply_translation_status_restore_resolution(self, entry):
+        root,game,source,count=self._resolve_backup_target_from_translation_status(entry)
+        if root is not None:
+            entry['target_root']=root
+            if not entry.get('game') or entry.get('game') == 'ゲーム未特定':
+                entry['game']=game
+        entry['target_source']=source
+        entry['target_candidate_count']=count
+        return entry
 
     def _backup_manifest_records(self):
         records=[]
@@ -3385,6 +3560,10 @@ Mod更新後だけ追加翻訳:
             for e in entries:
                 if e['manifest'] is None and e['entry_root'] in dirs:
                     e['generation']=order.get(str(e['entry_root']))
+        # Old backups often have no usable target path. Resolve them against the current
+        # Translation Status inventory (including its persisted snapshot) before rendering.
+        for entry in entries:
+            self._apply_translation_status_restore_resolution(entry)
         entries.sort(key=lambda e:str(e.get('created_at') or e['entry_root'].name),reverse=True)
         self.backup_restore_entries=entries
 
@@ -3490,8 +3669,12 @@ Mod更新後だけ追加翻訳:
         gen=f"第{int(e['generation'])}回" if e.get('generation') else '回数記録なし'
         target=e.get('target_root')
         exact='localization全体をその時点へ戻せます。' if e.get('exact') else '旧形式の部分バックアップです。保存済みファイルだけを戻し、新規作成ファイルは自動削除しません。'
+        target_source=e.get('target_source') or ('バックアップ記録' if target else '未特定')
+        ambiguity=''
+        if not target and int(e.get('target_candidate_count') or 0) > 1:
+            ambiguity=f"\n候補数: {int(e.get('target_candidate_count') or 0)}件（同名候補が複数あるため自動復元しません）"
         self.backup_restore_detail_var.set(
-            f"ゲーム: {e.get('game','ゲーム未特定')}\nMod: {e['mod']} / {gen} / {e['kind']}\n保存状態: {e['state']}\nバックアップ: {e['entry_root']}\n復元先: {target or '未特定'}\n{exact}"
+            f"ゲーム: {e.get('game','ゲーム未特定')}\nMod: {e['mod']} / {gen} / {e['kind']}\n保存状態: {e['state']}\nバックアップ: {e['entry_root']}\n復元先: {target or '未特定'}\n復元先の判断: {target_source}{ambiguity}\n{exact}"
         )
         self.backup_restore_btn.config(state='normal' if target and Path(target).exists() else 'disabled')
 
@@ -3501,7 +3684,7 @@ Mod更新後だけ追加翻訳:
         if not e: return
         target=Path(e.get('target_root') or '')
         if not target.exists():
-            messagebox.showerror(APP_NAME,'復元先Modを特定できません。翻訳状況タブでMod調査を実行してから一覧を再読込してください。')
+            messagebox.showerror(APP_NAME,'復元先Modを特定できません。翻訳状況タブの現在情報／保存済み情報でも一意に対応するModが見つかりませんでした。Mod調査を実行してから一覧を再読込してください。')
             return
         gen=f"第{int(e['generation'])}回" if e.get('generation') else '回数記録なし'
         warning=(
@@ -4957,6 +5140,13 @@ Mod更新後だけ追加翻訳:
             for r in rows: counts[r.get("status","")] = counts.get(r.get("status",""),0)+1
             summary=" / ".join(f"{k}: {v}" for k,v in counts.items())
             self.mod_status_summary_var.set(f"キャッシュ復元: {len(rows)}件" + (f"　{summary}" if summary else ""))
+            # Backup Restore may have been rendered before Translation Status was restored.
+            # Re-resolve legacy targets now that the current Mod inventory is available.
+            try:
+                if hasattr(self, 'backup_restore_tree'):
+                    self._refresh_backup_restore_entries()
+            except Exception as refresh_exc:
+                record_error("バックアップ復元先の再解決", refresh_exc)
         except Exception as e:
             record_error("翻訳状況キャッシュ復元", e)
 
@@ -9417,6 +9607,13 @@ Mod更新後だけ追加翻訳:
                         self.mod_status_summary_var.set(f"調査完了: {len(self.mod_research_results)}件"+(f"　{summary}" if summary else ""))
                     self._set_monitor_llm_idle("探索用LLM 待機中","Mod翻訳状況の調査が完了しました")
                     self._save_translation_status_state("status_research_done")
+                    # A newly completed Translation Status scan can resolve restore targets
+                    # that were previously shown as unknown. Refresh the rollback inventory.
+                    try:
+                        if hasattr(self, 'backup_restore_tree'):
+                            self._refresh_backup_restore_entries()
+                    except Exception as refresh_exc:
+                        record_error("バックアップ復元先の再解決", refresh_exc)
                 elif kind=="mod_research_error":
                     record_error("Mod翻訳状況調査", detail=str(payload))
                     self.mod_research_stop_btn.config(state="disabled"); self.mod_research_thread=None

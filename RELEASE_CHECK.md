@@ -1,3 +1,17 @@
+# v0.11.55 追加確認
+
+- [x] `VERSION` / `APP_VERSION` を 0.11.55 に統一
+- [x] 復元先未特定バックアップを翻訳状況の現在Mod一覧 / 保存済みスナップショットから補完
+- [x] 翻訳状況行の `external_translation_mod` / `external_translation_path` も独立した復元候補として利用
+- [x] Workshop App ID + Mod ID一致を復元先判定に利用
+- [x] `Japanese` / `JP` を保持したMod名完全一致を正規化名一致より先に評価
+- [x] 正規化名が元Modと日本語化Modで衝突しても厳密名一致で日本語化Modを一意に選択
+- [x] 同名候補が複数の場合は自動復元せず要確認
+- [x] 翻訳状況キャッシュ復元 / Mod調査完了時にバックアップ一覧を自動再解決
+- [x] 復元詳細欄へ復元先の判断根拠を表示
+- [x] `python -m py_compile app/main.py app/translator_core.py` PASS
+- [x] 合成テストで `Divine Intervention Cheat Menu Japanese` を元Modではなく日本語化Modパスへ解決
+
 # v0.11.54 追加確認
 
 - [x] `VERSION` / `APP_VERSION` を 0.11.54 に統一
@@ -501,3 +515,6 @@
 - [x] 初回から存在する日本語化Modは従来どおり検出可能
 - [x] 日本語化Mod上書き前に関係確認の警告を表示
 
+
+- [ ] 旧バックアップの復元先が翻訳状況のMod名/Workshop IDから一意に補完される
+- [ ] 同名候補が複数ある場合は復元ボタンが有効化されない
