@@ -37,7 +37,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.59"
+APP_VERSION = "0.11.60"
 MOD_STATUS_CACHE_VERSION = 12
 
 
@@ -3035,13 +3035,15 @@ Mod更新後だけ追加翻訳:
                 continue
         audit_index=core.build_translation_mod_index(japanese_roots)
         self._annotate_translation_index_with_base_game_keys(audit_index)
+        for row in audit_index:
+            ov=self._mod_relation_override(Path(row.get("path","")))
+            row["manual_role"]=ov.get("role","auto")
+            row["manual_source_paths"]=list(ov.get("source_paths") or [])
+        audit_index=core.assign_translation_candidate_owners(roots,audit_index)
         audit_by_path={}
         for row in audit_index:
             try: key=self._mod_classification_key(Path(row.get("path","")))
             except Exception: key=str(row.get("path",""))
-            ov=self._mod_relation_override(Path(row.get("path","")))
-            row["manual_role"]=ov.get("role","auto")
-            row["manual_source_paths"]=list(ov.get("source_paths") or [])
             audit_by_path[key]=row
 
         generated=datetime.now().isoformat(timespec="seconds")
@@ -3051,12 +3053,14 @@ Mod更新後だけ追加翻訳:
             f"翻訳状況Mod数: {len(rows)} / 現在参照可能: {len(roots)} / 現在日本語を持つ監査候補: {len(audit_index)}",
             "",
             "判定基準:",
-            "  ・元Mod原文キー100個以上: 日本語完全一致50キー以上が基本ゲート",
-            "  ・元Mod原文キー100個未満: 日本語完全一致20%以上が必須",
-            "  ・日本語localization専用構成は強い構成加点",
-            "  ・日本語化Mod候補自身の日本語キーの70%以上がゲーム本体キーなら、本体和訳修正の可能性として大幅減点",
-            "  ・本体一致率の分母は必ず日本語化Mod候補側の日本語キー総数（ゲーム本体側・元Mod側では計算しない）",
-            "  ・他言語localizationは存在自体では減点せず、元Modとの関連性が低い場合のみ減点",
+            "  ・本体とキー・元Mod原文が同一のバニラ持ち込みキーは、Mod間関連キーから除外",
+            "  ・有効キー100個以上: 有効共通キー50件以上、かつ元Mod側または候補側の有効一致率40%以上",
+            "  ・有効キー100個未満: 元Mod側の有効一致率20%以上",
+            "  ・候補に同一言語の原文があるキーは元Mod原文と照合し、不一致キーを除外",
+            "  ・候補の原文同梱率80%以上は独立Mod型、20%以下は外部日本語化Mod型",
+            "  ・候補キー50件以上かつ本体キー80%以上は本体日本語化・修正型。70%以上は本体キー優勢",
+            "  ・総合和訳は2つ以上の元Modで各50件以上、候補有効キー和集合率70%以上を別ゲートとして使用",
+            "  ・構成点・名前・dependenciesは実データ関係ゲート通過後の順位付けだけに使用",
             "  ・手動の日本語化Mod / 通常Mod / 対応元指定は自動判定より優先",
             "  ・監査ログでは、初回分類で候補外になった現在の日本語Modも比較対象として表示",
             "",
@@ -3087,23 +3091,43 @@ Mod更新後だけ追加翻訳:
             except Exception as exc:
                 out += [f"原文キー取得失敗: {exc}", ""]
                 continue
-            threshold=0.50 if len(source_keys)>=100 else 0.20
-            out += [f"原文キー数: {len(source_keys)}", f"適用ゲート: {'100キー以上 → 50キー一致' if len(source_keys)>=100 else '100キー未満 → 20%'}"]
+            out += [f"原文キー数（バニラ除外前）: {len(source_keys)}", "適用ゲート: 候補ごとにバニラ持ち込み除外後の有効キー数で判定"]
             if not source_keys:
                 out += ["原文キーがないため、このModを元Modとした関連判定は行いません。", ""]
                 continue
 
             candidates=[]
+            source_profile_cache={}
             for cand_key,cand in audit_by_path.items():
                 if cand_key==source_id:
                     continue
-                auto=core._translation_mod_weight(name,source_keys,cand)
+                profile_key=str(cand.get("base_game_name") or id(cand.get("base_game_source_entries")))
+                source_profile=source_profile_cache.get(profile_key)
+                if source_profile is None:
+                    source_profile=core.prepare_translation_source_profile(
+                        {"english":dict(src_data.get("english") or {}),
+                         "simp_chinese":dict(src_data.get("simp_chinese") or {})},
+                        cand.get("base_game_source_entries") or {},
+                        set(cand.get("base_game_keys") or set()),
+                    )
+                    source_profile_cache[profile_key]=source_profile
+                auto=core._translation_mod_weight(
+                    name,
+                    source_keys,
+                    cand,
+                    source_language_entries={
+                        "english": dict(src_data.get("english") or {}),
+                        "simp_chinese": dict(src_data.get("simp_chinese") or {}),
+                    },
+                    source_path=source_id,
+                    source_profile=source_profile,
+                )
                 role=cand.get("manual_role","auto")
                 manual_sources=set(cand.get("manual_source_paths") or [])
                 manual_relation=(role=="translation" and source_id in manual_sources)
                 # Keep every candidate with actual shared keys, plus explicit manual
                 # relations even if they intentionally have zero current overlap.
-                if int(auto.get("overlap_keys",0) or 0)<=0 and not manual_relation:
+                if int(auto.get("raw_overlap_keys",auto.get("overlap_keys",0)) or 0)<=0 and not manual_relation:
                     continue
                 try:
                     stable_candidate=self._first_seen_japanese_candidate(Path(cand.get("path","")))
@@ -3130,15 +3154,55 @@ Mod更新後だけ追加翻訳:
                     final_text="現行自動候補外（初回分類では日本語化Mod候補ではない）"
                 else:
                     final_text=class_label.get(auto_class,auto_class)
+                if auto.get("candidate_base_translation"):
+                    candidate_role_text="本体日本語化Mod"
+                elif auto.get("candidate_base_dominant"):
+                    candidate_role_text="大型Mod上書き候補"
+                elif auto.get("candidate_localization_shape")=="self_localized":
+                    candidate_role_text="日本語同梱の独立Mod"
+                elif auto.get("multi_translation_gate"):
+                    candidate_role_text="複数Mod総合日本語化Mod"
+                else:
+                    candidate_role_text="通常の日本語化Mod候補"
+                pair_classification = (
+                    "複数Mod総合日本語化候補" if auto.get("multi_translation_gate") else
+                    "特定Mod日本語化候補" if auto_class in {"auto","candidate"} else
+                    "関連なし"
+                )
+                raw_overlap=int(auto.get("raw_overlap_keys",auto.get("overlap_keys",0)) or 0)
+                candidate_total=int(auto.get("candidate_total_keys",auto.get("japanese_keys",0)) or 0)
+                base_count=int(auto.get("candidate_base_keys",auto.get("base_game_match_keys",0)) or 0)
+                non_base_count=int(auto.get("candidate_non_base_keys",max(0,candidate_total-base_count)) or 0)
+                paired_count=int(auto.get("candidate_paired_source_keys",0) or 0)
                 out += [
                     "-"*72,
                     f"候補 {ci}: {cand.get('mod') or cand_path.name}",
                     f"  場所: {cand_path}",
-                    f"  日本語一致: {int(auto.get('overlap_keys',0) or 0)} / {len(source_keys)} = {float(auto.get('coverage',0) or 0)*100:.1f}%  {'PASS' if float(auto.get('coverage',0) or 0) >= threshold else 'FAIL'}",
-                    f"  日本語化Mod側一致率: {float(auto.get('precision',0) or 0)*100:.1f}%",
-                    (f"  日本語化Mod側→ゲーム本体キー一致率: {float(auto.get('base_game_match_ratio',0) or 0)*100:.1f}% "
-                     f"({int(auto.get('base_game_match_keys',0) or 0)}/{int(auto.get('japanese_keys',0) or 0)}) / "
-                     f"減点 {float(auto.get('base_game_penalty',0) or 0):.1f}点"),
+                    f"  候補の総キー数: {candidate_total}",
+                    (f"  本体キー一致: {base_count}/{candidate_total} = "
+                     f"{float(auto.get('candidate_base_rate',0) or 0)*100:.1f}%"),
+                    (f"  非本体キー: {non_base_count}/{candidate_total} = "
+                     f"{float(auto.get('candidate_non_base_rate',0) or 0)*100:.1f}%"),
+                    f"  生の共通キー数: {raw_overlap}",
+                    "  共通キー内訳:",
+                    f"    - 本体とキー・英語原文まで同一: {int(auto.get('vanilla_carryover_keys',0) or 0)}",
+                    f"    - 本体キーだが元Mod側で原文変更あり: {int(auto.get('changed_base_overlap_keys',0) or 0)}",
+                    f"    - 非本体キー: {int(auto.get('non_base_overlap_keys',0) or 0)}",
+                    f"  バニラ持ち込みとして除外: {int(auto.get('vanilla_carryover_keys',0) or 0)}",
+                    f"  最終的な有効共通キー数: {int(auto.get('effective_overlap_keys',0) or 0)}",
+                    (f"  有効一致率: 元Mod側 {float(auto.get('effective_source_rate',0) or 0)*100:.1f}% / "
+                     f"候補側 {float(auto.get('effective_candidate_rate',0) or 0)*100:.1f}%"),
+                    f"  候補英語・中国語localization: {'あり' if paired_count else 'なし'} ({paired_count}/{candidate_total})",
+                    (f"  候補原文照合: 一致 {int(auto.get('source_text_match_keys',0) or 0)} / "
+                     f"不一致 {int(auto.get('source_text_mismatch_keys',0) or 0)}"),
+                    f"  本体和訳70%判定: {'PASS' if float(auto.get('candidate_base_rate',0) or 0)>=0.70 else 'FAIL'}",
+                    f"  非本体20%判定: {'PASS' if float(auto.get('candidate_non_base_rate',0) or 0)<=0.20 else 'FAIL'}",
+                    (f"  40%関連ゲート: 元Mod側 {'PASS' if auto.get('effective_source_rate_pass') else 'FAIL'} / "
+                     f"候補側 {'PASS' if auto.get('effective_candidate_rate_pass') else 'FAIL'} / "
+                     f"有効一致{int(auto.get('required_match_count',0) or 0)}キー "
+                     f"{'PASS' if auto.get('effective_count_pass') else 'FAIL'}"),
+                    f"  候補の性質: {candidate_role_text}",
+                    f"  ペア最終分類: {pair_classification}",
                     f"  構成: {auto.get('structure_label','')} / {float(auto.get('translation_only_points',0) or 0):.1f}点",
                     f"  他言語減点: {float(auto.get('other_language_penalty',0) or 0):.1f}点",
                     f"  自動スコア: {float(auto.get('score',0) or 0):.1f}/100",
@@ -5562,20 +5626,21 @@ Mod更新後だけ追加翻訳:
                 }
         self._save_mod_relation_overrides()
 
-    def _base_game_source_keys_for_mod(self, mod_root):
-        """Return cached vanilla source-key set for the game owning *mod_root*.
+    def _base_game_source_data_for_mod(self, mod_root):
+        """Return cached vanilla source text by language for the owning game.
 
         This is deliberately non-interactive because Translation Status and Total
         Diagnosis may call it from background workers.  The cache is per game and
-        uses English/Simplified-Chinese localization keys as the vanilla key universe.
+        retains English/Simplified-Chinese text so unchanged vanilla carryovers can
+        be removed from Mod-to-Mod relationship evidence.
         """
         game = self._backup_game_name_for_root(mod_root)
         if not game or game == "ゲーム未特定":
-            return set(), game
-        cache = getattr(self, "_base_game_source_key_cache", None)
+            return {"english": {}, "simp_chinese": {}}, game
+        cache = getattr(self, "_base_game_source_data_cache", None)
         if cache is None:
             cache = {}
-            self._base_game_source_key_cache = cache
+            self._base_game_source_data_cache = cache
         if game in cache:
             return cache[game], game
 
@@ -5594,7 +5659,7 @@ Mod更新後だけ追加翻訳:
             if loc_root is not None:
                 break
 
-        keys = set()
+        source_data = {"english": {}, "simp_chinese": {}}
         if loc_root is not None:
             try:
                 for fp in core.gather_yml_files(loc_root):
@@ -5608,21 +5673,30 @@ Mod更新後だけ追加翻訳:
                     except Exception:
                         continue
                     if lang in {"english", "simp_chinese"}:
-                        keys.update((entries or {}).keys())
+                        source_data[lang].update(entries or {})
             except Exception as exc:
-                record_error("ゲーム本体キー取得", exc, f"{game}: {loc_root}")
-        cache[game] = keys
+                record_error("ゲーム本体原文取得", exc, f"{game}: {loc_root}")
+        cache[game] = source_data
+        return source_data, game
+
+    def _base_game_source_keys_for_mod(self, mod_root):
+        """Compatibility wrapper returning the cached vanilla key universe."""
+        source_data, game = self._base_game_source_data_for_mod(mod_root)
+        keys = set(source_data.get("english", {})) | set(source_data.get("simp_chinese", {}))
         return keys, game
 
     def _annotate_translation_index_with_base_game_keys(self, rows):
         """Attach the owning game's vanilla key set to every Japanese candidate."""
         for row in rows or []:
             try:
-                keys, game = self._base_game_source_keys_for_mod(Path(row.get("path", "")))
+                source_data, game = self._base_game_source_data_for_mod(Path(row.get("path", "")))
+                keys = set(source_data.get("english", {})) | set(source_data.get("simp_chinese", {}))
                 row["base_game_keys"] = keys
+                row["base_game_source_entries"] = source_data
                 row["base_game_name"] = game
             except Exception as exc:
                 row["base_game_keys"] = set()
+                row["base_game_source_entries"] = {"english": {}, "simp_chinese": {}}
                 row["base_game_name"] = "ゲーム未特定"
                 record_error("本体和訳修正例外", exc, str(row.get("path", "")))
         return rows
@@ -5650,7 +5724,7 @@ Mod更新後だけ追加翻訳:
             ov=overrides.get(key) or {}
             row["manual_role"] = ov.get("role", "auto")
             row["manual_source_paths"] = list(ov.get("source_paths") or [])
-        return rows
+        return core.assign_translation_candidate_owners(pool_roots, rows)
 
     def _known_mod_rows_for_relation_dialog(self):
         rows=[]; seen=set()
@@ -5849,8 +5923,6 @@ Mod更新後だけ追加翻訳:
             check_external = bool(settings.get("check_translation_mods", True))
             pool_roots = list(translation_pool or roots)
             translation_index = self._build_stable_translation_mod_index(pool_roots) if check_external else None
-            if check_external and translation_index:
-                translation_index = core.assign_translation_candidate_owners(pool_roots, translation_index)
             pool_signature = ""
             if check_external:
                 h = hashlib.sha256()

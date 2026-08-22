@@ -2516,6 +2516,10 @@ def build_translation_mod_index(mod_roots: Iterable[Path]) -> List[dict]:
             "other_language_files": other_language_files,
             "language_files": language_files,
             "language_keys": language_keys,
+            "source_language_entries": {
+                "english": dict((data.get("languages") or {}).get("english", {}) or {}),
+                "simp_chinese": dict((data.get("languages") or {}).get("simp_chinese", {}) or {}),
+            },
             "dependencies": _descriptor_dependency_names(root),
             "profile": _mod_content_profile(root, jp_files, en_files, zh_files, other_language_files),
         })
@@ -2595,7 +2599,7 @@ def _external_gap_candidates(source_entries: Dict[str, str], japanese_entries: D
     return candidates
 
 
-def _translation_mod_weight(source_name: str, source_keys: set, row: dict) -> dict:
+def _translation_mod_weight_legacy(source_name: str, source_keys: set, row: dict) -> dict:
     """Score one Japanese Mod candidate using two-stage exact-key evidence.
 
     v0.11.51 uses a fixed evidence threshold for ordinary/large Mods:
@@ -2854,15 +2858,456 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict) -> di
     }
 
 
-def assign_translation_candidate_owners(source_roots: Iterable[Path], translation_index: Optional[List[dict]]) -> List[dict]:
-    """Compatibility wrapper for v0.11.34 callers.
+def _normalized_relation_text(value: str) -> str:
+    """Normalize non-semantic whitespace before exact source-text comparison."""
+    return re.sub(r"\s+", " ", str(value or "").strip())
 
-    v0.11.35 deliberately does *not* assign a Japanese candidate to only one
-    source Mod.  Comprehensive translation packs are expected to translate
-    several independent Mods.  Relationship safety is instead enforced by the
-    source-side exact-key gate (>=20%) plus the weighted structure score.
-    """
-    return [dict(row) for row in (translation_index or [])]
+
+def classify_translation_candidate_role(row: dict) -> dict:
+    """Classify candidate shape independently from any one source Mod relation."""
+    japanese_keys = set(row.get("japanese_keys") or set(row.get("japanese", {}) or {}))
+    language_keys = dict(row.get("language_keys") or {})
+    source_entries = dict(row.get("source_language_entries") or {})
+    english_keys = set(language_keys.get("english") or set(source_entries.get("english", {}) or {}))
+    chinese_keys = set(language_keys.get("simp_chinese") or set(source_entries.get("simp_chinese", {}) or {}))
+    paired_keys = japanese_keys & (english_keys | chinese_keys)
+    base_game_keys = set(row.get("base_game_keys") or set())
+    japanese_count = len(japanese_keys)
+    base_count = len(japanese_keys & base_game_keys)
+    non_base_count = max(0, japanese_count - base_count)
+    base_rate = base_count / max(1, japanese_count)
+    non_base_rate = non_base_count / max(1, japanese_count)
+    paired_rate = len(paired_keys) / max(1, japanese_count)
+
+    if paired_rate >= 0.80:
+        localization_shape = "self_localized"
+    elif paired_rate <= 0.20:
+        localization_shape = "translation_only"
+    else:
+        localization_shape = "mixed"
+
+    base_dominant = bool(japanese_count and base_rate >= 0.70)
+    base_translation = bool(japanese_count >= 50 and base_rate >= 0.80)
+    small_base_candidate = bool(0 < japanese_count < 50 and base_rate >= 0.80)
+    if base_translation:
+        base_classification = "base_translation"
+    elif small_base_candidate:
+        base_classification = "small_base_candidate"
+    elif base_dominant:
+        base_classification = "large_override_candidate"
+    else:
+        base_classification = "normal"
+    return {
+        "candidate_total_keys": japanese_count,
+        "candidate_base_keys": base_count,
+        "candidate_base_rate": base_rate,
+        "candidate_non_base_keys": non_base_count,
+        "candidate_non_base_rate": non_base_rate,
+        "candidate_paired_source_keys": len(paired_keys),
+        "candidate_paired_source_rate": paired_rate,
+        "candidate_localization_shape": localization_shape,
+        "candidate_base_classification": base_classification,
+        "candidate_base_dominant": base_dominant,
+        "candidate_base_translation": base_translation,
+        "candidate_small_base_candidate": small_base_candidate,
+    }
+
+
+def prepare_translation_source_profile(source_language_entries: dict,
+                                       base_game_source_entries: Optional[dict] = None,
+                                       base_game_keys: Optional[set] = None) -> dict:
+    """Precompute source-side vanilla identity once for repeated candidate checks."""
+    source_language_entries = source_language_entries or {}
+    source_english = source_language_entries.get("english") or {}
+    source_chinese = source_language_entries.get("simp_chinese") or {}
+    source_entries = dict(source_english)
+    for key, value in source_chinese.items():
+        source_entries.setdefault(key, value)
+    source_keys = set(source_entries)
+
+    base_entries = base_game_source_entries or {}
+    base_english = base_entries.get("english") or {}
+    base_chinese = base_entries.get("simp_chinese") or {}
+    resolved_base_keys = set(base_game_keys or set()) | set(base_english) | set(base_chinese)
+
+    unchanged_vanilla = set()
+    changed_base = set()
+    source_language_by_key = {}
+    for key in source_keys:
+        if key in source_english:
+            source_language_by_key[key] = "english"
+            if key in base_english:
+                if _normalized_relation_text(source_english[key]) == _normalized_relation_text(base_english[key]):
+                    unchanged_vanilla.add(key)
+                else:
+                    changed_base.add(key)
+        elif key in source_chinese:
+            source_language_by_key[key] = "simp_chinese"
+            if key in base_chinese:
+                if _normalized_relation_text(source_chinese[key]) == _normalized_relation_text(base_chinese[key]):
+                    unchanged_vanilla.add(key)
+                else:
+                    changed_base.add(key)
+
+    return {
+        "source_english": source_english,
+        "source_chinese": source_chinese,
+        "source_entries": source_entries,
+        "source_keys": source_keys,
+        "base_keys": resolved_base_keys,
+        "unchanged_vanilla": unchanged_vanilla,
+        "changed_base": changed_base,
+        "source_language_by_key": source_language_by_key,
+    }
+
+
+def translation_relation_evidence(source_language_entries: dict, row: dict,
+                                  source_profile: Optional[dict] = None) -> dict:
+    """Return source/candidate relation evidence after vanilla and text filtering."""
+    if source_profile is None:
+        source_profile = prepare_translation_source_profile(
+            source_language_entries,
+            row.get("base_game_source_entries") or {},
+            set(row.get("base_game_keys") or set()),
+        )
+    source_english = source_profile.get("source_english") or {}
+    source_chinese = source_profile.get("source_chinese") or {}
+    source_keys = source_profile.get("source_keys") or set()
+    base_keys = source_profile.get("base_keys") or set()
+    unchanged_vanilla = source_profile.get("unchanged_vanilla") or set()
+    changed_base = source_profile.get("changed_base") or set()
+    source_language_by_key = source_profile.get("source_language_by_key") or {}
+
+    japanese_keys = set(row.get("japanese_keys") or set(row.get("japanese", {}) or {}))
+    candidate_source = row.get("source_language_entries") or {}
+    candidate_english = candidate_source.get("english") or {}
+    candidate_chinese = candidate_source.get("simp_chinese") or {}
+
+    raw_overlap = source_keys & japanese_keys
+    vanilla_overlap = raw_overlap & unchanged_vanilla
+    changed_base_overlap = raw_overlap & changed_base
+    non_base_overlap = {key for key in raw_overlap if key not in base_keys}
+    preverified_overlap = raw_overlap - unchanged_vanilla
+    effective_overlap = set()
+    source_text_present = 0
+    source_text_matches = 0
+    source_text_mismatches = 0
+    for key in preverified_overlap:
+        language = source_language_by_key.get(key)
+        if language == "english" and key in candidate_english:
+            source_text_present += 1
+            if _normalized_relation_text(source_english[key]) == _normalized_relation_text(candidate_english[key]):
+                source_text_matches += 1
+                effective_overlap.add(key)
+            else:
+                source_text_mismatches += 1
+        elif language == "simp_chinese" and key in candidate_chinese:
+            source_text_present += 1
+            if _normalized_relation_text(source_chinese[key]) == _normalized_relation_text(candidate_chinese[key]):
+                source_text_matches += 1
+                effective_overlap.add(key)
+            else:
+                source_text_mismatches += 1
+        else:
+            effective_overlap.add(key)
+
+    source_effective_keys = source_keys - unchanged_vanilla
+    candidate_effective_keys = {
+        key for key in japanese_keys
+        if key not in base_keys or key in changed_base
+    }
+    source_rate = len(effective_overlap) / max(1, len(source_effective_keys))
+    candidate_rate = len(effective_overlap) / max(1, len(candidate_effective_keys))
+    if len(source_effective_keys) >= 100:
+        required_match_count = 50
+        source_rate_pass = source_rate >= 0.40
+        candidate_rate_pass = candidate_rate >= 0.40
+        count_pass = len(effective_overlap) >= required_match_count
+        relation_gate = bool(count_pass and (source_rate_pass or candidate_rate_pass))
+        threshold_label = "有効キー100以上 → 50キーかつ双方向40%のどちらか"
+    else:
+        required_match_count = max(1, int((len(source_effective_keys) * 0.20) + 0.999999))
+        source_rate_pass = source_rate >= 0.20
+        candidate_rate_pass = candidate_rate >= 0.20
+        count_pass = len(effective_overlap) >= required_match_count
+        relation_gate = bool(count_pass and source_rate_pass)
+        threshold_label = "有効キー100未満 → 元Mod側20%"
+    return {
+        "raw_source_keys": len(source_keys),
+        "source_effective_keys": len(source_effective_keys),
+        "candidate_effective_keys": len(candidate_effective_keys),
+        "raw_overlap_keys": len(raw_overlap),
+        "vanilla_carryover_keys": len(vanilla_overlap),
+        "changed_base_overlap_keys": len(changed_base_overlap),
+        "non_base_overlap_keys": len(non_base_overlap),
+        "preverified_overlap_keys": len(preverified_overlap),
+        "effective_overlap_keys": len(effective_overlap),
+        "source_text_present_keys": source_text_present,
+        "source_text_match_keys": source_text_matches,
+        "source_text_mismatch_keys": source_text_mismatches,
+        "effective_source_rate": source_rate,
+        "effective_candidate_rate": candidate_rate,
+        "required_match_count": required_match_count,
+        "effective_count_pass": count_pass,
+        "effective_source_rate_pass": source_rate_pass,
+        "effective_candidate_rate_pass": candidate_rate_pass,
+        "relation_gate": relation_gate,
+        "threshold_label": threshold_label,
+        "_effective_overlap_set": effective_overlap,
+        "_source_effective_set": source_effective_keys,
+        "_candidate_effective_set": candidate_effective_keys,
+        "_changed_base_set": changed_base,
+    }
+
+
+def _translation_mod_weight(source_name: str, source_keys: set, row: dict,
+                            source_language_entries: Optional[dict] = None,
+                            source_path: str = "",
+                            source_profile: Optional[dict] = None) -> dict:
+    """Score a relation only after candidate-role and effective-key gates pass."""
+    source_language_entries = dict(source_language_entries or {})
+    if not source_language_entries:
+        source_language_entries = {"english": {key: "" for key in set(source_keys or set())}, "simp_chinese": {}}
+    evidence = translation_relation_evidence(source_language_entries, row, source_profile=source_profile)
+    role = classify_translation_candidate_role(row)
+    profile = dict(row.get("profile") or {})
+    language_files = dict(row.get("language_files") or {})
+    japanese_file_count = int(language_files.get("japanese", row.get("japanese_files", 0)) or 0)
+    non_japanese_loc_files = sum(int(value or 0) for lang, value in language_files.items() if lang != "japanese")
+    non_loc = int(profile.get("non_localization_files", 0) or 0)
+    gameplay_files = int(profile.get("gameplay_files", 0) or 0)
+    gameplay_dirs = list(profile.get("gameplay_dirs") or [])
+    other_files = int(profile.get("other_files", 0) or 0)
+    loc_ratio = float(profile.get("localization_ratio", 0.0) or 0.0)
+    pure_japanese_localization = bool(japanese_file_count > 0 and non_japanese_loc_files == 0 and non_loc == 0)
+    if pure_japanese_localization:
+        translation_only_points = 60.0
+        structure_label = "日本語localization専用（大幅加点）"
+    elif non_loc == 0:
+        translation_only_points = 30.0
+        structure_label = "localization専用（他言語を含む）"
+    elif gameplay_files == 0 and other_files <= 3:
+        translation_only_points = 27.5
+        structure_label = "日本語化補助ファイルのみ"
+    elif gameplay_files == 0 and loc_ratio >= 0.80:
+        translation_only_points = 22.5
+        structure_label = "localization中心"
+    elif loc_ratio >= 0.60:
+        translation_only_points = 15.0
+        structure_label = "localization優勢"
+    elif loc_ratio >= 0.30:
+        translation_only_points = 7.5
+        structure_label = "localization混在"
+    else:
+        translation_only_points = 0.0
+        structure_label = "ゲーム内容中心"
+
+    if gameplay_files <= 0:
+        low_gameplay_points = 10.0
+    elif gameplay_files <= 5:
+        low_gameplay_points = 5.0
+    elif gameplay_files <= 25:
+        low_gameplay_points = 2.5
+    else:
+        low_gameplay_points = 0.0
+
+    source_norm = _normalize_mod_name_for_match(source_name)
+    candidate_norm = _normalize_mod_name_for_match(str(row.get("mod", "")))
+    name_match = bool(
+        source_norm and candidate_norm and
+        (source_norm == candidate_norm or
+         (len(source_norm) >= 6 and source_norm in candidate_norm) or
+         (len(candidate_norm) >= 6 and candidate_norm in source_norm))
+    )
+    dependency_match = False
+    matched_dependency = ""
+    for dependency in row.get("dependencies") or []:
+        dependency_norm = _normalize_mod_name_for_match(str(dependency))
+        if source_norm and dependency_norm and (
+            source_norm == dependency_norm or source_norm in dependency_norm or dependency_norm in source_norm
+        ):
+            dependency_match = True
+            matched_dependency = str(dependency)
+            break
+    dependency_points = 20.0 if dependency_match else 0.0
+    folder_evidence = _localization_folder_name_evidence(source_name, row)
+    localization_folder_points = float(folder_evidence.get("points", 0.0) or 0.0)
+    folder_match = localization_folder_points > 0
+    manual_translation = row.get("manual_role") == "translation"
+    explicit_relation_evidence = bool(name_match or dependency_match or folder_match or manual_translation)
+    base_relation_evidence = bool(name_match or dependency_match or manual_translation)
+    translation_shape_gate = bool(
+        role.get("candidate_localization_shape") != "self_localized" or explicit_relation_evidence
+    )
+    base_role_gate = bool(
+        not role.get("candidate_base_translation") or base_relation_evidence
+    )
+    multi_sources = set(row.get("multi_translation_source_paths") or [])
+    multi_relation_gate = bool(
+        source_path and source_path in multi_sources and
+        int(evidence.get("effective_overlap_keys", 0) or 0) >= 50
+    )
+    numeric_gate = bool(evidence.get("relation_gate") or multi_relation_gate)
+    final_gate = bool(numeric_gate and translation_shape_gate and base_role_gate)
+
+    effective_overlap_n = int(evidence.get("effective_overlap_keys", 0) or 0)
+    source_effective_n = int(evidence.get("source_effective_keys", 0) or 0)
+    if final_gate:
+        if source_effective_n >= 100:
+            key_points = min(45.0, max(15.0, 15.0 + (effective_overlap_n - 50) * 0.30))
+        else:
+            key_points = max(15.0, float(evidence.get("effective_source_rate", 0.0) or 0.0) * 45.0)
+    else:
+        key_points = 0.0
+
+    name_points = 10.0 if name_match else 0.0
+    raw_score = (
+        key_points + translation_only_points + dependency_points +
+        low_gameplay_points + localization_folder_points + name_points
+    )
+    score = max(0.0, min(100.0, raw_score))
+    if not final_gate:
+        classification = "rejected"
+    elif score >= 60.0:
+        classification = "auto"
+    elif score >= 40.0:
+        classification = "candidate"
+    else:
+        classification = "rejected"
+
+    reasons = [
+        f"生共通キー {evidence['raw_overlap_keys']}件 / バニラ持ち込み除外 {evidence['vanilla_carryover_keys']}件",
+        (f"共通キー内訳: 本体原文変更 {evidence['changed_base_overlap_keys']}件 / "
+         f"非本体 {evidence['non_base_overlap_keys']}件"),
+        (f"候補原文照合: 一致 {evidence['source_text_match_keys']}件 / "
+         f"不一致 {evidence['source_text_mismatch_keys']}件 / "
+         f"候補原文なし {max(0, evidence['preverified_overlap_keys'] - evidence['source_text_present_keys'])}件"),
+        (f"最終有効共通キー {effective_overlap_n}件 / 元Mod側 {evidence['effective_source_rate']*100:.1f}% / "
+         f"候補側 {evidence['effective_candidate_rate']*100:.1f}%"),
+        (f"関係ゲート: 件数 {'PASS' if evidence['effective_count_pass'] else 'FAIL'} / "
+         f"元Mod側 {'PASS' if evidence['effective_source_rate_pass'] else 'FAIL'} / "
+         f"候補側 {'PASS' if evidence['effective_candidate_rate_pass'] else 'FAIL'}"),
+        (f"候補構成: 本体キー {role['candidate_base_keys']}/{role['candidate_total_keys']} "
+         f"({role['candidate_base_rate']*100:.1f}%) / 非本体 {role['candidate_non_base_rate']*100:.1f}% / "
+         f"原文同梱 {role['candidate_paired_source_rate']*100:.1f}%"),
+        f"候補役割: {role['candidate_base_classification']} / {role['candidate_localization_shape']}",
+    ]
+    if multi_relation_gate:
+        reasons.append(
+            f"総合和訳集合ゲート: 候補有効キー和集合率 {float(row.get('multi_translation_union_coverage', 0.0))*100:.1f}% → PASS"
+        )
+    if not translation_shape_gate:
+        reasons.append("候補が原文と日本語を80%以上同梱する独立Mod型で、明示的な関係証拠がないため除外")
+    if not base_role_gate:
+        reasons.append("候補が本体キー80%以上・50キー以上の本体日本語化型で、明示的な関係証拠がないため除外")
+    if not numeric_gate:
+        reasons.append("有効なMod間関連キーのゲート未通過のため、構成点だけでは自動関連付けしない")
+
+    public_evidence = {key: value for key, value in evidence.items() if not key.startswith("_")}
+    return {
+        **public_evidence,
+        **role,
+        "score": score,
+        "raw_score": raw_score,
+        "classification": classification,
+        "precision": float(evidence.get("effective_candidate_rate", 0.0) or 0.0),
+        "coverage": float(evidence.get("effective_source_rate", 0.0) or 0.0),
+        "source_match_ratio": float(evidence.get("effective_source_rate", 0.0) or 0.0),
+        "overlap_keys": effective_overlap_n,
+        "source_keys": source_effective_n,
+        "japanese_keys": int(role.get("candidate_total_keys", 0) or 0),
+        "ordinary_gate": bool(evidence.get("relation_gate")),
+        "multi_translation_gate": multi_relation_gate,
+        "translation_shape_gate": translation_shape_gate,
+        "base_role_gate": base_role_gate,
+        "final_relation_gate": final_gate,
+        "key_points": key_points,
+        "translation_only_points": translation_only_points,
+        "dependency_points": dependency_points,
+        "low_gameplay_points": low_gameplay_points,
+        "localization_folder_points": localization_folder_points,
+        "localization_folder_match": folder_evidence.get("matched_folder", ""),
+        "localization_folder_match_type": folder_evidence.get("match_type", "none"),
+        "dependency_match": dependency_match,
+        "matched_dependency": matched_dependency,
+        "profile": profile,
+        "structure_label": structure_label,
+        "japanese_localization_files": japanese_file_count,
+        "non_japanese_localization_files": non_japanese_loc_files,
+        "other_language_penalty": 0.0,
+        "other_language_relations": [],
+        "name_match": name_match,
+        "name_points": name_points,
+        "base_game_match_ratio": float(role.get("candidate_base_rate", 0.0) or 0.0),
+        "base_game_match_keys": int(role.get("candidate_base_keys", 0) or 0),
+        "base_game_penalty": 0.0,
+        "reasons": reasons,
+    }
+
+
+def assign_translation_candidate_owners(source_roots: Iterable[Path], translation_index: Optional[List[dict]]) -> List[dict]:
+    """Annotate Japanese-only candidates that collectively translate several Mods."""
+    rows = [dict(row) for row in (translation_index or [])]
+    sources = []
+    for root in source_roots or []:
+        root = Path(root)
+        try:
+            source_id = str(root.expanduser().resolve())
+        except Exception:
+            source_id = str(root)
+        data = _collect_mod_language_entries(root)
+        if data.get("source"):
+            sources.append((source_id, {
+                "english": dict(data.get("english") or {}),
+                "simp_chinese": dict(data.get("simp_chinese") or {}),
+            }))
+    source_profile_cache = {}
+    for row in rows:
+        role = classify_translation_candidate_role(row)
+        manual_translation = row.get("manual_role") == "translation"
+        if role.get("candidate_localization_shape") == "self_localized" and not manual_translation:
+            continue
+        if role.get("candidate_base_translation") and not manual_translation:
+            continue
+        contributors = []
+        overlap_union = set()
+        candidate_universe = set()
+        for source_id, source_entries in sources:
+            try:
+                if Path(source_id).resolve() == Path(row.get("path", "")).resolve():
+                    continue
+            except Exception:
+                pass
+            profile_key = (
+                source_id,
+                str(row.get("base_game_name") or id(row.get("base_game_source_entries"))),
+            )
+            source_profile = source_profile_cache.get(profile_key)
+            if source_profile is None:
+                source_profile = prepare_translation_source_profile(
+                    source_entries,
+                    row.get("base_game_source_entries") or {},
+                    set(row.get("base_game_keys") or set()),
+                )
+                source_profile_cache[profile_key] = source_profile
+            evidence = translation_relation_evidence(source_entries, row, source_profile=source_profile)
+            if int(evidence.get("effective_overlap_keys", 0) or 0) < 50:
+                continue
+            contributors.append(source_id)
+            overlap_union.update(evidence.get("_effective_overlap_set") or set())
+            candidate_universe.update(evidence.get("_candidate_effective_set") or set())
+        union_coverage = len(overlap_union) / max(1, len(candidate_universe))
+        if len(contributors) >= 2 and union_coverage >= 0.70:
+            row["multi_translation_source_paths"] = contributors
+            row["multi_translation_union_keys"] = len(overlap_union)
+            row["multi_translation_candidate_keys"] = len(candidate_universe)
+            row["multi_translation_union_coverage"] = union_coverage
+        else:
+            row["multi_translation_source_paths"] = []
+            row["multi_translation_union_keys"] = len(overlap_union)
+            row["multi_translation_candidate_keys"] = len(candidate_universe)
+            row["multi_translation_union_coverage"] = union_coverage
+    return rows
 
 def rank_external_japanese_translations(mod_root: Path, translation_index: Optional[List[dict]]) -> List[dict]:
     """Return weighted Japanese-translation candidates ordered by score."""
@@ -2875,7 +3320,12 @@ def rank_external_japanese_translations(mod_root: Path, translation_index: Optio
         return []
     source_keys = set(source_entries)
     source_name = detect_mod_name(mod_root)
+    source_language_entries = {
+        "english": src_data.get("english") or {},
+        "simp_chinese": src_data.get("simp_chinese") or {},
+    }
     ranked = []
+    source_profile_cache = {}
     try:
         source_id = str(mod_root.expanduser().resolve())
     except Exception:
@@ -2893,7 +3343,23 @@ def rank_external_japanese_translations(mod_root: Path, translation_index: Optio
             continue
         if manual_role == "translation" and manual_sources and source_id not in manual_sources:
             continue
-        weight = _translation_mod_weight(source_name, source_keys, row)
+        profile_key = str(row.get("base_game_name") or id(row.get("base_game_source_entries")))
+        source_profile = source_profile_cache.get(profile_key)
+        if source_profile is None:
+            source_profile = prepare_translation_source_profile(
+                source_language_entries,
+                row.get("base_game_source_entries") or {},
+                set(row.get("base_game_keys") or set()),
+            )
+            source_profile_cache[profile_key] = source_profile
+        weight = _translation_mod_weight(
+            source_name,
+            source_keys,
+            row,
+            source_language_entries=source_language_entries,
+            source_path=source_id,
+            source_profile=source_profile,
+        )
         if manual_role == "translation" and source_id in manual_sources:
             reasons = ["手動例外: この日本語化Modと元Modの対応関係をユーザーが指定"] + list(weight.get("reasons") or [])
             weight = {**weight, "score": 100.0, "raw_score": max(100.0, float(weight.get("raw_score",0.0) or 0.0)),
