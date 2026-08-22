@@ -25,6 +25,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 import translator_core as core
+import app_state
 
 try:
     from tkinterdnd2 import DND_FILES, TkinterDnD
@@ -36,7 +37,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.58"
+APP_VERSION = "0.11.59"
 MOD_STATUS_CACHE_VERSION = 12
 
 
@@ -115,6 +116,11 @@ def _save_data_root_preference(path: Path):
 
 
 def _automatic_data_root() -> Path:
+    override=os.environ.get("PARADOX_TRANSLATOR_DATA_ROOT","").strip()
+    if override:
+        root=Path(override).expanduser()
+        root.mkdir(parents=True,exist_ok=True)
+        return root
     saved = _load_saved_data_root()
     if saved is not None and _is_writable_dir(saved):
         return saved
@@ -379,6 +385,26 @@ def record_error(context: str, exc: BaseException | None = None, detail: str = "
         pass
 
 
+def load_persistent_json(path: Path, default, label: str):
+    """Load application-owned JSON and quarantine malformed data with a visible log."""
+    path=Path(path)
+    if not path.exists():
+        return default
+    try:
+        text,_encoding=core.decode_text_bytes(path.read_bytes())
+        return json.loads(text)
+    except Exception as exc:
+        stamp=datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        quarantined=path.with_name(path.name+f".corrupt_{stamp}")
+        try:
+            path.replace(quarantined)
+            detail=f"{path} -> {quarantined}"
+        except Exception as move_exc:
+            detail=f"{path}; 退避失敗: {move_exc}"
+        record_error(f"{label} JSON破損",exc,detail)
+        return default
+
+
 
 def _native_crash_state_path() -> Path:
     return APP_HOME / "native_crash_import_state.json"
@@ -557,10 +583,20 @@ class App(BaseTk):
         self.single_overwrite_thread = None
         self.backup_restore_operation_thread = None
         self.data_root_move_thread = None
-        self.model_stats = core.load_json(STATS_PATH, {})
-        self.model_profiles = core.load_json(PROFILES_PATH, {})
+        self._differential_prepare_mode = None
+        self._bulk_overwrite_queue_kind = None
+        self._closing = False
+        self._shutdown_wait_started = 0.0
+        self._shutdown_prompted_at = 0.0
+        self._normal_queue_controls = []
+        self._chinese_queue_controls = []
+        self._cross_queue_controls = []
+        self._data_root_controls = []
+        self.model_stats = load_persistent_json(STATS_PATH, {}, "モデル統計")
+        self.model_profiles = load_persistent_json(PROFILES_PATH, {}, "モデルプロファイル")
         self.benchmark_controller: core.TranslationController | None = None
         self.proofread_controller: core.TranslationController | None = None
+        self.proofread_thread = None
         self.llm_busy_count = 0
         self.llm_active_ids = set()
         self.llm_busy_since = None
@@ -580,7 +616,7 @@ class App(BaseTk):
 
         # 前回使用したLLM設定は通常セッションとは別に常時保存する。
         # APIキーだけは保存しない。
-        self.app_preferences = core.load_json(APP_PREFS_PATH, {})
+        self.app_preferences = load_persistent_json(APP_PREFS_PATH, {}, "アプリ設定")
         if not isinstance(self.app_preferences, dict):
             self.app_preferences = {}
         last_translation = self.app_preferences.get("translation_llm", {})
@@ -604,6 +640,7 @@ class App(BaseTk):
         self.glossary_path_var = tk.StringVar(value=str(DEFAULT_GLOSSARY))
         self.auto_glossary_status_var = tk.StringVar(value="自動用語作成: 待機中")
         self.auto_glossary_controller = None
+        self.auto_glossary_thread = None
         self.glossary_import_thread = None
         self.glossary_import_busy = False
         self.connection_var = tk.StringVar(value="LLM接続確認中…")
@@ -643,6 +680,7 @@ class App(BaseTk):
         self.diff_rows = []
         self.diff_row_by_key = {}
         self.diff_controller: core.TranslationController | None = None
+        self.diff_translate_thread = None
         self.diff_source_lang = "english"
         self.search_path_var = tk.StringVar(value="")  # legacy/internal compatibility; search is now game-scoped
         self.search_game_var = tk.StringVar(value="Crusader Kings III")
@@ -729,7 +767,7 @@ class App(BaseTk):
         # had no Japanese YAML must stay a source Mod after we generate Japanese).
         # False *relationships* live in the Translation Status/workspace caches and
         # are reset separately below.
-        _classification = core.load_json(MOD_CLASSIFICATION_CACHE_PATH, {})
+        _classification = load_persistent_json(MOD_CLASSIFICATION_CACHE_PATH, {}, "Mod分類キャッシュ")
         if not isinstance(_classification, dict):
             _classification = {}
         self.mod_classification_cache = {
@@ -744,7 +782,7 @@ class App(BaseTk):
         except Exception as exc:
             record_error("Mod初回分類キャッシュ移行", exc)
         self.mod_classification_lock = threading.Lock()
-        _relation_overrides = core.load_json(MOD_RELATION_OVERRIDES_PATH, {"schema": 1, "mods": {}})
+        _relation_overrides = load_persistent_json(MOD_RELATION_OVERRIDES_PATH, {"schema": 1, "mods": {}}, "Mod関連付け設定")
         if not isinstance(_relation_overrides, dict):
             _relation_overrides = {"schema": 1, "mods": {}}
         self.mod_relation_overrides = {
@@ -781,7 +819,98 @@ class App(BaseTk):
         self.after(750, self.discover_mod_locations)
         self.after(15000, self._workspace_autosave_tick)
 
-    # ---------------- UI ----------------
+    # ---------------- UI / operation state ----------------
+    @staticmethod
+    def _thread_is_active(thread):
+        return bool(thread and thread.is_alive())
+
+    @staticmethod
+    def _operation_pending(thread):
+        """Remain busy until the main thread consumes the worker completion event."""
+        return thread is not None
+
+    def _normal_queue_locked(self):
+        differential = self._operation_pending(self.differential_prepare_thread) and self._differential_prepare_mode == "normal"
+        overwrite = self._operation_pending(self.bulk_overwrite_thread) and self._bulk_overwrite_queue_kind in {None, "normal"}
+        shared_write = any(self._operation_pending(x) for x in (
+            self.data_root_move_thread,self.backup_restore_operation_thread,self.diagnostic_thread,
+        ))
+        return bool(self._closing or shared_write or self._operation_pending(self.worker) or differential or overwrite or self._operation_pending(self.single_overwrite_thread))
+
+    def _chinese_queue_locked(self):
+        differential = self._operation_pending(self.differential_prepare_thread) and self._differential_prepare_mode == "chinese"
+        overwrite = self._operation_pending(self.bulk_overwrite_thread) and self._bulk_overwrite_queue_kind in {None, "chinese"}
+        shared_write = any(self._operation_pending(x) for x in (
+            self.data_root_move_thread,self.backup_restore_operation_thread,self.diagnostic_thread,
+        ))
+        return bool(self._closing or shared_write or self._operation_pending(self.chinese_worker) or differential or overwrite or self._operation_pending(self.single_overwrite_thread))
+
+    def _active_file_operation_names(self):
+        checks = (
+            ("通常翻訳", self.worker),
+            ("中国語基準翻訳", self.chinese_worker),
+            ("差分翻訳準備", self.differential_prepare_thread),
+            ("単体上書き", self.single_overwrite_thread),
+            ("一括上書き", self.bulk_overwrite_thread),
+            ("バックアップ復元", self.backup_restore_operation_thread),
+            ("保存場所コピー", self.data_root_move_thread),
+            ("総合診断・修復", self.diagnostic_thread),
+            ("用語取り込み", self.glossary_import_thread),
+        )
+        return [name for name, thread in checks if self._operation_pending(thread)]
+
+    @staticmethod
+    def _set_control_group_state(controls, disabled):
+        state = "disabled" if disabled else "normal"
+        for widget in controls:
+            try:
+                widget.configure(state=state)
+            except (tk.TclError, AttributeError):
+                try:
+                    widget.state(["disabled"] if disabled else ["!disabled"])
+                except (tk.TclError, AttributeError):
+                    pass
+
+    def _refresh_operation_states(self):
+        """Keep unavailable operations visibly greyed out while workers own their data."""
+        normal_locked = self._normal_queue_locked()
+        chinese_locked = self._chinese_queue_locked()
+        self._set_control_group_state(self._normal_queue_controls, normal_locked)
+        self._set_control_group_state(self._chinese_queue_controls, chinese_locked)
+        self._set_control_group_state(self._cross_queue_controls, normal_locked or chinese_locked)
+
+        if hasattr(self, "start_btn"):
+            self.start_btn.configure(state="disabled" if normal_locked else "normal")
+        normal_can_control = self._thread_is_active(self.worker) and not (self.controller and self.controller.stop_event.is_set())
+        if hasattr(self, "pause_btn"):
+            self.pause_btn.configure(state="normal" if normal_can_control else "disabled")
+        if hasattr(self, "stop_btn"):
+            self.stop_btn.configure(state="normal" if normal_can_control else "disabled")
+        if hasattr(self, "chinese_start_btn"):
+            self.chinese_start_btn.configure(state="disabled" if chinese_locked else "normal")
+        chinese_can_control = self._thread_is_active(self.chinese_worker) and not (self.chinese_controller and self.chinese_controller.stop_event.is_set())
+        if hasattr(self, "chinese_pause_btn"):
+            self.chinese_pause_btn.configure(state="normal" if chinese_can_control else "disabled")
+        if hasattr(self, "chinese_stop_btn"):
+            self.chinese_stop_btn.configure(state="normal" if chinese_can_control else "disabled")
+
+        data_root_locked = bool(self._closing or self._active_file_operation_names())
+        self._set_control_group_state(self._data_root_controls, data_root_locked)
+
+    def _disable_all_interactive_controls(self):
+        """Grey out the complete UI after final shutdown has started."""
+        interactive=(ttk.Button,ttk.Menubutton,ttk.Checkbutton,ttk.Combobox,ttk.Entry,ttk.Treeview,tk.Button,tk.Entry,tk.Listbox)
+        stack=list(self.winfo_children())
+        while stack:
+            widget=stack.pop()
+            try: stack.extend(widget.winfo_children())
+            except (tk.TclError,AttributeError): pass
+            if isinstance(widget,interactive):
+                try: widget.configure(state="disabled")
+                except (tk.TclError,AttributeError):
+                    try: widget.state(["disabled"])
+                    except (tk.TclError,AttributeError): pass
+
     def _build_ui(self):
         style = ttk.Style(self)
         try: style.theme_use("clam")
@@ -1008,9 +1137,11 @@ class App(BaseTk):
         ttk.Label(src,textvariable=self.normal_status_var,foreground="#555",wraplength=430,justify="left").grid(row=3,column=0,sticky="w",pady=(4,0))
         ttk.Separator(src,orient="horizontal").grid(row=4,column=0,sticky="ew",pady=5)
         ttk.Label(src,text="出力先ルート").grid(row=5,column=0,sticky="w")
-        ttk.Entry(src,textvariable=self.normal_output_var).grid(row=6,column=0,sticky="ew",pady=(3,0))
+        self.normal_output_entry=ttk.Entry(src,textvariable=self.normal_output_var)
+        self.normal_output_entry.grid(row=6,column=0,sticky="ew",pady=(3,0))
         outbar=ttk.Frame(src); outbar.grid(row=7,column=0,sticky="ew",pady=(5,0))
-        ttk.Button(outbar,text="選択",command=self.pick_normal_output).pack(side="left")
+        self.normal_pick_output_btn=ttk.Button(outbar,text="選択",command=self.pick_normal_output)
+        self.normal_pick_output_btn.pack(side="left")
         ttk.Button(outbar,text="開く",command=lambda:self._open_path(Path(self.normal_output_var.get()))).pack(side="left",padx=(5,0))
 
         settings=ttk.LabelFrame(left,text="モデル / 接続（共通設定）",padding=9); settings.pack(fill="x",pady=(5,0))
@@ -1021,20 +1152,20 @@ class App(BaseTk):
 
         qbox=ttk.LabelFrame(right,text="通常翻訳キュー",padding=8); qbox.pack(fill="both",expand=True)
         qbar=ttk.Frame(qbox); qbar.pack(fill="x",pady=(0,5))
-        ttk.Button(qbar,text="選択削除",command=self.remove_queue).pack(side="left")
-        ttk.Button(qbar,text="全消去",command=self.clear_queue).pack(side="left",padx=(5,0))
-        ttk.Button(qbar,text="出力先変更",command=self.change_output).pack(side="left",padx=(10,0))
+        self.normal_remove_btn=ttk.Button(qbar,text="選択削除",command=self.remove_queue); self.normal_remove_btn.pack(side="left")
+        self.normal_clear_btn=ttk.Button(qbar,text="全消去",command=self.clear_queue); self.normal_clear_btn.pack(side="left",padx=(5,0))
+        self.normal_change_output_btn=ttk.Button(qbar,text="出力先変更",command=self.change_output); self.normal_change_output_btn.pack(side="left",padx=(10,0))
         ttk.Button(qbar,text="キャッシュを見る",command=self.view_selected_cache).pack(side="left",padx=(5,0))
-        ttk.Button(qbar,text="キャッシュを追加",command=self.import_cache_to_selected).pack(side="left",padx=(5,0))
+        self.normal_import_cache_btn=ttk.Button(qbar,text="キャッシュを追加",command=self.import_cache_to_selected); self.normal_import_cache_btn.pack(side="left",padx=(5,0))
 
         qbar2=ttk.Frame(qbox); qbar2.pack(fill="x",pady=(0,5))
-        ttk.Button(qbar2,text="選択項目を一括上書き",command=self.overwrite_selected_translation_to_mod).pack(side="left")
-        ttk.Button(qbar2,text="選択項目の翻訳語QAを実行",command=self.run_selected_translation_qa).pack(side="left",padx=(6,0))
-        ttk.Button(qbar2,text="用語集を自動作成",command=lambda:self.start_auto_glossary_generation("normal")).pack(side="left",padx=(6,0))
-        ttk.Button(qbar2,text="QA / 比較編集へ",command=lambda:self._send_pair_to_qa_or_diff("normal","review")).pack(side="left",padx=(6,0))
-        ttk.Button(qbar2,text="差分調査へ",command=lambda:self._send_pair_to_qa_or_diff("normal","diff")).pack(side="left",padx=(6,0))
-        ttk.Button(qbar,text="中国語基準キューへ渡す",command=lambda:self.transfer_selected_queue_to_opposite("normal",False)).pack(side="left",padx=(10,0))
-        ttk.Button(qbar2,text="中国語不足分だけをキューへ追加",command=lambda:self.transfer_selected_queue_to_opposite("normal",True)).pack(side="left",padx=(6,0))
+        self.normal_overwrite_btn=ttk.Button(qbar2,text="選択項目を一括上書き",command=self.overwrite_selected_translation_to_mod); self.normal_overwrite_btn.pack(side="left")
+        self.normal_qa_btn=ttk.Button(qbar2,text="選択項目の翻訳語QAを実行",command=self.run_selected_translation_qa); self.normal_qa_btn.pack(side="left",padx=(6,0))
+        self.normal_glossary_btn=ttk.Button(qbar2,text="用語集を自動作成",command=lambda:self.start_auto_glossary_generation("normal")); self.normal_glossary_btn.pack(side="left",padx=(6,0))
+        self.normal_send_qa_btn=ttk.Button(qbar2,text="QA / 比較編集へ",command=lambda:self._send_pair_to_qa_or_diff("normal","review")); self.normal_send_qa_btn.pack(side="left",padx=(6,0))
+        self.normal_send_diff_btn=ttk.Button(qbar2,text="差分調査へ",command=lambda:self._send_pair_to_qa_or_diff("normal","diff")); self.normal_send_diff_btn.pack(side="left",padx=(6,0))
+        self.normal_transfer_btn=ttk.Button(qbar,text="中国語基準キューへ渡す",command=lambda:self.transfer_selected_queue_to_opposite("normal",False)); self.normal_transfer_btn.pack(side="left",padx=(10,0))
+        self.normal_transfer_missing_btn=ttk.Button(qbar2,text="中国語不足分だけをキューへ追加",command=lambda:self.transfer_selected_queue_to_opposite("normal",True)); self.normal_transfer_missing_btn.pack(side="left",padx=(6,0))
         ttk.Label(qbox,text="上書き: 複数選択に対応。最初に上書き方針を1回だけ選び、完了済み項目をまとめて処理します。成功した項目は「上書き済み」と表示します。",foreground="#8a5a00",wraplength=900,justify="left").pack(fill="x",anchor="w",pady=(0,5))
 
         self.drop_hint=ttk.Label(qbox,textvariable=self.dnd_status_var,foreground="#666")
@@ -1054,6 +1185,13 @@ class App(BaseTk):
         sx.pack(side="bottom",fill="x")
         sy.pack(side="right",fill="y")
         self.queue_tree.pack(side="left",fill="both",expand=True)
+        self._normal_queue_controls=[
+            self.add_menu_button,self.normal_output_entry,self.normal_pick_output_btn,
+            self.normal_remove_btn,self.normal_clear_btn,self.normal_change_output_btn,self.normal_import_cache_btn,
+            self.normal_overwrite_btn,self.normal_qa_btn,self.normal_glossary_btn,self.normal_send_qa_btn,
+            self.normal_send_diff_btn,self.normal_transfer_btn,self.normal_transfer_missing_btn,self.queue_tree,
+        ]
+        self._cross_queue_controls.extend([self.normal_transfer_btn,self.normal_transfer_missing_btn])
 
         if DND_AVAILABLE:
             try:
@@ -1107,9 +1245,11 @@ class App(BaseTk):
         ttk.Label(src,textvariable=self.chinese_status_var,foreground="#555",wraplength=430,justify="left").grid(row=3,column=0,sticky="w",pady=(4,0))
         ttk.Separator(src,orient="horizontal").grid(row=4,column=0,sticky="ew",pady=5)
         ttk.Label(src,text="出力先ルート").grid(row=5,column=0,sticky="w")
-        ttk.Entry(src,textvariable=self.chinese_output_var).grid(row=6,column=0,sticky="ew",pady=(3,0))
+        self.chinese_output_entry=ttk.Entry(src,textvariable=self.chinese_output_var)
+        self.chinese_output_entry.grid(row=6,column=0,sticky="ew",pady=(3,0))
         outbar=ttk.Frame(src); outbar.grid(row=7,column=0,sticky="ew",pady=(5,0))
-        ttk.Button(outbar,text="選択",command=self.pick_chinese_output).pack(side="left")
+        self.chinese_pick_output_btn=ttk.Button(outbar,text="選択",command=self.pick_chinese_output)
+        self.chinese_pick_output_btn.pack(side="left")
         ttk.Button(outbar,text="開く",command=lambda:self._open_path(Path(self.chinese_output_var.get()))).pack(side="left",padx=(5,0))
 
         settings=ttk.LabelFrame(left,text="モデル / 接続（共通設定）",padding=9); settings.pack(fill="x",pady=(5,0))
@@ -1121,20 +1261,20 @@ class App(BaseTk):
 
         qbox=ttk.LabelFrame(right,text="中国語基準翻訳キュー",padding=8); qbox.pack(fill="both",expand=True)
         qbar=ttk.Frame(qbox); qbar.pack(fill="x",pady=(0,5))
-        ttk.Button(qbar,text="選択削除",command=self.remove_chinese_queue_selected).pack(side="left")
-        ttk.Button(qbar,text="全消去",command=self.clear_chinese_queue).pack(side="left",padx=(5,0))
-        ttk.Button(qbar,text="出力先変更",command=self.change_chinese_output_for_selected).pack(side="left",padx=(10,0))
+        self.chinese_remove_btn=ttk.Button(qbar,text="選択削除",command=self.remove_chinese_queue_selected); self.chinese_remove_btn.pack(side="left")
+        self.chinese_clear_btn=ttk.Button(qbar,text="全消去",command=self.clear_chinese_queue); self.chinese_clear_btn.pack(side="left",padx=(5,0))
+        self.chinese_change_output_btn=ttk.Button(qbar,text="出力先変更",command=self.change_chinese_output_for_selected); self.chinese_change_output_btn.pack(side="left",padx=(10,0))
         ttk.Button(qbar,text="キャッシュを見る",command=self.view_selected_chinese_cache).pack(side="left",padx=(5,0))
-        ttk.Button(qbar,text="キャッシュを追加",command=self.import_cache_to_selected_chinese).pack(side="left",padx=(5,0))
+        self.chinese_import_cache_btn=ttk.Button(qbar,text="キャッシュを追加",command=self.import_cache_to_selected_chinese); self.chinese_import_cache_btn.pack(side="left",padx=(5,0))
 
         qbar2=ttk.Frame(qbox); qbar2.pack(fill="x",pady=(0,5))
-        ttk.Button(qbar2,text="選択項目を一括上書き",command=self.overwrite_selected_chinese_translation).pack(side="left")
-        ttk.Button(qbar2,text="選択項目の翻訳語QAを実行",command=self.run_selected_chinese_qa).pack(side="left",padx=(6,0))
-        ttk.Button(qbar2,text="用語集を自動作成",command=lambda:self.start_auto_glossary_generation("chinese")).pack(side="left",padx=(6,0))
-        ttk.Button(qbar2,text="QA / 比較編集へ",command=lambda:self._send_pair_to_qa_or_diff("chinese","review")).pack(side="left",padx=(6,0))
-        ttk.Button(qbar2,text="差分調査へ",command=lambda:self._send_pair_to_qa_or_diff("chinese","diff")).pack(side="left",padx=(6,0))
-        ttk.Button(qbar,text="通常翻訳キューへ渡す",command=lambda:self.transfer_selected_queue_to_opposite("chinese",False)).pack(side="left",padx=(10,0))
-        ttk.Button(qbar2,text="英語不足分だけをキューへ追加",command=lambda:self.transfer_selected_queue_to_opposite("chinese",True)).pack(side="left",padx=(6,0))
+        self.chinese_overwrite_btn=ttk.Button(qbar2,text="選択項目を一括上書き",command=self.overwrite_selected_chinese_translation); self.chinese_overwrite_btn.pack(side="left")
+        self.chinese_qa_btn=ttk.Button(qbar2,text="選択項目の翻訳語QAを実行",command=self.run_selected_chinese_qa); self.chinese_qa_btn.pack(side="left",padx=(6,0))
+        self.chinese_glossary_btn=ttk.Button(qbar2,text="用語集を自動作成",command=lambda:self.start_auto_glossary_generation("chinese")); self.chinese_glossary_btn.pack(side="left",padx=(6,0))
+        self.chinese_send_qa_btn=ttk.Button(qbar2,text="QA / 比較編集へ",command=lambda:self._send_pair_to_qa_or_diff("chinese","review")); self.chinese_send_qa_btn.pack(side="left",padx=(6,0))
+        self.chinese_send_diff_btn=ttk.Button(qbar2,text="差分調査へ",command=lambda:self._send_pair_to_qa_or_diff("chinese","diff")); self.chinese_send_diff_btn.pack(side="left",padx=(6,0))
+        self.chinese_transfer_btn=ttk.Button(qbar,text="通常翻訳キューへ渡す",command=lambda:self.transfer_selected_queue_to_opposite("chinese",False)); self.chinese_transfer_btn.pack(side="left",padx=(10,0))
+        self.chinese_transfer_missing_btn=ttk.Button(qbar2,text="英語不足分だけをキューへ追加",command=lambda:self.transfer_selected_queue_to_opposite("chinese",True)); self.chinese_transfer_missing_btn.pack(side="left",padx=(6,0))
         ttk.Label(qbox,text="上書き: 複数選択に対応。最初に上書き方針を1回だけ選び、完了済み項目をまとめて処理します。成功した項目は「上書き済み」と表示します。",foreground="#8a5a00",wraplength=900,justify="left").pack(fill="x",anchor="w",pady=(0,5))
         cols=("mod","input","output","status")
         chinese_queue_table=ttk.Frame(qbox)
@@ -1151,6 +1291,13 @@ class App(BaseTk):
         sx.pack(side="bottom",fill="x")
         sy.pack(side="right",fill="y")
         self.chinese_queue_tree.pack(side="left",fill="both",expand=True)
+        self._chinese_queue_controls=[
+            self.chinese_add_menu_button,self.chinese_output_entry,self.chinese_pick_output_btn,
+            self.chinese_remove_btn,self.chinese_clear_btn,self.chinese_change_output_btn,self.chinese_import_cache_btn,
+            self.chinese_overwrite_btn,self.chinese_qa_btn,self.chinese_glossary_btn,self.chinese_send_qa_btn,
+            self.chinese_send_diff_btn,self.chinese_transfer_btn,self.chinese_transfer_missing_btn,self.chinese_queue_tree,
+        ]
+        self._cross_queue_controls.extend([self.chinese_transfer_btn,self.chinese_transfer_missing_btn])
 
         actions=ttk.Frame(right); actions.pack(fill="x",pady=(7,0))
         self.chinese_start_btn=ttk.Button(actions,text="翻訳開始",command=self.start_chinese_basis_translation); self.chinese_start_btn.pack(side="left")
@@ -1196,6 +1343,7 @@ class App(BaseTk):
 
     def _refresh_chinese_queue_tree(self):
         if not hasattr(self,"chinese_queue_tree"): return
+        app_state.ensure_queue_item_ids(self.chinese_queue_items)
         for x in self.chinese_queue_tree.get_children(): self.chinese_queue_tree.delete(x)
         for i,item in enumerate(self.chinese_queue_items):
             self.chinese_queue_tree.insert("","end",iid=f"zh_{i}",values=(
@@ -1206,6 +1354,8 @@ class App(BaseTk):
             ))
 
     def _append_chinese_queue(self, path, mod_name=""):
+        if self._chinese_queue_locked():
+            return None,"中国語基準キューは処理中のため変更できません。"
         path=Path(path); ok,msg=self._validate_chinese_input(path)
         if not ok: return None,msg
         key=str(path.resolve())
@@ -1216,6 +1366,7 @@ class App(BaseTk):
         output_root = Path(self.chinese_output_var.get().strip() or str(OUTPUT_ROOT/"中国語基準翻訳"))
         isolated_output = self._isolated_output_path(path, output_root, mod_name or "")
         item={"input":str(path),"mod_name":mod_name or path.name,"status":"待機","output":str(isolated_output),"output_isolated_v2":True}
+        app_state.ensure_queue_item_id(item)
         if path.is_dir() and path.name.lower()=="localization":
             item["mod_localization"]=str(path); item["mod_root"]=str(path.parent)
         elif path.is_dir() and (path/"localization").is_dir():
@@ -1224,6 +1375,7 @@ class App(BaseTk):
         return item,msg
 
     def remove_chinese_queue_selected(self):
+        if self._chinese_queue_locked(): return
         if not hasattr(self,"chinese_queue_tree"): return
         idx=[]
         for iid in self.chinese_queue_tree.selection():
@@ -1234,6 +1386,7 @@ class App(BaseTk):
         self._refresh_chinese_queue_tree(); self._save_workspace_state("chinese_queue_changed")
 
     def clear_chinese_queue(self):
+        if self._chinese_queue_locked(): return
         self.chinese_queue_items.clear(); self._refresh_chinese_queue_tree(); self._save_workspace_state("chinese_queue_cleared")
 
     def _selected_chinese_queue_item(self):
@@ -1250,6 +1403,7 @@ class App(BaseTk):
         return self.chinese_queue_items[idx] if 0 <= idx < len(self.chinese_queue_items) else None
 
     def change_chinese_output_for_selected(self):
+        if self._chinese_queue_locked(): return
         item=self._selected_chinese_queue_item()
         if not item: return
         raw=filedialog.askdirectory(title="選択した中国語基準翻訳の出力先を変更")
@@ -1277,6 +1431,7 @@ class App(BaseTk):
         self._open_path(cache.parent if cache.parent.exists() else cache)
 
     def import_cache_to_selected_chinese(self):
+        if self._chinese_queue_locked(): return
         item=self._selected_chinese_queue_item()
         if not item: return
         raw=filedialog.askopenfilename(title="中国語基準翻訳キャッシュを追加",filetypes=[("JSON","*.json"),("All files","*")])
@@ -1344,6 +1499,8 @@ class App(BaseTk):
         if raw:self.chinese_output_var.set(raw)
 
     def on_chinese_drop_paths(self,event):
+        if self._chinese_queue_locked():
+            return "break"
         paths=self._raw_drop_paths(event)
         added=0
         for path in paths:
@@ -1398,7 +1555,8 @@ class App(BaseTk):
         self._start_differential_prepare(entries, mode='chinese')
 
     def start_chinese_basis_translation(self):
-        if self.chinese_worker and self.chinese_worker.is_alive():
+        if self._closing: return
+        if self.chinese_worker is not None:
             return
         if not self.chinese_queue_items:
             raw=self.chinese_input_var.get().strip()
@@ -1420,12 +1578,14 @@ class App(BaseTk):
         self._start_chinese_selected([idx for idx, _item in entries], diff_requested=False)
 
     def _start_chinese_selected(self, selected_indices, diff_requested=False):
-        if self.chinese_worker and self.chinese_worker.is_alive(): return
+        if self._closing: return
+        if self.chinese_worker is not None: return
         selected_indices = sorted(set(int(x) for x in selected_indices if 0 <= int(x) < len(self.chinese_queue_items)))
         if not selected_indices:
             messagebox.showinfo(APP_NAME,"翻訳する項目を選択してください。"); return
         for idx in selected_indices:
             self._ensure_isolated_item_output(self.chinese_queue_items[idx], mode="chinese")
+            app_state.ensure_queue_item_id(self.chinese_queue_items[idx])
         self._refresh_chinese_queue_tree()
         out_root=Path(self.chinese_output_var.get().strip() or str(OUTPUT_ROOT/"中国語基準翻訳")); out_root.mkdir(parents=True,exist_ok=True)
         self.chinese_log.config(state="normal"); self.chinese_log.delete("1.0","end"); self.chinese_log.config(state="disabled")
@@ -1433,28 +1593,31 @@ class App(BaseTk):
         self.chinese_controller=core.TranslationController(progress_callback=lambda x:self.events.put(("chinese_progress",x)))
         self.chinese_start_btn.config(state="disabled"); self.chinese_pause_btn.config(state="normal", text="一時停止"); self.chinese_stop_btn.config(state="normal")
         settings={"provider":self.provider_var.get(),"url":self.url_var.get().strip(),"model":self.model_var.get().strip(),"api_key":self.api_key_var.get().strip(),"preset":self.preset_var.get(),"batch":max(1,self.batch_var.get()),"workers":max(1,self.workers_var.get()),"glossary":self.glossary_path_var.get().strip() or None,"autoqa":self.chinese_autoqa_var.get()}
-        snapshot=[(i, dict(self.chinese_queue_items[i])) for i in selected_indices]
+        snapshot=[(app_state.ensure_queue_item_id(self.chinese_queue_items[i]), dict(self.chinese_queue_items[i])) for i in selected_indices]
         def worker():
             try:
                 total=len(snapshot); completed=0; qa_errors=0; qa_warnings=0
-                for pos,(i,item) in enumerate(snapshot):
+                for pos,(item_id,item) in enumerate(snapshot):
                     if self.chinese_controller.stop_event.is_set(): break
-                    self.events.put(("chinese_queue_status",(i,"翻訳中")))
+                    live_item=app_state.queue_item_by_id(self.chinese_queue_items,item_id)
+                    if live_item is None:
+                        raise RuntimeError("中国語基準キュー項目が処理中に失われました")
+                    live_item["status"]="翻訳中"
+                    self.events.put(("chinese_queue_status",(item_id,"翻訳中")))
                     self.events.put(("chinese_queue_current",(pos+1,total,item.get("mod_name",""))))
-                    inp=Path(item["input"]); safe=re.sub(r'[^0-9A-Za-z_\-\u3040-\u30ff\u4e00-\u9fff]+','_',item.get("mod_name") or inp.name).strip("_") or f"item_{i+1}"
+                    inp=Path(item["input"]); safe=re.sub(r'[^0-9A-Za-z_\-\u3040-\u30ff\u4e00-\u9fff]+','_',item.get("mod_name") or inp.name).strip("_") or f"item_{pos+1}"
                     out=Path(item.get("output") or (out_root/safe)); out.mkdir(parents=True,exist_ok=True)
                     cache=Path(item.get("cache", "")) if item.get("cache") else self._new_cache_path(inp)
                     item["output"]=str(out); item["cache"]=str(cache)
-                    if 0 <= i < len(self.chinese_queue_items):
-                        self.chinese_queue_items[i]["output"]=str(out); self.chinese_queue_items[i]["cache"]=str(cache)
+                    live_item["output"]=str(out); live_item["cache"]=str(cache)
                     result=core.run_chinese_basis_translation(inp,out,model=settings["model"],url=settings["url"],workers=settings["workers"],batch_size=settings["batch"],cache_path=cache,controller=self.chinese_controller,glossary_path=settings["glossary"],preset=settings["preset"],auto_qa=settings["autoqa"],provider=settings["provider"],api_key=settings["api_key"])
                     qa_errors += int(result.get("qa_errors",0) or 0)
                     qa_warnings += int(result.get("qa_warnings",0) or 0)
-                    self._register_cache_job(self.chinese_queue_items[i], mode="chinese")
+                    self._register_cache_job(live_item, mode="chinese")
                     if result.get("interrupted"):
-                        self.events.put(("chinese_queue_status",(i,"中断"))); break
+                        live_item["status"]="中断"
+                        self.events.put(("chinese_queue_status",(item_id,"中断"))); break
                     completed += 1
-                    live_item=self.chinese_queue_items[i]
                     if live_item.get("diff_mode"):
                         lang_done = self._differential_language_completion(live_item, "simp_chinese")
                         if lang_done.get("language_complete"):
@@ -1467,10 +1630,12 @@ class App(BaseTk):
                         final_status = "完了（一部差分欠落あり）"
                     else:
                         final_status = "完了"
-                    self.events.put(("chinese_queue_status",(i,final_status)))
+                    live_item["status"]=final_status
+                    self.events.put(("chinese_queue_status",(item_id,final_status)))
                 self.events.put(("chinese_done",{"interrupted":self.chinese_controller.stop_event.is_set(),"processed_files":completed,"jobs":0,"output":str(out_root),"queue_total":total,"qa_errors":qa_errors,"qa_warnings":qa_warnings}))
             except Exception as exc: self.events.put(("chinese_error",str(exc)))
         self.chinese_worker=threading.Thread(target=worker,daemon=True); self.chinese_worker.start()
+        self._refresh_operation_states()
 
     def toggle_chinese_pause(self):
         if not self.chinese_controller:
@@ -1932,7 +2097,9 @@ class App(BaseTk):
         box.columnconfigure(1, weight=1)
         ttk.Label(box, text="保存フォルダ").grid(row=0, column=0, sticky="w")
         ttk.Entry(box, textvariable=self.data_root_var, state="readonly").grid(row=0, column=1, sticky="ew", padx=(8,8))
-        ttk.Button(box, text="保存場所を変更", command=self.change_data_root).grid(row=0, column=2)
+        self.data_root_change_btn=ttk.Button(box, text="保存場所を変更", command=self.change_data_root)
+        self.data_root_change_btn.grid(row=0, column=2)
+        self._data_root_controls=[self.data_root_change_btn]
         ttk.Button(box, text="フォルダを開く", command=lambda:self._open_path(DATA_ROOT)).grid(row=0, column=3, padx=(6,0))
         ttk.Button(box, text="エラーログを開く", command=lambda:self._open_path(LOG_ROOT)).grid(row=2, column=2, pady=(10,0))
         ttk.Button(box, text="診断ログを収集", command=self.collect_error_logs).grid(row=2, column=3, padx=(6,0), pady=(10,0))
@@ -1987,7 +2154,10 @@ class App(BaseTk):
         text.config(state="disabled")
 
     def change_data_root(self):
-        if self.data_root_move_thread and self.data_root_move_thread.is_alive():
+        blockers=[name for name in self._active_file_operation_names() if name!="保存場所コピー"]
+        if blockers:
+            return
+        if self.data_root_move_thread is not None:
             messagebox.showinfo(APP_NAME,'保存場所の変更はすでにバックグラウンドで実行中です。'); return
         old_root=DATA_ROOT
         chosen=filedialog.askdirectory(title='Paradox Localization Translator フォルダの保存先を選択',initialdir=str(old_root.parent if old_root.exists() else Path.home()))
@@ -2009,6 +2179,7 @@ class App(BaseTk):
             except Exception as exc:
                 self.events.put(('data_root_copy_error',str(exc)))
         self.data_root_move_thread=threading.Thread(target=work,daemon=True,name='data-root-move'); self.data_root_move_thread.start()
+        self._refresh_operation_states()
 
     def _apply_data_root_change(self, old_root_raw, new_root_raw, copied, current_glossary, queue_snapshot):
         global DATA_ROOT
@@ -2030,16 +2201,17 @@ class App(BaseTk):
                 self.glossary_path_var.set(str(DATA_ROOT/rel) if rel is not None else str(DEFAULT_GLOSSARY))
             except Exception:
                 if not current_glossary or current_glossary==str(old_root/'設定'/'glossary.json'): self.glossary_path_var.set(str(DEFAULT_GLOSSARY))
-            self.model_stats=core.load_json(STATS_PATH,{}); self.model_profiles=core.load_json(PROFILES_PATH,{})
+            self.model_stats=load_persistent_json(STATS_PATH,{},"モデル統計"); self.model_profiles=load_persistent_json(PROFILES_PATH,{},"モデルプロファイル")
             # Large status cache is intentionally not decoded here; its worker does that.
             self.mod_status_cache={'version':MOD_STATUS_CACHE_VERSION,'items':{}}
-            _cls=core.load_json(MOD_CLASSIFICATION_CACHE_PATH,{'schema':2,'mods':{}}); _cls=_cls if isinstance(_cls,dict) else {'schema':2,'mods':{}}
+            _cls=load_persistent_json(MOD_CLASSIFICATION_CACHE_PATH,{'schema':2,'mods':{}},"Mod分類キャッシュ"); _cls=_cls if isinstance(_cls,dict) else {'schema':2,'mods':{}}
             self.mod_classification_cache={'schema':2,'mods':dict(_cls.get('mods') or {}),'updated_at':_cls.get('updated_at','')}
-            _ov=core.load_json(MOD_RELATION_OVERRIDES_PATH,{'schema':1,'mods':{}}); _ov=_ov if isinstance(_ov,dict) else {'schema':1,'mods':{}}
+            _ov=load_persistent_json(MOD_RELATION_OVERRIDES_PATH,{'schema':1,'mods':{}},"Mod関連付け設定"); _ov=_ov if isinstance(_ov,dict) else {'schema':1,'mods':{}}
             self.mod_relation_overrides={'schema':1,'mods':dict(_ov.get('mods') or {}),'updated_at':_ov.get('updated_at','')}
             self._restore_shared_mod_state_cache(); self.refresh_profiles_ui(); self._restore_cached_mod_status(); self._restore_diagnostic_state(); self._refresh_backup_restore_entries()
             self.progress_text.set('保存場所を変更しました')
-            messagebox.showinfo(APP_NAME,'保存場所を変更しました。\n\n'+str(DATA_ROOT)+'\n\n'+('既存データもコピーしました。' if copied else '今後作成するデータから新しい場所を使用します。'))
+            if not self._closing:
+                messagebox.showinfo(APP_NAME,'保存場所を変更しました。\n\n'+str(DATA_ROOT)+'\n\n'+('既存データもコピーしました。' if copied else '今後作成するデータから新しい場所を使用します。'))
         except Exception as exc:
             record_error('保存場所切替適用',exc); messagebox.showerror(APP_NAME,f'保存場所の変更に失敗しました。\n{exc}')
 
@@ -2101,35 +2273,117 @@ class App(BaseTk):
         self.wait_window(dlg)
         return result["action"]
 
-    def _perform_app_exit(self):
-        """終了時の保存規則を一箇所に固定してからUIを閉じる。"""
+    def _save_exit_state(self):
+        """Persist recoverable state before requesting worker shutdown."""
         self._save_llm_preferences()
         self._save_translation_status_state("app_exit")
         self._save_diagnostic_state("app_exit")
         self._save_shared_mod_state_cache("app_exit")
         self._save_workspace_state("app_exit")
-        if self.monitor_thread and self.monitor_thread.is_alive():
-            self.monitor_stop_event.set()
-            if self.monitor_llm_controller:
-                self.monitor_llm_controller.request_stop(save=False)
-
         running=bool(self.worker and self.worker.is_alive())
         unfinished=any(not self._queue_item_is_completed(item) for item in self.queue_items)
         if running:
-            # 翻訳中の終了は必ず復元可能状態として保存する。
             self._write_session_file(active=True,restore_on_launch=True)
-            if self.controller:
-                self.controller.request_stop(save=True)
         elif self.queue_items and unfinished:
-            # 待機中/中断済みの未完了キューだけを終了時保存する。
             self._write_session_file(active=False,restore_on_launch=True)
         else:
-            # 空キュー、または全項目完了済みなら古いセッションを残さない。
             self._delete_session()
 
-        if self.chinese_worker and self.chinese_worker.is_alive() and self.chinese_controller:
-            self.chinese_controller.request_stop(save=True)
-        _mark_runtime_clean_exit()
+    def _request_worker_shutdown(self):
+        self.monitor_stop_event.set()
+        self.mod_research_stop_event.set()
+        controllers = (
+            (self.controller, True),
+            (self.chinese_controller, True),
+            (self.monitor_llm_controller, False),
+            (self.benchmark_controller, False),
+            (self.proofread_controller, False),
+            (self.diff_controller, False),
+            (self.auto_glossary_controller, False),
+        )
+        for controller, save in controllers:
+            if controller:
+                try:
+                    controller.request_stop(save=save)
+                except Exception as exc:
+                    record_error("終了時停止要求",exc)
+
+    def _active_shutdown_threads(self):
+        checks = (
+            ("通常翻訳", self.worker),
+            ("中国語基準翻訳", self.chinese_worker),
+            ("常時監視", self.monitor_thread),
+            ("Mod調査", self.mod_research_thread),
+            ("差分翻訳準備", self.differential_prepare_thread),
+            ("単体上書き", self.single_overwrite_thread),
+            ("一括上書き", self.bulk_overwrite_thread),
+            ("バックアップ復元", self.backup_restore_operation_thread),
+            ("保存場所コピー", self.data_root_move_thread),
+            ("総合診断・修復", self.diagnostic_thread),
+            ("用語取り込み", self.glossary_import_thread),
+            ("モデル速度テスト", getattr(self,"benchmark_worker",None)),
+            ("翻訳検索", self.search_thread),
+            ("QA解析", self.review_worker),
+            ("差分解析", self.diff_load_worker),
+            ("差分翻訳", self.diff_translate_thread),
+            ("AI校正", self.proofread_thread),
+            ("自動用語作成", self.auto_glossary_thread),
+        )
+        return [(name,thread) for name,thread in checks if self._operation_pending(thread)]
+
+    def _begin_graceful_exit(self):
+        if self._closing:
+            return
+        self._closing=True
+        self._shutdown_wait_started=time.monotonic()
+        self._shutdown_prompted_at=0.0
+        self._save_exit_state()
+        self._request_worker_shutdown()
+        self._refresh_operation_states()
+        self._disable_all_interactive_controls()
+        active=self._active_shutdown_threads()
+        if not active:
+            self._finalize_app_exit(force=False)
+            return
+        names=" / ".join(name for name,_thread in active)
+        self.progress_text.set("終了準備中 — 保存と処理停止を待っています")
+        self.chinese_progress_var.set("終了準備中 — 保存と処理停止を待っています")
+        self.title(f"{APP_NAME} {APP_VERSION} — 終了準備中")
+        self.after(100,self._poll_shutdown_completion)
+
+    def _poll_shutdown_completion(self):
+        if not self._closing:
+            return
+        active=self._active_shutdown_threads()
+        if not active:
+            self._finalize_app_exit(force=False)
+            return
+        now=time.monotonic()
+        names=" / ".join(name for name,_thread in active)
+        self.progress_text.set("終了準備中: "+names)
+        if now-self._shutdown_wait_started >= 10 and now-self._shutdown_prompted_at >= 10:
+            self._shutdown_prompted_at=now
+            force=messagebox.askyesno(
+                APP_NAME,
+                "保存または処理の停止を待っています。\n\n"
+                f"動作中: {names}\n\n"
+                "［はい］: 強制終了する（処理中の最新バッチは失われる可能性があります）\n"
+                "［いいえ］: 安全な停止を待ち続ける",
+                icon="warning",
+            )
+            if force:
+                self._finalize_app_exit(force=True)
+                return
+        self.after(100,self._poll_shutdown_completion)
+
+    def _finalize_app_exit(self, force=False):
+        """Destroy Tk only after workers stopped; forced exits remain marked unclean."""
+        if not force:
+            self._save_exit_state()
+            _mark_runtime_clean_exit()
+        else:
+            record_error("強制終了",detail="worker完了前にユーザーが強制終了を選択しました")
+
         try:
             if self._fatal_log_handle:
                 self._fatal_log_handle.flush()
@@ -3717,7 +3971,7 @@ Mod更新後だけ追加翻訳:
         self.backup_restore_btn.config(state='normal' if target and Path(target).exists() else 'disabled')
 
     def _restore_selected_backup(self):
-        if self.backup_restore_operation_thread and self.backup_restore_operation_thread.is_alive():
+        if self.backup_restore_operation_thread is not None:
             messagebox.showinfo(APP_NAME,'バックアップ復元はすでにバックグラウンドで実行中です。'); return
         sel=self.backup_restore_tree.selection() if hasattr(self,'backup_restore_tree') else ()
         e=self.backup_restore_entry_map.get(sel[0]) if sel else None
@@ -3754,6 +4008,7 @@ Mod更新後だけ追加翻訳:
             except Exception as exc:
                 record_error('バックアップ復元',exc,str(target)); self.events.put(('backup_restore_error',str(exc)))
         self.backup_restore_operation_thread=threading.Thread(target=work,daemon=True,name='backup-restore-operation'); self.backup_restore_operation_thread.start()
+        self._refresh_operation_states()
 
 
 
@@ -4281,7 +4536,7 @@ Mod更新後だけ追加翻訳:
         self._save_diagnostic_state("all_conflict_choices_changed")
 
     def _start_localization_diagnostic(self, repair=False):
-        if self.diagnostic_thread and self.diagnostic_thread.is_alive():
+        if self.diagnostic_thread is not None:
             messagebox.showinfo(APP_NAME,"総合診断はすでにバックグラウンドで実行中です。")
             return
         roots=self._selected_diagnostic_roots()
@@ -4413,6 +4668,7 @@ Mod更新後だけ追加翻訳:
             except Exception as exc:
                 self.events.put(("diagnostic_error",{"generation":generation,"error":str(exc)}))
         self.diagnostic_thread=threading.Thread(target=work,daemon=True); self.diagnostic_thread.start()
+        self._refresh_operation_states()
 
     def _refresh_diagnostic_action_state(self, analyses=None, integration_summary=None):
         analyses=list(self.diagnostic_last_analyses if analyses is None else (analyses or []))
@@ -5147,7 +5403,7 @@ Mod更新後だけ追加翻訳:
         self.mod_status_summary_var.set('前回の翻訳状況をバックグラウンドで復元中…')
         def work():
             try:
-                data = core.load_json(MOD_STATUS_CACHE_PATH, {"version": MOD_STATUS_CACHE_VERSION, "items": {}})
+                data = load_persistent_json(MOD_STATUS_CACHE_PATH, {"version": MOD_STATUS_CACHE_VERSION, "items": {}}, "翻訳状況キャッシュ")
                 if not isinstance(data, dict) or data.get("version") != MOD_STATUS_CACHE_VERSION:
                     data = {"version": MOD_STATUS_CACHE_VERSION, "items": {}}
                 by_path={}
@@ -5974,6 +6230,8 @@ Mod更新後だけ追加翻訳:
 
     def transfer_selected_queue_to_opposite(self, queue_kind="normal", missing_only=False):
         """Transfer selected jobs to the opposite source-language queue, optionally only real missing keys."""
+        if self._normal_queue_locked() or self._chinese_queue_locked():
+            return
         items = self._selected_queue_items_for_kind(queue_kind)
         if not items:
             label = "中国語基準" if queue_kind == "chinese" else "通常"
@@ -6415,7 +6673,7 @@ Mod更新後だけ追加翻訳:
             return False,str(e)
 
     def _overwrite_single_item_interactive(self, item, prefer_external=True):
-        if self.single_overwrite_thread and self.single_overwrite_thread.is_alive():
+        if self.single_overwrite_thread is not None:
             messagebox.showinfo(APP_NAME,'上書き処理はすでにバックグラウンドで実行中です。'); return False
         if not self._queue_item_is_completed(item):
             messagebox.showinfo(APP_NAME,'上書きできるのは翻訳完了済みの項目です。'); return False
@@ -6448,6 +6706,7 @@ Mod更新後だけ追加翻訳:
             except Exception as exc:
                 record_error('単体上書きバックグラウンド処理',exc,target_label); self.events.put(('single_overwrite_done',(item,False,str(exc),target_label)))
         self.single_overwrite_thread=threading.Thread(target=work,daemon=True,name='single-overwrite'); self.single_overwrite_thread.start()
+        self._refresh_operation_states()
         return True
 
     def _apply_single_overwrite_done(self, item, ok, reason, target_label):
@@ -6457,13 +6716,13 @@ Mod更新後だけ追加翻訳:
             self._refresh_queue_tree(); self._refresh_chinese_queue_tree(); self._save_workspace_state('overwrite_completed')
             self.progress_text.set(f'上書き完了: {target_label}')
             self._refresh_backup_restore_entries()
-            messagebox.showinfo(APP_NAME,f'上書きが完了しました。\n\n対象: {target_label}\n{reason}')
+            if not self._closing: messagebox.showinfo(APP_NAME,f'上書きが完了しました。\n\n対象: {target_label}\n{reason}')
         else:
             self.progress_text.set('上書きできませんでした')
-            if reason not in {'キャンセル'}: messagebox.showinfo(APP_NAME,f'上書きできませんでした。\n{reason}')
+            if reason not in {'キャンセル'} and not self._closing: messagebox.showinfo(APP_NAME,f'上書きできませんでした。\n{reason}')
 
     def _bulk_overwrite_queue_entries(self, entries, queue_kind="normal"):
-        if self.bulk_overwrite_thread and self.bulk_overwrite_thread.is_alive():
+        if self.bulk_overwrite_thread is not None:
             messagebox.showinfo(APP_NAME,'一括上書きはすでにバックグラウンドで実行中です。'); return
         eligible=[]; skipped_unfinished=0
         for idx,item in entries:
@@ -6510,10 +6769,13 @@ Mod更新後だけ追加翻訳:
                 except Exception as exc:
                     failed+=1; details.append(f'{name}: 失敗 ({exc})'); record_error('一括上書き',exc,name)
             self.events.put(('bulk_overwrite_done',(success,skipped,failed,details,queue_kind)))
+        self._bulk_overwrite_queue_kind=queue_kind
         self.bulk_overwrite_thread=threading.Thread(target=work,daemon=True,name='bulk-overwrite'); self.bulk_overwrite_thread.start()
+        self._refresh_operation_states()
 
     def _apply_bulk_overwrite_done(self, success, skipped, failed, details, queue_kind):
         self.bulk_overwrite_thread=None
+        self._bulk_overwrite_queue_kind=None
         self._refresh_queue_tree(); self._refresh_chinese_queue_tree(); self._save_workspace_state('bulk_overwrite_completed')
         if self.queue_items and all(self._queue_item_is_completed(x) for x in self.queue_items): self._delete_session()
         self.progress_text.set(f'一括上書き完了: 成功 {success} / スキップ {skipped} / 失敗 {failed}')
@@ -6521,7 +6783,7 @@ Mod更新後だけ追加翻訳:
         if details:
             summary+='\n\n詳細:\n'+'\n'.join(details[:12])
             if len(details)>12: summary+=f'\n…ほか {len(details)-12}件'
-        messagebox.showinfo(APP_NAME,summary)
+        if not self._closing: messagebox.showinfo(APP_NAME,summary)
         self._refresh_backup_restore_entries()
 
     def overwrite_selected_translation_to_mod(self, item_override=None, prefer_external=True):
@@ -6938,7 +7200,7 @@ Mod更新後だけ追加翻訳:
             return str(Path(p).absolute())
 
     def _load_cache_registry(self) -> dict:
-        data = core.load_json(CACHE_REGISTRY_PATH, {})
+        data = load_persistent_json(CACHE_REGISTRY_PATH, {}, "キャッシュ台帳")
         return data if isinstance(data, dict) else {}
 
     def _save_cache_registry(self, data: dict):
@@ -7199,12 +7461,15 @@ Mod更新後だけ追加翻訳:
         return diff
 
     def _append_queue(self,p:Path,out:Path|None=None,status="待機",cache:Path|None=None):
+        if self._normal_queue_locked():
+            return None
         p = Path(p)
         if not p.exists():
             return
         out=out or self._default_output(p)
         cache_path = cache or self._new_cache_path(p)
         item={"input":str(p),"output":str(out),"status":status,"cache":str(cache_path),"output_isolated_v2":True}
+        app_state.ensure_queue_item_id(item)
         self.queue_items.append(item)
         self._refresh_queue_tree(); self._save_workspace_state("normal_queue_changed")
 
@@ -7325,6 +7590,8 @@ Mod更新後だけ追加翻訳:
         return event.action if hasattr(event,"action") else None
 
     def on_drop_paths(self, event):
+        if self._normal_queue_locked():
+            return "break"
         added = 0
         ignored = []
         for p in self._raw_drop_paths(event):
@@ -7342,6 +7609,7 @@ Mod更新後だけ追加翻訳:
         return event.action if hasattr(event, "action") else None
 
     def _refresh_queue_tree(self):
+        app_state.ensure_queue_item_ids(self.queue_items)
         for x in self.queue_tree.get_children(): self.queue_tree.delete(x)
         for i,item in enumerate(self.queue_items):
             inp=Path(item.get("input", ""))
@@ -7354,6 +7622,7 @@ Mod更新後だけ追加翻訳:
             ))
 
     def remove_queue(self):
+        if self._normal_queue_locked(): return
         sels=sorted((int(x) for x in self.queue_tree.selection()),reverse=True)
         for i in sels:
             if 0<=i<len(self.queue_items): self.queue_items.pop(i)
@@ -7365,7 +7634,7 @@ Mod更新後だけ追加翻訳:
         self._save_workspace_state("normal_queue_changed")
 
     def clear_queue(self):
-        if self.worker and self.worker.is_alive(): return
+        if self._normal_queue_locked(): return
         self.queue_items.clear(); self._refresh_queue_tree(); self._delete_session(); self._save_workspace_state("normal_queue_cleared")
 
     def _selected_queue_item(self):
@@ -7408,6 +7677,7 @@ Mod更新後だけ追加翻訳:
         text_widget.config(state="disabled")
 
     def import_cache_to_selected(self):
+        if self._normal_queue_locked(): return
         item = self._selected_queue_item()
         if not item:
             return
@@ -7463,6 +7733,7 @@ Mod更新後だけ追加翻訳:
             messagebox.showerror(APP_NAME, str(exc))
 
     def change_output(self):
+        if self._normal_queue_locked(): return
         sel=self.queue_tree.selection()
         if not sel:
             messagebox.showinfo(APP_NAME, "出力先を変更する項目を、キュー一覧から先に選択してください。\n\n通常は変更不要です。既定では『Paradox Localization Translator/翻訳結果』へ出力されます。全体の保存場所は［設定］タブから変更できます。")
@@ -7541,8 +7812,8 @@ Mod更新後だけ追加翻訳:
 
     def _start_differential_prepare(self, entries, mode='normal'):
         active_worker=self.chinese_worker if mode=='chinese' else self.worker
-        if active_worker and active_worker.is_alive(): return
-        if self.differential_prepare_thread and self.differential_prepare_thread.is_alive():
+        if active_worker is not None: return
+        if self.differential_prepare_thread is not None:
             messagebox.showinfo(APP_NAME,'差分翻訳の準備はすでにバックグラウンドで実行中です。'); return
         entries=list(entries or [])
         if not entries:
@@ -7550,7 +7821,7 @@ Mod更新後だけ追加翻訳:
         repair_enabled=bool(self.repair_var.get())
         if mode=='chinese': self.chinese_progress_var.set(f'差分をバックグラウンド解析中… 0/{len(entries)}')
         else: self.progress_text.set(f'差分をバックグラウンド解析中… 0/{len(entries)}')
-        def work():
+        def prepare_work():
             unavailable=[]; notices=[]; prepared=[]
             source_language='simp_chinese' if mode=='chinese' else 'english'
             for pos,(idx,item) in enumerate(entries,1):
@@ -7570,12 +7841,23 @@ Mod更新後だけ追加翻訳:
                 else:
                     item['status']='待機'; prepared.append(idx)
             self.events.put(('differential_prepare_done',(mode,prepared,unavailable,notices)))
+        def work():
+            try:
+                prepare_work()
+            except Exception as exc:
+                self.events.put(('differential_prepare_error',(mode,str(exc))))
+        self._differential_prepare_mode=mode
         self.differential_prepare_thread=threading.Thread(target=work,daemon=True,name=f'differential-prepare-{mode}'); self.differential_prepare_thread.start()
+        self._refresh_operation_states()
 
     def _apply_differential_prepare_done(self, mode, prepared_indices, unavailable, language_complete_notices):
         self.differential_prepare_thread=None
+        self._differential_prepare_mode=None
         if mode=='chinese': self._refresh_chinese_queue_tree()
         else: self._refresh_queue_tree()
+        if self._closing:
+            self._save_workspace_state("differential_prepare_stopped_for_exit")
+            return
         if unavailable:
             msg='差分スナップショットがなく、翻訳状況にも判定材料となる欠損がないため、差分を判定できない項目があります。\n\n'+'\n'.join(unavailable[:10])
             if language_complete_notices: msg+='\n\n言語別に完了している項目:\n'+'\n'.join(language_complete_notices[:10])
@@ -7590,7 +7872,8 @@ Mod更新後だけ追加翻訳:
             messagebox.showinfo(APP_NAME,'原文差分も翻訳状況の欠損もありません。')
 
     def start_queue(self):
-        if self.worker and self.worker.is_alive():
+        if self._closing: return
+        if self.worker is not None:
             return
         if not self.queue_items:
             messagebox.showinfo(APP_NAME,"翻訳キューにフォルダまたはファイルを追加してください。"); return
@@ -7609,12 +7892,14 @@ Mod更新後だけ追加翻訳:
         self._start_normal_selected([idx for idx, _item in entries], diff_requested=False)
 
     def _start_normal_selected(self, selected_indices, diff_requested=False):
-        if self.worker and self.worker.is_alive(): return
+        if self._closing: return
+        if self.worker is not None: return
         selected_indices = sorted(set(int(x) for x in selected_indices if 0 <= int(x) < len(self.queue_items)))
         if not selected_indices:
             messagebox.showinfo(APP_NAME, "翻訳する項目を選択してください."); return
         for idx in selected_indices:
             self._ensure_isolated_item_output(self.queue_items[idx], mode="normal")
+            app_state.ensure_queue_item_id(self.queue_items[idx])
         self._refresh_queue_tree()
         self._clear_log(); self.progress["value"]=0
         self.llm_operation = "翻訳"
@@ -7630,27 +7915,32 @@ Mod更新後だけ追加翻訳:
             "batch":max(1,self.batch_var.get()), "workers":max(1,self.workers_var.get()),
             "glossary":self.glossary_path_var.get().strip() or None, "dual":False,
             "repair":self.repair_var.get(), "autoqa":self.autoqa_var.get()}
-        self._active_normal_indices = selected_indices
+        self._active_normal_item_ids = [app_state.ensure_queue_item_id(self.queue_items[idx]) for idx in selected_indices]
         mode_label = "差分だけ翻訳" if diff_requested else "一からすべて翻訳"
         self._append_log(f"翻訳開始: {len(selected_indices)}項目 / {mode_label}")
         self._append_log(f"接続: {self.provider_var.get()} / {self.model_var.get().strip() or '(model未指定)'} / batch {max(1,self.batch_var.get())} / workers {max(1,self.workers_var.get())}")
         self.start_btn.config(state="disabled"); self.pause_btn.config(state="normal",text="一時停止"); self.stop_btn.config(state="normal")
         self.worker=threading.Thread(target=self._queue_worker,daemon=True); self.worker.start()
+        self._refresh_operation_states()
         self.save_session(active=True)
 
     def _queue_worker(self):
         interrupted = False
         completed = 0
-        active = list(getattr(self, "_active_normal_indices", range(len(self.queue_items))))
+        active = list(getattr(self, "_active_normal_item_ids", []))
+        if not active:
+            app_state.ensure_queue_item_ids(self.queue_items)
+            active = [app_state.ensure_queue_item_id(item) for item in self.queue_items]
         try:
-            for pos,i in enumerate(active):
-                if not (0 <= i < len(self.queue_items)):
-                    continue
-                item=self.queue_items[i]
+            for pos,item_id in enumerate(active):
+                item=app_state.queue_item_by_id(self.queue_items,item_id)
+                if item is None:
+                    raise RuntimeError("通常翻訳キュー項目が処理中に失われました")
+                i=app_state.queue_index_by_id(self.queue_items,item_id)
                 self.current_queue_index=i
                 item["status"]="翻訳中"; self.events.put(("queue_refresh",None))
                 self.events.put(("normal_log", f"開始: {item.get('mod_name') or Path(item.get('input','')).name} ({pos+1}/{len(active)})"))
-                self._checkpoint({"queue_index":i})
+                self._checkpoint({"queue_index":i,"queue_item_id":item_id})
                 cache_file=Path(self._ensure_item_cache(item))
                 st=getattr(self,"translation_start_settings",{})
                 result=core.run_translation(
@@ -7743,7 +8033,7 @@ Mod更新後だけ追加翻訳:
     def _restore_shared_mod_state_cache(self):
         """Use the shared cache as a safety fallback if the primary cache files are missing/incomplete."""
         try:
-            data = core.load_json(SHARED_MOD_STATE_CACHE_PATH, {})
+            data = load_persistent_json(SHARED_MOD_STATE_CACHE_PATH, {}, "Mod共通状態")
             if not isinstance(data, dict):
                 return
             cached_cls = data.get("classification") if isinstance(data.get("classification"), dict) else {}
@@ -7812,7 +8102,7 @@ Mod更新後だけ追加翻訳:
         if not force_disk and self._restore_status_snapshot_cache is not None:
             return self._restore_status_snapshot_cache
         try:
-            data = core.load_json(TRANSLATION_STATUS_STATE_PATH, {})
+            data = load_persistent_json(TRANSLATION_STATUS_STATE_PATH, {}, "翻訳状況状態")
             data = data if isinstance(data, dict) else {}
             self._restore_status_snapshot_cache = data
             return data
@@ -7852,7 +8142,7 @@ Mod更新後だけ追加翻訳:
         self.diagnostic_summary_var.set('前回診断をバックグラウンドで復元中…')
         def work():
             try:
-                data=core.load_json(DIAGNOSTIC_STATE_PATH,{})
+                data=load_persistent_json(DIAGNOSTIC_STATE_PATH,{},"総合診断状態")
                 self.events.put(('diagnostic_state_restored',data if isinstance(data,dict) else {}))
             except Exception as exc:
                 self.events.put(('diagnostic_state_restore_error',str(exc)))
@@ -8036,7 +8326,7 @@ Mod更新後だけ追加翻訳:
             item.pop(key, None)
 
     def _restore_workspace_state(self):
-        data=core.load_json(WORKSPACE_STATE_PATH,{})
+        data=load_persistent_json(WORKSPACE_STATE_PATH,{},"ワークスペース状態")
         if not isinstance(data,dict) or not data:
             return
         self._workspace_restore_data=data
@@ -8375,6 +8665,8 @@ Mod更新後だけ追加翻訳:
             record_error("差分訳保存", e); messagebox.showerror(APP_NAME, str(e))
 
     def translate_diff_items(self, all_missing=False):
+        if self._closing:
+            return
         if self.diff_controller is not None:
             messagebox.showinfo(APP_NAME, "差分翻訳はすでに実行中です。")
             return
@@ -8415,7 +8707,8 @@ Mod更新後だけ追加翻訳:
                 self.events.put(("diff_translate_stopped", None))
             except Exception as e:
                 self.events.put(("diff_translate_error", str(e)))
-        threading.Thread(target=work, daemon=True).start()
+        self.diff_translate_thread=threading.Thread(target=work, daemon=True,name="diff-translate")
+        self.diff_translate_thread.start()
 
     def pick_search_folder(self):
         # Legacy compatibility: translation search is now game-scoped.
@@ -8807,6 +9100,8 @@ Mod更新後だけ追加翻訳:
             self.dst_text.delete("1.0","end"); self.dst_text.insert("1.0",self.review_source_entries.get(key,""))
 
     def ai_proofread_selected(self):
+        if self._closing:
+            return
         key=self._selected_review_key()
         if not key: return
         text=self.dst_text.get("1.0","end-1c"); src=self.review_source_entries.get(key,"")
@@ -8827,7 +9122,8 @@ Mod更新後だけ追加翻訳:
             except core.StopRequested:
                 self.events.put(("proofread_stopped",None))
             except Exception as e: self.events.put(("proofread_error",str(e)))
-        threading.Thread(target=work,daemon=True).start()
+        self.proofread_thread=threading.Thread(target=work,daemon=True,name="proofread")
+        self.proofread_thread.start()
 
     def bulk_unify_review_terms(self):
         src = Path(self.review_src_var.get()) if self.review_src_var.get() else None
@@ -8892,6 +9188,8 @@ Mod更新後だけ追加翻訳:
         return []
 
     def start_auto_glossary_generation(self, origin):
+        if self._closing:
+            return
         if self.glossary_import_busy:
             messagebox.showinfo(APP_NAME, "用語取り込み中です。完了してから自動用語作成を実行してください。")
             return
@@ -8923,7 +9221,8 @@ Mod更新後だけ追加翻訳:
                 self.events.put(("auto_glossary_error","停止しました"))
             except Exception as exc:
                 self.events.put(("auto_glossary_error",str(exc)))
-        threading.Thread(target=work,daemon=True).start()
+        self.auto_glossary_thread=threading.Thread(target=work,daemon=True,name="auto-glossary")
+        self.auto_glossary_thread.start()
 
     # ---------------- glossary ----------------
     def _glossary_variant_metadata(self):
@@ -9542,9 +9841,11 @@ Mod更新後だけ追加翻訳:
         self.log.config(state="normal"); self.log.delete("1.0","end"); self.log.config(state="disabled")
 
     def _poll_events(self):
+        budget=app_state.EventBudget(max_items=200,max_seconds=0.012)
         try:
-            while True:
+            while budget.allow_next():
                 kind,payload=self.events.get_nowait()
+                budget.record()
                 if kind=="models":
                     self.model_combo["values"]=payload
                     if payload and self.model_var.get() not in payload: self.model_var.set(payload[0])
@@ -9647,24 +9948,32 @@ Mod更新後だけ追加翻訳:
                     target,safety_root=payload
                     self._refresh_diagnostic_targets()
                     self._refresh_backup_restore_entries()
-                    messagebox.showinfo(APP_NAME,f"復元しました。\n\n対象: {target}\n復元前退避: {safety_root}\n\n翻訳状況は次回の再調査で再判定されます。")
+                    if not self._closing: messagebox.showinfo(APP_NAME,f"復元しました。\n\n対象: {target}\n復元前退避: {safety_root}\n\n翻訳状況は次回の再調査で再判定されます。")
                 elif kind=="backup_restore_error":
                     self.backup_restore_operation_thread=None
                     self.backup_restore_summary_var.set("バックアップ復元エラー")
-                    messagebox.showerror(APP_NAME,f"バックアップ復元に失敗しました。\n{payload}")
+                    if not self._closing: messagebox.showerror(APP_NAME,f"バックアップ復元に失敗しました。\n{payload}")
                 elif kind=="differential_prepare_progress":
                     mode,pos,total,name=payload
                     if mode=='chinese': self.chinese_progress_var.set(f"差分解析中… {pos}/{total} — {name}")
                     else: self.progress_text.set(f"差分解析中… {pos}/{total} — {name}")
                 elif kind=="differential_prepare_done":
                     self._apply_differential_prepare_done(*payload)
+                elif kind=="differential_prepare_error":
+                    mode,msg=payload
+                    self.differential_prepare_thread=None
+                    self._differential_prepare_mode=None
+                    if mode=='chinese': self.chinese_progress_var.set("差分解析エラー")
+                    else: self.progress_text.set("差分解析エラー")
+                    record_error("差分翻訳準備",detail=str(msg))
+                    messagebox.showerror(APP_NAME,"差分解析に失敗しました。\n"+str(msg))
                 elif kind=="data_root_copy_done":
                     self._apply_data_root_change(*payload)
                 elif kind=="data_root_copy_error":
                     self.data_root_move_thread=None
                     self.progress_text.set("保存場所変更エラー")
                     record_error("保存場所バックグラウンドコピー",detail=str(payload))
-                    messagebox.showerror(APP_NAME,f"保存場所の変更に失敗しました。\n{payload}")
+                    if not self._closing: messagebox.showerror(APP_NAME,f"保存場所の変更に失敗しました。\n{payload}")
                 elif kind=="progress":
                     if payload.get("kind")=="llm_activity":
                         self._handle_llm_activity(payload,"翻訳")
@@ -9680,9 +9989,10 @@ Mod更新後だけ追加翻訳:
                         self.progress["value"]=100
                         self._append_log(f"完了: {Path(payload.get('file','')).name}")
                 elif kind=="chinese_queue_status":
-                    idx,status=payload
-                    if 0 <= idx < len(self.chinese_queue_items):
-                        self.chinese_queue_items[idx]["status"]=status
+                    item_id,status=payload
+                    item=app_state.queue_item_by_id(self.chinese_queue_items,item_id)
+                    if item is not None:
+                        item["status"]=status
                         self._refresh_chinese_queue_tree()
                         self._save_workspace_state("chinese_progress")
                 elif kind=="chinese_queue_current":
@@ -9717,13 +10027,13 @@ Mod更新後だけ追加翻訳:
                         msg=f"中国語基準翻訳が完了しました。\n翻訳語QA: error {qa_e} / warning {qa_w}"
                         if source_notice:
                             msg += "\n\n" + source_notice
-                        messagebox.showinfo(APP_NAME,msg)
+                        if not self._closing: messagebox.showinfo(APP_NAME,msg)
                 elif kind=="chinese_error":
                     record_error("中国語基準翻訳", detail=str(payload)); self.chinese_worker=None; self.chinese_controller=None
                     self.chinese_start_btn.config(state="normal"); self.chinese_pause_btn.config(state="disabled", text="一時停止"); self.chinese_stop_btn.config(state="disabled")
                     self.chinese_progress_var.set("エラー")
                     self._append_chinese_log("エラー: "+str(payload)); self._set_llm_idle("LLM 待機中","中国語基準翻訳でエラーが発生しました")
-                    messagebox.showerror(APP_NAME,"中国語基準翻訳エラー: "+str(payload))
+                    if not self._closing: messagebox.showerror(APP_NAME,"中国語基準翻訳エラー: "+str(payload))
                 elif kind=="benchmark_progress":
                     if payload.get("kind")=="llm_activity": self._handle_llm_activity(payload,"モデル速度テスト")
                     elif payload.get("kind")=="llm_response": self._show_llm_response(payload, monitor=False)
@@ -9739,9 +10049,9 @@ Mod更新後だけ追加翻訳:
                     i,total,model,err=payload; self.benchmark_status_var.set(f"{model} 失敗 ({i}/{total})")
                     self._append_log(f"[速度テスト失敗] {model}: {err}")
                 elif kind=="benchmark_done":
-                    self.benchmark_status_var.set("速度テスト完了"); self.benchmark_stop_btn.config(state="disabled"); self.benchmark_controller=None; self._set_llm_idle("LLM 待機中","速度テストが完了しました")
+                    self.benchmark_status_var.set("速度テスト完了"); self.benchmark_stop_btn.config(state="disabled"); self.benchmark_controller=None; self.benchmark_worker=None; self._set_llm_idle("LLM 待機中","速度テストが完了しました")
                 elif kind=="benchmark_stopped":
-                    self.benchmark_status_var.set("速度テストを停止しました"); self.benchmark_stop_btn.config(state="disabled"); self.benchmark_controller=None; self._set_llm_idle("LLM 待機中","速度テストを停止しました")
+                    self.benchmark_status_var.set("速度テストを停止しました"); self.benchmark_stop_btn.config(state="disabled"); self.benchmark_controller=None; self.benchmark_worker=None; self._set_llm_idle("LLM 待機中","速度テストを停止しました")
                 elif kind=="mod_locations_discovered":
                     self.detected_mod_locations=list(payload or [])
                     # Remember Steam library roots so a custom/secondary drive does not
@@ -9878,7 +10188,7 @@ Mod更新後だけ追加翻訳:
                         self._populate_diagnostic_results(shown)
                         self.diagnostic_summary_var.set("競合の優先先を指定してください")
                         self._save_diagnostic_state("choices_required")
-                        messagebox.showwarning(APP_NAME,
+                        if not self._closing: messagebox.showwarning(APP_NAME,
                             "修復前に本体 / 日本語化Modの重複キーについて優先先の指定が必要です。\n\n"
                             +str(payload.get("message", ""))+
                             "\n\n総合診断の『本体/日本語化Mod重複』行を選択し、\n『本体を残す』または『日本語化Modを残す』を設定してください。\n"
@@ -9919,7 +10229,7 @@ Mod更新後だけ追加翻訳:
                         self.diagnostic_running_repair=False
                         self.diagnostic_summary_var.set("診断エラー")
                         record_error("総合診断",detail=str(payload.get("error","")))
-                        messagebox.showerror(APP_NAME,"総合診断エラー: "+str(payload.get("error","")))
+                        if not self._closing: messagebox.showerror(APP_NAME,"総合診断エラー: "+str(payload.get("error","")))
                 elif kind=="translation_search_mods_done":
                     if int(payload.get("generation",-1)) == self.search_mod_refresh_generation:
                         rows=list(payload.get("rows") or [])
@@ -9983,11 +10293,12 @@ Mod更新後だけ追加翻訳:
                         msg=f"選択した翻訳が完了しました。\n完了: {info.get('processed_items', 0)}/{info.get('selected_total', 0)}項目"
                         if source_notice:
                             msg += "\n\n" + source_notice
-                        messagebox.showinfo(APP_NAME,msg)
+                        if not self._closing: messagebox.showinfo(APP_NAME,msg)
                 elif kind=="fatal":
                     self.worker=None
                     self._append_log("エラー: "+str(payload))
-                    record_error("翻訳処理 fatal", detail=str(payload)); self._finish_controls(); self._set_llm_idle("LLM 待機中","翻訳処理でエラーが発生しました"); messagebox.showerror(APP_NAME,payload)
+                    record_error("翻訳処理 fatal", detail=str(payload)); self._finish_controls(); self._set_llm_idle("LLM 待機中","翻訳処理でエラーが発生しました")
+                    if not self._closing: messagebox.showerror(APP_NAME,payload)
                 elif kind=="diff_translate_progress":
                     if payload.get("kind")=="llm_activity": self._handle_llm_activity(payload,"差分翻訳")
                     elif payload.get("kind")=="llm_response": self._show_llm_response(payload, monitor=False)
@@ -9995,31 +10306,36 @@ Mod更新後だけ追加翻訳:
                 elif kind=="diff_translate_status":
                     i,total,key=payload; self.diff_message_var.set(f"差分翻訳中 {i}/{total} — {key}")
                 elif kind=="diff_translate_done":
-                    self.diff_controller=None; self._set_llm_idle("LLM 待機中",f"差分翻訳 {payload}件が完了しました"); self.load_diff_inspector(); self.diff_message_var.set(f"差分翻訳完了: {payload}件")
+                    self.diff_controller=None; self.diff_translate_thread=None; self._set_llm_idle("LLM 待機中",f"差分翻訳 {payload}件が完了しました")
+                    if not self._closing: self.load_diff_inspector()
+                    self.diff_message_var.set(f"差分翻訳完了: {payload}件")
                 elif kind=="diff_translate_stopped":
-                    self.diff_controller=None; self._set_llm_idle("LLM 待機中","差分翻訳を停止しました"); self.diff_message_var.set("差分翻訳を停止しました")
+                    self.diff_controller=None; self.diff_translate_thread=None; self._set_llm_idle("LLM 待機中","差分翻訳を停止しました"); self.diff_message_var.set("差分翻訳を停止しました")
                 elif kind=="diff_translate_error":
-                    record_error("差分翻訳", detail=str(payload)); self.diff_controller=None; self._set_llm_idle("LLM 待機中","差分翻訳でエラーが発生しました"); self.diff_message_var.set("差分翻訳エラー: "+str(payload)); messagebox.showerror(APP_NAME,"差分翻訳エラー: "+str(payload))
+                    record_error("差分翻訳", detail=str(payload)); self.diff_controller=None; self.diff_translate_thread=None; self._set_llm_idle("LLM 待機中","差分翻訳でエラーが発生しました"); self.diff_message_var.set("差分翻訳エラー: "+str(payload))
+                    if not self._closing: messagebox.showerror(APP_NAME,"差分翻訳エラー: "+str(payload))
                 elif kind=="auto_glossary_progress":
                     if payload.get("kind")=="llm_activity": self._handle_llm_activity(payload,"自動用語作成")
                     elif payload.get("kind")=="llm_response": self._show_llm_response(payload, monitor=False)
                     elif payload.get("kind")=="llm_metric": self._record_metric(payload.get("metric"))
                 elif kind=="auto_glossary_done":
-                    self.auto_glossary_controller=None
+                    self.auto_glossary_controller=None; self.auto_glossary_thread=None
                     self._set_llm_idle("LLM 待機中","自動用語作成が完了しました")
                     self.load_glossary_ui(silent=True)
                     self.auto_glossary_status_var.set(f"追加 {payload.get('added',0)} / 候補 {payload.get('total',0)} / 表記揺れ {payload.get('conflicts',0)}")
-                    messagebox.showinfo(APP_NAME, f"自動用語作成が完了しました。\n候補: {payload.get('total',0)}件\n新規追加: {payload.get('added',0)}件\n複数訳を統一: {payload.get('conflicts',0)}件")
+                    if not self._closing: messagebox.showinfo(APP_NAME, f"自動用語作成が完了しました。\n候補: {payload.get('total',0)}件\n新規追加: {payload.get('added',0)}件\n複数訳を統一: {payload.get('conflicts',0)}件")
                 elif kind=="auto_glossary_error":
-                    self.auto_glossary_controller=None
+                    self.auto_glossary_controller=None; self.auto_glossary_thread=None
                     self._set_llm_idle("LLM 待機中","自動用語作成を終了しました")
                     self.auto_glossary_status_var.set("自動用語作成: "+str(payload))
-                    if str(payload)!="停止しました": messagebox.showerror(APP_NAME,"自動用語作成エラー: "+str(payload))
+                    if str(payload)!="停止しました" and not self._closing: messagebox.showerror(APP_NAME,"自動用語作成エラー: "+str(payload))
                 elif kind=="glossary_import_status":
                     self.auto_glossary_status_var.set(str(payload))
                 elif kind=="glossary_import_needs_fallback":
                     self.glossary_import_thread=None
                     self._set_glossary_import_busy(False,"対応原文をゲーム本体から探せます")
+                    if self._closing:
+                        continue
                     messagebox.showinfo(APP_NAME,
                         "選択した日本語localizationの近くに、対応する英語 / 簡体字中国語原文が見つかりませんでした。\n\n"
                         "対象ゲーム本体のlocalizationを同じキーで自動照合できます。ゲーム本体に存在しないMod独自キーはスキップされます。")
@@ -10034,7 +10350,7 @@ Mod更新後だけ追加翻訳:
                     self.glossary_import_thread=None
                     self._set_glossary_import_busy(False,"用語取り込み完了")
                     if payload.get("invalid"):
-                        messagebox.showinfo(APP_NAME,"取り込み可能な日本語localizationを確認できませんでした。")
+                        if not self._closing: messagebox.showinfo(APP_NAME,"取り込み可能な日本語localizationを確認できませんでした。")
                     else:
                         label=payload.get("label","用語取り込み")
                         result=payload.get("result") or {}
@@ -10048,24 +10364,27 @@ Mod更新後だけ追加翻訳:
                         if stats:
                             lines += ["",f"日本語キー: {stats.get('japanese_keys',0)}件",f"英語対応: {stats.get('english',0)}件",f"中国語対応: {stats.get('chinese',0)}件",f"対応なし: {stats.get('unmatched',0)}件"]
                             if stats.get("unmatched",0): lines.append(f"ゲーム本体に対応原文がないため {stats.get('unmatched',0)}件をスキップしました。")
-                        messagebox.showinfo(APP_NAME,"\n".join(lines))
+                        if not self._closing: messagebox.showinfo(APP_NAME,"\n".join(lines))
                 elif kind=="glossary_import_error":
                     self.glossary_import_thread=None
                     self._set_glossary_import_busy(False,"用語取り込みエラー")
-                    messagebox.showerror(APP_NAME,"用語取り込みエラー: "+str(payload))
+                    if not self._closing: messagebox.showerror(APP_NAME,"用語取り込みエラー: "+str(payload))
                 elif kind=="proofread_progress":
                     if payload.get("kind")=="llm_activity": self._handle_llm_activity(payload,"AI誤字脱字校正")
                     elif payload.get("kind")=="llm_response": self._show_llm_response(payload, monitor=False)
                     elif payload.get("kind")=="llm_metric": self._record_metric(payload.get("metric"))
                 elif kind=="proofread":
-                    self.dst_text.delete("1.0","end"); self.dst_text.insert("1.0",payload); self.issue_text.set("AI校正結果を表示しました。内容を確認して保存してください。"); self.proofread_controller=None; self._set_llm_idle("LLM 待機中","AI校正が完了しました")
+                    self.dst_text.delete("1.0","end"); self.dst_text.insert("1.0",payload); self.issue_text.set("AI校正結果を表示しました。内容を確認して保存してください。"); self.proofread_controller=None; self.proofread_thread=None; self._set_llm_idle("LLM 待機中","AI校正が完了しました")
                 elif kind=="proofread_stopped":
-                    self.issue_text.set("AI校正を停止しました。"); self.proofread_controller=None; self._set_llm_idle("LLM 待機中","AI校正を停止しました")
+                    self.issue_text.set("AI校正を停止しました。"); self.proofread_controller=None; self.proofread_thread=None; self._set_llm_idle("LLM 待機中","AI校正を停止しました")
                 elif kind=="proofread_error":
                     record_error("AI校正", detail=str(payload))
-                    self.issue_text.set("AI校正エラー: "+payload); self.proofread_controller=None; self._set_llm_idle("LLM 待機中","AI校正でエラーが発生しました")
-        except queue.Empty: pass
-        self.after(100,self._poll_events)
+                    self.issue_text.set("AI校正エラー: "+payload); self.proofread_controller=None; self.proofread_thread=None; self._set_llm_idle("LLM 待機中","AI校正でエラーが発生しました")
+        except queue.Empty:
+            pass
+        self._refresh_operation_states()
+        delay=1 if not self.events.empty() else 100
+        self.after(delay,self._poll_events)
 
     def _finish_controls(self):
         self.start_btn.config(state="normal"); self.pause_btn.config(state="disabled",text="一時停止"); self.stop_btn.config(state="disabled"); self.controller=None
@@ -10087,7 +10406,7 @@ Mod更新後だけ追加翻訳:
         if action == "minimize":
             self.iconify()
             return
-        self._perform_app_exit()
+        self._begin_graceful_exit()
 
 
 
