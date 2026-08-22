@@ -13,7 +13,7 @@ main = importlib.import_module("main")
 
 
 def test_relation_algorithm_change_invalidates_old_status_cache_generation():
-    assert main.MOD_STATUS_CACHE_VERSION == 13
+    assert main.MOD_STATUS_CACHE_VERSION == 14
     assert main.core.TRANSLATION_RELATION_ALGORITHM_VERSION == 2
     assert main._translation_status_snapshot_is_current({"schema": 1}) is False
     assert main._translation_status_snapshot_is_current({
@@ -23,7 +23,7 @@ def test_relation_algorithm_change_invalidates_old_status_cache_generation():
     }) is False
     assert main._translation_status_snapshot_is_current({
         "schema": 2,
-        "mod_status_cache_version": 13,
+        "mod_status_cache_version": 14,
         "relation_algorithm_version": 2,
     }) is True
 

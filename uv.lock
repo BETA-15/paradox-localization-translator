@@ -4,5 +4,5 @@ requires-python = ">=3.10"
 
 [[package]]
 name = "paradox-localization-translator"
-version = "0.11.61"
+version = "0.11.62"
 source = { virtual = "." }
