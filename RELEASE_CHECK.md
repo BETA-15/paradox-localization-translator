@@ -1,3 +1,16 @@
+# v0.11.54 追加確認
+
+- [x] `VERSION` / `APP_VERSION` を 0.11.54 に統一
+- [x] バックアップ復元タブを左右2ブロック構成へ変更
+- [x] 左側Mod選択を常時表示Listboxへ変更
+- [x] Mod一覧へ縦・横スクロールを追加
+- [x] 履歴表へ縦・横スクロールを常設
+- [x] Shift+ホイールで履歴表を横スクロール可能
+- [x] 選択中Mod名を右ブロック上部へ常時表示
+- [x] 詳細欄のwraplengthを右ブロック幅へ追従
+- [x] `python -m py_compile app/main.py app/translator_core.py` PASS
+- [x] XvfbでGUI起動スモークテスト PASS（8秒間例外なし）
+
 # v0.11.53 追加確認
 
 - [x] `VERSION` / `APP_VERSION` を 0.11.53 に統一

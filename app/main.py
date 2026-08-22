@@ -36,7 +36,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.53"
+APP_VERSION = "0.11.54"
 MOD_STATUS_CACHE_VERSION = 11
 
 
@@ -3209,49 +3209,104 @@ Mod更新後だけ追加翻訳:
         ttk.Label(head,text='バックアップ復元 — ゲーム → Mod → 履歴からロールバック',font=('',14,'bold')).pack(side='left')
         ttk.Label(head,textvariable=self.backup_restore_summary_var).pack(side='right')
         ttk.Label(t,text=(
-            'バックアップはゲームごと・Modごとに整理して表示します。ゲームを選び、次にModを選ぶと、そのModの上書き・総合診断・復元前退避の履歴だけを確認できます。'
-            ' v0.11.52以降の新規バックアップも「ゲーム / Mod / 種別 / 履歴」の階層へ保存します。既存バックアップは移動せず、この画面で可能な範囲を自動分類します。'
+            '左側でゲーム・Modを選び、右側でそのModのバックアップ履歴を確認して復元します。'
+            ' 検索はMod名とバックアップ履歴の両方を絞り込みます。既存バックアップは移動せず、この画面で可能な範囲を自動分類します。'
         ),foreground='#555',wraplength=1150,justify='left').pack(fill='x',pady=(6,8))
 
-        filters=ttk.LabelFrame(t,text='1. ゲームとModを選択 / 検索',padding=6); filters.pack(fill='x')
-        ttk.Label(filters,text='ゲーム:').grid(row=0,column=0,sticky='w')
-        self.backup_restore_game_combo=ttk.Combobox(filters,textvariable=self.backup_restore_game_var,state='readonly',width=28)
-        self.backup_restore_game_combo.grid(row=0,column=1,sticky='w',padx=(6,18))
-        ttk.Label(filters,text='Mod:').grid(row=0,column=2,sticky='w')
-        self.backup_restore_mod_combo=ttk.Combobox(filters,textvariable=self.backup_restore_mod_var,state='readonly',width=42)
-        self.backup_restore_mod_combo.grid(row=0,column=3,sticky='ew',padx=(6,18))
-        ttk.Button(filters,text='バックアップ一覧を再読込',command=self._refresh_backup_restore_entries).grid(row=0,column=4,sticky='e')
-        ttk.Label(filters,text='検索:').grid(row=1,column=0,sticky='w',pady=(7,0))
-        self.backup_restore_search_entry=ttk.Entry(filters,textvariable=self.backup_restore_search_var)
-        self.backup_restore_search_entry.grid(row=1,column=1,columnspan=3,sticky='ew',padx=(6,18),pady=(7,0))
-        self.backup_restore_search_entry.bind('<KeyRelease>',self._on_backup_restore_search_changed)
-        ttk.Button(filters,text='検索クリア',command=self._clear_backup_restore_search).grid(row=1,column=4,sticky='e',pady=(7,0))
-        filters.columnconfigure(3,weight=1)
+        # 2ブロック構成: 左=対象選択、右=履歴/復元
+        panes=ttk.Panedwindow(t,orient='horizontal')
+        panes.pack(fill='both',expand=True)
+
+        left=ttk.LabelFrame(panes,text='1. ゲーム / Mod を選択',padding=8)
+        right=ttk.LabelFrame(panes,text='2. バックアップ履歴を選択して復元',padding=8)
+        panes.add(left,weight=1)
+        panes.add(right,weight=3)
+
+        ttk.Label(left,text='ゲーム:').pack(anchor='w')
+        self.backup_restore_game_combo=ttk.Combobox(left,textvariable=self.backup_restore_game_var,state='readonly')
+        self.backup_restore_game_combo.pack(fill='x',pady=(3,8))
         self.backup_restore_game_combo.bind('<<ComboboxSelected>>',self._on_backup_restore_game_changed)
-        self.backup_restore_mod_combo.bind('<<ComboboxSelected>>',lambda _e:self._render_backup_restore_entries())
 
-        action=ttk.Frame(t); action.pack(fill='x',pady=(8,0))
-        ttk.Label(action,text='2. 履歴を選択して復元:').pack(side='left')
+        ttk.Label(left,text='検索:').pack(anchor='w')
+        searchrow=ttk.Frame(left); searchrow.pack(fill='x',pady=(3,8))
+        self.backup_restore_search_entry=ttk.Entry(searchrow,textvariable=self.backup_restore_search_var)
+        self.backup_restore_search_entry.pack(side='left',fill='x',expand=True)
+        self.backup_restore_search_entry.bind('<KeyRelease>',self._on_backup_restore_search_changed)
+        ttk.Button(searchrow,text='クリア',command=self._clear_backup_restore_search).pack(side='left',padx=(6,0))
+
+        ttk.Label(left,text='Mod一覧:').pack(anchor='w')
+        modbox=ttk.Frame(left); modbox.pack(fill='both',expand=True,pady=(3,8))
+        self.backup_restore_mod_list=tk.Listbox(modbox,exportselection=False,activestyle='dotbox')
+        mod_sy=ttk.Scrollbar(modbox,orient='vertical',command=self.backup_restore_mod_list.yview)
+        mod_sx=ttk.Scrollbar(modbox,orient='horizontal',command=self.backup_restore_mod_list.xview)
+        self.backup_restore_mod_list.configure(yscrollcommand=mod_sy.set,xscrollcommand=mod_sx.set)
+        modbox.rowconfigure(0,weight=1); modbox.columnconfigure(0,weight=1)
+        self.backup_restore_mod_list.grid(row=0,column=0,sticky='nsew')
+        mod_sy.grid(row=0,column=1,sticky='ns')
+        mod_sx.grid(row=1,column=0,sticky='ew')
+        self.backup_restore_mod_list.bind('<<ListboxSelect>>',self._on_backup_restore_mod_list_selected)
+        ttk.Button(left,text='バックアップ一覧を再読込',command=self._refresh_backup_restore_entries).pack(fill='x')
+
+        action=ttk.Frame(right); action.pack(fill='x')
+        self.backup_restore_selected_mod_label=ttk.Label(action,text='選択Mod: すべてのMod',font=('',11,'bold'))
+        self.backup_restore_selected_mod_label.pack(side='left',fill='x',expand=True)
         self.backup_restore_btn=ttk.Button(action,text='選択バックアップを復元',command=self._restore_selected_backup,state='disabled')
-        self.backup_restore_btn.pack(side='left',padx=(8,0))
+        self.backup_restore_btn.pack(side='right',padx=(8,0))
 
-        treebox=ttk.Frame(t); treebox.pack(fill='both',expand=True,pady=(8,0))
+        treebox=ttk.Frame(right); treebox.pack(fill='both',expand=True,pady=(8,0))
         cols=('generation','time','kind','state','target','format')
         self.backup_restore_tree=ttk.Treeview(treebox,columns=cols,show='headings',selectmode='browse',height=18)
         for c,txt,w in (
-            ('generation','作成回数',110),('time','作成日時',165),('kind','バックアップ種別',180),
-            ('state','保存されている状態 / 原文',380),('target','復元先',460),('format','形式',120)):
-            self.backup_restore_tree.heading(c,text=txt); self.backup_restore_tree.column(c,width=w,minwidth=w,stretch=False,anchor='w')
+            ('generation','作成回数',90),('time','作成日時',165),('kind','バックアップ種別',155),
+            ('state','保存されている状態 / 原文',330),('target','復元先',390),('format','形式',110)):
+            self.backup_restore_tree.heading(c,text=txt)
+            self.backup_restore_tree.column(c,width=w,minwidth=80,stretch=False,anchor='w')
         sy=ttk.Scrollbar(treebox,orient='vertical',command=self.backup_restore_tree.yview)
         sx=ttk.Scrollbar(treebox,orient='horizontal',command=self.backup_restore_tree.xview)
         self.backup_restore_tree.configure(yscrollcommand=sy.set,xscrollcommand=sx.set)
         treebox.rowconfigure(0,weight=1); treebox.columnconfigure(0,weight=1)
-        self.backup_restore_tree.grid(row=0,column=0,sticky='nsew'); sy.grid(row=0,column=1,sticky='ns'); sx.grid(row=1,column=0,sticky='ew')
+        self.backup_restore_tree.grid(row=0,column=0,sticky='nsew')
+        sy.grid(row=0,column=1,sticky='ns')
+        sx.grid(row=1,column=0,sticky='ew')
         self.backup_restore_tree.bind('<<TreeviewSelect>>',self._on_backup_restore_selected)
+        self.backup_restore_tree.bind('<Shift-MouseWheel>',self._on_backup_restore_tree_shift_wheel)
+        self.backup_restore_tree.bind('<Shift-Button-4>',lambda _e:self.backup_restore_tree.xview_scroll(-3,'units'))
+        self.backup_restore_tree.bind('<Shift-Button-5>',lambda _e:self.backup_restore_tree.xview_scroll(3,'units'))
         self._enable_tree_sort(self.backup_restore_tree)
-        detail=ttk.LabelFrame(t,text='選択バックアップの詳細',padding=6); detail.pack(fill='x',pady=(8,0))
-        ttk.Label(detail,textvariable=self.backup_restore_detail_var,foreground='#555',wraplength=1120,justify='left').pack(anchor='w')
+
+        detail=ttk.LabelFrame(right,text='選択バックアップの詳細',padding=6)
+        detail.pack(fill='x',pady=(8,0))
+        self.backup_restore_detail_label=ttk.Label(detail,textvariable=self.backup_restore_detail_var,foreground='#555',wraplength=760,justify='left')
+        self.backup_restore_detail_label.pack(anchor='w',fill='x')
+        right.bind('<Configure>',self._on_backup_restore_right_resize)
         self._refresh_backup_restore_entries()
+
+    def _on_backup_restore_right_resize(self, event=None):
+        if hasattr(self,'backup_restore_detail_label') and event is not None:
+            try:
+                self.backup_restore_detail_label.configure(wraplength=max(360,event.width-40))
+            except Exception:
+                pass
+
+    def _on_backup_restore_tree_shift_wheel(self, event):
+        if not hasattr(self,'backup_restore_tree'):
+            return 'break'
+        delta=getattr(event,'delta',0)
+        if delta:
+            step=-1 if delta > 0 else 1
+            # macOSの細かなトラックパッド入力でも横移動が見える量にする
+            self.backup_restore_tree.xview_scroll(step*3,'units')
+        return 'break'
+
+    def _on_backup_restore_mod_list_selected(self, _event=None):
+        if not hasattr(self,'backup_restore_mod_list'):
+            return
+        sel=self.backup_restore_mod_list.curselection()
+        if not sel:
+            return
+        value=self.backup_restore_mod_list.get(sel[0])
+        self.backup_restore_mod_var.set(value)
+        self._render_backup_restore_entries()
 
     def _infer_legacy_backup_target(self, backup_name):
         token=str(backup_name or '')
@@ -3364,9 +3419,21 @@ Mod更新後だけ追加翻訳:
                      if (game == 'すべてのゲーム' or str(e.get('game')) == game)
                      and self._backup_restore_entry_matches_search(e,query)},key=str.casefold)
         values=['すべてのMod']+mods
-        self.backup_restore_mod_combo['values']=values
-        if self.backup_restore_mod_var.get() not in values:
-            self.backup_restore_mod_var.set(values[0])
+        if hasattr(self,'backup_restore_mod_list'):
+            current=self.backup_restore_mod_var.get()
+            self.backup_restore_mod_list.delete(0,'end')
+            for value in values:
+                self.backup_restore_mod_list.insert('end',value)
+            if current not in values:
+                current=values[0]
+                self.backup_restore_mod_var.set(current)
+            try:
+                idx=values.index(current)
+                self.backup_restore_mod_list.selection_clear(0,'end')
+                self.backup_restore_mod_list.selection_set(idx)
+                self.backup_restore_mod_list.see(idx)
+            except Exception:
+                pass
 
     def _on_backup_restore_search_changed(self, _event=None):
         self._refresh_backup_restore_mod_filter()
@@ -3410,6 +3477,8 @@ Mod更新後だけ追加翻訳:
         suffix=(' / ' + ' → '.join(scope)) if scope else ''
         search_suffix=(f" / 検索: {query}" if query else '')
         self.backup_restore_summary_var.set(f'バックアップ: {len(visible)}件（全{len(self.backup_restore_entries)}件）{suffix}{search_suffix}')
+        if hasattr(self,'backup_restore_selected_mod_label'):
+            self.backup_restore_selected_mod_label.config(text=f'選択Mod: {mod}')
         self.backup_restore_detail_var.set('一覧からバックアップを選択してください。')
         self.backup_restore_btn.config(state='disabled')
 
