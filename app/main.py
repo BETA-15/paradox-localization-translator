@@ -37,8 +37,16 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.60"
-MOD_STATUS_CACHE_VERSION = 12
+APP_VERSION = "0.11.61"
+MOD_STATUS_CACHE_VERSION = 13
+
+
+def _translation_status_snapshot_is_current(snapshot) -> bool:
+    return bool(
+        isinstance(snapshot, dict)
+        and snapshot.get("mod_status_cache_version") == MOD_STATUS_CACHE_VERSION
+        and snapshot.get("relation_algorithm_version") == core.TRANSLATION_RELATION_ALGORITHM_VERSION
+    )
 
 
 def _app_container_dir() -> Path:
@@ -3054,12 +3062,12 @@ Mod更新後だけ追加翻訳:
             "",
             "判定基準:",
             "  ・本体とキー・元Mod原文が同一のバニラ持ち込みキーは、Mod間関連キーから除外",
-            "  ・有効キー100個以上: 有効共通キー50件以上、かつ元Mod側または候補側の有効一致率40%以上",
+            "  ・有効キー100個以上: 有効共通キー200件以上、かつ元Mod側または候補側の有効一致率40%以上",
             "  ・有効キー100個未満: 元Mod側の有効一致率20%以上",
             "  ・候補に同一言語の原文があるキーは元Mod原文と照合し、不一致キーを除外",
             "  ・候補の原文同梱率80%以上は独立Mod型、20%以下は外部日本語化Mod型",
             "  ・候補キー50件以上かつ本体キー80%以上は本体日本語化・修正型。70%以上は本体キー優勢",
-            "  ・総合和訳は2つ以上の元Modで各50件以上、候補有効キー和集合率70%以上を別ゲートとして使用",
+            "  ・総合和訳は2つ以上の元Modで各200件以上、候補有効キー和集合率70%以上を別ゲートとして使用",
             "  ・構成点・名前・dependenciesは実データ関係ゲート通過後の順位付けだけに使用",
             "  ・手動の日本語化Mod / 通常Mod / 対応元指定は自動判定より優先",
             "  ・監査ログでは、初回分類で候補外になった現在の日本語Modも比較対象として表示",
@@ -5468,7 +5476,8 @@ Mod更新後だけ追加翻訳:
         def work():
             try:
                 data = load_persistent_json(MOD_STATUS_CACHE_PATH, {"version": MOD_STATUS_CACHE_VERSION, "items": {}}, "翻訳状況キャッシュ")
-                if not isinstance(data, dict) or data.get("version") != MOD_STATUS_CACHE_VERSION:
+                cache_is_current = isinstance(data, dict) and data.get("version") == MOD_STATUS_CACHE_VERSION
+                if not cache_is_current:
                     data = {"version": MOD_STATUS_CACHE_VERSION, "items": {}}
                 by_path={}
                 for row in (data.get("items", {}) or {}).values():
@@ -5476,11 +5485,13 @@ Mod更新後だけ追加翻訳:
                     if isinstance(result, dict) and result.get("path"):
                         r=dict(result); r["cached"]=True; by_path[str(r.get("path"))]=r
                 snap=self._load_translation_status_snapshot()
-                for r in (snap.get("results") or []):
-                    if not isinstance(r,dict) or not r.get("path"): continue
-                    path=str(r.get("path"))
-                    if path not in by_path:
-                        rr=dict(r); rr["cached"]=True; rr["stale_cached"]=True; by_path[path]=rr
+                snapshot_is_current = _translation_status_snapshot_is_current(snap)
+                if cache_is_current and snapshot_is_current:
+                    for r in (snap.get("results") or []):
+                        if not isinstance(r,dict) or not r.get("path"): continue
+                        path=str(r.get("path"))
+                        if path not in by_path:
+                            rr=dict(r); rr["cached"]=True; rr["stale_cached"]=True; by_path[path]=rr
                 rows=list(by_path.values()); rows.sort(key=lambda r:str(r.get("mod","")).lower())
                 self.events.put(('status_cache_restored',(data,rows,list(snap.get('selected_paths') or []))))
             except Exception as exc:
@@ -5926,6 +5937,7 @@ Mod更新後だけ追加翻訳:
             pool_signature = ""
             if check_external:
                 h = hashlib.sha256()
+                h.update(f"relation-algorithm:{core.TRANSLATION_RELATION_ALGORITHM_VERSION}".encode())
                 for root in sorted((Path(r) for r in pool_roots), key=lambda x: str(x)):
                     h.update(str(root).encode("utf-8", "ignore"))
                     h.update(self._mod_source_signature(root).encode())
@@ -8091,7 +8103,9 @@ Mod更新後だけ追加翻訳:
         """Mirror classification/relation state into キャッシュ for cross-tab recovery."""
         try:
             payload = {
-                "schema": 1,
+                "schema": 2,
+                "mod_status_cache_version": MOD_STATUS_CACHE_VERSION,
+                "relation_algorithm_version": core.TRANSLATION_RELATION_ALGORITHM_VERSION,
                 "saved_at": datetime.now().isoformat(timespec="seconds"),
                 "saved_at_ns": time.time_ns(),
                 "reason": reason,

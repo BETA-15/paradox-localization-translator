@@ -30,6 +30,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
+TRANSLATION_RELATION_ALGORITHM_VERSION = 2
+LARGE_RELATION_MIN_EFFECTIVE_KEYS = 200
+
 DEFAULT_MODEL = "qwen3.6:latest"
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
 DEFAULT_LMSTUDIO_URL = "http://localhost:1234/v1"
@@ -3019,12 +3022,14 @@ def translation_relation_evidence(source_language_entries: dict, row: dict,
     source_rate = len(effective_overlap) / max(1, len(source_effective_keys))
     candidate_rate = len(effective_overlap) / max(1, len(candidate_effective_keys))
     if len(source_effective_keys) >= 100:
-        required_match_count = 50
+        required_match_count = LARGE_RELATION_MIN_EFFECTIVE_KEYS
         source_rate_pass = source_rate >= 0.40
         candidate_rate_pass = candidate_rate >= 0.40
         count_pass = len(effective_overlap) >= required_match_count
         relation_gate = bool(count_pass and (source_rate_pass or candidate_rate_pass))
-        threshold_label = "有効キー100以上 → 50キーかつ双方向40%のどちらか"
+        threshold_label = (
+            f"有効キー100以上 → {LARGE_RELATION_MIN_EFFECTIVE_KEYS}キーかつ双方向40%のどちらか"
+        )
     else:
         required_match_count = max(1, int((len(source_effective_keys) * 0.20) + 0.999999))
         source_rate_pass = source_rate >= 0.20
@@ -3145,7 +3150,7 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict,
     multi_sources = set(row.get("multi_translation_source_paths") or [])
     multi_relation_gate = bool(
         source_path and source_path in multi_sources and
-        int(evidence.get("effective_overlap_keys", 0) or 0) >= 50
+        int(evidence.get("effective_overlap_keys", 0) or 0) >= LARGE_RELATION_MIN_EFFECTIVE_KEYS
     )
     numeric_gate = bool(evidence.get("relation_gate") or multi_relation_gate)
     final_gate = bool(numeric_gate and translation_shape_gate and base_role_gate)
@@ -3291,7 +3296,7 @@ def assign_translation_candidate_owners(source_roots: Iterable[Path], translatio
                 )
                 source_profile_cache[profile_key] = source_profile
             evidence = translation_relation_evidence(source_entries, row, source_profile=source_profile)
-            if int(evidence.get("effective_overlap_keys", 0) or 0) < 50:
+            if int(evidence.get("effective_overlap_keys", 0) or 0) < LARGE_RELATION_MIN_EFFECTIVE_KEYS:
                 continue
             contributors.append(source_id)
             overlap_union.update(evidence.get("_effective_overlap_set") or set())
