@@ -2743,6 +2743,25 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict) -> di
     folder_evidence = _localization_folder_name_evidence(source_name, row)
     localization_folder_points = float(folder_evidence.get("points", 0.0) or 0.0)
 
+    # v0.11.57: protect against mistaking a base-game Japanese correction Mod for
+    # a dedicated translation Mod.  The direction of this ratio is intentional:
+    # the denominator is the Japanese candidate's own key set, never the source Mod
+    # or the base game's much larger key set.  If 70%+ of the candidate's Japanese
+    # keys already exist in the base game, it is likely correcting/replacing vanilla
+    # Japanese localization.  Apply a strong *penalty* rather than a hard rejection so
+    # explicit/manual relationships and unusually strong dedicated evidence can still
+    # win when appropriate.
+    base_game_keys = set(row.get("base_game_keys") or set())
+    base_game_match_n = len(ja_keys & base_game_keys) if base_game_keys else 0
+    base_game_match_ratio = base_game_match_n / max(1, len(ja_keys)) if base_game_keys else 0.0
+    base_game_penalty = 0.0
+    if base_game_keys and base_game_match_ratio >= 0.70:
+        # This is an exception-level penalty rather than a hard rejection.  -100
+        # guarantees that ordinary automatic evidence cannot turn a base-language
+        # correction package into another Mod's trusted translation, while an
+        # explicit manual relation can still override the automatic score later.
+        base_game_penalty = -100.0
+
     # Alternate gate for partial translation Mods.  Pure Japanese localization plus
     # a strong candidate-side match is sufficiently specific to establish a relation
     # even when fewer than 50 keys exist in the translation package.  Requiring at
@@ -2753,7 +2772,8 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict) -> di
     gate = ordinary_gate or pure_japanese_relation_gate
 
     raw_score = (key_points + translation_only_points + dependency_points +
-                 low_gameplay_points + localization_folder_points + other_language_penalty)
+                 low_gameplay_points + localization_folder_points + other_language_penalty +
+                 base_game_penalty)
     score = max(0.0, min(100.0, raw_score))
     if not gate:
         classification = "rejected"
@@ -2782,6 +2802,20 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict) -> di
         reasons.append(f"他言語localizationの元Mod関連度: {details} / 基準充足度平均 {avg_other_quality*100:.1f}% → {other_language_penalty:.1f}点")
     else:
         reasons.append("他言語localizationなし → 減点なし")
+    if base_game_keys:
+        if base_game_match_ratio >= 0.70:
+            reasons.append(
+                f"日本語化Mod側から見たゲーム本体キー一致率 {base_game_match_ratio*100:.1f}% "
+                f"({base_game_match_n}/{len(ja_keys)}) / 70%以上 → 本体和訳修正の可能性が高いため "
+                f"{base_game_penalty:.1f}点"
+            )
+        else:
+            reasons.append(
+                f"日本語化Mod側から見たゲーム本体キー一致率 {base_game_match_ratio*100:.1f}% "
+                f"({base_game_match_n}/{len(ja_keys)}) / 70%未満 → 減点なし"
+            )
+    else:
+        reasons.append("ゲーム本体キーを取得できないため、本体和訳修正例外の減点なし")
     if pure_japanese_relation_gate and not ordinary_gate:
         reasons.append(
             f"日本語localization専用の例外ゲート: 日本語化Mod側一致率 {precision*100:.1f}% / "
@@ -2805,6 +2839,10 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict) -> di
         "localization_folder_match_type": folder_evidence.get("match_type", "none"),
         "source_language_penalty": other_language_penalty,
         "other_language_penalty": other_language_penalty,
+        "base_game_match_ratio": base_game_match_ratio,
+        "base_game_match_keys": base_game_match_n,
+        "base_game_key_count": len(base_game_keys),
+        "base_game_penalty": base_game_penalty,
         "other_language_relation": avg_other_relation,
         "other_language_quality": avg_other_quality,
         "other_language_relations": other_language_relations,

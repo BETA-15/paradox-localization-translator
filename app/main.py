@@ -36,8 +36,8 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.55"
-MOD_STATUS_CACHE_VERSION = 11
+APP_VERSION = "0.11.57"
+MOD_STATUS_CACHE_VERSION = 12
 
 
 def _app_container_dir() -> Path:
@@ -2834,6 +2834,7 @@ Mod更新後だけ追加翻訳:
             except Exception:
                 continue
         audit_index=core.build_translation_mod_index(japanese_roots)
+        self._annotate_translation_index_with_base_game_keys(audit_index)
         audit_by_path={}
         for row in audit_index:
             try: key=self._mod_classification_key(Path(row.get("path","")))
@@ -2852,7 +2853,9 @@ Mod更新後だけ追加翻訳:
             "判定基準:",
             "  ・元Mod原文キー100個以上: 日本語完全一致50キー以上が基本ゲート",
             "  ・元Mod原文キー100個未満: 日本語完全一致20%以上が必須",
-            "  ・日本語localization専用構成は構成点35/35",
+            "  ・日本語localization専用構成は強い構成加点",
+            "  ・日本語化Mod候補自身の日本語キーの70%以上がゲーム本体キーなら、本体和訳修正の可能性として大幅減点",
+            "  ・本体一致率の分母は必ず日本語化Mod候補側の日本語キー総数（ゲーム本体側・元Mod側では計算しない）",
             "  ・他言語localizationは存在自体では減点せず、元Modとの関連性が低い場合のみ減点",
             "  ・手動の日本語化Mod / 通常Mod / 対応元指定は自動判定より優先",
             "  ・監査ログでは、初回分類で候補外になった現在の日本語Modも比較対象として表示",
@@ -2933,7 +2936,10 @@ Mod更新後だけ追加翻訳:
                     f"  場所: {cand_path}",
                     f"  日本語一致: {int(auto.get('overlap_keys',0) or 0)} / {len(source_keys)} = {float(auto.get('coverage',0) or 0)*100:.1f}%  {'PASS' if float(auto.get('coverage',0) or 0) >= threshold else 'FAIL'}",
                     f"  日本語化Mod側一致率: {float(auto.get('precision',0) or 0)*100:.1f}%",
-                    f"  構成: {auto.get('structure_label','')} / {float(auto.get('translation_only_points',0) or 0):.1f}/35点",
+                    (f"  日本語化Mod側→ゲーム本体キー一致率: {float(auto.get('base_game_match_ratio',0) or 0)*100:.1f}% "
+                     f"({int(auto.get('base_game_match_keys',0) or 0)}/{int(auto.get('japanese_keys',0) or 0)}) / "
+                     f"減点 {float(auto.get('base_game_penalty',0) or 0):.1f}点"),
+                    f"  構成: {auto.get('structure_label','')} / {float(auto.get('translation_only_points',0) or 0):.1f}点",
                     f"  他言語減点: {float(auto.get('other_language_penalty',0) or 0):.1f}点",
                     f"  自動スコア: {float(auto.get('score',0) or 0):.1f}/100",
                     f"  純粋な自動判定: {class_label.get(auto_class,auto_class)}",
@@ -5286,6 +5292,71 @@ Mod更新後だけ追加翻訳:
                 }
         self._save_mod_relation_overrides()
 
+    def _base_game_source_keys_for_mod(self, mod_root):
+        """Return cached vanilla source-key set for the game owning *mod_root*.
+
+        This is deliberately non-interactive because Translation Status and Total
+        Diagnosis may call it from background workers.  The cache is per game and
+        uses English/Simplified-Chinese localization keys as the vanilla key universe.
+        """
+        game = self._backup_game_name_for_root(mod_root)
+        if not game or game == "ゲーム未特定":
+            return set(), game
+        cache = getattr(self, "_base_game_source_key_cache", None)
+        if cache is None:
+            cache = {}
+            self._base_game_source_key_cache = cache
+        if game in cache:
+            return cache[game], game
+
+        loc_root = None
+        try:
+            libs = core.discover_steam_libraries(Path.home(), sys.platform)
+        except Exception:
+            libs = []
+        for lib in libs:
+            base = Path(lib) / "steamapps" / "common" / game
+            for rel in ("game/localization", "game/localisation", "localization", "localisation"):
+                candidate = base / rel
+                if candidate.is_dir():
+                    loc_root = candidate
+                    break
+            if loc_root is not None:
+                break
+
+        keys = set()
+        if loc_root is not None:
+            try:
+                for fp in core.gather_yml_files(loc_root):
+                    # Most Paradox layouts include the language in the directory or
+                    # filename.  Skip clearly unrelated languages before parsing.
+                    low = str(fp).replace("\\", "/").lower()
+                    if not any(token in low for token in ("english", "simp_chinese", "l_english", "l_simp_chinese")):
+                        continue
+                    try:
+                        lang, entries, _ = core.parse_localization_file(fp)
+                    except Exception:
+                        continue
+                    if lang in {"english", "simp_chinese"}:
+                        keys.update((entries or {}).keys())
+            except Exception as exc:
+                record_error("ゲーム本体キー取得", exc, f"{game}: {loc_root}")
+        cache[game] = keys
+        return keys, game
+
+    def _annotate_translation_index_with_base_game_keys(self, rows):
+        """Attach the owning game's vanilla key set to every Japanese candidate."""
+        for row in rows or []:
+            try:
+                keys, game = self._base_game_source_keys_for_mod(Path(row.get("path", "")))
+                row["base_game_keys"] = keys
+                row["base_game_name"] = game
+            except Exception as exc:
+                row["base_game_keys"] = set()
+                row["base_game_name"] = "ゲーム未特定"
+                record_error("本体和訳修正例外", exc, str(row.get("path", "")))
+        return rows
+
     def _build_stable_translation_mod_index(self, pool_roots):
         eligible = []
         overrides = {}
@@ -5302,6 +5373,7 @@ Mod更新後だけ追加翻訳:
             except Exception as exc:
                 record_error("Mod初期分類", exc, str(root))
         rows=core.build_translation_mod_index(eligible)
+        self._annotate_translation_index_with_base_game_keys(rows)
         for row in rows:
             try: key=self._mod_classification_key(Path(row.get("path","")))
             except Exception: key=str(row.get("path",""))

@@ -1,6 +1,21 @@
+# v0.11.57 追加確認
+
+- [x] `VERSION` / `APP_VERSION` を 0.11.57 に統一
+- [x] 日本語化Mod候補自身の日本語キー総数を分母にしてゲーム本体キー一致率を計算
+- [x] ゲーム本体側・元Mod側のキー総数を分母にしない
+- [x] 本体キー一致率70%以上で -100点の強い例外減点
+- [x] 70%未満では本体和訳修正例外の減点なし
+- [x] 手動日本語化Mod / 手動対応元指定は自動減点より優先
+- [x] Steamゲーム本体のEnglish / Simplified Chineseキーをゲーム単位でキャッシュ
+- [x] 判定ログに本体一致率・一致キー数・減点を表示
+- [x] `MOD_STATUS_CACHE_VERSION` を更新して旧自動判定キャッシュを無効化
+- [x] 80%本体一致の強い日本語化候補が自動関連付け対象外になる合成テスト PASS
+- [x] 20%本体一致の専用日本語化候補が従来どおり自動判定される合成テスト PASS
+- [x] `python -m py_compile app/main.py app/translator_core.py` PASS
+
 # v0.11.56 追加確認
 
-- [x] `VERSION` / `APP_VERSION` を 0.11.55 に統一
+- [x] `VERSION` / `APP_VERSION` を 0.11.56 に統一
 - [x] 復元先未特定バックアップを翻訳状況の現在Mod一覧 / 保存済みスナップショットから補完
 - [x] 翻訳状況行の `external_translation_mod` / `external_translation_path` も独立した復元候補として利用
 - [x] Workshop App ID + Mod ID一致を復元先判定に利用
