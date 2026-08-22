@@ -108,14 +108,14 @@ def test_large_partial_translation_passes_candidate_side_40_percent():
     assert result["classification"] == "auto"
 
 
-def test_large_relation_requires_50_effective_keys():
-    source = _entries("source", 125)
-    row_49 = _candidate_row({key: "訳" for key in list(source)[:49]})
-    row_50 = _candidate_row({key: "訳" for key in list(source)[:50]})
+def test_large_relation_requires_200_effective_keys():
+    source = _entries("source", 500)
+    row_199 = _candidate_row({key: "訳" for key in list(source)[:199]})
+    row_200 = _candidate_row({key: "訳" for key in list(source)[:200]})
     args = {"english": source, "simp_chinese": {}}
 
-    fail = core._translation_mod_weight("Source", set(source), row_49, source_language_entries=args)
-    passed = core._translation_mod_weight("Source", set(source), row_50, source_language_entries=args)
+    fail = core._translation_mod_weight("Source", set(source), row_199, source_language_entries=args)
+    passed = core._translation_mod_weight("Source", set(source), row_200, source_language_entries=args)
 
     assert fail["effective_source_rate"] < 0.40
     assert fail["effective_count_pass"] is False
@@ -123,6 +123,21 @@ def test_large_relation_requires_50_effective_keys():
     assert passed["effective_source_rate"] == 0.40
     assert passed["effective_count_pass"] is True
     assert passed["final_relation_gate"] is True
+
+
+def test_small_source_keeps_20_percent_gate():
+    source = _entries("small", 50)
+    row = _candidate_row({key: "訳" for key in list(source)[:10]})
+    result = core._translation_mod_weight(
+        "Small Source",
+        set(source),
+        row,
+        source_language_entries={"english": source, "simp_chinese": {}},
+    )
+
+    assert result["required_match_count"] == 10
+    assert result["effective_source_rate"] == 0.20
+    assert result["final_relation_gate"] is True
 
 
 def test_candidate_source_text_mismatch_removes_shared_keys():
@@ -143,7 +158,7 @@ def test_candidate_source_text_mismatch_removes_shared_keys():
 
 
 def test_self_localized_mod_is_not_external_translation_without_explicit_evidence():
-    source = _entries("shared", 100)
+    source = _entries("shared", 200)
     row = _candidate_row(
         {key: "訳" for key in source},
         english=source,
@@ -255,14 +270,14 @@ def test_multi_translation_union_gate_handles_five_mod_pack(tmp_path):
         prefix = f"source{source_index}"
         _write_source_mod(root, prefix, 1_000)
         source_roots.append(root)
-        japanese.update({f"{prefix}_{index:05d}": f"訳 {index}" for index in range(100)})
+        japanese.update({f"{prefix}_{index:05d}": f"訳 {index}" for index in range(200)})
     candidate_path = tmp_path / "CombinedJapanese"
     row = _candidate_row(japanese, path=str(candidate_path), name="Combined Japanese")
 
     assigned = core.assign_translation_candidate_owners(source_roots, [row])[0]
 
     assert len(assigned["multi_translation_source_paths"]) == 5
-    assert assigned["multi_translation_union_keys"] == 500
+    assert assigned["multi_translation_union_keys"] == 1_000
     assert assigned["multi_translation_union_coverage"] == 1.0
     first_source = source_roots[0]
     first_data = core._collect_mod_language_entries(first_source)
@@ -273,8 +288,24 @@ def test_multi_translation_union_gate_handles_five_mod_pack(tmp_path):
         source_language_entries={"english": first_data["english"], "simp_chinese": {}},
         source_path=str(first_source.resolve()),
     )
-    assert result["effective_source_rate"] == 0.10
+    assert result["effective_source_rate"] == 0.20
     assert result["effective_candidate_rate"] == 0.20
     assert result["ordinary_gate"] is False
     assert result["multi_translation_gate"] is True
     assert result["classification"] == "auto"
+
+
+def test_multi_translation_contributor_requires_200_effective_keys(tmp_path):
+    source_roots = []
+    japanese = {}
+    for source_index in range(2):
+        root = tmp_path / f"Source{source_index}"
+        prefix = f"source{source_index}"
+        _write_source_mod(root, prefix, 1_000)
+        source_roots.append(root)
+        japanese.update({f"{prefix}_{index:05d}": f"訳 {index}" for index in range(199)})
+    row = _candidate_row(japanese, path=str(tmp_path / "CombinedJapanese"), name="Combined Japanese")
+
+    assigned = core.assign_translation_candidate_owners(source_roots, [row])[0]
+
+    assert assigned.get("multi_translation_source_paths") == []
