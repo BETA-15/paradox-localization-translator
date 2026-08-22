@@ -686,6 +686,11 @@ class App(BaseTk):
         self.backup_restore_game_var = tk.StringVar(value="すべてのゲーム")
         self.backup_restore_mod_var = tk.StringVar(value="すべてのMod")
         self.backup_restore_search_var = tk.StringVar(value="")
+        # v0.11.56: restore-target resolution may need a large persisted Translation Status
+        # snapshot. Keep one in-memory copy per refresh instead of reparsing the same JSON
+        # once for every backup entry.
+        self._restore_status_snapshot_cache = None
+        self._restore_status_rows_cache = None
 
         self.mod_research_results = []
         self.mod_research_thread = None
@@ -3088,21 +3093,27 @@ Mod更新後だけ追加翻訳:
                 return str(row.get('game'))
         return 'ゲーム未特定'
 
-    def _translation_status_rows_for_restore(self):
-        """Return current + persisted Translation Status rows usable for rollback target resolution.
+    def _translation_status_rows_for_restore(self, *, persisted_snapshot=None, use_persisted=True, force_rebuild=False):
+        """Return Translation Status rows usable for rollback target resolution.
 
-        The Backup Restore tab is built before the visible Translation Status cache is restored on
-        startup, so reading the persisted snapshot here is important for old backups whose own
-        target metadata is missing.
+        v0.11.56 performance rule: the persisted translation-status JSON is parsed at most once
+        for a backup-list refresh. Older code called this helper for every backup entry, causing
+        hundreds of repeated JSON parses on startup.
         """
+        if not force_rebuild and use_persisted and persisted_snapshot is None and self._restore_status_rows_cache is not None:
+            return self._restore_status_rows_cache
         rows=[]
         seen=set()
         sources=[list(getattr(self, 'mod_research_results', []) or [])]
-        try:
-            snap=self._load_translation_status_snapshot()
-            sources.append(list((snap or {}).get('results') or []))
-        except Exception:
-            pass
+        if use_persisted:
+            try:
+                if persisted_snapshot is None:
+                    if self._restore_status_snapshot_cache is None:
+                        self._restore_status_snapshot_cache=self._load_translation_status_snapshot()
+                    persisted_snapshot=self._restore_status_snapshot_cache
+                sources.append(list((persisted_snapshot or {}).get('results') or []))
+            except Exception:
+                pass
         for source in sources:
             for row in source:
                 if not isinstance(row, dict):
@@ -3151,12 +3162,14 @@ Mod更新後だけ追加翻訳:
                     rr['_restore_path_key']=key
                     rr['_restore_inventory_source']=inventory_source
                     rows.append(rr)
+        if use_persisted:
+            self._restore_status_rows_cache=rows
         return rows
 
-    def _known_mod_roots_for_restore(self):
+    def _known_mod_roots_for_restore(self, restore_rows=None):
         roots=[]
         seen=set()
-        for row in self._translation_status_rows_for_restore():
+        for row in (restore_rows if restore_rows is not None else self._translation_status_rows_for_restore()):
             p=Path(row.get('_restore_root'))
             key=str(row.get('_restore_path_key') or p)
             if key in seen or not p.exists():
@@ -3172,7 +3185,7 @@ Mod更新後だけ追加翻訳:
             seen.add(key); roots.append(p)
         return roots
 
-    def _resolve_backup_target_from_translation_status(self, entry):
+    def _resolve_backup_target_from_translation_status(self, entry, restore_rows=None):
         """Resolve an old/unknown backup target using the Translation Status inventory.
 
         Priority: existing recorded path -> Workshop/content identifier -> exact normalized Mod
@@ -3184,7 +3197,7 @@ Mod更新後だけ追加翻訳:
             if rp.exists():
                 return rp, self._backup_game_name_for_root(rp), 'バックアップ記録', 1
 
-        rows=self._translation_status_rows_for_restore()
+        rows=restore_rows if restore_rows is not None else self._translation_status_rows_for_restore()
         candidates=[]
         for row in rows:
             root=Path(row.get('_restore_root'))
@@ -3276,8 +3289,8 @@ Mod更新後だけ追加翻訳:
             return None, 'ゲーム未特定', '翻訳状況に正規化同名Mod候補が複数', len(hits)
         return None, 'ゲーム未特定', '翻訳状況でも復元先未特定', 0
 
-    def _apply_translation_status_restore_resolution(self, entry):
-        root,game,source,count=self._resolve_backup_target_from_translation_status(entry)
+    def _apply_translation_status_restore_resolution(self, entry, restore_rows=None):
+        root,game,source,count=self._resolve_backup_target_from_translation_status(entry, restore_rows=restore_rows)
         if root is not None:
             entry['target_root']=root
             if not entry.get('game') or entry.get('game') == 'ゲーム未特定':
@@ -3483,13 +3496,13 @@ Mod更新後だけ追加翻訳:
         self.backup_restore_mod_var.set(value)
         self._render_backup_restore_entries()
 
-    def _infer_legacy_backup_target(self, backup_name):
+    def _infer_legacy_backup_target(self, backup_name, known_roots=None):
         token=str(backup_name or '')
         token=re.sub(r'^\d{8}_\d{6}(?:_\d+)?_?', '', token)
         token=re.sub(r'_(?:不足分上書き|差分上書き)$','',token)
         token_norm=core._normalize_mod_name_for_match(token.replace('_',' '))
         candidates=[]
-        for root in self._known_mod_roots_for_restore():
+        for root in (known_roots if known_roots is not None else self._known_mod_roots_for_restore()):
             name=core.detect_mod_name(root)
             norm=core._normalize_mod_name_for_match(name)
             if token_norm and norm and (token_norm == norm or token_norm in norm or norm in token_norm):
@@ -3499,6 +3512,12 @@ Mod更新後だけ追加翻訳:
     def _refresh_backup_restore_entries(self):
         if not hasattr(self,'backup_restore_tree'):
             return
+        # v0.11.56: build the Translation Status restore inventory exactly once for this
+        # refresh.  v0.11.55 rebuilt it for every backup row, reparsing the persisted
+        # JSON hundreds of times and freezing the macOS main thread on startup.
+        self._restore_status_rows_cache = None
+        restore_rows = self._translation_status_rows_for_restore(force_rebuild=True)
+        known_restore_roots = self._known_mod_roots_for_restore(restore_rows=restore_rows)
         entries=[]; seen=set()
         for rec in self._backup_manifest_records():
             root=Path(rec.get('_entry_root',''))
@@ -3527,7 +3546,7 @@ Mod更新後だけ追加翻訳:
                 target=None; target_name=''
                 norm=core._normalize_mod_name_for_match(mod_guess)
                 matches=[]
-                for r in self._known_mod_roots_for_restore():
+                for r in known_restore_roots:
                     n=core.detect_mod_name(r); rn=core._normalize_mod_name_for_match(n)
                     if norm and rn and (norm==rn or norm in rn or rn in norm): matches.append((r,n))
                 if len(matches)==1: target,target_name=matches[0]
@@ -3547,7 +3566,7 @@ Mod更新後だけ追加翻訳:
         for d in sorted(top_dirs,key=lambda x:x.name):
             if not d.is_dir() or d.name in reserved: continue
             if not re.match(r'^\d{8}_\d{6}',d.name): continue
-            target,target_name=self._infer_legacy_backup_target(d.name)
+            target,target_name=self._infer_legacy_backup_target(d.name, known_roots=known_restore_roots)
             kind='差分上書き' if d.name.endswith('_差分上書き') else '不足分上書き' if d.name.endswith('_不足分上書き') else '元Mod上書き'
             key=target_name or re.sub(r'^\d{8}_\d{6}(?:_\d+)?_?','',d.name)
             legacy_by_mod.setdefault(key,[]).append(d)
@@ -3563,7 +3582,7 @@ Mod更新後だけ追加翻訳:
         # Old backups often have no usable target path. Resolve them against the current
         # Translation Status inventory (including its persisted snapshot) before rendering.
         for entry in entries:
-            self._apply_translation_status_restore_resolution(entry)
+            self._apply_translation_status_restore_resolution(entry, restore_rows=restore_rows)
         entries.sort(key=lambda e:str(e.get('created_at') or e['entry_root'].name),reverse=True)
         self.backup_restore_entries=entries
 
@@ -7688,16 +7707,28 @@ Mod更新後だけ追加翻訳:
                 "search": self._workspace_scalar(getattr(self, "mod_status_search_var", None), ""),
             }
             core.save_json(TRANSLATION_STATUS_STATE_PATH, payload)
+            self._restore_status_snapshot_cache = payload
+            self._restore_status_rows_cache = None
             self._save_shared_mod_state_cache("translation_status:" + str(reason))
         except Exception as exc:
             record_error("翻訳状況状態キャッシュ保存", exc)
 
-    def _load_translation_status_snapshot(self):
+    def _load_translation_status_snapshot(self, force_disk=False):
+        """Load the persisted Translation Status snapshot with a process-local cache.
+
+        v0.11.56: this file can become large. Re-reading/re-decoding it repeatedly during
+        application startup caused multi-second hangs and extreme transient memory use.
+        """
+        if not force_disk and self._restore_status_snapshot_cache is not None:
+            return self._restore_status_snapshot_cache
         try:
             data = core.load_json(TRANSLATION_STATUS_STATE_PATH, {})
-            return data if isinstance(data, dict) else {}
+            data = data if isinstance(data, dict) else {}
+            self._restore_status_snapshot_cache = data
+            return data
         except Exception as exc:
             record_error("翻訳状況状態キャッシュ読込", exc)
+            self._restore_status_snapshot_cache = {}
             return {}
 
     def _save_diagnostic_state(self, reason="update"):
