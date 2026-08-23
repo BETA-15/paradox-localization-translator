@@ -11,6 +11,47 @@ def _write(path: Path, text: str):
     path.write_text(text, encoding="utf-8")
 
 
+def test_detect_mod_name_supports_victoria3_metadata(tmp_path):
+    root = tmp_path / "2941539986"
+    metadata = root / ".metadata" / "metadata.json"
+    metadata.parent.mkdir(parents=True)
+    metadata.write_text(json.dumps({"name": "Laws +", "id": "2941539986"}), encoding="utf-8")
+
+    assert core.detect_mod_name(root) == "Laws +"
+
+
+def test_detect_mod_name_keeps_legacy_descriptor_priority(tmp_path):
+    root = tmp_path / "LegacyMod"
+    _write(root / "descriptor.mod", 'name="Descriptor Name"\n')
+    metadata = root / ".metadata" / "metadata.json"
+    metadata.parent.mkdir(parents=True)
+    metadata.write_text(json.dumps({"name": "Metadata Name"}), encoding="utf-8")
+
+    assert core.detect_mod_name(root) == "Descriptor Name"
+
+
+def test_detect_mod_name_falls_back_when_metadata_is_invalid(tmp_path):
+    root = tmp_path / "Workshop123"
+    metadata = root / ".metadata" / "metadata.json"
+    metadata.parent.mkdir(parents=True)
+    metadata.write_text("{not valid json", encoding="utf-8")
+
+    assert core.detect_mod_name(root) == "Workshop123"
+
+
+def test_detect_mod_name_recovers_name_from_victoria3_metadata_with_unescaped_windows_path(tmp_path):
+    root = tmp_path / "3276835261"
+    metadata = root / ".metadata" / "metadata.json"
+    metadata.parent.mkdir(parents=True)
+    metadata.write_text(
+        '{\n  "name": "Joinable Powerblocks",\n'
+        '  "path": "C:\\Users\\Admin\\Documents\\Victoria 3\\mod"\n}\n',
+        encoding="utf-8",
+    )
+
+    assert core.detect_mod_name(root) == "Joinable Powerblocks"
+
+
 def test_placeholder_round_trip():
     original = "Text $NAME$ [GetValue] £gold£ #P green#! \\n next"
     protected, tokens = core.protect_text(original)
