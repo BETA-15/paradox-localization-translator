@@ -1,6 +1,6 @@
-# v0.11.64 追加確認
+# v0.11.65 追加確認
 
-- [x] `VERSION` / `APP_VERSION` / `pyproject.toml` / `uv.lock` を 0.11.64 に統一
+- [x] `VERSION` / `APP_VERSION` / `pyproject.toml` / `uv.lock` を 0.11.65 に統一
 - [x] Vic3の`.metadata/metadata.json`からMod名を取得
 - [x] `descriptor.mod` / `*.mod`の従来優先順位を維持
 - [x] 未エスケープWindowsパスを含む不正JSONから名前欄だけを回収
