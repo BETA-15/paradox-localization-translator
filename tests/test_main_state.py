@@ -29,6 +29,82 @@ def test_relation_algorithm_change_invalidates_old_status_cache_generation():
     }) is True
 
 
+def test_compact_translation_status_result_keeps_gap_identity_without_source_text():
+    result = {
+        "mod": "Example",
+        "status": "欠損あり",
+        "candidates": [{"key": "example_key", "source_origin": "english_only", "source": "x" * 10000}],
+        "external_translation_gaps": [{"key": "external_key", "source": "y" * 10000}],
+    }
+
+    compact = main._compact_translation_status_result(result)
+
+    assert compact["mod"] == "Example"
+    assert "candidates" not in compact
+    assert "external_translation_gaps" not in compact
+    assert main._status_gap_rows(compact) == [{"key": "example_key", "source_origin": "english_only"}]
+    assert main._status_gap_rows(compact, external=True) == [{"key": "external_key"}]
+    assert len(str(compact)) < 500
+
+
+def test_translation_status_save_writes_current_generation_and_compact_rows(monkeypatch):
+    saved = []
+    monkeypatch.setattr(main.core, "save_json", lambda path, payload: saved.append((path, payload)))
+    state = SimpleNamespace(
+        _translation_status_save_after_id=None,
+        _translation_status_pending_reason="",
+        mod_research_results=[{
+            "path": "/mods/example",
+            "mod": "Example",
+            "candidates": [{"key": "missing", "source": "large source text"}],
+            "external_translation_gaps": [],
+        }],
+        _restore_status_snapshot_cache=None,
+        _restore_status_rows_cache=None,
+        _json_safe_state=main.App._json_safe_state,
+        _workspace_scalar=main.App._workspace_scalar,
+        _save_shared_mod_state_cache=lambda reason: None,
+    )
+
+    main.App._save_translation_status_state(state, "test")
+
+    payload = saved[0][1]
+    assert payload["schema"] == main.TRANSLATION_STATUS_SNAPSHOT_SCHEMA
+    assert payload["mod_status_cache_version"] == main.MOD_STATUS_CACHE_VERSION
+    assert payload["relation_algorithm_version"] == main.core.TRANSLATION_RELATION_ALGORITHM_VERSION
+    assert main._translation_status_snapshot_is_current(payload)
+    assert main._status_gap_rows(payload["results"][0]) == [{"key": "missing"}]
+
+
+def test_translation_status_save_schedule_coalesces_rapid_updates():
+    callbacks = {}
+    cancelled = []
+    saved = []
+
+    def after(delay, callback):
+        token = f"after-{len(callbacks) + 1}"
+        callbacks[token] = callback
+        return token
+
+    state = SimpleNamespace(
+        _translation_status_save_after_id=None,
+        _translation_status_pending_reason="",
+        after=after,
+        after_cancel=lambda token: cancelled.append(token),
+        _save_translation_status_state=lambda reason: saved.append(reason),
+    )
+
+    main.App._schedule_translation_status_state_save(state, "first", 750)
+    first_token = state._translation_status_save_after_id
+    main.App._schedule_translation_status_state_save(state, "latest", 750)
+    latest_token = state._translation_status_save_after_id
+    callbacks[latest_token]()
+
+    assert cancelled == [first_token]
+    assert saved == ["latest"]
+    assert state._translation_status_save_after_id is None
+
+
 class FakeThread:
     def __init__(self, alive):
         self.alive = alive

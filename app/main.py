@@ -37,8 +37,9 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.64"
+APP_VERSION = "0.11.65"
 MOD_STATUS_CACHE_VERSION = 15
+TRANSLATION_STATUS_SNAPSHOT_SCHEMA = 2
 
 
 def _translation_status_snapshot_is_current(snapshot) -> bool:
@@ -47,6 +48,60 @@ def _translation_status_snapshot_is_current(snapshot) -> bool:
         and snapshot.get("mod_status_cache_version") == MOD_STATUS_CACHE_VERSION
         and snapshot.get("relation_algorithm_version") == core.TRANSLATION_RELATION_ALGORITHM_VERSION
     )
+
+
+def _compact_status_gap_groups(rows):
+    """Group gap keys by origin without repeating a dict for every key."""
+    compact = {}
+    for row in rows or []:
+        if not isinstance(row, dict) or not row.get("key"):
+            continue
+        origin = str(row.get("source_origin") or "")
+        compact.setdefault(origin, []).append(str(row.get("key")))
+    return compact
+
+
+def _status_gap_rows(result, external=False):
+    """Return full live gaps or rebuild lightweight persisted gaps on demand."""
+    if not isinstance(result, dict):
+        return []
+    field = "external_translation_gaps" if external else "candidates"
+    rows = result.get(field)
+    if isinstance(rows, list) and rows:
+        return rows
+    if external and result.get("external_gaps_match_candidates"):
+        groups = result.get("candidate_gap_keys_by_origin") or {}
+    else:
+        groups = result.get(
+            "external_gap_keys_by_origin" if external else "candidate_gap_keys_by_origin"
+        ) or {}
+    rebuilt = []
+    for origin, keys in groups.items():
+        for key in keys or []:
+            item = {"key": str(key)}
+            if origin:
+                item["source_origin"] = str(origin)
+            rebuilt.append(item)
+    return rebuilt
+
+
+def _compact_translation_status_result(result):
+    """Remove source text payloads while preserving visible status and gap keys."""
+    if not isinstance(result, dict):
+        return {}
+    compact = dict(result)
+    candidate_groups = _compact_status_gap_groups(_status_gap_rows(result))
+    external_groups = _compact_status_gap_groups(_status_gap_rows(result, external=True))
+    compact.pop("candidates", None)
+    compact.pop("external_translation_gaps", None)
+    compact["candidate_gap_keys_by_origin"] = candidate_groups
+    if external_groups and external_groups == candidate_groups:
+        compact["external_gaps_match_candidates"] = True
+        compact.pop("external_gap_keys_by_origin", None)
+    else:
+        compact["external_gaps_match_candidates"] = False
+        compact["external_gap_keys_by_origin"] = external_groups
+    return compact
 
 
 def _app_container_dir() -> Path:
@@ -748,6 +803,8 @@ class App(BaseTk):
         self.backup_restore_refresh_generation = 0
         self.backup_restore_refresh_pending = False
         self.status_restore_thread = None
+        self._translation_status_save_after_id = None
+        self._translation_status_pending_reason = ""
         self.diagnostic_restore_thread = None
         self.judgement_log_thread = None
         self._judgement_log_window = None
@@ -5478,7 +5535,7 @@ Mod更新後だけ追加翻訳:
 
     def _cache_mod_status_result(self, mod_root: Path, signature: str, result: dict):
         key = str(Path(mod_root).expanduser().resolve())
-        summary = {k:v for k,v in result.items() if k != "candidates"}
+        summary = _compact_translation_status_result(result)
         summary["path"] = str(result.get("path") or mod_root)
         row = {"signature": signature, "checked_at": datetime.now().isoformat(timespec="seconds"), "result": summary}
         with self.mod_status_cache_lock:
@@ -5504,10 +5561,15 @@ Mod更新後だけ追加翻訳:
                 if not cache_is_current:
                     data = {"version": MOD_STATUS_CACHE_VERSION, "items": {}}
                 by_path={}
+                cache_compacted = False
                 for row in (data.get("items", {}) or {}).values():
                     result = row.get("result") if isinstance(row, dict) else None
                     if isinstance(result, dict) and result.get("path"):
-                        r=dict(result); r["cached"]=True; by_path[str(r.get("path"))]=r
+                        compact_result = _compact_translation_status_result(result)
+                        if compact_result != result:
+                            row["result"] = compact_result
+                            cache_compacted = True
+                        r=dict(compact_result); r["cached"]=True; by_path[str(r.get("path"))]=r
                 snap=self._load_translation_status_snapshot()
                 snapshot_is_current = _translation_status_snapshot_is_current(snap)
                 if cache_is_current and snapshot_is_current:
@@ -5515,9 +5577,13 @@ Mod更新後だけ追加翻訳:
                         if not isinstance(r,dict) or not r.get("path"): continue
                         path=str(r.get("path"))
                         if path not in by_path:
-                            rr=dict(r); rr["cached"]=True; rr["stale_cached"]=True; by_path[path]=rr
+                            rr=_compact_translation_status_result(r); rr["cached"]=True; rr["stale_cached"]=True; by_path[path]=rr
+                if cache_compacted:
+                    data["updated_at"] = datetime.now().isoformat(timespec="seconds")
+                    core.save_json(MOD_STATUS_CACHE_PATH, data)
                 rows=list(by_path.values()); rows.sort(key=lambda r:str(r.get("mod","")).lower())
-                self.events.put(('status_cache_restored',(data,rows,list(snap.get('selected_paths') or []))))
+                selected_paths = list(snap.get('selected_paths') or []) if snapshot_is_current else []
+                self.events.put(('status_cache_restored',(data,rows,selected_paths)))
             except Exception as exc:
                 self.events.put(('status_cache_restore_error',str(exc)))
         self.status_restore_thread=threading.Thread(target=work,daemon=True,name='status-cache-restore')
@@ -5541,6 +5607,8 @@ Mod更新後だけ追加翻訳:
         for r in self.mod_research_results: counts[r.get('status','')]=counts.get(r.get('status',''),0)+1
         summary=' / '.join(f'{k}: {v}' for k,v in counts.items())
         self.mod_status_summary_var.set(f'キャッシュ復元: {len(self.mod_research_results)}件'+(f'　{summary}' if summary else ''))
+        # Rewrite legacy/markerless snapshots from the validated generation cache.
+        self._save_translation_status_state("cache_restored")
         self._refresh_diagnostic_targets()
         self._refresh_backup_restore_entries()
 
@@ -6126,7 +6194,7 @@ Mod更新後だけ追加翻訳:
                 item["external_translation_mod"]=result.get("external_translation_mod","")
                 item["external_translation_path"]=result.get("external_translation_path","")
                 item["external_translation_localization"]=result.get("external_translation_localization","")
-                item["external_gap_keys"]=[c.get("key") for c in result.get("external_translation_gaps",[]) if c.get("key")]
+                item["external_gap_keys"]=[c.get("key") for c in _status_gap_rows(result, external=True) if c.get("key")]
                 added+=1
         self._refresh_chinese_queue_tree()
         if added:
@@ -6221,9 +6289,9 @@ Mod更新後だけ追加翻訳:
         item["external_translation_mod"] = result.get("external_translation_mod", "")
         item["external_translation_path"] = result.get("external_translation_path", "")
         item["external_translation_localization"] = result.get("external_translation_localization", "")
-        item["external_gap_keys"] = [c.get("key") for c in result.get("external_translation_gaps", []) if c.get("key")]
+        item["external_gap_keys"] = [c.get("key") for c in _status_gap_rows(result, external=True) if c.get("key")]
         # Preserve the exact gap set shown in the Translation Status tab for diagnostics/session restore.
-        item["status_gap_candidates"] = list(result.get("candidates", []))
+        item["status_gap_candidates"] = _status_gap_rows(result)
         item["status_gap_count"] = int(result.get("gap_count", 0) or 0)
         return item
 
@@ -6282,8 +6350,8 @@ Mod更新後だけ追加翻訳:
                 item["external_translation_mod"]=result.get("external_translation_mod","")
                 item["external_translation_path"]=result.get("external_translation_path","")
                 item["external_translation_localization"]=result.get("external_translation_localization","")
-                item["external_gap_keys"]=[c.get("key") for c in result.get("external_translation_gaps",[]) if c.get("key")]
-                item["status_gap_candidates"] = list(result.get("candidates", []))
+                item["external_gap_keys"]=[c.get("key") for c in _status_gap_rows(result, external=True) if c.get("key")]
+                item["status_gap_candidates"] = _status_gap_rows(result)
                 item["status_gap_count"] = int(result.get("gap_count", 0) or 0)
                 added += 1
         self._refresh_chinese_queue_tree()
@@ -8324,7 +8392,21 @@ Mod更新後だけ追加翻訳:
 
     def _save_translation_status_state(self, reason="update"):
         """Persist the visible Translation Status state independently from scan-signature cache."""
+        if threading.current_thread() is not threading.main_thread():
+            try:
+                self.after(0, lambda r=reason: self._save_translation_status_state(r))
+            except Exception:
+                pass
+            return
         try:
+            pending = getattr(self, "_translation_status_save_after_id", None)
+            if pending is not None:
+                try:
+                    self.after_cancel(pending)
+                except Exception:
+                    pass
+                self._translation_status_save_after_id = None
+            self._translation_status_pending_reason = ""
             selected_paths = []
             if hasattr(self, "mod_status_tree"):
                 for row in self._selected_mod_status_results():
@@ -8332,11 +8414,17 @@ Mod更新後だけ追加翻訳:
                     if raw and raw not in selected_paths:
                         selected_paths.append(str(raw))
             payload = {
-                "schema": 1,
+                "schema": TRANSLATION_STATUS_SNAPSHOT_SCHEMA,
+                "mod_status_cache_version": MOD_STATUS_CACHE_VERSION,
+                "relation_algorithm_version": core.TRANSLATION_RELATION_ALGORITHM_VERSION,
                 "saved_at": datetime.now().isoformat(timespec="seconds"),
                 "saved_at_ns": time.time_ns(),
                 "reason": reason,
-                "results": self._json_safe_state(list(getattr(self, "mod_research_results", []) or [])),
+                "results": self._json_safe_state([
+                    _compact_translation_status_result(row)
+                    for row in list(getattr(self, "mod_research_results", []) or [])
+                    if isinstance(row, dict)
+                ]),
                 "selected_paths": selected_paths,
                 "summary": self._workspace_scalar(getattr(self, "mod_status_summary_var", None), ""),
                 "search": self._workspace_scalar(getattr(self, "mod_status_search_var", None), ""),
@@ -8347,6 +8435,22 @@ Mod更新後だけ追加翻訳:
             self._save_shared_mod_state_cache("translation_status:" + str(reason))
         except Exception as exc:
             record_error("翻訳状況状態キャッシュ保存", exc)
+
+    def _schedule_translation_status_state_save(self, reason="update", delay_ms=750):
+        """Coalesce rapid status-row events into one main-thread snapshot write."""
+        self._translation_status_pending_reason = str(reason)
+        pending = getattr(self, "_translation_status_save_after_id", None)
+        if pending is not None:
+            try:
+                self.after_cancel(pending)
+            except Exception:
+                pass
+        def flush():
+            self._translation_status_save_after_id = None
+            pending_reason = self._translation_status_pending_reason or reason
+            self._translation_status_pending_reason = ""
+            self._save_translation_status_state(pending_reason)
+        self._translation_status_save_after_id = self.after(max(0, int(delay_ms)), flush)
 
     def _load_translation_status_snapshot(self, force_disk=False):
         """Load the persisted Translation Status snapshot with a process-local cache.
@@ -10398,7 +10502,7 @@ Mod更新後だけ追加翻訳:
                 elif kind=="mod_status_append":
                     self.mod_research_results.append(payload)
                     self._populate_mod_status_tree()
-                    self._save_translation_status_state("status_append")
+                    self._schedule_translation_status_state_save("status_append")
                     counts={}
                     for r in self.mod_research_results: counts[r.get("status","")]=counts.get(r.get("status",""),0)+1
                     summary=" / ".join(f"{k}: {v}" for k,v in counts.items())
