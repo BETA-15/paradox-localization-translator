@@ -1,3 +1,18 @@
+# v0.11.64 追加確認
+
+- [x] `VERSION` / `APP_VERSION` / `pyproject.toml` / `uv.lock` を 0.11.64 に統一
+- [x] Vic3の`.metadata/metadata.json`からMod名を取得
+- [x] `descriptor.mod` / `*.mod`の従来優先順位を維持
+- [x] 未エスケープWindowsパスを含む不正JSONから名前欄だけを回収
+- [x] Mod分類キャッシュの数字名を再調査時に更新
+- [x] 翻訳状況キャッシュを世代15へ更新
+- [x] Vic3実物174件すべてのMod名を取得
+- [x] CK3実物で従来形式の名前取得を確認
+- [x] pytest 40件 PASS
+- [x] Pythonコンパイル PASS
+- [ ] GUI実画面で再調査後の名前更新を確認
+- [ ] GitHub Actions 3OSビルドを確認
+
 # v0.11.63 追加確認
 
 - [x] `VERSION` / `APP_VERSION` / `pyproject.toml` / `uv.lock` を 0.11.63 に統一

@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.64
+
+- Victoria 3 Workshop Modの`.metadata/metadata.json`からMod名を取得する処理を追加。
+- 従来の`descriptor.mod`とルート直下の`*.mod`を優先し、CK3・HOI4・Stellaris・EU系の既存取得方式を維持。
+- 未エスケープのWindowsパスを含む不正なVic3メタデータでも、正常な`name`フィールドだけを安全に回収。
+- 数字のWorkshop IDが残ったMod分類キャッシュを、再調査時に正式なMod名へ更新。
+- 翻訳状況キャッシュを世代15へ更新し、旧版で保存された数字名を復元しないように変更。
+
 ## v0.11.63
 
 - Workshopファイルで確認された`UTF-8 BOM + UTF-16LE BOM`の混在を自動判別・復旧し、出力をUTF-8 BOMへ正規化。

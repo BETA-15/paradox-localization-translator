@@ -26,6 +26,13 @@ Paradox Interactive系ゲームのModローカライズを、**ローカルLLM�
 
 ---
 
+## v0.11.64 の改善
+
+- Victoria 3 Workshop Modの`.metadata/metadata.json`から正式なMod名を取得します。
+- 従来形式を優先するため、CK3・HOI4・Stellaris・EU系Modの名前取得方法は変わりません。
+- Windowsパスの未エスケープでJSONとして壊れたVic3メタデータでも、名前欄だけを安全に回収します。
+- 再調査時に、既存キャッシュ内の数字名を正式なMod名へ置き換えます。
+
 ## v0.11.63 の改善
 
 - UTF-8 BOMの後ろにUTF-16/UTF-32 BOMが重なったWorkshop localizationを自動修復し、生成物をUTF-8 BOMへ正規化します。

@@ -37,8 +37,8 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.63"
-MOD_STATUS_CACHE_VERSION = 14
+APP_VERSION = "0.11.64"
+MOD_STATUS_CACHE_VERSION = 15
 
 
 def _translation_status_snapshot_is_current(snapshot) -> bool:
@@ -5585,6 +5585,15 @@ Mod更新後だけ追加翻訳:
             mods = self.mod_classification_cache.setdefault("mods", {})
             row = mods.get(key)
             if isinstance(row, dict) and "had_japanese_at_first_seen" in row:
+                # Refresh display-only metadata without changing the sticky
+                # first-seen role.  This repairs Vic3 caches that previously
+                # stored the numeric Workshop directory as the Mod name.
+                detected_name = core.detect_mod_name(root)
+                if detected_name and row.get("mod") != detected_name:
+                    row["mod"] = detected_name
+                    row["path"] = key
+                    self.mod_classification_cache["updated_at"] = datetime.now().isoformat(timespec="seconds")
+                    core.save_json(MOD_CLASSIFICATION_CACHE_PATH, self.mod_classification_cache)
                 return bool(row.get("had_japanese_at_first_seen"))
 
         historical = None

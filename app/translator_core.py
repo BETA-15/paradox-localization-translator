@@ -2429,6 +2429,34 @@ def detect_mod_name(mod_root: Path) -> str:
         m = re.search(r'^\s*name\s*=\s*["\']([^"\']+)["\']', text, flags=re.I | re.M)
         if m:
             return m.group(1).strip()
+    # Victoria 3 Workshop Mods use the newer .metadata/metadata.json layout
+    # instead of descriptor.mod.  Keep the legacy Paradox descriptors first so
+    # existing CK3/HOI4/Stellaris/EU Mods retain their current display names.
+    metadata = mod_root / ".metadata" / "metadata.json"
+    if metadata.is_file():
+        try:
+            text = metadata.read_text(encoding="utf-8-sig")
+        except (OSError, UnicodeError):
+            pass
+        else:
+            try:
+                payload = json.loads(text)
+            except json.JSONDecodeError:
+                payload = None
+            name = payload.get("name") if isinstance(payload, dict) else None
+            if not isinstance(name, str) or not name.strip():
+                # Some published Vic3 Mods contain an unescaped Windows path,
+                # making the document invalid JSON even though the name field is
+                # intact.  Recover only that quoted scalar; never interpret the
+                # rest of a malformed metadata document.
+                match = re.search(r'^\s*"name"\s*:\s*"((?:\\.|[^"\\])*)"', text, flags=re.I | re.M)
+                if match:
+                    try:
+                        name = json.loads(f'"{match.group(1)}"')
+                    except json.JSONDecodeError:
+                        name = match.group(1)
+            if isinstance(name, str) and name.strip():
+                return name.strip()
     return mod_root.name or str(mod_root)
 
 
