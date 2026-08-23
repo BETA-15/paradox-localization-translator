@@ -145,6 +145,17 @@ def decode_text_bytes(data: bytes) -> tuple[str, str]:
     Returns ``(text, encoding_name)``.  UTF-32 BOMs are checked before
     UTF-16 because UTF-32 LE begins with the same ``FF FE`` prefix.
     """
+    # Some Workshop files contain a UTF-8 BOM prepended to an already BOM-marked
+    # UTF-16/UTF-32 file.  Treat these mixed BOMs as a recoverable producer error
+    # instead of trying to decode the inner UTF-16 bytes as UTF-8.
+    if data.startswith(b"\xef\xbb\xbf\xff\xfe\x00\x00"):
+        return data[3:].decode("utf-32-le").lstrip("\ufeff"), "utf-8-bom+utf-32-le"
+    if data.startswith(b"\xef\xbb\xbf\x00\x00\xfe\xff"):
+        return data[3:].decode("utf-32-be").lstrip("\ufeff"), "utf-8-bom+utf-32-be"
+    if data.startswith(b"\xef\xbb\xbf\xff\xfe"):
+        return data[3:].decode("utf-16-le").lstrip("\ufeff"), "utf-8-bom+utf-16-le"
+    if data.startswith(b"\xef\xbb\xbf\xfe\xff"):
+        return data[3:].decode("utf-16-be").lstrip("\ufeff"), "utf-8-bom+utf-16-be"
     if data.startswith(b"\xef\xbb\xbf"):
         return data.decode("utf-8-sig"), "utf-8-sig"
     if data.startswith(b"\xff\xfe\x00\x00"):
@@ -245,7 +256,7 @@ def save_glossary(path: Path, glossary: dict):
     save_json(path, glossary)
 
 
-def read_localization_text(path: Path) -> str:
+def read_localization_text_with_encoding(path: Path) -> tuple[str, str]:
     """Read a Paradox localization file with BOM-aware encoding detection.
 
     UTF-8/UTF-8 BOM and UTF-16 LE/BE are supported, with a conservative
@@ -254,13 +265,17 @@ def read_localization_text(path: Path) -> str:
     """
     path = Path(path)
     try:
-        text, _encoding = decode_text_bytes(path.read_bytes())
-        return text
+        return decode_text_bytes(path.read_bytes())
     except UnicodeDecodeError as exc:
         raise UnicodeDecodeError(
             exc.encoding, exc.object, exc.start, exc.end,
             f"{exc.reason}; file={path}"
         ) from exc
+
+
+def read_localization_text(path: Path) -> str:
+    text, _encoding = read_localization_text_with_encoding(path)
+    return text
 
 
 def text_hash(s: str) -> str:
@@ -1277,6 +1292,8 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
 
     results = {}
     failed = set()
+    failure_reasons = {}
+    deferred_systemic_failures = set()
     completed_jobs = 0
     cursor = 0
 
@@ -1342,6 +1359,12 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
             if err == "__STOP__":
                 raise StopRequested()
             _apply_batch_result(b, translated, results, cache, translation_source_lang, failed)
+            for job in b:
+                line_idx = job["line_idx"]
+                if line_idx in failed:
+                    failure_reasons[line_idx] = err or "LLM応答が原文のまま、または翻訳として利用できませんでした"
+                else:
+                    failure_reasons.pop(line_idx, None)
             completed_jobs += len(b)
             if err and verbose:
                 print(f"  [警告] バッチ失敗: {err}")
@@ -1358,10 +1381,28 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
             if controller and controller.stop_event.is_set():
                 raise StopRequested()
 
+        # translate_batch only raises after the provider call exhausted its own
+        # retries. Do not repeat that same systemic failure once per remaining key;
+        # defer those jobs to the queue-level retry pass instead.
+        transport_errors = [err for _b, _translated, err in work_results if err and err != "__STOP__"]
+        if transport_errors:
+            reason = transport_errors[0]
+            for pending in jobs[cursor:]:
+                failed.add(pending["line_idx"])
+                deferred_systemic_failures.add(pending["line_idx"])
+                failure_reasons[pending["line_idx"]] = f"接続・プロバイダ障害のため後段再試行へ延期: {reason}"
+            for batch, _translated, err in work_results:
+                if err:
+                    deferred_systemic_failures.update(j["line_idx"] for j in batch)
+            if verbose and cursor < len(jobs):
+                print(f"  [警告] プロバイダ障害が継続しているため、残り {len(jobs)-cursor}件をキュー後段の再試行へ延期します")
+            cursor = len(jobs)
+
     if failed:
         if verbose:
-            print(f"  {len(failed)}件を単発再試行します…")
-        retry_jobs = [j for j in jobs if j["line_idx"] in failed]
+            immediate_count = sum(1 for idx in failed if idx not in deferred_systemic_failures)
+            print(f"  {immediate_count}件を単発再試行します…")
+        retry_jobs = [j for j in jobs if j["line_idx"] in failed and j["line_idx"] not in deferred_systemic_failures]
         for j in retry_jobs:
             if controller:
                 controller.wait_if_paused()
@@ -1377,14 +1418,16 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
                 restored = restore_text(tr[0], j["tokens"])
                 if looks_untranslated(j["value"], restored, translation_source_lang):
                     cache.pop(j["hash"], None)
+                    failure_reasons[j["line_idx"]] = "単発再試行後も原文のまま、または翻訳として利用できませんでした"
                 else:
                     results[j["line_idx"]] = restored
                     cache[j["hash"]] = restored
                     failed.discard(j["line_idx"])
+                    failure_reasons.pop(j["line_idx"], None)
             except StopRequested:
                 raise
-            except Exception:
-                pass
+            except Exception as exc:
+                failure_reasons[j["line_idx"]] = str(exc)
             if cache_file:
                 save_cache(cache_file, cache)
 
@@ -1408,7 +1451,15 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
         out_lines.append(f'{m.group("indent")}{m.group("key")}: {m.group("version") or ""}"{escaped_translated}"{m.group("trailing") or ""}')
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text("\ufeff" + "\n".join(out_lines) + "\n", encoding="utf-8")
-    return {"jobs": len(jobs), "failed": len(failed), "keys": total_keys}
+    failed_jobs = [
+        {
+            "key": j["key"],
+            "reason": failure_reasons.get(j["line_idx"], "翻訳できませんでした"),
+        }
+        for j in jobs if j["line_idx"] in failed
+    ]
+    return {"jobs": len(jobs), "failed": len(failed), "keys": total_keys,
+            "failed_jobs": failed_jobs}
 
 
 def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OLLAMA_URL,
@@ -1435,6 +1486,54 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
     if not files:
         raise RuntimeError("翻訳対象のYAMLファイルが見つかりませんでした。")
 
+    file_errors = []
+    encoding_recoveries = []
+    llm_failures = []
+
+    def collect_file_error(path: Path, stage: str, exc: Exception, action: str = "スキップして継続"):
+        skipped = action.startswith("スキップ")
+        row = {
+            "file": str(path), "stage": stage, "error_type": type(exc).__name__,
+            "message": str(exc), "action": action, "skipped": skipped,
+            "retryable": skipped,
+        }
+        file_errors.append(row)
+        print(f"  [警告] {stage}エラーのため{action}: {path} / {type(exc).__name__}: {exc}")
+        if controller:
+            controller.notify(kind="file_error", **row)
+
+    def save_error_report(interrupted: bool = False) -> Path:
+        report_path = output_path / "translation_error_report.json"
+        attempt = {
+            "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "input": str(input_path), "output": str(output_path),
+            "interrupted": bool(interrupted),
+            "encoding_recoveries": encoding_recoveries,
+            "file_errors": file_errors,
+            "llm_failures": llm_failures,
+            "summary": {
+                "encoding_recoveries": len(encoding_recoveries),
+                "skipped_files": sum(1 for row in file_errors if row.get("skipped")),
+                "qa_errors": sum(1 for row in file_errors if not row.get("skipped")),
+                "unresolved_llm_jobs": len(llm_failures),
+            },
+        }
+        previous = load_json(report_path, {})
+        attempts = list(previous.get("attempts") or []) if isinstance(previous, dict) else []
+        attempts.append(attempt)
+        payload = dict(attempt)
+        payload["attempts"] = attempts
+        payload["history_summary"] = {
+            "attempts": len(attempts),
+            "total_file_error_occurrences": sum(len(row.get("file_errors") or []) for row in attempts),
+            "total_llm_failure_occurrences": sum(len(row.get("llm_failures") or []) for row in attempts),
+            "recovered_on_latest_retry": len(attempts) > 1
+                and not file_errors and not llm_failures
+                and any((row.get("file_errors") or row.get("llm_failures")) for row in attempts[:-1]),
+        }
+        save_json(report_path, payload)
+        return report_path
+
     def sort_key(p):
         parts = [x.lower() for x in p.parts]; name = p.name.lower()
         is_en = "english" in parts or "_l_english" in name
@@ -1443,54 +1542,100 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
         # Dual source時は中国語ファイル自体を別途出力しない（英語の参考として使用）
         return (0 if is_en else 3 if is_target else 2 if is_zh else 1, str(p))
     files = sorted(files, key=sort_key)
-    if dual_source:
-        english_exists = any(detect_source_lang(p, read_localization_text(p).splitlines()[:5]) == "english" for p in files)
-        if english_exists:
-            files = [p for p in files if detect_source_lang(p, read_localization_text(p).splitlines()[:5]) != "simp_chinese"]
+    # Preflight every file independently. One malformed file must not prevent the
+    # remaining files (or later queue items) from being translated overnight.
+    file_info = []
+    for p in files:
+        try:
+            text, encoding = read_localization_text_with_encoding(p)
+            source_lang = detect_source_lang(p, text.splitlines()[:5])
+            file_info.append((p, source_lang))
+            if "+" in encoding:
+                recovery = {
+                    "file": str(p), "detected_encoding": encoding,
+                    "action": "混在BOMを除去して読み込み、出力はUTF-8 BOMへ正規化",
+                }
+                encoding_recoveries.append(recovery)
+                print(f"  [自動修復] 混在BOMを検出: {p} / {encoding}")
+                if controller:
+                    controller.notify(kind="encoding_recovered", **recovery)
+        except StopRequested:
+            raise
+        except Exception as exc:
+            collect_file_error(p, "読み込み・文字コード判定", exc)
+    if dual_source and any(lang == "english" for _p, lang in file_info):
+        file_info = [(p, lang) for p, lang in file_info if lang != "simp_chinese"]
 
-    print(f"プロバイダ: {provider} / モデル: {model} / 対象ファイル: {len(files)} / プリセット: {preset} / 英中併用: {'ON' if dual_source else 'OFF'}")
+    print(f"プロバイダ: {provider} / モデル: {model} / 対象ファイル: {len(file_info)} / 読込スキップ: {sum(1 for row in file_errors if row.get('skipped'))} / プリセット: {preset} / 英中併用: {'ON' if dual_source else 'OFF'}")
     base_dir = input_path if input_path.is_dir() else input_path.parent
     planned = {}
     processed = 0
     total_jobs = total_failed = 0
     try:
-        for i, f in enumerate(files, 1):
+        for i, (f, source_lang) in enumerate(file_info, 1):
             if controller:
                 controller.wait_if_paused()
-            rel = f.parent.relative_to(base_dir) if input_path.is_dir() else Path(".")
-            source_lang = detect_source_lang(f, read_localization_text(f).splitlines()[:5])
-            out = output_path / remap_rel_dir(rel, target_lang) / rename_for_target(f, target_lang, source_lang)
-            key = str(out.resolve())
-            if key in planned:
-                print(f"[{i}/{len(files)}] 出力先重複のためスキップ: {f.name}")
+            try:
+                rel = f.parent.relative_to(base_dir) if input_path.is_dir() else Path(".")
+                out = output_path / remap_rel_dir(rel, target_lang) / rename_for_target(f, target_lang, source_lang)
+                key = str(out.resolve())
+                if key in planned:
+                    print(f"[{i}/{len(file_info)}] 出力先重複のためスキップ: {f.name}")
+                    continue
+                planned[key] = str(f)
+                print(f"[{i}/{len(file_info)}] {f.relative_to(base_dir) if input_path.is_dir() else f.name} -> {out}")
+                stats = process_file(f, out, url, model, target_lang, cache, workers, verbose,
+                                     batch_size, controller, glossary, preset, zh_refs, dual_source,
+                                     cache_file, i, len(file_info), provider, api_key, False)
+            except StopRequested:
+                raise
+            except Exception as exc:
+                collect_file_error(f, "翻訳処理", exc)
+                save_cache(cache_file, cache)
+                if controller:
+                    controller.checkpoint({"current_file": str(f), "file_error": str(exc),
+                                           "timestamp": time.time()})
                 continue
-            planned[key] = str(f)
-            print(f"[{i}/{len(files)}] {f.relative_to(base_dir) if input_path.is_dir() else f.name} -> {out}")
-            stats = process_file(f, out, url, model, target_lang, cache, workers, verbose,
-                                 batch_size, controller, glossary, preset, zh_refs, dual_source,
-                                 cache_file, i, len(files), provider, api_key, False)
             processed += 1; total_jobs += stats["jobs"]; total_failed += stats["failed"]
+            for failed_job in stats.get("failed_jobs", []):
+                llm_failures.append({"file": str(f), **failed_job})
             save_cache(cache_file, cache)
             if auto_qa and out.exists():
-                source_ref = f if source_lang != target_lang else None
-                qa_result = qa_file_with_syntax_repair(out, source_ref, source_lang=source_lang, glossary=glossary)
-                issues = qa_result["issues"]
-                severe = sum(1 for x in issues if x["severity"] == "error")
-                warn = sum(1 for x in issues if x["severity"] == "warning")
-                print(f"  QA: error {severe} / warning {warn} / syntax自動修正 {qa_result['syntax_repaired']}件 / 未修正 {qa_result['syntax_unresolved']}件")
+                try:
+                    source_ref = f if source_lang != target_lang else None
+                    qa_result = qa_file_with_syntax_repair(out, source_ref, source_lang=source_lang, glossary=glossary)
+                    issues = qa_result["issues"]
+                    severe = sum(1 for x in issues if x["severity"] == "error")
+                    warn = sum(1 for x in issues if x["severity"] == "warning")
+                    print(f"  QA: error {severe} / warning {warn} / syntax自動修正 {qa_result['syntax_repaired']}件 / 未修正 {qa_result['syntax_unresolved']}件")
+                except StopRequested:
+                    raise
+                except Exception as exc:
+                    collect_file_error(out, "翻訳後QA", exc, action="翻訳結果を保持して継続")
             if controller:
-                controller.notify(kind="file_done", file=str(f), file_no=i, file_total=len(files))
+                controller.notify(kind="file_done", file=str(f), file_no=i, file_total=len(file_info))
                 if controller.stop_event.is_set():
                     raise StopRequested()
     except StopRequested:
         save_cache(cache_file, cache)
         save_source_manifest(cache_file, current_manifest)
+        report_path = save_error_report(interrupted=True)
         print("保存して中断しました。次回はキャッシュから再開できます。")
         return {"processed": processed, "interrupted": True, "jobs": total_jobs, "failed": total_failed,
+                "skipped": sum(1 for row in file_errors if row.get("skipped")), "file_errors": file_errors,
+                "warnings": sum(1 for row in file_errors if not row.get("skipped")),
+                "encoding_recoveries": encoding_recoveries, "error_report": str(report_path),
                 "cache": str(cache_file)}
     save_source_manifest(cache_file, current_manifest)
-    print("完了しました。")
+    report_path = save_error_report(interrupted=False)
+    if file_errors or total_failed:
+        print(f"警告付きで完了しました。スキップ {sum(1 for row in file_errors if row.get('skipped'))}ファイル / 翻訳失敗 {total_failed}件")
+    else:
+        print("完了しました。")
     return {"processed": processed, "interrupted": False, "jobs": total_jobs, "failed": total_failed,
+            "skipped": sum(1 for row in file_errors if row.get("skipped")), "file_errors": file_errors,
+            "warnings": sum(1 for row in file_errors if not row.get("skipped")),
+            "encoding_recoveries": encoding_recoveries, "error_report": str(report_path),
             "cache": str(cache_file), "manifest": str(cache_file.parent / SOURCE_MANIFEST_NAME)}
 
 
