@@ -37,7 +37,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.62"
+APP_VERSION = "0.11.63"
 MOD_STATUS_CACHE_VERSION = 14
 
 
@@ -8035,60 +8035,195 @@ Mod更新後だけ追加翻訳:
 
     def _queue_worker(self):
         interrupted = False
-        completed = 0
+        completed_ids = set()
+        recovered_ids = set()
+        unresolved_ids = set()
+        queue_error_records = []
         active = list(getattr(self, "_active_normal_item_ids", []))
         if not active:
             app_state.ensure_queue_item_ids(self.queue_items)
             active = [app_state.ensure_queue_item_id(item) for item in self.queue_items]
-        try:
-            for pos,item_id in enumerate(active):
-                item=app_state.queue_item_by_id(self.queue_items,item_id)
-                if item is None:
-                    raise RuntimeError("通常翻訳キュー項目が処理中に失われました")
-                i=app_state.queue_index_by_id(self.queue_items,item_id)
-                self.current_queue_index=i
-                item["status"]="翻訳中"; self.events.put(("queue_refresh",None))
-                self.events.put(("normal_log", f"開始: {item.get('mod_name') or Path(item.get('input','')).name} ({pos+1}/{len(active)})"))
-                self._checkpoint({"queue_index":i,"queue_item_id":item_id})
-                cache_file=Path(self._ensure_item_cache(item))
-                st=getattr(self,"translation_start_settings",{})
-                result=core.run_translation(
-                    item["input"], item["output"], model=st.get("model", ""), url=st.get("url", ""),
-                    workers=max(1,int(st.get("workers",1) or 1)), batch_size=max(1,int(st.get("batch",40) or 40)), cache_path=cache_file,
-                    resume=True, verbose=True, include_target_files=bool(st.get("repair",True)), controller=self.controller,
-                    glossary_path=st.get("glossary") or None, preset=st.get("preset","CK3"),
-                    dual_source=False, auto_qa=bool(st.get("autoqa",True)),
-                    provider=st.get("provider","Ollama"), api_key=st.get("api_key", ""))
-                self._register_cache_job(item)
-                self.events.put(("normal_log", f"処理結果: {item.get('mod_name') or Path(item.get('input','')).name} / ファイル {result.get('processed',0)} / LLMジョブ {result.get('jobs',0)} / 失敗 {result.get('failed',0)}"))
-                if result.get("interrupted"):
-                    interrupted = True
-                    item["status"]="中断（再開可）"
-                    self.events.put(("queue_refresh",None))
-                    self._write_session_file(active=True,restore_on_launch=True)
-                    break
-                completed += 1
-                if item.get("diff_mode"):
-                    lang_done = self._differential_language_completion(item, "english")
-                    if lang_done.get("language_complete"):
-                        item["status"] = self._language_complete_status_text("english", int(lang_done.get("opposite_only_count", 0) or 0))
-                    elif self._item_has_remaining_translation_gap(item):
-                        item["status"] = "完了（一部差分欠落あり）"
-                    else:
-                        item["status"] = "完了（差分更新）"
+
+        def item_label(item):
+            return item.get("mod_name") or Path(item.get("input", "")).name
+
+        def run_item(item_id, pos, total, retry_pass=False):
+            item=app_state.queue_item_by_id(self.queue_items,item_id)
+            if item is None:
+                raise RuntimeError("通常翻訳キュー項目が処理中に失われました")
+            i=app_state.queue_index_by_id(self.queue_items,item_id)
+            self.current_queue_index=i
+            item["status"]="エラー項目を再試行中" if retry_pass else "翻訳中"
+            self.events.put(("queue_refresh",None))
+            phase = "再試行" if retry_pass else "開始"
+            self.events.put(("normal_log", f"{phase}: {item_label(item)} ({pos+1}/{total})"))
+            self._checkpoint({"queue_index":i,"queue_item_id":item_id,"retry_pass":retry_pass})
+            cache_file=Path(self._ensure_item_cache(item))
+            st=getattr(self,"translation_start_settings",{})
+            result=core.run_translation(
+                item["input"], item["output"], model=st.get("model", ""), url=st.get("url", ""),
+                workers=max(1,int(st.get("workers",1) or 1)), batch_size=max(1,int(st.get("batch",40) or 40)), cache_path=cache_file,
+                resume=True, verbose=True, include_target_files=bool(st.get("repair",True)), controller=self.controller,
+                glossary_path=st.get("glossary") or None, preset=st.get("preset","CK3"),
+                dual_source=False, auto_qa=bool(st.get("autoqa",True)),
+                provider=st.get("provider","Ollama"), api_key=st.get("api_key", ""))
+            self._register_cache_job(item)
+            skipped=int(result.get("skipped",0) or 0)
+            failed=int(result.get("failed",0) or 0)
+            warnings=int(result.get("warnings",0) or 0)
+            item["translation_error_summary"]={
+                "skipped_files":skipped, "failed_jobs":failed,
+                "warnings":warnings,
+                "error_report":result.get("error_report", ""),
+                "encoding_recoveries":len(result.get("encoding_recoveries") or []),
+                "retry_pass_completed":bool(retry_pass),
+            }
+            item["translation_error_report"]=result.get("error_report", "")
+            self.events.put(("normal_log", f"処理結果: {item_label(item)} / ファイル {result.get('processed',0)} / LLMジョブ {result.get('jobs',0)} / 失敗 {failed} / スキップ {skipped} / 警告 {warnings}"))
+            if result.get("encoding_recoveries"):
+                self.events.put(("normal_log", f"自動修復: {item_label(item)} / 文字コード {len(result.get('encoding_recoveries') or [])}ファイル"))
+            if skipped or failed or warnings:
+                self.events.put(("normal_log", f"エラー記録: {result.get('error_report','')}"))
+            return item, result
+
+        def set_completed_status(item, result, retry_pass=False):
+            item_id=app_state.ensure_queue_item_id(item)
+            skipped=int(result.get("skipped",0) or 0)
+            failed=int(result.get("failed",0) or 0)
+            warnings=int(result.get("warnings",0) or 0)
+            unresolved=bool(skipped or failed)
+            if unresolved:
+                unresolved_ids.add(item_id)
+                details=[]
+                if skipped: details.append(f"{skipped}ファイルスキップ")
+                if failed: details.append(f"翻訳失敗{failed}件")
+                suffix="・".join(details)
+                item["status"]=(f"警告あり（{suffix}・再試行予定）" if not retry_pass
+                                else f"完了（未解決: {suffix}）")
+                return
+            if item_id in unresolved_ids:
+                unresolved_ids.discard(item_id)
+                recovered_ids.add(item_id)
+            if warnings:
+                item["status"]=f"完了（警告 {warnings}件）"
+                return
+            if item.get("diff_mode"):
+                lang_done = self._differential_language_completion(item, "english")
+                if lang_done.get("language_complete"):
+                    item["status"] = self._language_complete_status_text("english", int(lang_done.get("opposite_only_count", 0) or 0))
                 elif self._item_has_remaining_translation_gap(item):
                     item["status"] = "完了（一部差分欠落あり）"
                 else:
-                    item["status"] = "完了"
+                    item["status"] = "完了（差分更新）"
+            elif self._item_has_remaining_translation_gap(item):
+                item["status"] = "完了（一部差分欠落あり）"
+            else:
+                item["status"] = "完了"
+
+        try:
+            for pos,item_id in enumerate(active):
+                try:
+                    item,result=run_item(item_id,pos,len(active),retry_pass=False)
+                    if result.get("interrupted"):
+                        interrupted = True
+                        item["status"]="中断（再開可）"
+                        self.events.put(("queue_refresh",None))
+                        self._write_session_file(active=True,restore_on_launch=True)
+                        break
+                    completed_ids.add(item_id)
+                    set_completed_status(item,result,retry_pass=False)
+                except core.StopRequested:
+                    interrupted=True
+                    item=app_state.queue_item_by_id(self.queue_items,item_id)
+                    if item: item["status"]="中断（再開可）"
+                    break
+                except Exception as exc:
+                    item=app_state.queue_item_by_id(self.queue_items,item_id)
+                    record_error(f"翻訳キュー項目: {item_label(item or {})}",exc)
+                    queue_error_records.append({
+                        "phase":"first_pass", "item_id":item_id,
+                        "mod":item_label(item or {}), "error_type":type(exc).__name__,
+                        "message":str(exc), "action":"後段の自動再試行へ延期",
+                    })
+                    unresolved_ids.add(item_id)
+                    if item:
+                        item["status"]="エラー（後で再試行）"
+                        item["translation_error_summary"]={"queue_error":str(exc),"retry_pass_completed":False}
+                    self.events.put(("normal_log",f"[警告] {item_label(item or {})} を後で再試行します: {type(exc).__name__}: {exc}"))
                 self.events.put(("queue_refresh",None))
                 if pos < len(active)-1:
                     self._write_session_file(active=True,restore_on_launch=True)
+
+            # Finish the healthy queue first. Then retry only unresolved items once,
+            # using conservative concurrency so malformed responses are isolated.
+            if not interrupted and unresolved_ids:
+                retry_ids=[item_id for item_id in active if item_id in unresolved_ids]
+                self.events.put(("normal_log",f"未解決 {len(retry_ids)}項目の自動再試行を開始します。"))
+                previous_runtime=self.controller.get_runtime_settings() if self.controller else {}
+                if self.controller:
+                    self.controller.update_runtime_settings(batch_size=min(10,max(1,int(previous_runtime.get("batch_size",10) or 10))),workers=1)
+                try:
+                    for retry_pos,item_id in enumerate(retry_ids):
+                        try:
+                            item,result=run_item(item_id,retry_pos,len(retry_ids),retry_pass=True)
+                            if result.get("interrupted"):
+                                interrupted=True
+                                item["status"]="中断（再開可）"
+                                break
+                            completed_ids.add(item_id)
+                            set_completed_status(item,result,retry_pass=True)
+                        except core.StopRequested:
+                            interrupted=True
+                            break
+                        except Exception as exc:
+                            item=app_state.queue_item_by_id(self.queue_items,item_id)
+                            record_error(f"翻訳キュー再試行: {item_label(item or {})}",exc)
+                            queue_error_records.append({
+                                "phase":"retry_pass", "item_id":item_id,
+                                "mod":item_label(item or {}), "error_type":type(exc).__name__,
+                                "message":str(exc), "action":"未解決として記録",
+                            })
+                            if item:
+                                item["status"]="未解決エラー"
+                                summary=dict(item.get("translation_error_summary") or {})
+                                summary.update({"queue_error":str(exc),"retry_pass_completed":True})
+                                item["translation_error_summary"]=summary
+                            self.events.put(("normal_log",f"[未解決] {item_label(item or {})}: {type(exc).__name__}: {exc}"))
+                        self.events.put(("queue_refresh",None))
+                        self._write_session_file(active=True,restore_on_launch=True)
+                finally:
+                    if self.controller and previous_runtime:
+                        self.controller.update_runtime_settings(**previous_runtime)
             if not interrupted:
-                self._write_session_file(active=False,restore_on_launch=False)
+                keep_for_review=bool(unresolved_ids)
+                self._write_session_file(active=keep_for_review,restore_on_launch=keep_for_review)
+            queue_report_path=LOG_ROOT / f"unattended_translation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            try:
+                core.save_json(queue_report_path,{
+                    "generated_at":datetime.now().isoformat(timespec="seconds"),
+                    "app_version":APP_VERSION, "interrupted":interrupted,
+                    "selected_total":len(active), "completed_items":len(completed_ids),
+                    "recovered_items":len(recovered_ids), "unresolved_items":len(unresolved_ids),
+                    "queue_errors":queue_error_records,
+                    "items":[{
+                        "item_id":item_id,
+                        "mod":item_label(app_state.queue_item_by_id(self.queue_items,item_id) or {}),
+                        "status":(app_state.queue_item_by_id(self.queue_items,item_id) or {}).get("status",""),
+                        "summary":(app_state.queue_item_by_id(self.queue_items,item_id) or {}).get("translation_error_summary",{}),
+                        "error_report":(app_state.queue_item_by_id(self.queue_items,item_id) or {}).get("translation_error_report",""),
+                    } for item_id in active],
+                })
+                self.events.put(("normal_log",f"夜間処理レポート: {queue_report_path}"))
+            except Exception as report_exc:
+                record_error("夜間処理レポート保存",report_exc)
+                queue_report_path=Path("")
             self.events.put(("done", {
                 "interrupted": interrupted,
-                "processed_items": completed,
+                "processed_items": len(completed_ids),
                 "selected_total": len(active),
+                "unresolved_items": len(unresolved_ids),
+                "recovered_items": len(recovered_ids),
+                "queue_report": str(queue_report_path) if queue_report_path else "",
             }))
         except Exception as exc:
             record_error("翻訳処理 fatal", exc)
@@ -10099,6 +10234,10 @@ Mod更新後だけ追加翻訳:
                     elif payload.get("kind")=="file_done":
                         self.progress["value"]=100
                         self._append_log(f"完了: {Path(payload.get('file','')).name}")
+                    elif payload.get("kind")=="encoding_recovered":
+                        self._append_log(f"[自動修復] {Path(payload.get('file','')).name}: {payload.get('detected_encoding','')} → UTF-8 BOM出力")
+                    elif payload.get("kind")=="file_error":
+                        self._append_log(f"[ファイルエラー] {Path(payload.get('file','')).name} / {payload.get('stage','')}: {payload.get('error_type','')} — {payload.get('action','')}")
                 elif kind=="chinese_queue_status":
                     item_id,status=payload
                     item=app_state.queue_item_by_id(self.chinese_queue_items,item_id)
@@ -10387,7 +10526,9 @@ Mod更新後だけ追加翻訳:
                     self.worker=None
                     info = payload if isinstance(payload, dict) else {}
                     interrupted = bool(info.get("interrupted", False))
-                    if not interrupted:
+                    unresolved = int(info.get("unresolved_items", 0) or 0)
+                    recovered = int(info.get("recovered_items", 0) or 0)
+                    if not interrupted and not unresolved:
                         self._delete_session()
                     self._finish_controls()
                     self._refresh_queue_tree()
@@ -10396,12 +10537,17 @@ Mod更新後だけ追加翻訳:
                         self._set_llm_idle("LLM 待機中","翻訳を中断しました")
                         self.progress_text.set("中断しました（キャッシュ保存済み）")
                     else:
-                        self._append_log(f"翻訳完了: {info.get('processed_items',0)}/{info.get('selected_total',0)}項目")
-                        self._set_llm_idle("LLM 待機中","翻訳が完了しました")
+                        self._append_log(f"翻訳完了: {info.get('processed_items',0)}/{info.get('selected_total',0)}項目 / 再試行で復旧 {recovered} / 未解決 {unresolved}")
+                        idle_detail = f"翻訳完了・未解決 {unresolved}項目" if unresolved else "翻訳が完了しました"
+                        self._set_llm_idle("LLM 待機中",idle_detail)
                         self.progress["value"]=100
-                        self.progress_text.set("選択した翻訳が完了しました")
+                        self.progress_text.set(f"翻訳完了（未解決 {unresolved}項目）" if unresolved else "選択した翻訳が完了しました")
                         source_notice=self._source_gap_notice_for_items(self.queue_items)
-                        msg=f"選択した翻訳が完了しました。\n完了: {info.get('processed_items', 0)}/{info.get('selected_total', 0)}項目"
+                        msg=f"選択した翻訳が完了しました。\n完了: {info.get('processed_items', 0)}/{info.get('selected_total', 0)}項目\n再試行で復旧: {recovered}項目\n未解決: {unresolved}項目"
+                        if info.get("queue_report"):
+                            msg += f"\n\n夜間処理レポート:\n{info.get('queue_report')}"
+                        if unresolved:
+                            msg += "\n\n未解決項目はキューに保持されています。各翻訳結果フォルダの translation_error_report.json で詳細を確認できます。"
                         if source_notice:
                             msg += "\n\n" + source_notice
                         if not self._closing: messagebox.showinfo(APP_NAME,msg)

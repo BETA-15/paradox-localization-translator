@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import os
 import tempfile
+import queue
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -139,3 +140,59 @@ def test_malformed_persistent_json_is_quarantined(tmp_path, monkeypatch):
     assert main.load_persistent_json(broken, {"safe": True}, "テスト") == {"safe": True}
     assert not broken.exists()
     assert list(tmp_path.glob("workspace_state.json.corrupt_*"))
+
+
+class RuntimeController:
+    def __init__(self):
+        self.settings = {"batch_size": 60, "workers": 2}
+
+    def get_runtime_settings(self):
+        return dict(self.settings)
+
+    def update_runtime_settings(self, **settings):
+        self.settings.update(settings)
+
+
+def test_queue_continues_then_retries_only_failed_item(tmp_path, monkeypatch):
+    calls = []
+    outcomes = {"mod-a": [RuntimeError("broken file"), {"processed": 1, "jobs": 0, "failed": 0, "skipped": 0}],
+                "mod-b": [{"processed": 1, "jobs": 0, "failed": 0, "skipped": 0}]}
+
+    def fake_run(input_path, output_path, **kwargs):
+        name = Path(input_path).name
+        calls.append(name)
+        result = outcomes[name].pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return {**result, "interrupted": False, "encoding_recoveries": [],
+                "error_report": str(Path(output_path) / "translation_error_report.json")}
+
+    monkeypatch.setattr(main.core, "run_translation", fake_run)
+    monkeypatch.setattr(main, "record_error", lambda *args, **kwargs: None)
+    items = [
+        {"input": str(tmp_path / "mod-a"), "output": str(tmp_path / "out-a"), "mod_name": "A", "queue_item_id": "a"},
+        {"input": str(tmp_path / "mod-b"), "output": str(tmp_path / "out-b"), "mod_name": "B", "queue_item_id": "b"},
+    ]
+    saved = []
+    state = SimpleNamespace(
+        queue_items=items, _active_normal_item_ids=["a", "b"], controller=RuntimeController(),
+        events=queue.SimpleQueue(), current_queue_index=0,
+        translation_start_settings={"batch": 60, "workers": 2},
+        _checkpoint=lambda payload: saved.append(("checkpoint", payload)),
+        _ensure_item_cache=lambda item: str(tmp_path / f"{item['queue_item_id']}.json"),
+        _register_cache_job=lambda item: None,
+        _item_has_remaining_translation_gap=lambda item: False,
+        _write_session_file=lambda **kwargs: saved.append(("session", kwargs)),
+    )
+
+    main.App._queue_worker(state)
+
+    events = []
+    while not state.events.empty():
+        events.append(state.events.get())
+    done = next(payload for kind, payload in events if kind == "done")
+    assert calls == ["mod-a", "mod-b", "mod-a"]
+    assert [item["status"] for item in items] == ["完了", "完了"]
+    assert done["recovered_items"] == 1
+    assert done["unresolved_items"] == 0
+    assert state.controller.settings == {"batch_size": 60, "workers": 2}

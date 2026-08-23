@@ -1,3 +1,18 @@
+# v0.11.63 追加確認
+
+- [x] `VERSION` / `APP_VERSION` / `pyproject.toml` / `uv.lock` を 0.11.63 に統一
+- [x] UTF-8 BOM + UTF-16LE/BE・UTF-32LE/BE BOMの混在検出を追加
+- [x] 実ファイル`ercf_triumph_l_english.yml`をUTF-16LEとして復旧し、1キーを解析
+- [x] 復旧不能ファイルだけをスキップし、同じ入力内の正常ファイルを継続
+- [x] Mod単位の例外後も後続キューを処理し、最後に失敗Modだけを再試行
+- [x] プロバイダ障害時に残りキーの単発再試行を抑止
+- [x] ファイル別レポートと夜間キュー集計レポートを追加
+- [x] エラー試行履歴を再試行後も保持
+- [x] pytest 36件 PASS
+- [x] Pythonコンパイル PASS
+- [ ] GUI実画面で夜間完了集計を確認
+- [ ] GitHub Actions 3OSビルドを確認
+
 # v0.11.62 追加確認
 
 - [x] `VERSION` / `APP_VERSION` / `pyproject.toml` / `uv.lock` を 0.11.62 に統一
