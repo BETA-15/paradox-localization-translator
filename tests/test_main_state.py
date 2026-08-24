@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import os
 import tempfile
 import queue
@@ -193,11 +194,60 @@ def test_mod_status_tree_explains_selected_game_without_results():
     assert "Crusader Kings III" in details[-1]
 
 
-def test_qa_diff_language_bulk_selection_and_all_selection():
+def test_qa_diff_language_bulk_selection():
     pairs=[{"lang":"english","source":"a"},{"lang":"simp_chinese","source":"b"},{"lang":"english","source":"c"}]
     assert [p["source"] for p in main._qa_diff_pairs_for_language(pairs,"english")] == ["a","c"]
     assert [p["source"] for p in main._qa_diff_pairs_for_language(pairs,"simp_chinese")] == ["b"]
-    assert main._qa_diff_pairs_for_language(pairs) == pairs
+
+
+def test_qa_log_payload_has_diagnostics_without_localization_text():
+    contexts=[{
+        "source_path":Path("/mods/example/localization/english/example_l_english.yml"),
+        "target_path":Path("/mods/example/localization/japanese/example_l_japanese.yml"),
+        "lang":"english",
+        "source_entries":{"example_key":"SECRET SOURCE TEXT"},
+        "target_entries":{"example_key":"SECRET TARGET TEXT"},
+        "issues":[{"key":"example_key","type":"placeholder_mismatch","severity":"error","message":"SECRET ISSUE TEXT"}],
+    }]
+    failures=[{"source_file":"bad.yml","target_file":"bad_ja.yml","source_language":"english","stage":"source_read",
+               "error_type":"UnicodeError","message":"decode failed","action":"スキップして継続"}]
+
+    payload=main._build_qa_log_payload(contexts,failures,generated_at="2026-08-24T15:00:00",app_version="0.11.68")
+    encoded=json.dumps(payload,ensure_ascii=False)
+
+    assert payload["summary"] == {"files":2,"completed_files":1,"failed_files":1,"issues":1,"errors":1,"warnings":0}
+    assert payload["files"][0]["issues"] == [{"key":"example_key","type":"placeholder_mismatch","severity":"error"}]
+    assert payload["failures"][0]["stage"] == "source_read"
+    assert "SECRET SOURCE TEXT" not in encoded
+    assert "SECRET TARGET TEXT" not in encoded
+    assert "SECRET ISSUE TEXT" not in encoded
+
+
+def test_qa_log_button_is_disabled_without_results_and_enabled_with_results():
+    widget=FakeWidget(); state=SimpleNamespace(review_export_log_btn=widget)
+    main.App._set_review_qa_log_enabled(state,False)
+    assert widget.state_value == "disabled"
+    main.App._set_review_qa_log_enabled(state,True)
+    assert widget.state_value == "normal"
+
+
+def test_qa_log_is_written_only_by_export_action(monkeypatch):
+    saved=[]; notices=[]
+    monkeypatch.setattr(main.core,"save_json",lambda path,payload: saved.append((path,payload)))
+    monkeypatch.setattr(main.messagebox,"showinfo",lambda title,message: notices.append(message))
+    state=SimpleNamespace(
+        review_last_qa_contexts=[{"source_path":"source.yml","target_path":"target.yml","lang":"english",
+                                  "source_entries":{"key":"source"},"target_entries":{"key":"target"},"issues":[]}],
+        review_last_qa_errors=[],
+    )
+
+    assert saved == []
+    main.App.export_review_qa_log(state)
+
+    assert len(saved) == 1
+    assert saved[0][0].name.startswith("qa_report_")
+    assert saved[0][1]["summary"]["completed_files"] == 1
+    assert notices and "QAログを書き出しました" in notices[0]
 
 
 def test_diff_bulk_translation_deduplicates_same_target_key():

@@ -1,3 +1,19 @@
+# v0.11.68 追加確認
+
+- [x] `VERSION` / `APP_VERSION` / `pyproject.toml` / `uv.lock` を 0.11.68 に統一
+- [x] QAログはQA実行時に自動保存しない
+- [x] 「QAログを書き出す」操作時だけ日時付きJSONを保存
+- [x] QA結果のない間は書き出しボタンをグレーアウト
+- [x] 正常QA・警告・解析失敗後に書き出しを有効化
+- [x] 単体・英語一括・簡体字中国語一括のQAログ構造を共通化
+- [x] QAログに原文・日本語本文が入らないテスト
+- [x] 一括QAの失敗段階・例外型・継続対応を構造化
+- [x] 「英語・中国語をすべて」ボタンを削除
+- [x] pytest 52件 PASS
+- [x] Pythonコンパイル PASS
+- [ ] GUI実画面でQAログ書き出し・グレーアウトを確認
+- [ ] GitHub Actions 3OSビルドを確認
+
 # v0.11.67 追加確認
 
 - [x] `VERSION` / `APP_VERSION` / `pyproject.toml` / `uv.lock` を 0.11.67 に統一
