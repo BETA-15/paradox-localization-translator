@@ -74,6 +74,75 @@ def test_translation_status_save_writes_current_generation_and_compact_rows(monk
     assert payload["relation_algorithm_version"] == main.core.TRANSLATION_RELATION_ALGORITHM_VERSION
     assert main._translation_status_snapshot_is_current(payload)
     assert main._status_gap_rows(payload["results"][0]) == [{"key": "missing"}]
+    assert payload["search"] == ""
+
+
+class FakeVar:
+    def __init__(self, value=""):
+        self.value = value
+
+    def get(self):
+        return self.value
+
+    def set(self, value):
+        self.value = value
+
+
+class FakeStatusTree:
+    def __init__(self):
+        self.rows = {}
+        self.selected = ()
+
+    def get_children(self):
+        return tuple(self.rows)
+
+    def delete(self, iid):
+        self.rows.pop(iid, None)
+
+    def insert(self, parent, position, iid, values, tags=()):
+        self.rows[iid] = {"values": values, "tags": tags}
+
+    def selection(self):
+        return self.selected
+
+    def item(self, iid, option):
+        return self.rows[iid][option]
+
+
+def test_mod_status_empty_row_distinguishes_search_from_no_scan_results():
+    assert main._mod_status_empty_row("reali", 87)[:2] == (
+        "検索結果なし", "検索条件「reali」に一致するModはありません"
+    )
+    assert main._mod_status_empty_row("", 0)[:2] == (
+        "調査結果なし", "翻訳状況の調査結果がありません"
+    )
+
+
+def test_mod_status_tree_shows_non_operable_no_match_row():
+    details = []
+    actions = []
+    state = SimpleNamespace(
+        mod_status_tree=FakeStatusTree(),
+        mod_status_search_var=FakeVar("reali"),
+        mod_status_search_result_var=FakeVar(),
+        mod_research_results=[{"mod": "More Bookmarks+", "status": "翻訳なし", "path": "/mods/bookmarks"}],
+        _mod_status_matches_query=lambda result, query: main.App._mod_status_matches_query(state, result, query),
+        _set_mod_status_selection_actions_enabled=lambda enabled: actions.append(enabled),
+        _set_mod_status_detail_text=lambda text: details.append(text),
+    )
+
+    main.App._populate_mod_status_tree(state)
+
+    assert tuple(state.mod_status_tree.rows) == (main.MOD_STATUS_EMPTY_IID,)
+    row = state.mod_status_tree.rows[main.MOD_STATUS_EMPTY_IID]
+    assert row["values"][0] == "検索結果なし"
+    assert row["tags"] == ("empty",)
+    assert state.mod_status_search_result_var.get() == "0件 / 全1件"
+    assert actions[-1] is False
+    assert "［解除］" in details[-1]
+
+    state.mod_status_tree.selected = (main.MOD_STATUS_EMPTY_IID,)
+    assert main.App._selected_mod_status_results(state) == []
 
 
 def test_translation_status_save_schedule_coalesces_rapid_updates():

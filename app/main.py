@@ -37,9 +37,17 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.65"
+APP_VERSION = "0.11.66"
 MOD_STATUS_CACHE_VERSION = 15
 TRANSLATION_STATUS_SNAPSHOT_SCHEMA = 2
+MOD_STATUS_EMPTY_IID = "__mod_status_empty__"
+
+
+def _mod_status_empty_row(query: str, total: int) -> tuple:
+    query = (query or "").strip()
+    if query:
+        return ("検索結果なし", f"検索条件「{query}」に一致するModはありません", "", "", "", "")
+    return ("調査結果なし", "翻訳状況の調査結果がありません", "", "", "", "")
 
 
 def _translation_status_snapshot_is_current(snapshot) -> bool:
@@ -3041,6 +3049,7 @@ Mod更新後だけ追加翻訳:
         sy.grid(row=0,column=1,sticky="ns")
         sx.grid(row=1,column=0,sticky="ew")
         self.mod_status_tree.bind("<<TreeviewSelect>>", self._on_mod_status_selection_changed)
+        self.mod_status_tree.tag_configure("empty", foreground="#777777")
         self._enable_tree_sort(self.mod_status_tree)
 
         detail = ttk.LabelFrame(detail_frame, text="選択項目の詳細", padding=6); detail.pack(fill="both",expand=True,pady=(4,0))
@@ -3052,17 +3061,24 @@ Mod更新後だけ追加翻訳:
         bottom=ttk.Frame(right); bottom.pack(fill="x", pady=(4,0))
         bottom1=ttk.Frame(bottom); bottom1.pack(fill="x")
         bottom2=ttk.Frame(bottom); bottom2.pack(fill="x", pady=(4,0))
-        ttk.Button(bottom1,text="選択Modだけ再調査",command=self.research_selected_status_mods).pack(side="left")
-        ttk.Button(bottom1,text="通常翻訳キューへ追加",command=lambda:self.queue_selected_mod_from_status(start_now=False)).pack(side="left",padx=(6,0))
+        self.status_selection_action_buttons=[]
+        self.status_research_selected_btn=ttk.Button(bottom1,text="選択Modだけ再調査",command=self.research_selected_status_mods,state="disabled")
+        self.status_research_selected_btn.pack(side="left"); self.status_selection_action_buttons.append(self.status_research_selected_btn)
+        self.status_normal_queue_btn=ttk.Button(bottom1,text="通常翻訳キューへ追加",command=lambda:self.queue_selected_mod_from_status(start_now=False),state="disabled")
+        self.status_normal_queue_btn.pack(side="left",padx=(6,0)); self.status_selection_action_buttons.append(self.status_normal_queue_btn)
         self.status_chinese_queue_btn = ttk.Button(bottom1,text="中国語基準キューへ追加",command=self.queue_selected_mods_to_chinese_basis,state="disabled")
-        self.status_chinese_queue_btn.pack(side="left",padx=(6,0))
-        ttk.Button(bottom1,text="選択Modを除外して通常翻訳キューへ追加",command=self.queue_all_except_selected_mods).pack(side="left",padx=(6,0))
-        ttk.Button(bottom1,text="選択Modを除外して中国語基準キューへ追加",command=self.queue_all_except_selected_mods_chinese).pack(side="left",padx=(6,0))
+        self.status_chinese_queue_btn.pack(side="left",padx=(6,0)); self.status_selection_action_buttons.append(self.status_chinese_queue_btn)
+        self.status_except_normal_btn=ttk.Button(bottom1,text="選択Modを除外して通常翻訳キューへ追加",command=self.queue_all_except_selected_mods,state="disabled")
+        self.status_except_normal_btn.pack(side="left",padx=(6,0)); self.status_selection_action_buttons.append(self.status_except_normal_btn)
+        self.status_except_chinese_btn=ttk.Button(bottom1,text="選択Modを除外して中国語基準キューへ追加",command=self.queue_all_except_selected_mods_chinese,state="disabled")
+        self.status_except_chinese_btn.pack(side="left",padx=(6,0)); self.status_selection_action_buttons.append(self.status_except_chinese_btn)
 
-        ttk.Button(bottom2,text="QA / 比較編集へ",command=lambda:self._send_pair_to_qa_or_diff("status","review")).pack(side="left")
-        ttk.Button(bottom2,text="差分調査へ",command=lambda:self._send_pair_to_qa_or_diff("status","diff")).pack(side="left",padx=(6,0))
-        self.status_overwrite_btn = ttk.Button(bottom2,text="完成した日本語化をModへ上書き",command=self.overwrite_selected_status_mod)
-        self.status_overwrite_btn.pack(side="left",padx=(6,0))
+        self.status_qa_btn=ttk.Button(bottom2,text="QA / 比較編集へ",command=lambda:self._send_pair_to_qa_or_diff("status","review"),state="disabled")
+        self.status_qa_btn.pack(side="left"); self.status_selection_action_buttons.append(self.status_qa_btn)
+        self.status_diff_btn=ttk.Button(bottom2,text="差分調査へ",command=lambda:self._send_pair_to_qa_or_diff("status","diff"),state="disabled")
+        self.status_diff_btn.pack(side="left",padx=(6,0)); self.status_selection_action_buttons.append(self.status_diff_btn)
+        self.status_overwrite_btn = ttk.Button(bottom2,text="完成した日本語化をModへ上書き",command=self.overwrite_selected_status_mod,state="disabled")
+        self.status_overwrite_btn.pack(side="left",padx=(6,0)); self.status_selection_action_buttons.append(self.status_overwrite_btn)
         ttk.Separator(bottom2,orient="vertical").pack(side="left",fill="y",padx=8)
         ttk.Button(bottom2,text="判定ログを表示",command=self.show_translation_judgement_log).pack(side="left")
         ttk.Button(bottom2,text="判定ログを書き出す",command=self.export_translation_judgement_log).pack(side="left",padx=(6,0))
@@ -4895,6 +4911,16 @@ Mod更新後だけ追加翻訳:
         ]
         return any(q in str(v).casefold() for v in fields)
 
+    def _set_mod_status_selection_actions_enabled(self, enabled):
+        state = "normal" if enabled else "disabled"
+        for widget in getattr(self, "status_selection_action_buttons", []):
+            try: widget.config(state=state)
+            except Exception: pass
+        # Chinese-basis queueing has an additional source-availability condition
+        # and is enabled separately after a valid selection is inspected.
+        if hasattr(self, "status_chinese_queue_btn") and not enabled:
+            self.status_chinese_queue_btn.config(state="disabled")
+
     def _populate_mod_status_tree(self, results=None):
         if not hasattr(self, "mod_status_tree"):
             return
@@ -4921,12 +4947,19 @@ Mod更新後だけ追加翻訳:
                 r.get("external_translation_mod", "") or (("候補: " + r.get("translation_candidate_mod", "")) if r.get("translation_candidate_mod") else ""),
                 r.get("external_translation_gap_count", 0) if r.get("external_translation_mod") else ((f"{float(r.get('translation_candidate_score',0.0) or 0.0):.1f}点") if r.get("translation_candidate_mod") else "")
             ))
+        if not visible:
+            self.mod_status_tree.insert("", "end", iid=MOD_STATUS_EMPTY_IID,
+                                        values=_mod_status_empty_row(query, len(source)), tags=("empty",))
+        self._set_mod_status_selection_actions_enabled(False)
         if query:
             self.mod_status_search_result_var.set(f"{len(visible)}件 / 全{len(source)}件")
         else:
             self.mod_status_search_result_var.set("")
-        if not visible and query:
-            self._set_mod_status_detail_text(f"『{query}』に一致する判定済みModはありません。")
+        if not visible:
+            if query:
+                self._set_mod_status_detail_text(f"検索結果なし\n\n『{query}』に一致する判定済みModはありません。\n左側の［解除］を押すと全{len(source)}件を再表示します。")
+            else:
+                self._set_mod_status_detail_text("調査結果がありません。左側でゲーム／Mod場所を選び、［選択した場所のModを調査］を実行してください。")
 
     def _schedule_mod_status_search(self, _event=None):
         if self._status_search_after_id is not None:
@@ -4977,13 +5010,22 @@ Mod更新後だけ追加翻訳:
     def _on_mod_status_selection_changed(self, _event=None):
         selected = self._selected_mod_status_results() if hasattr(self, "mod_status_tree") else []
         if not selected:
-            self._set_mod_status_detail_text("一覧からModを選択すると、ここに調査結果・日本語化Mod・上書き先・場所を段落で表示します。")
+            query=self.mod_status_search_var.get().strip() if hasattr(self,"mod_status_search_var") else ""
+            children=self.mod_status_tree.get_children() if hasattr(self,"mod_status_tree") else []
+            if MOD_STATUS_EMPTY_IID in children and query:
+                self._set_mod_status_detail_text(f"検索結果なし\n\n『{query}』に一致する判定済みModはありません。\n左側の［解除］を押すと全{len(self.mod_research_results)}件を再表示します。")
+            elif MOD_STATUS_EMPTY_IID in children:
+                self._set_mod_status_detail_text("調査結果がありません。左側でゲーム／Mod場所を選び、［選択した場所のModを調査］を実行してください。")
+            else:
+                self._set_mod_status_detail_text("一覧からModを選択すると、ここに調査結果・日本語化Mod・上書き先・場所を段落で表示します。")
+            self._set_mod_status_selection_actions_enabled(False)
             if hasattr(self, "status_overwrite_btn"):
                 self.status_overwrite_btn.config(text="完成した日本語化をModへ上書き")
             if hasattr(self, "status_chinese_queue_btn"):
                 self.status_chinese_queue_btn.config(state="disabled")
             return
         r = selected[0]
+        self._set_mod_status_selection_actions_enabled(True)
         mod_name = r.get("mod", "Mod")
         jpmod = r.get("external_translation_mod", "")
         jp_path = r.get("external_translation_path", "")
@@ -5593,6 +5635,8 @@ Mod更新後だけ追加翻訳:
         self.status_restore_thread=None
         self.mod_status_cache=data if isinstance(data,dict) else {"version":MOD_STATUS_CACHE_VERSION,"items":{}}
         self.mod_research_results=list(rows or [])
+        self.mod_status_search_var.set("")
+        self.mod_status_search_result_var.set("")
         self._populate_mod_status_tree()
         wanted={str(x) for x in (selected_paths or []) if x}
         if wanted:
@@ -6015,6 +6059,8 @@ Mod更新後だけ追加翻訳:
         self.mod_status_summary_var.set(f"バックグラウンド調査中: 0/{len(roots)}")
         self._set_monitor_scan_status(f"● 未翻訳Mod探索開始 — 0/{len(roots)}", "Mod一覧と別日本語化Modを確認しています")
         if replace:
+            self.mod_status_search_var.set("")
+            self.mod_status_search_result_var.set("")
             self.mod_research_results=[]
             self.events.put(("mod_status_results",[]))
         self._mod_research_worker_settings = self._snapshot_monitor_worker_settings()
@@ -6251,6 +6297,8 @@ Mod更新後だけ追加翻訳:
         results = []
         seen = set()
         for iid in selected:
+            if iid == MOD_STATUS_EMPTY_IID:
+                continue
             result = None
             if iid.startswith("mod_"):
                 try:
@@ -7000,8 +7048,9 @@ Mod更新後だけ追加翻訳:
         if not messagebox.askyesno(APP_NAME, "翻訳状況一覧と保存済みキャッシュを消去しますか？"):
             return
         self.mod_research_results=[]
-        if hasattr(self,"mod_status_tree"):
-            for x in self.mod_status_tree.get_children(): self.mod_status_tree.delete(x)
+        self.mod_status_search_var.set("")
+        self.mod_status_search_result_var.set("")
+        self._populate_mod_status_tree()
         with self.mod_status_cache_lock:
             self.mod_status_cache={"version":MOD_STATUS_CACHE_VERSION,"items":{},"updated_at":datetime.now().isoformat(timespec="seconds")}
             core.save_json(MOD_STATUS_CACHE_PATH,self.mod_status_cache)
@@ -8427,7 +8476,9 @@ Mod更新後だけ追加翻訳:
                 ]),
                 "selected_paths": selected_paths,
                 "summary": self._workspace_scalar(getattr(self, "mod_status_summary_var", None), ""),
-                "search": self._workspace_scalar(getattr(self, "mod_status_search_var", None), ""),
+                # Search is a transient view filter. Persisting it made a valid
+                # restored result set appear empty on the next launch.
+                "search": "",
             }
             core.save_json(TRANSLATION_STATUS_STATE_PATH, payload)
             self._restore_status_snapshot_cache = payload
@@ -8636,7 +8687,7 @@ Mod更新後だけ追加翻訳:
             "translation_status":{
                 "selected_location_paths":self._workspace_selected_paths(),
                 "multi_select":bool(self._workspace_scalar(self.discovery_multi_select_var,False)),
-                "search":self._workspace_scalar(self.mod_status_search_var,""),
+                "search":"",
             },
             "translation_search":{
                 "game":self._workspace_scalar(self.search_game_var,"Crusader Kings III"),
@@ -8743,7 +8794,7 @@ Mod更新後だけ追加翻訳:
 
             st=data.get("translation_status") or {}
             self._workspace_selected_location_paths=[str(x) for x in (st.get("selected_location_paths") or []) if x]
-            self.discovery_multi_select_var.set(bool(st.get("multi_select",False))); self.mod_status_search_var.set(st.get("search","") or "")
+            self.discovery_multi_select_var.set(bool(st.get("multi_select",False))); self.mod_status_search_var.set("")
             sr=data.get("translation_search") or {}; self.search_game_var.set(sr.get("game",self.search_game_var.get())); self.search_query_var.set(sr.get("query","") or ""); self.search_selected_mod_paths=[str(x) for x in (sr.get("selected_mod_paths") or []) if x]
             try: self.after_idle(self.refresh_translation_search_mods)
             except Exception: pass
