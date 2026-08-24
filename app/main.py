@@ -37,7 +37,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.66"
+APP_VERSION = "0.11.67"
 MOD_STATUS_CACHE_VERSION = 15
 TRANSLATION_STATUS_SNAPSHOT_SCHEMA = 2
 MOD_STATUS_EMPTY_IID = "__mod_status_empty__"
@@ -56,6 +56,22 @@ def _translation_status_snapshot_is_current(snapshot) -> bool:
         and snapshot.get("mod_status_cache_version") == MOD_STATUS_CACHE_VERSION
         and snapshot.get("relation_algorithm_version") == core.TRANSLATION_RELATION_ALGORITHM_VERSION
     )
+
+
+def _qa_diff_pairs_for_language(pairs, lang=None):
+    return [pair for pair in (pairs or []) if lang is None or pair.get("lang") == lang]
+
+
+def _dedupe_diff_translation_tasks(contexts, tasks):
+    out=[]; seen=set()
+    for ci,key in tasks or []:
+        if not (0 <= ci < len(contexts or [])):
+            continue
+        token=(str(contexts[ci].get("target_path") or ""),str(key))
+        if token in seen:
+            continue
+        seen.add(token); out.append((ci,key))
+    return out
 
 
 def _compact_status_gap_groups(rows):
@@ -647,6 +663,9 @@ class App(BaseTk):
         self.review_target_entries = {}
         self.review_issues = []
         self.review_issue_by_key = {}
+        self.review_batch_contexts = []
+        self.review_batch_errors = []
+        self.review_tree_record_map = {}
         self.review_worker = None
         self.diff_load_worker = None
         self.differential_prepare_thread = None
@@ -750,6 +769,8 @@ class App(BaseTk):
         self.diff_target_entries = {}
         self.diff_rows = []
         self.diff_row_by_key = {}
+        self.diff_batch_contexts = []
+        self.diff_tree_record_map = {}
         self.diff_controller: core.TranslationController | None = None
         self.diff_translate_thread = None
         self.diff_source_lang = "english"
@@ -782,6 +803,7 @@ class App(BaseTk):
         self.mod_status_summary_var = tk.StringVar(value="調査結果: --")
         self.mod_status_search_var = tk.StringVar(value="")
         self.mod_status_search_result_var = tk.StringVar(value="")
+        self.mod_status_game_filter_var = tk.StringVar(value="表示ゲーム: すべて")
 
         # Comprehensive localization diagnostics / repair
         self.diagnostic_summary_var = tk.StringVar(value="診断待機中")
@@ -1859,13 +1881,13 @@ class App(BaseTk):
             pairs.append({"source": sf, "target": chosen, "lang": lang})
         return pairs
 
-    def _choose_qa_diff_pair(self, pairs, title):
+    def _choose_qa_diff_pairs(self, pairs, title):
         if not pairs:
-            return None
+            return []
         if len(pairs) == 1:
-            return pairs[0]
+            return [pairs[0]]
 
-        result = {"value": None}
+        result = {"value": []}
         win = tk.Toplevel(self)
         win.title(title)
         win.geometry("980x520")
@@ -1888,15 +1910,26 @@ class App(BaseTk):
         tree.selection_set("0"); tree.focus("0")
 
         buttons = ttk.Frame(win, padding=(10,0,10,10)); buttons.pack(fill="x")
-        def accept(_=None):
+        def accept_selected(_=None):
             sel = tree.selection()
             if not sel:
                 return
-            result["value"] = pairs[int(sel[0])]
+            result["value"] = [pairs[int(sel[0])]]
             win.destroy()
-        ttk.Button(buttons, text="選択", command=accept).pack(side="right")
+        def accept_language(lang=None):
+            selected=_qa_diff_pairs_for_language(pairs,lang)
+            if not selected:
+                return
+            result["value"] = selected
+            win.destroy()
+        english_count=sum(pair.get("lang")=="english" for pair in pairs)
+        chinese_count=sum(pair.get("lang")=="simp_chinese" for pair in pairs)
+        ttk.Button(buttons, text=f"英語をすべて ({english_count})", command=lambda:accept_language("english"), state="normal" if english_count else "disabled").pack(side="left")
+        ttk.Button(buttons, text=f"簡体字中国語をすべて ({chinese_count})", command=lambda:accept_language("simp_chinese"), state="normal" if chinese_count else "disabled").pack(side="left", padx=(6,0))
+        ttk.Button(buttons, text=f"英語・中国語をすべて ({len(pairs)})", command=lambda:accept_language(None)).pack(side="left", padx=(6,0))
+        ttk.Button(buttons, text="選択したファイル", command=accept_selected).pack(side="right")
         ttk.Button(buttons, text="キャンセル", command=win.destroy).pack(side="right", padx=(0,6))
-        tree.bind("<Double-1>", accept)
+        tree.bind("<Double-1>", accept_selected)
         self.wait_window(win)
         return result["value"]
 
@@ -1939,19 +1972,15 @@ class App(BaseTk):
         if not pairs:
             messagebox.showinfo(APP_NAME, f"{label}から、原文（英語/簡体字中国語）と対応する日本語YAMLの組み合わせを見つけられませんでした。\n翻訳完了後、または日本語化Modが存在する状態で実行してください。")
             return
-        pair = self._choose_qa_diff_pair(pairs, f"{label}からQA / 差分用ファイルを選択")
-        if not pair:
+        selected_pairs = self._choose_qa_diff_pairs(pairs, f"{label}からQA / 差分用ファイルを選択")
+        if not selected_pairs:
             return
         if destination == "review":
-            self.review_src_var.set(str(pair["source"]))
-            self.review_dst_var.set(str(pair["target"]))
             self.notebook.select(self.tab_review)
-            self.load_review()
+            self.load_review_pairs(selected_pairs)
         else:
-            self.diff_src_var.set(str(pair["source"]))
-            self.diff_dst_var.set(str(pair["target"]))
             self.notebook.select(self.tab_diff)
-            self.load_diff_inspector()
+            self.load_diff_pairs(selected_pairs)
 
     def _build_review_tab(self):
         t=self.tab_review
@@ -1980,9 +2009,10 @@ class App(BaseTk):
 
         paned=ttk.Panedwindow(t,orient="horizontal"); paned.pack(fill="both",expand=True)
         left=ttk.Frame(paned); right=ttk.Frame(paned); paned.add(left,weight=2); paned.add(right,weight=3)
-        self.review_tree=ttk.Treeview(left,columns=("type","key"),show="tree headings")
+        self.review_tree=ttk.Treeview(left,columns=("type","file","key"),show="tree headings")
         self.review_tree.heading("#0",text="重要度 / 分類"); self.review_tree.column("#0",width=150)
         self.review_tree.heading("type",text="種別"); self.review_tree.column("type",width=130)
+        self.review_tree.heading("file",text="ファイル"); self.review_tree.column("file",width=220)
         self.review_tree.heading("key",text="キー"); self.review_tree.column("key",width=300)
         self.review_tree.bind("<<TreeviewSelect>>",self.on_review_select)
         self._enable_tree_sort(self.review_tree, recursive=True)
@@ -2029,9 +2059,10 @@ class App(BaseTk):
 
         paned = ttk.Panedwindow(t, orient="horizontal"); paned.pack(fill="both", expand=True)
         left = ttk.Frame(paned); right = ttk.Frame(paned); paned.add(left, weight=2); paned.add(right, weight=3)
-        self.diff_tree = ttk.Treeview(left, columns=("key",), show="tree headings", selectmode="extended")
+        self.diff_tree = ttk.Treeview(left, columns=("file","key"), show="tree headings", selectmode="extended")
         self._enable_ctrl_multiselect(self.diff_tree)
         self.diff_tree.heading("#0", text="状態"); self.diff_tree.column("#0", width=150)
+        self.diff_tree.heading("file", text="ファイル"); self.diff_tree.column("file", width=220)
         self.diff_tree.heading("key", text="キー"); self.diff_tree.column("key", width=360)
         self.diff_tree.tag_configure("missing", background="#fee2e2")
         self.diff_tree.tag_configure("untranslated", background="#fef3c7")
@@ -3028,6 +3059,7 @@ Mod更新後だけ追加翻訳:
         guide = ttk.LabelFrame(left, text="選択と操作", padding=6); guide.pack(fill="both", expand=True)
         ttk.Label(guide, text="小さく：Ctrlキーを押しながら複数選択できます。\n\n一覧では、選択したModだけの再調査、翻訳、除外翻訳、翻訳キュー追加、中国語基準キュー追加、上書きができます。", foreground="#666", justify="left", wraplength=320).pack(anchor="w")
 
+        ttk.Label(right, textvariable=self.mod_status_game_filter_var, foreground="#315b8a").pack(fill="x", pady=(0,4))
         content = ttk.Panedwindow(right, orient="vertical"); content.pack(fill="x", expand=False)
         tree_frame=ttk.Frame(content); detail_frame=ttk.Frame(content)
         content.add(tree_frame, weight=6); content.add(detail_frame, weight=2)
@@ -4911,6 +4943,37 @@ Mod更新後だけ追加翻訳:
         ]
         return any(q in str(v).casefold() for v in fields)
 
+    def _mod_status_result_game(self, result):
+        game = str((result or {}).get("game") or (result or {}).get("game_name") or "").strip()
+        if game:
+            return game
+        raw = (result or {}).get("path") or (result or {}).get("mod_root") or ""
+        if not raw:
+            return "ゲーム未特定"
+        return self._backup_game_name_for_root(Path(raw))
+
+    def _selected_mod_status_games(self):
+        games=[]
+        if not hasattr(self, "discovered_mod_tree"):
+            return games
+        for iid in self.discovered_mod_tree.selection():
+            try:
+                idx=int(str(iid).split("_",1)[1])
+                game=str(self.detected_mod_locations[idx].get("game") or "").strip()
+                if game and game not in games:
+                    games.append(game)
+            except Exception:
+                continue
+        return games
+
+    def _game_filtered_mod_status_results(self, results=None):
+        source=list(self.mod_research_results if results is None else results)
+        games=App._selected_mod_status_games(self)
+        if not games:
+            return source, games
+        wanted=set(games)
+        return [r for r in source if App._mod_status_result_game(self,r) in wanted], games
+
     def _set_mod_status_selection_actions_enabled(self, enabled):
         state = "normal" if enabled else "disabled"
         for widget in getattr(self, "status_selection_action_buttons", []):
@@ -4928,7 +4991,7 @@ Mod更新後だけ追加翻訳:
             try: self._refresh_diagnostic_targets()
             except Exception: pass
         query = self.mod_status_search_var.get().strip() if hasattr(self, "mod_status_search_var") else ""
-        source = list(self.mod_research_results if results is None else results)
+        source, selected_games = App._game_filtered_mod_status_results(self,results)
         visible = [r for r in source if self._mod_status_matches_query(r, query)]
         for x in self.mod_status_tree.get_children():
             self.mod_status_tree.delete(x)
@@ -4948,18 +5011,29 @@ Mod更新後だけ追加翻訳:
                 r.get("external_translation_gap_count", 0) if r.get("external_translation_mod") else ((f"{float(r.get('translation_candidate_score',0.0) or 0.0):.1f}点") if r.get("translation_candidate_mod") else "")
             ))
         if not visible:
+            empty_values=_mod_status_empty_row(query, len(source))
+            if not query and selected_games and self.mod_research_results:
+                empty_values=("表示対象なし",f"選択ゲーム（{'、'.join(selected_games)}）の調査結果はありません","","","","")
             self.mod_status_tree.insert("", "end", iid=MOD_STATUS_EMPTY_IID,
-                                        values=_mod_status_empty_row(query, len(source)), tags=("empty",))
+                                        values=empty_values, tags=("empty",))
         self._set_mod_status_selection_actions_enabled(False)
+        total_all=len(self.mod_research_results)
+        game_label="、".join(selected_games) if selected_games else "すべて"
+        if hasattr(self,"mod_status_game_filter_var"):
+            self.mod_status_game_filter_var.set(f"表示ゲーム: {game_label}　{len(source)}件 / 全{total_all}件")
         if query:
-            self.mod_status_search_result_var.set(f"{len(visible)}件 / 全{len(source)}件")
+            scope_label="表示対象" if selected_games else "全"
+            self.mod_status_search_result_var.set(f"{len(visible)}件 / {scope_label}{len(source)}件")
         else:
             self.mod_status_search_result_var.set("")
         if not visible:
             if query:
                 self._set_mod_status_detail_text(f"検索結果なし\n\n『{query}』に一致する判定済みModはありません。\n左側の［解除］を押すと全{len(source)}件を再表示します。")
             else:
-                self._set_mod_status_detail_text("調査結果がありません。左側でゲーム／Mod場所を選び、［選択した場所のModを調査］を実行してください。")
+                if selected_games and self.mod_research_results:
+                    self._set_mod_status_detail_text(f"選択中のゲーム（{game_label}）には調査結果がありません。")
+                else:
+                    self._set_mod_status_detail_text("調査結果がありません。左側でゲーム／Mod場所を選び、［選択した場所のModを調査］を実行してください。")
 
     def _schedule_mod_status_search(self, _event=None):
         if self._status_search_after_id is not None:
@@ -4976,7 +5050,8 @@ Mod更新後だけ追加翻訳:
         self._populate_mod_status_tree()
         if not query:
             return
-        matches = [r for r in self.mod_research_results if self._mod_status_matches_query(r, query)]
+        source,_games=App._game_filtered_mod_status_results(self)
+        matches = [r for r in source if self._mod_status_matches_query(r, query)]
         if len(matches) == 1:
             r = matches[0]
             # 1件なら自動選択し、判定結果を下段に表示する。
@@ -5015,7 +5090,11 @@ Mod更新後だけ追加翻訳:
             if MOD_STATUS_EMPTY_IID in children and query:
                 self._set_mod_status_detail_text(f"検索結果なし\n\n『{query}』に一致する判定済みModはありません。\n左側の［解除］を押すと全{len(self.mod_research_results)}件を再表示します。")
             elif MOD_STATUS_EMPTY_IID in children:
-                self._set_mod_status_detail_text("調査結果がありません。左側でゲーム／Mod場所を選び、［選択した場所のModを調査］を実行してください。")
+                games=App._selected_mod_status_games(self)
+                if games and self.mod_research_results:
+                    self._set_mod_status_detail_text(f"選択中のゲーム（{'、'.join(games)}）には調査結果がありません。")
+                else:
+                    self._set_mod_status_detail_text("調査結果がありません。左側でゲーム／Mod場所を選び、［選択した場所のModを調査］を実行してください。")
             else:
                 self._set_mod_status_detail_text("一覧からModを選択すると、ここに調査結果・日本語化Mod・上書き先・場所を段落で表示します。")
             self._set_mod_status_selection_actions_enabled(False)
@@ -5138,6 +5217,7 @@ Mod更新後だけ追加翻訳:
             except Exception:
                 continue
         self._set_monitor_targets(rows)
+        self._populate_mod_status_tree()
         if rows:
             self.mod_discovery_status_var.set(f"{len(rows)}か所を選択中 / 監視対象へ反映済み")
         return rows
@@ -6139,10 +6219,12 @@ Mod更新後だけ追加翻訳:
                     except Exception as e:
                         record_error("Mod翻訳状況 LLM精査", e, str(mod_root))
                         self.events.put(("monitor_log",f"{result.get('mod','Mod')} のLLM精査をスキップ: {e}"))
+                    result["game"] = str(result.get("game") or self._backup_game_name_for_root(Path(mod_root)))
                     core.apply_translation_warning_status(result)
                     self._cache_mod_status_result(Path(mod_root), signature, result)
                 else:
                     self.events.put(("monitor_log", f"{result.get('mod', Path(mod_root).name)}: 前回調査結果をキャッシュから再利用"))
+                result["game"] = str(result.get("game") or self._backup_game_name_for_root(Path(mod_root)))
                 results.append(result)
                 self.events.put(("mod_status_append",result))
             self.events.put(("mod_research_done",results))
@@ -9007,6 +9089,7 @@ Mod更新後だけ追加翻訳:
             messagebox.showerror(APP_NAME,'英語または簡体字中国語の原文ファイルと日本語ファイルの両方を選択してください。'); return
         if self.diff_load_worker and self.diff_load_worker.is_alive():
             self.diff_summary_var.set('差分をバックグラウンド解析中…'); return
+        self.diff_batch_contexts=[]
         self.diff_summary_var.set('差分をバックグラウンド解析中… GUIは操作できます')
         def work():
             try:
@@ -9018,8 +9101,34 @@ Mod更新後だけ追加翻訳:
                 self.events.put(('diff_inspector_load_error',str(exc)))
         self.diff_load_worker=threading.Thread(target=work,daemon=True,name='diff-inspector-load'); self.diff_load_worker.start()
 
+    def load_diff_pairs(self, pairs):
+        pairs=[dict(pair) for pair in (pairs or []) if pair.get("source") and pair.get("target")]
+        if not pairs:
+            return
+        if len(pairs)==1:
+            self.diff_src_var.set(str(pairs[0]["source"])); self.diff_dst_var.set(str(pairs[0]["target"]))
+            self.load_diff_inspector(); return
+        if self.diff_load_worker and self.diff_load_worker.is_alive():
+            self.diff_summary_var.set('差分をバックグラウンド解析中…'); return
+        self.diff_src_var.set(str(pairs[0]["source"])); self.diff_dst_var.set(str(pairs[0]["target"]))
+        self.diff_summary_var.set(f'差分を一括解析中… {len(pairs)}ファイル / GUIは操作できます')
+        def work():
+            contexts=[]; errors=[]
+            for pair in pairs:
+                try:
+                    lang,source,_=core.parse_localization_file(Path(pair["source"]))
+                    _,target,_=core.parse_localization_file(Path(pair["target"]))
+                    rows=core.compare_localization_entries(source,target,lang)
+                    contexts.append({"source_path":Path(pair["source"]),"target_path":Path(pair["target"]),"lang":lang,
+                                     "source_entries":source,"target_entries":target,"rows":list(rows or [])})
+                except Exception as exc:
+                    errors.append(f'{Path(pair.get("source","")).name}: {exc}')
+            self.events.put(('diff_inspector_batch_loaded',(contexts,errors)))
+        self.diff_load_worker=threading.Thread(target=work,daemon=True,name='diff-inspector-batch'); self.diff_load_worker.start()
+
     def _apply_diff_inspector_loaded(self, source_lang, source_entries, target_entries, rows):
         self.diff_load_worker=None
+        self.diff_batch_contexts=[]; self.diff_tree_record_map={}
         self.diff_source_lang=source_lang; self.diff_source_entries=source_entries; self.diff_target_entries=target_entries
         self.diff_rows=list(rows or []); self.diff_row_by_key={r['key']:r for r in self.diff_rows}
         for iid in self.diff_tree.get_children(): self.diff_tree.delete(iid)
@@ -9027,7 +9136,7 @@ Mod更新後だけ追加翻訳:
         labels={'missing':'欠落','untranslated':'未翻訳','extra':'日本語のみ','ok':'対応あり'}
         counts={k:0 for k in labels}; parents={}
         for status in ('missing','untranslated','extra','ok'):
-            parents[status]=self.diff_tree.insert('','end',iid=f'diff_group_{status}',text=labels[status],open=status!='ok',values=('',),tags=(status,))
+            parents[status]=self.diff_tree.insert('','end',iid=f'diff_group_{status}',text=labels[status],open=status!='ok',values=('',''),tags=(status,))
         for row in self.diff_rows: counts[row['status']]=counts.get(row['status'],0)+1
         self.diff_summary_var.set(f"欠落 {counts['missing']} / 未翻訳 {counts['untranslated']} / 日本語のみ {counts['extra']} / 対応あり {counts['ok']} — 表示作成中…")
         self._populate_diff_rows_chunked(0,parents)
@@ -9036,13 +9145,43 @@ Mod更新後だけ追加翻訳:
         end=min(len(self.diff_rows),start+chunk)
         for n in range(start,end):
             row=self.diff_rows[n]; status=row['status']; iid=f'diff_leaf_{n}'
-            self.diff_tree.insert(parents[status],'end',iid=iid,text='',values=(row['key'],),tags=(status,)); self.diff_tree_key_map[iid]=row['key']
+            self.diff_tree.insert(parents[status],'end',iid=iid,text='',values=('',row['key']),tags=(status,)); self.diff_tree_key_map[iid]=row['key']
         if end < len(self.diff_rows):
             self.after(1,lambda:self._populate_diff_rows_chunked(end,parents,chunk))
         else:
             counts={k:0 for k in ('missing','untranslated','extra','ok')}
             for row in self.diff_rows: counts[row['status']]=counts.get(row['status'],0)+1
             self.diff_summary_var.set(f"欠落 {counts['missing']} / 未翻訳 {counts['untranslated']} / 日本語のみ {counts['extra']} / 対応あり {counts['ok']}")
+
+    def _activate_diff_context(self, index):
+        if not (0 <= index < len(self.diff_batch_contexts)):
+            return
+        c=self.diff_batch_contexts[index]
+        self.diff_src_var.set(str(c["source_path"])); self.diff_dst_var.set(str(c["target_path"]))
+        self.diff_source_lang=c["lang"]; self.diff_source_entries=c["source_entries"]; self.diff_target_entries=c["target_entries"]
+        self.diff_rows=c["rows"]; self.diff_row_by_key={r['key']:r for r in self.diff_rows}
+
+    def _apply_diff_inspector_batch_loaded(self, contexts, errors):
+        self.diff_load_worker=None; self.diff_batch_contexts=list(contexts or []); self.diff_tree_record_map={}; self.diff_tree_key_map={}
+        for iid in self.diff_tree.get_children(): self.diff_tree.delete(iid)
+        if not self.diff_batch_contexts:
+            self.diff_summary_var.set(f'差分一括解析失敗: {len(errors)}ファイル')
+            if errors: messagebox.showerror(APP_NAME,'差分を読み込めるファイルがありませんでした。\n\n'+'\n'.join(errors[:20]))
+            return
+        self._activate_diff_context(0)
+        labels={'missing':'欠落','untranslated':'未翻訳','extra':'日本語のみ','ok':'対応あり'}
+        parents={status:self.diff_tree.insert('','end',iid=f'diff_batch_group_{status}',text=label,open=status!='ok',values=('',''),tags=(status,)) for status,label in labels.items()}
+        counts={k:0 for k in labels}; n=0
+        for ci,c in enumerate(self.diff_batch_contexts):
+            file_label=f'{"English" if c["lang"]=="english" else "簡体字中国語"}: {Path(c["source_path"]).name}'
+            for row in c["rows"]:
+                status=row['status']; counts[status]=counts.get(status,0)+1; iid=f'diff_batch_leaf_{n}'; n+=1
+                self.diff_tree.insert(parents[status],'end',iid=iid,values=(file_label,row['key']),tags=(status,))
+                self.diff_tree_key_map[iid]=row['key']; self.diff_tree_record_map[iid]=(ci,row['key'])
+        failed=len(errors or [])
+        self.diff_summary_var.set(f'差分一括: {len(self.diff_batch_contexts)}ファイル / 欠落 {counts["missing"]} / 未翻訳 {counts["untranslated"]} / 日本語のみ {counts["extra"]} / 対応あり {counts["ok"]}'+(f' / 読込失敗 {failed}' if failed else ''))
+        if failed:
+            messagebox.showwarning(APP_NAME,f'{failed}ファイルをスキップし、残りの差分調査を完了しました。\n\n'+'\n'.join((errors or [])[:20]))
 
     def _selected_diff_keys(self):
         out=[]
@@ -9055,6 +9194,9 @@ Mod更新後だけ追加翻訳:
         keys=self._selected_diff_keys()
         if not keys: return
         key=keys[0]
+        sel=self.diff_tree.selection()
+        if sel and sel[0] in self.diff_tree_record_map:
+            ci,_key=self.diff_tree_record_map[sel[0]]; self._activate_diff_context(ci)
         row = self.diff_row_by_key.get(key, {})
         self.diff_src_text.delete("1.0", "end"); self.diff_src_text.insert("1.0", row.get("source", ""))
         self.diff_dst_text.delete("1.0", "end"); self.diff_dst_text.insert("1.0", row.get("target", ""))
@@ -9067,7 +9209,11 @@ Mod更新後だけ追加翻訳:
         value = self.diff_dst_text.get("1.0", "end-1c")
         try:
             core.upsert_localization_values(Path(self.diff_dst_var.get()), {key:value})
-            self.load_diff_inspector()
+            if len(self.diff_batch_contexts)>1:
+                pairs=[{"source":c["source_path"],"target":c["target_path"],"lang":c["lang"]} for c in self.diff_batch_contexts]
+                self.load_diff_pairs(pairs)
+            else:
+                self.load_diff_inspector()
             for iid,k in getattr(self,"diff_tree_key_map",{}).items():
                 if k==key and self.diff_tree.exists(iid):
                     self.diff_tree.selection_set(iid); self.diff_tree.see(iid); break
@@ -9080,21 +9226,37 @@ Mod更新後だけ追加翻訳:
         if self.diff_controller is not None:
             messagebox.showinfo(APP_NAME, "差分翻訳はすでに実行中です。")
             return
-        if not self.diff_rows:
+        if not self.diff_rows and not self.diff_batch_contexts:
             self.load_diff_inspector()
             if not self.diff_rows: return
-        if all_missing:
-            keys = [r["key"] for r in self.diff_rows if r["status"] in ("missing","untranslated") and r.get("source")]
+        tasks=[]
+        if len(self.diff_batch_contexts)>1:
+            if all_missing:
+                contexts=sorted(enumerate(self.diff_batch_contexts),key=lambda item:(item[1].get("lang")!="english",item[0]))
+                for ci,c in contexts:
+                    for row in c["rows"]:
+                        if row["status"] in ("missing","untranslated") and row.get("source"):
+                            tasks.append((ci,row["key"]))
+            else:
+                for iid in self.diff_tree.selection():
+                    record=self.diff_tree_record_map.get(iid)
+                    if record:
+                        ci,key=record; row=next((r for r in self.diff_batch_contexts[ci]["rows"] if r["key"]==key),{})
+                        if row.get("source"): tasks.append((ci,key))
         else:
-            keys = [k for k in self._selected_diff_keys() if self.diff_row_by_key.get(k,{}).get("source")]
-        if not keys:
+            keys = ([r["key"] for r in self.diff_rows if r["status"] in ("missing","untranslated") and r.get("source")]
+                    if all_missing else [k for k in self._selected_diff_keys() if self.diff_row_by_key.get(k,{}).get("source")])
+            single={"source_path":Path(self.diff_src_var.get()),"target_path":Path(self.diff_dst_var.get()),"lang":self.diff_source_lang or "english",
+                    "source_entries":self.diff_source_entries,"target_entries":self.diff_target_entries,"rows":self.diff_rows}
+            tasks=[(0,key) for key in keys]
+        contexts=self.diff_batch_contexts if len(self.diff_batch_contexts)>1 else [single]
+        tasks=_dedupe_diff_translation_tasks(contexts,tasks)
+        if not tasks:
             messagebox.showinfo(APP_NAME, "翻訳対象の欠落/未翻訳キーを選択してください。")
             return
-        src_path = Path(self.diff_src_var.get()); dst_path = Path(self.diff_dst_var.get())
-        source_lang = self.diff_source_lang or "english"
         self.diff_controller = core.TranslationController(progress_callback=lambda p:self.events.put(("diff_translate_progress", p)))
         self.llm_operation = "差分翻訳"
-        self.diff_message_var.set(f"差分翻訳中… {len(keys)}件")
+        self.diff_message_var.set(f"差分翻訳中… {len(tasks)}件")
         glossary_path = self.glossary_path_var.get().strip()
         diff_settings = {
             "url": self.url_var.get().strip(), "model": self.model_var.get().strip(),
@@ -9104,15 +9266,18 @@ Mod更新後だけ追加翻訳:
         def work():
             try:
                 glossary = core.load_glossary(Path(glossary_path)) if glossary_path else {}
-                out = {}
-                for i, key in enumerate(keys, 1):
+                outputs = {}
+                for i, (ci,key) in enumerate(tasks, 1):
                     if self.diff_controller.stop_event.is_set(): raise core.StopRequested()
-                    self.events.put(("diff_translate_status", (i, len(keys), key)))
-                    out[key] = core.translate_single_text(diff_settings["url"], diff_settings["model"], self.diff_source_entries[key], source_lang,
+                    context=contexts[ci]; source_lang=context["lang"]
+                    self.events.put(("diff_translate_status", (i, len(tasks), f'{Path(context["source_path"]).name} / {key}')))
+                    translated=core.translate_single_text(diff_settings["url"], diff_settings["model"], context["source_entries"][key], source_lang,
                                                           glossary, diff_settings["preset"], diff_settings["provider"], diff_settings["api_key"], self.diff_controller,
                                                           chinese_basis=(source_lang == "simp_chinese"))
-                core.upsert_localization_values(dst_path, out)
-                self.events.put(("diff_translate_done", len(out)))
+                    outputs.setdefault(str(context["target_path"]),{})[key]=translated
+                for target_path,values in outputs.items():
+                    core.upsert_localization_values(Path(target_path),values)
+                self.events.put(("diff_translate_done", len(tasks)))
             except core.StopRequested:
                 self.events.put(("diff_translate_stopped", None))
             except Exception as e:
@@ -9371,10 +9536,43 @@ Mod更新後だけ追加翻訳:
     def load_review(self):
         dst=Path(self.review_dst_var.get())
         if not dst.exists(): messagebox.showerror(APP_NAME,'訳文ファイルを選択してください。'); return
+        self.review_batch_contexts=[]
         self._start_review_background(load_files=True)
 
+    def load_review_pairs(self, pairs):
+        pairs=[dict(pair) for pair in (pairs or []) if pair.get("source") and pair.get("target")]
+        if not pairs:
+            return
+        first=pairs[0]
+        self.review_src_var.set(str(first["source"])); self.review_dst_var.set(str(first["target"]))
+        self._start_review_pairs_background(pairs)
+
     def run_review_qa(self):
+        if len(self.review_batch_contexts)>1:
+            pairs=[{"source":c["source_path"],"target":c["target_path"],"lang":c["lang"]} for c in self.review_batch_contexts]
+            self._start_review_pairs_background(pairs)
+            return
         self._start_review_background(load_files=not bool(self.review_target_entries))
+
+    def _start_review_pairs_background(self, pairs):
+        if self.review_worker and self.review_worker.is_alive():
+            self.qa_summary_var.set('QAをバックグラウンド解析中…'); return
+        glossary_path=Path(self.glossary_path_var.get()) if self.glossary_path_var.get() else None
+        self.qa_summary_var.set(f'QAを一括解析中… {len(pairs)}ファイル / GUIは操作できます')
+        def work():
+            contexts=[]; errors=[]
+            glossary=core.load_glossary(glossary_path) if glossary_path else {}
+            for pair in pairs:
+                try:
+                    lang,source,_=core.parse_localization_file(Path(pair["source"]))
+                    _,target,_=core.parse_localization_file(Path(pair["target"]))
+                    issues=core.qa_entries(target,source or None,lang,glossary)
+                    contexts.append({"source_path":Path(pair["source"]),"target_path":Path(pair["target"]),"lang":lang,
+                                     "source_entries":source,"target_entries":target,"issues":list(issues or [])})
+                except Exception as exc:
+                    errors.append(f'{Path(pair.get("source","")).name}: {exc}')
+            self.events.put(('review_qa_batch_loaded',(contexts,errors)))
+        self.review_worker=threading.Thread(target=work,daemon=True,name='review-qa-batch'); self.review_worker.start()
 
     def _start_review_background(self, load_files=False):
         if self.review_worker and self.review_worker.is_alive():
@@ -9401,13 +9599,68 @@ Mod更新後だけ追加翻訳:
 
     def _apply_review_qa_loaded(self, source_lang, source_entries, target_entries, issues):
         self.review_worker=None; self.review_source_lang=source_lang; self.review_source_entries=source_entries; self.review_target_entries=target_entries
+        self.review_batch_contexts=[]; self.review_batch_errors=[]; self.review_tree_record_map={}
         self.review_issues=list(issues or []); self.review_issue_by_key={}
         for issue in self.review_issues: self.review_issue_by_key.setdefault(issue['key'],[]).append(issue)
         errs=sum(x['severity']=='error' for x in self.review_issues); warns=sum(x['severity']=='warning' for x in self.review_issues)
         self.qa_summary_var.set(f'QA: エラー {errs} / 警告 {warns} / キー {len(self.review_target_entries)}')
         self.populate_review(True)
 
+    def _activate_review_context(self, index):
+        if not (0 <= index < len(self.review_batch_contexts)):
+            return
+        c=self.review_batch_contexts[index]
+        self.review_src_var.set(str(c["source_path"])); self.review_dst_var.set(str(c["target_path"]))
+        self.review_source_lang=c["lang"]; self.review_source_entries=c["source_entries"]; self.review_target_entries=c["target_entries"]
+        self.review_issues=c["issues"]; self.review_issue_by_key={}
+        for issue in self.review_issues: self.review_issue_by_key.setdefault(issue['key'],[]).append(issue)
+
+    def _apply_review_qa_batch_loaded(self, contexts, errors):
+        self.review_worker=None; self.review_batch_contexts=list(contexts or []); self.review_batch_errors=list(errors or []); self.review_tree_record_map={}
+        if not self.review_batch_contexts:
+            self.qa_summary_var.set(f'QA一括解析失敗: {len(errors)}ファイル')
+            if errors: messagebox.showerror(APP_NAME,'QAで読み込めるファイルがありませんでした。\n\n'+'\n'.join(errors[:20]))
+            return
+        self._activate_review_context(0)
+        self.populate_review_batch(True,errors)
+
+    def populate_review_batch(self, warnings_only, errors=None):
+        for x in self.review_tree.get_children(): self.review_tree.delete(x)
+        self.review_tree_key_map={}; self.review_tree_record_map={}; parents={}; type_parents={}; n=0
+        counts={"error":0,"warning":0}; total_keys=0
+        for ci,c in enumerate(self.review_batch_contexts):
+            issue_by_key={}
+            for issue in c["issues"]:
+                issue_by_key.setdefault(issue['key'],[]).append(issue); counts[issue['severity']]=counts.get(issue['severity'],0)+1
+            keys=sorted(set(c["target_entries"]) | set(c["source_entries"]))
+            total_keys += len(keys)
+            file_label=f'{"English" if c["lang"]=="english" else "簡体字中国語"}: {Path(c["source_path"]).name}'
+            for key in keys:
+                issues=issue_by_key.get(key,[])
+                if warnings_only and not issues: continue
+                group='error' if any(i['severity']=='error' for i in issues) else ('warning' if issues else 'ok')
+                types=sorted(set(i['type'] for i in issues)) or ['']
+                for typ in types:
+                    if group not in parents:
+                        parents[group]=self.review_tree.insert('', 'end', iid=f'qa_batch_group_{group}', text={'error':'エラー','warning':'警告','ok':'問題なし'}[group], open=group!='ok', values=('','',''))
+                    parent=parents[group]
+                    if group!='ok':
+                        token=(group,typ)
+                        if token not in type_parents:
+                            type_parents[token]=self.review_tree.insert(parent,'end',text=typ,open=True,values=(typ,'',''))
+                        parent=type_parents[token]
+                    iid=f'qa_batch_leaf_{n}'; n+=1
+                    self.review_tree.insert(parent,'end',iid=iid,values=(typ,file_label,key))
+                    self.review_tree_key_map[iid]=key; self.review_tree_record_map[iid]=(ci,key)
+        failed=len(errors or [])
+        self.qa_summary_var.set(f'QA一括: {len(self.review_batch_contexts)}ファイル / エラー {counts["error"]} / 警告 {counts["warning"]} / キー {total_keys}'+(f' / 読込失敗 {failed}' if failed else ''))
+        if failed:
+            messagebox.showwarning(APP_NAME,f'{failed}ファイルをスキップし、残りのQAを完了しました。\n\n'+'\n'.join((errors or [])[:20]))
+
     def populate_review(self,warnings_only):
+        if self.review_batch_contexts:
+            self.populate_review_batch(warnings_only,self.review_batch_errors)
+            return
         for x in self.review_tree.get_children(): self.review_tree.delete(x)
         self.review_tree_key_map={}
         keys=sorted(set(self.review_target_entries) | set(self.review_source_entries or {}))
@@ -9433,14 +9686,14 @@ Mod更新後だけ追加翻訳:
             k=(group,typ)
             if k not in type_parents:
                 parent=ensure_parent(group,{'error':'エラー','warning':'警告','ok':'問題なし'}[group])
-                type_parents[k]=self.review_tree.insert(parent,'end',text=typ,open=True,values=(typ,''))
+                type_parents[k]=self.review_tree.insert(parent,'end',text=typ,open=True,values=(typ,'',''))
             return type_parents[k]
         end=min(len(rows),start+chunk)
         for n in range(start,end):
             group,typ,key=rows[n]
             if group=='ok': parent=ensure_parent('ok','問題なし')
             else: parent=ensure_type(group,typ)
-            iid=f'qa_leaf_{n}'; self.review_tree.insert(parent,'end',iid=iid,text='',values=(typ,key)); self.review_tree_key_map[iid]=key
+            iid=f'qa_leaf_{n}'; self.review_tree.insert(parent,'end',iid=iid,text='',values=(typ,'',key)); self.review_tree_key_map[iid]=key
         if end < len(rows):
             self.after(1,lambda:self._populate_review_rows_chunked(rows,end,parents,type_parents,chunk))
         else:
@@ -9457,6 +9710,9 @@ Mod更新後だけ追加翻訳:
     def on_review_select(self,_=None):
         key=self._selected_review_key()
         if not key: return
+        sel=self.review_tree.selection()
+        if sel and sel[0] in self.review_tree_record_map:
+            ci,_key=self.review_tree_record_map[sel[0]]; self._activate_review_context(ci)
         self.src_text.delete("1.0","end"); self.src_text.insert("1.0",self.review_source_entries.get(key,""))
         self.dst_text.delete("1.0","end"); self.dst_text.insert("1.0",self.review_target_entries.get(key,""))
         self.issue_text.set(" / ".join(i["message"] for i in self.review_issue_by_key.get(key,[])))
@@ -10334,6 +10590,8 @@ Mod更新後だけ追加翻訳:
                     messagebox.showerror(APP_NAME,f"判定ログの書き出しに失敗しました。\n{payload}")
                 elif kind=="diff_inspector_loaded":
                     self._apply_diff_inspector_loaded(*payload)
+                elif kind=="diff_inspector_batch_loaded":
+                    self._apply_diff_inspector_batch_loaded(*payload)
                 elif kind=="diff_inspector_load_error":
                     self.diff_load_worker=None
                     self.diff_summary_var.set("差分解析エラー")
@@ -10341,6 +10599,8 @@ Mod更新後だけ追加翻訳:
                     messagebox.showerror(APP_NAME,str(payload))
                 elif kind=="review_qa_loaded":
                     self._apply_review_qa_loaded(*payload)
+                elif kind=="review_qa_batch_loaded":
+                    self._apply_review_qa_batch_loaded(*payload)
                 elif kind=="review_qa_error":
                     self.review_worker=None
                     self.qa_summary_var.set("QA解析エラー")
@@ -10728,7 +10988,12 @@ Mod更新後だけ追加翻訳:
                     i,total,key=payload; self.diff_message_var.set(f"差分翻訳中 {i}/{total} — {key}")
                 elif kind=="diff_translate_done":
                     self.diff_controller=None; self.diff_translate_thread=None; self._set_llm_idle("LLM 待機中",f"差分翻訳 {payload}件が完了しました")
-                    if not self._closing: self.load_diff_inspector()
+                    if not self._closing:
+                        if len(self.diff_batch_contexts)>1:
+                            pairs=[{"source":c["source_path"],"target":c["target_path"],"lang":c["lang"]} for c in self.diff_batch_contexts]
+                            self.load_diff_pairs(pairs)
+                        else:
+                            self.load_diff_inspector()
                     self.diff_message_var.set(f"差分翻訳完了: {payload}件")
                 elif kind=="diff_translate_stopped":
                     self.diff_controller=None; self.diff_translate_thread=None; self._set_llm_idle("LLM 待機中","差分翻訳を停止しました"); self.diff_message_var.set("差分翻訳を停止しました")

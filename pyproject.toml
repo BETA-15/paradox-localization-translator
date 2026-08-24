@@ -1,6 +1,6 @@
 [project]
 name = "paradox-localization-translator"
-version = "0.11.66"
+version = "0.11.67"
 requires-python = ">=3.10"
 
 [tool.pytest.ini_options]
