@@ -37,7 +37,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.68"
+APP_VERSION = "0.11.69"
 MOD_STATUS_CACHE_VERSION = 15
 TRANSLATION_STATUS_SNAPSHOT_SCHEMA = 2
 MOD_STATUS_EMPTY_IID = "__mod_status_empty__"
@@ -271,11 +271,85 @@ def _automatic_data_root() -> Path:
     return root
 
 
+def _log_category_dirs(root: Path) -> dict:
+    root=Path(root)
+    return {
+        "qa":root / "QA",
+        "error":root / "エラー",
+        "judgement":root / "日本語化Mod判定",
+        "diagnostic":root / "診断",
+        "unattended":root / "夜間処理",
+        "system":root / "システム・履歴",
+    }
+
+
+def _log_category_for_name(name: str):
+    name=str(name or "")
+    if name.startswith("qa_report_") and name.endswith(".json"): return "qa"
+    if (name.startswith("errors_") or name.startswith("fatal_")) and name.endswith(".log"): return "error"
+    if name.startswith("translation_mod_judgement_") and name.endswith(".txt"): return "judgement"
+    if name.startswith("ParadoxLocalizationTranslator_diagnostics_") and name.endswith(".zip"): return "diagnostic"
+    if name.startswith("unattended_translation_") and name.endswith(".json"): return "unattended"
+    if name in {"resume_history.jsonl","storage_migration.log"}: return "system"
+    return None
+
+
+def _non_overwriting_log_destination(directory: Path, name: str) -> Path:
+    target=Path(directory)/name
+    if not target.exists(): return target
+    source=Path(name); counter=1
+    while True:
+        candidate=Path(directory)/f"{source.stem}_migrated_{counter}{source.suffix}"
+        if not candidate.exists(): return candidate
+        counter += 1
+
+
+def _organize_existing_logs(root: Path) -> dict:
+    """Move known legacy root-level logs into category folders without overwriting."""
+    root=Path(root); dirs=_log_category_dirs(root); result={"moved":[],"errors":[]}
+    try:
+        root.mkdir(parents=True,exist_ok=True)
+        for directory in dirs.values(): directory.mkdir(parents=True,exist_ok=True)
+        for source in list(root.iterdir()):
+            if not source.is_file(): continue
+            category=_log_category_for_name(source.name)
+            if not category: continue
+            target=_non_overwriting_log_destination(dirs[category],source.name)
+            try:
+                shutil.move(str(source),str(target)); result["moved"].append({"source":str(source),"target":str(target)})
+            except Exception as exc:
+                result["errors"].append({"source":str(source),"error":f"{type(exc).__name__}: {exc}"})
+        old_native=root/"native_crash_reports"; new_native=dirs["error"]/"native_crash_reports"
+        if old_native.is_dir() and old_native != new_native:
+            new_native.mkdir(parents=True,exist_ok=True)
+            for source in list(old_native.iterdir()):
+                if not source.is_file(): continue
+                target=_non_overwriting_log_destination(new_native,source.name)
+                try:
+                    shutil.move(str(source),str(target)); result["moved"].append({"source":str(source),"target":str(target)})
+                except Exception as exc:
+                    result["errors"].append({"source":str(source),"error":f"{type(exc).__name__}: {exc}"})
+            try: old_native.rmdir()
+            except OSError: pass
+    except Exception as exc:
+        result["errors"].append({"source":str(root),"error":f"{type(exc).__name__}: {exc}"})
+    return result
+
+
+def _diagnostic_log_files(root: Path) -> list[Path]:
+    dirs=_log_category_dirs(Path(root)); files=[]
+    for category in ("qa","error","judgement","unattended","system"):
+        directory=dirs[category]
+        if directory.exists(): files.extend(path for path in directory.rglob("*") if path.is_file())
+    return sorted(files,key=lambda path:str(path))
+
+
 def _configure_data_root(root: Path):
     """Update all generated-file locations after the user changes the storage root."""
     global DATA_ROOT, APP_HOME, OUTPUT_ROOT, SESSION_PATH, DEFAULT_GLOSSARY
     global STATS_PATH, PROFILES_PATH, CACHE_ROOT, CACHE_REGISTRY_PATH, BACKUP_ROOT
-    global SAVED_STEAM_ROOTS_PATH, LOG_ROOT, MOD_STATUS_CACHE_PATH, MOD_CLASSIFICATION_CACHE_PATH, MOD_RELATION_OVERRIDES_PATH, APP_PREFS_PATH
+    global SAVED_STEAM_ROOTS_PATH, LOG_ROOT, QA_LOG_ROOT, ERROR_LOG_ROOT, JUDGEMENT_LOG_ROOT, DIAGNOSTIC_LOG_ROOT, UNATTENDED_LOG_ROOT, SYSTEM_LOG_ROOT
+    global MOD_STATUS_CACHE_PATH, MOD_CLASSIFICATION_CACHE_PATH, MOD_RELATION_OVERRIDES_PATH, APP_PREFS_PATH
     global TRANSLATION_STATUS_STATE_PATH, DIAGNOSTIC_STATE_PATH, SHARED_MOD_STATE_CACHE_PATH
     global RESUME_STATE_PATH, RESUME_HISTORY_PATH, WORK_STATE_ROOT, MIGRATION_STATE_PATH, WORKSPACE_STATE_PATH
     DATA_ROOT = root.expanduser().resolve()
@@ -289,6 +363,9 @@ def _configure_data_root(root: Path):
     CACHE_REGISTRY_PATH = CACHE_ROOT / "cache_registry.json"
     BACKUP_ROOT = DATA_ROOT / "バックアップ"
     LOG_ROOT = DATA_ROOT / "ログ"
+    log_dirs=_log_category_dirs(LOG_ROOT)
+    QA_LOG_ROOT=log_dirs["qa"]; ERROR_LOG_ROOT=log_dirs["error"]; JUDGEMENT_LOG_ROOT=log_dirs["judgement"]
+    DIAGNOSTIC_LOG_ROOT=log_dirs["diagnostic"]; UNATTENDED_LOG_ROOT=log_dirs["unattended"]; SYSTEM_LOG_ROOT=log_dirs["system"]
     SAVED_STEAM_ROOTS_PATH = APP_HOME / "steam_library_roots.json"
     MOD_STATUS_CACHE_PATH = CACHE_ROOT / "mod_translation_status_cache.json"
     # Stable first-seen Mod role cache.  A source/child Mod that originally had no
@@ -302,13 +379,14 @@ def _configure_data_root(root: Path):
     APP_PREFS_PATH = APP_HOME / "app_preferences.json"
     # Stable, version-independent resume files. APP_VERSION is metadata only.
     RESUME_STATE_PATH = APP_HOME / "resume_state.json"
-    RESUME_HISTORY_PATH = LOG_ROOT / "resume_history.jsonl"
+    RESUME_HISTORY_PATH = SYSTEM_LOG_ROOT / "resume_history.jsonl"
     # Version-independent runtime/work state belongs under the user data root,
     # never beside the executable/app bundle.
     WORK_STATE_ROOT = DATA_ROOT / "作業データ"
     MIGRATION_STATE_PATH = APP_HOME / "storage_migration.json"
     WORKSPACE_STATE_PATH = APP_HOME / "workspace_state.json"
-    for d in (DATA_ROOT, APP_HOME, OUTPUT_ROOT, CACHE_ROOT, BACKUP_ROOT, LOG_ROOT, WORK_STATE_ROOT):
+    for d in (DATA_ROOT, APP_HOME, OUTPUT_ROOT, CACHE_ROOT, BACKUP_ROOT, LOG_ROOT, QA_LOG_ROOT, ERROR_LOG_ROOT,
+              JUDGEMENT_LOG_ROOT, DIAGNOSTIC_LOG_ROOT, UNATTENDED_LOG_ROOT, SYSTEM_LOG_ROOT, WORK_STATE_ROOT):
         d.mkdir(parents=True, exist_ok=True)
 
 
@@ -450,8 +528,8 @@ def _migrate_legacy_generated_data() -> dict:
         result["previous_run"] = previous.get("timestamp") if isinstance(previous, dict) else None
         core.save_json(MIGRATION_STATE_PATH, result)
         if result["copied"]:
-            LOG_ROOT.mkdir(parents=True, exist_ok=True)
-            with (LOG_ROOT / "storage_migration.log").open("a", encoding="utf-8") as fh:
+            SYSTEM_LOG_ROOT.mkdir(parents=True, exist_ok=True)
+            with (SYSTEM_LOG_ROOT / "storage_migration.log").open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(result, ensure_ascii=False) + "\n")
     except Exception:
         pass
@@ -497,11 +575,12 @@ def _remap_saved_data_path(value, saved_root=None):
 
 
 LEGACY_MIGRATION_RESULT = _migrate_legacy_generated_data()
+LOG_CATEGORY_MIGRATION_RESULT = _organize_existing_logs(LOG_ROOT)
 
 
 def _error_log_path() -> Path:
-    LOG_ROOT.mkdir(parents=True, exist_ok=True)
-    return LOG_ROOT / f"errors_{datetime.now().strftime('%Y%m%d')}.log"
+    ERROR_LOG_ROOT.mkdir(parents=True, exist_ok=True)
+    return ERROR_LOG_ROOT / f"errors_{datetime.now().strftime('%Y%m%d')}.log"
 
 
 def record_error(context: str, exc: BaseException | None = None, detail: str = ""):
@@ -587,7 +666,7 @@ def _collect_native_crash_reports():
                     candidates.append((path, key))
         if not candidates:
             return
-        archive_dir = LOG_ROOT / "native_crash_reports"
+        archive_dir = ERROR_LOG_ROOT / "native_crash_reports"
         archive_dir.mkdir(parents=True, exist_ok=True)
         for path, key in sorted(candidates, key=lambda x: x[0].stat().st_mtime):
             try:
@@ -689,7 +768,7 @@ class App(BaseTk):
         _mark_runtime_started()
         self._fatal_log_handle = None
         try:
-            fatal_path = LOG_ROOT / f"fatal_{datetime.now().strftime('%Y%m%d')}.log"
+            fatal_path = ERROR_LOG_ROOT / f"fatal_{datetime.now().strftime('%Y%m%d')}.log"
             self._fatal_log_handle = fatal_path.open("a", encoding="utf-8")
             faulthandler.enable(file=self._fatal_log_handle, all_threads=True)
         except Exception as exc:
@@ -2297,10 +2376,12 @@ class App(BaseTk):
             "│   └── shared_mod_state_cache.json\n"
             "├── バックアップ/\n"
             "├── ログ/\n"
-            "│   ├── errors_YYYYMMDD.log\n"
-            "│   ├── resume_history.jsonl\n"
-            "│   ├── storage_migration.log\n"
-            "│   └── ParadoxLocalizationTranslator_diagnostics_*.zip\n"
+            "│   ├── QA/\n"
+            "│   ├── エラー/\n"
+            "│   ├── 日本語化Mod判定/\n"
+            "│   ├── 診断/\n"
+            "│   ├── 夜間処理/\n"
+            "│   └── システム・履歴/\n"
             "├── 作業データ/  ← バージョン非依存の一時・作業状態用\n"
             "└── 設定/\n"
             "    ├── session.json\n"
@@ -2348,7 +2429,7 @@ class App(BaseTk):
         self.data_root_move_thread=None
         old_root=Path(old_root_raw); new_root=Path(new_root_raw)
         try:
-            _save_data_root_preference(new_root); _configure_data_root(new_root)
+            _save_data_root_preference(new_root); _configure_data_root(new_root); _organize_existing_logs(LOG_ROOT)
             for i,item in enumerate(self.queue_items):
                 if not isinstance(item,dict): continue
                 for key in ('cache','output','previous_cache'):
@@ -3445,8 +3526,8 @@ Mod更新後だけ追加翻訳:
 
     def _write_translation_judgement_log_text(self, text):
         try:
-            LOG_ROOT.mkdir(parents=True,exist_ok=True)
-            target=LOG_ROOT / f"translation_mod_judgement_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+            JUDGEMENT_LOG_ROOT.mkdir(parents=True,exist_ok=True)
+            target=JUDGEMENT_LOG_ROOT / f"translation_mod_judgement_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
             target.write_text(text,encoding='utf-8')
             messagebox.showinfo(APP_NAME,f'日本語化Mod判定ログを書き出しました。\n\n{target}')
             return target
@@ -3461,8 +3542,8 @@ Mod更新後だけ追加翻訳:
         def work():
             try:
                 text=self._translation_judgement_log_text()
-                LOG_ROOT.mkdir(parents=True,exist_ok=True)
-                target=LOG_ROOT / f"translation_mod_judgement_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+                JUDGEMENT_LOG_ROOT.mkdir(parents=True,exist_ok=True)
+                target=JUDGEMENT_LOG_ROOT / f"translation_mod_judgement_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
                 target.write_text(text,encoding='utf-8')
                 self.events.put(('judgement_log_exported',str(target)))
             except Exception as exc:
@@ -5636,9 +5717,9 @@ Mod更新後だけ追加翻訳:
     def collect_error_logs(self):
         """Create a shareable diagnostics ZIP without API keys or localization content."""
         try:
-            LOG_ROOT.mkdir(parents=True, exist_ok=True)
+            DIAGNOSTIC_LOG_ROOT.mkdir(parents=True, exist_ok=True)
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            target = LOG_ROOT / f"ParadoxLocalizationTranslator_diagnostics_{stamp}.zip"
+            target = DIAGNOSTIC_LOG_ROOT / f"ParadoxLocalizationTranslator_diagnostics_{stamp}.zip"
             info = {
                 "app": APP_NAME, "version": APP_VERSION,
                 "created_at": datetime.now().isoformat(timespec="seconds"),
@@ -5649,13 +5730,10 @@ Mod更新後だけ追加翻訳:
             }
             with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as zf:
                 zf.writestr("diagnostics.json", json.dumps(info, ensure_ascii=False, indent=2))
-                for lp in sorted(LOG_ROOT.glob("*.log")):
-                    zf.write(lp, f"logs/{lp.name}")
-                native_dir = LOG_ROOT / "native_crash_reports"
-                if native_dir.exists():
-                    for rp in sorted(native_dir.iterdir()):
-                        if rp.is_file():
-                            zf.write(rp, f"native_crash_reports/{rp.name}")
+                for lp in _diagnostic_log_files(LOG_ROOT):
+                    try: rel=lp.relative_to(LOG_ROOT)
+                    except Exception: rel=Path(lp.parent.name)/lp.name
+                    zf.write(lp, str(Path("logs")/rel))
                 if SESSION_PATH.exists():
                     try:
                         session = core.load_json(SESSION_PATH, {})
@@ -5669,9 +5747,6 @@ Mod更新後だけ追加翻訳:
                         zf.writestr("resume_state_sanitized.json",json.dumps(resume_state,ensure_ascii=False,indent=2))
                     except Exception:
                         pass
-                if RESUME_HISTORY_PATH.exists():
-                    try: zf.write(RESUME_HISTORY_PATH,"logs/resume_history.jsonl")
-                    except Exception: pass
             messagebox.showinfo(APP_NAME, f"診断ログを収集しました。\n\n{target}\n\nAPIキーや翻訳本文は収集しません。")
         except Exception as e:
             record_error("診断ログ収集", e)
@@ -8463,7 +8538,7 @@ Mod更新後だけ追加翻訳:
             if not interrupted:
                 keep_for_review=bool(unresolved_ids)
                 self._write_session_file(active=keep_for_review,restore_on_launch=keep_for_review)
-            queue_report_path=LOG_ROOT / f"unattended_translation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            queue_report_path=UNATTENDED_LOG_ROOT / f"unattended_translation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
             try:
                 core.save_json(queue_report_path,{
                     "generated_at":datetime.now().isoformat(timespec="seconds"),
@@ -9612,7 +9687,7 @@ Mod更新後だけ追加翻訳:
             return
         try:
             payload=_build_qa_log_payload(contexts,failures)
-            path=LOG_ROOT / f'qa_report_{datetime.now().strftime("%Y%m%d_%H%M%S_%f")}.json'
+            path=QA_LOG_ROOT / f'qa_report_{datetime.now().strftime("%Y%m%d_%H%M%S_%f")}.json'
             core.save_json(path,payload)
             messagebox.showinfo(APP_NAME,f'QAログを書き出しました。\n\n{path}')
         except Exception as exc:

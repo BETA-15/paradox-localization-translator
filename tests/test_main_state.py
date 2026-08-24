@@ -250,6 +250,52 @@ def test_qa_log_is_written_only_by_export_action(monkeypatch):
     assert notices and "QAログを書き出しました" in notices[0]
 
 
+def test_log_category_mapping_covers_each_global_log_type():
+    assert main._log_category_for_name("qa_report_20260824.json") == "qa"
+    assert main._log_category_for_name("errors_20260824.log") == "error"
+    assert main._log_category_for_name("fatal_20260824.log") == "error"
+    assert main._log_category_for_name("translation_mod_judgement_20260824.txt") == "judgement"
+    assert main._log_category_for_name("ParadoxLocalizationTranslator_diagnostics_20260824.zip") == "diagnostic"
+    assert main._log_category_for_name("unattended_translation_20260824.json") == "unattended"
+    assert main._log_category_for_name("resume_history.jsonl") == "system"
+    assert main._log_category_for_name("unrelated.txt") is None
+
+
+def test_existing_logs_are_moved_by_category_without_overwrite(tmp_path):
+    root=tmp_path/"ログ"; root.mkdir()
+    (root/"qa_report_1.json").write_text("new",encoding="utf-8")
+    (root/"errors_1.log").write_text("error",encoding="utf-8")
+    (root/"resume_history.jsonl").write_text("history",encoding="utf-8")
+    (root/"keep.txt").write_text("keep",encoding="utf-8")
+    dirs=main._log_category_dirs(root); dirs["qa"].mkdir(parents=True)
+    (dirs["qa"]/"qa_report_1.json").write_text("existing",encoding="utf-8")
+    native=root/"native_crash_reports"; native.mkdir(); (native/"sample.ips").write_text("crash",encoding="utf-8")
+
+    result=main._organize_existing_logs(root)
+
+    assert result["errors"] == []
+    assert (dirs["qa"]/"qa_report_1.json").read_text(encoding="utf-8") == "existing"
+    assert (dirs["qa"]/"qa_report_1_migrated_1.json").read_text(encoding="utf-8") == "new"
+    assert (dirs["error"]/"errors_1.log").exists()
+    assert (dirs["error"]/"native_crash_reports"/"sample.ips").exists()
+    assert (dirs["system"]/"resume_history.jsonl").exists()
+    assert (root/"keep.txt").exists()
+    assert not (root/"qa_report_1.json").exists()
+
+
+def test_diagnostics_collects_category_logs_but_not_previous_diagnostic_zips(tmp_path):
+    root=tmp_path/"ログ"; dirs=main._log_category_dirs(root)
+    for directory in dirs.values(): directory.mkdir(parents=True,exist_ok=True)
+    qa=dirs["qa"]/"qa.json"; qa.write_text("{}",encoding="utf-8")
+    err=dirs["error"]/"errors.log"; err.write_text("error",encoding="utf-8")
+    old_zip=dirs["diagnostic"]/"old.zip"; old_zip.write_bytes(b"zip")
+
+    files=main._diagnostic_log_files(root)
+
+    assert qa in files and err in files
+    assert old_zip not in files
+
+
 def test_diff_bulk_translation_deduplicates_same_target_key():
     contexts=[{"target_path":"/tmp/ja.yml"},{"target_path":"/tmp/ja.yml"},{"target_path":"/tmp/other.yml"}]
     tasks=[(0,"same"),(1,"same"),(2,"same"),(1,"unique")]
