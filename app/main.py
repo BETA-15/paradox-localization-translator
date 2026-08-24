@@ -37,7 +37,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.70"
+APP_VERSION = "0.11.71"
 MOD_STATUS_CACHE_VERSION = 15
 TRANSLATION_STATUS_SNAPSHOT_SCHEMA = 2
 MOD_STATUS_EMPTY_IID = "__mod_status_empty__"
@@ -84,7 +84,15 @@ def _qa_failure_display(failure):
     return f"{name} [{stage}]: {error_type}: {message}".rstrip(": ")
 
 
-def _build_qa_log_payload(contexts, failures, generated_at=None, app_version=None):
+def _qa_contexts_have_repairable_errors(contexts):
+    return any(
+        issue.get("severity") == "error" and bool(issue.get("repairable"))
+        for context in (contexts or [])
+        for issue in (context.get("issues") or [])
+    )
+
+
+def _build_qa_log_payload(contexts, failures, generated_at=None, app_version=None, repair_result=None):
     """Create a text-free but actionable snapshot of the latest inspected QA run."""
     files=[]; issue_total=0; error_total=0; warning_total=0; languages=[]
     for context in contexts or []:
@@ -127,7 +135,7 @@ def _build_qa_log_payload(contexts, failures, generated_at=None, app_version=Non
         else:
             safe_failures.append({"source_file":"","target_file":"","source_language":"","stage":"qa","error_type":"Error","message":str(failure),"action":"スキップして継続"})
     mode="single" if len(files)+len(safe_failures)<=1 else ("english_bulk" if languages==["english"] else ("simp_chinese_bulk" if languages==["simp_chinese"] else "batch"))
-    return {
+    payload={
         "schema":2,
         "generated_at":generated_at or datetime.now().isoformat(timespec="seconds"),
         "app_version":str(app_version or APP_VERSION),
@@ -139,6 +147,25 @@ def _build_qa_log_payload(contexts, failures, generated_at=None, app_version=Non
         "files":files,
         "failures":safe_failures,
     }
+    if isinstance(repair_result,dict):
+        payload["auto_repair"]={
+            "backup_dir":str(repair_result.get("backup_dir") or ""),
+            "summary":dict(repair_result.get("summary") or {}),
+            "files":[{
+                "source_file":str(row.get("source_file") or ""),
+                "target_file":str(row.get("target_file") or ""),
+                "source_language":str(row.get("source_language") or ""),
+                "initial_errors":int(row.get("initial_errors",0) or 0),
+                "final_errors":int(row.get("final_errors",0) or 0),
+                "repaired":int(row.get("repaired",0) or 0),
+                "repair_attempts":int(row.get("repair_attempts",0) or 0),
+                "backup":str(row.get("backup") or ""),
+                "rolled_back":bool(row.get("rolled_back",False)),
+                "events":[dict(event) for event in (row.get("events") or [])],
+            } for row in (repair_result.get("files") or [])],
+            "failures":[dict(row) for row in (repair_result.get("failures") or [])],
+        }
+    return payload
 
 
 def _compact_status_gap_groups(rows):
@@ -813,8 +840,10 @@ class App(BaseTk):
         self.review_batch_errors = []
         self.review_last_qa_contexts = []
         self.review_last_qa_errors = []
+        self.review_last_qa_repair_result = None
         self.review_tree_record_map = {}
         self.review_worker = None
+        self.qa_repair_thread = None
         self.diff_load_worker = None
         self.differential_prepare_thread = None
         self.bulk_overwrite_thread = None
@@ -1076,7 +1105,7 @@ class App(BaseTk):
         differential = self._operation_pending(self.differential_prepare_thread) and self._differential_prepare_mode == "normal"
         overwrite = self._operation_pending(self.bulk_overwrite_thread) and self._bulk_overwrite_queue_kind in {None, "normal"}
         shared_write = any(self._operation_pending(x) for x in (
-            self.data_root_move_thread,self.backup_restore_operation_thread,self.diagnostic_thread,
+            self.data_root_move_thread,self.backup_restore_operation_thread,self.diagnostic_thread,getattr(self,"qa_repair_thread",None),
         ))
         return bool(self._closing or shared_write or self._operation_pending(self.worker) or differential or overwrite or self._operation_pending(self.single_overwrite_thread))
 
@@ -1084,7 +1113,7 @@ class App(BaseTk):
         differential = self._operation_pending(self.differential_prepare_thread) and self._differential_prepare_mode == "chinese"
         overwrite = self._operation_pending(self.bulk_overwrite_thread) and self._bulk_overwrite_queue_kind in {None, "chinese"}
         shared_write = any(self._operation_pending(x) for x in (
-            self.data_root_move_thread,self.backup_restore_operation_thread,self.diagnostic_thread,
+            self.data_root_move_thread,self.backup_restore_operation_thread,self.diagnostic_thread,getattr(self,"qa_repair_thread",None),
         ))
         return bool(self._closing or shared_write or self._operation_pending(self.chinese_worker) or differential or overwrite or self._operation_pending(self.single_overwrite_thread))
 
@@ -1098,6 +1127,7 @@ class App(BaseTk):
             ("バックアップ復元", self.backup_restore_operation_thread),
             ("保存場所コピー", self.data_root_move_thread),
             ("総合診断・修復", self.diagnostic_thread),
+            ("QA・自動修正", getattr(self,"qa_repair_thread",None)),
             ("用語取り込み", self.glossary_import_thread),
         )
         return [name for name, thread in checks if self._operation_pending(thread)]
@@ -1139,6 +1169,10 @@ class App(BaseTk):
 
         data_root_locked = bool(self._closing or self._active_file_operation_names())
         self._set_control_group_state(self._data_root_controls, data_root_locked)
+        if hasattr(self,"review_auto_repair_btn"):
+            self._set_review_auto_repair_enabled(
+                not data_root_locked and _qa_contexts_have_repairable_errors(
+                    self.review_batch_contexts or self.review_last_qa_contexts))
 
     def _disable_all_interactive_controls(self):
         """Grey out the complete UI after final shutdown has started."""
@@ -1403,7 +1437,7 @@ class App(BaseTk):
 
         qbar2=ttk.Frame(qbox); qbar2.pack(fill="x",pady=(0,5))
         self.normal_overwrite_btn=ttk.Button(qbar2,text="選択項目を一括上書き",command=self.overwrite_selected_translation_to_mod); self.normal_overwrite_btn.pack(side="left")
-        self.normal_qa_btn=ttk.Button(qbar2,text="選択項目の翻訳語QAを実行",command=self.run_selected_translation_qa); self.normal_qa_btn.pack(side="left",padx=(6,0))
+        self.normal_qa_btn=ttk.Button(qbar2,text="選択項目のQA・自動修正を実行",command=self.run_selected_translation_qa); self.normal_qa_btn.pack(side="left",padx=(6,0))
         self.normal_glossary_btn=ttk.Button(qbar2,text="用語集を自動作成",command=lambda:self.start_auto_glossary_generation("normal")); self.normal_glossary_btn.pack(side="left",padx=(6,0))
         self.normal_send_qa_btn=ttk.Button(qbar2,text="QA / 比較編集へ",command=lambda:self._send_pair_to_qa_or_diff("normal","review")); self.normal_send_qa_btn.pack(side="left",padx=(6,0))
         self.normal_send_diff_btn=ttk.Button(qbar2,text="差分調査へ",command=lambda:self._send_pair_to_qa_or_diff("normal","diff")); self.normal_send_diff_btn.pack(side="left",padx=(6,0))
@@ -1512,7 +1546,7 @@ class App(BaseTk):
 
         qbar2=ttk.Frame(qbox); qbar2.pack(fill="x",pady=(0,5))
         self.chinese_overwrite_btn=ttk.Button(qbar2,text="選択項目を一括上書き",command=self.overwrite_selected_chinese_translation); self.chinese_overwrite_btn.pack(side="left")
-        self.chinese_qa_btn=ttk.Button(qbar2,text="選択項目の翻訳語QAを実行",command=self.run_selected_chinese_qa); self.chinese_qa_btn.pack(side="left",padx=(6,0))
+        self.chinese_qa_btn=ttk.Button(qbar2,text="選択項目のQA・自動修正を実行",command=self.run_selected_chinese_qa); self.chinese_qa_btn.pack(side="left",padx=(6,0))
         self.chinese_glossary_btn=ttk.Button(qbar2,text="用語集を自動作成",command=lambda:self.start_auto_glossary_generation("chinese")); self.chinese_glossary_btn.pack(side="left",padx=(6,0))
         self.chinese_send_qa_btn=ttk.Button(qbar2,text="QA / 比較編集へ",command=lambda:self._send_pair_to_qa_or_diff("chinese","review")); self.chinese_send_qa_btn.pack(side="left",padx=(6,0))
         self.chinese_send_diff_btn=ttk.Button(qbar2,text="差分調査へ",command=lambda:self._send_pair_to_qa_or_diff("chinese","diff")); self.chinese_send_diff_btn.pack(side="left",padx=(6,0))
@@ -1700,24 +1734,14 @@ class App(BaseTk):
         self._bulk_overwrite_queue_entries(entries, queue_kind="chinese")
 
     def run_selected_chinese_qa(self):
-        item=self._selected_chinese_queue_item()
-        if not item: return
-        inp=Path(item.get("input", "")); out=Path(item.get("output", ""))
-        if not inp.exists():
-            messagebox.showerror(APP_NAME,"中国語原文が見つかりません。"); return
-        if not out.exists():
-            messagebox.showinfo(APP_NAME,"まだ翻訳出力がありません。先に中国語基準翻訳を実行してください。"); return
-        try:
-            result=core.qa_chinese_basis_translation(inp,out,self.glossary_path_var.get().strip() or None)
-            report_path=out / "chinese_basis_qa_report.json"
-            core.save_json(report_path,{"source_language":"simp_chinese",**result})
-            self._append_chinese_log(f"翻訳語QA: error {result['errors']} / warning {result['warnings']} / syntax自動修正 {result['syntax_repaired']} / 未修正 {result['syntax_unresolved']} / 確認 {result['checked_files']}ファイル")
-            if result.get("missing_outputs"):
-                self._append_chinese_log(f"翻訳語QA: 対応する日本語出力がないファイル {result['missing_outputs']}件")
-            messagebox.showinfo(APP_NAME,f"中国語翻訳語QAが完了しました。\n\nエラー: {result['errors']}\n警告: {result['warnings']}\nsyntax検出: {result['syntax_detected']}\n自動修正: {result['syntax_repaired']}\n未修正: {result['syntax_unresolved']}\n確認ファイル: {result['checked_files']}\n\nレポート: {report_path}")
-        except Exception as exc:
-            record_error("中国語翻訳語QA",exc)
-            messagebox.showerror(APP_NAME,str(exc))
+        entries=self._selected_chinese_queue_entries()
+        if not entries:
+            messagebox.showinfo(APP_NAME,"QA・自動修正する中国語基準翻訳項目を選択してください。"); return
+        pairs=[]
+        for _idx,item in entries:
+            inp=Path(item.get("input", "")); out=Path(item.get("output", ""))
+            if inp.exists(): pairs.extend(core.collect_translation_qa_pairs(inp,out,("simp_chinese",)))
+        self._start_manual_qa_repair(pairs,"chinese")
 
     def pick_chinese_file(self):
         raw=filedialog.askopenfilename(title="簡体字中国語YAMLを追加",filetypes=[("Paradox YAML","*.yml *.yaml"),("All files","*")])
@@ -2150,6 +2174,8 @@ class App(BaseTk):
         self.review_drop_hint.grid(row=2,column=0,columnspan=4,sticky="ew",pady=(7,0))
         qa=ttk.Frame(t); qa.pack(fill="x",pady=(8,5))
         ttk.Button(qa,text="QA再実行",command=self.run_review_qa).pack(side="left")
+        self.review_auto_repair_btn=ttk.Button(qa,text="バックアップして全エラーを自動修復",command=self.run_review_auto_repair,state="disabled")
+        self.review_auto_repair_btn.pack(side="left",padx=(6,0))
         self.review_export_log_btn=ttk.Button(qa,text="QAログを書き出す",command=self.export_review_qa_log,state="disabled")
         self.review_export_log_btn.pack(side="left",padx=(6,0))
         ttk.Button(qa,text="警告だけ表示",command=lambda:self.populate_review(True)).pack(side="left",padx=(6,0))
@@ -2583,6 +2609,7 @@ class App(BaseTk):
             ("モデル速度テスト", getattr(self,"benchmark_worker",None)),
             ("翻訳検索", self.search_thread),
             ("QA解析", self.review_worker),
+            ("QA・自動修正", getattr(self,"qa_repair_thread",None)),
             ("差分解析", self.diff_load_worker),
             ("差分翻訳", self.diff_translate_thread),
             ("AI校正", self.proofread_thread),
@@ -8167,36 +8194,87 @@ Mod更新後だけ追加翻訳:
         except Exception as e:
             messagebox.showerror(APP_NAME, f"キャッシュの追加に失敗しました。\n{e}")
 
+    def _start_manual_qa_repair(self, pairs, origin):
+        if self.qa_repair_thread is not None:
+            messagebox.showinfo(APP_NAME,"QA・自動修正はすでに実行中です。"); return
+        pairs=[dict(pair) for pair in (pairs or []) if pair.get("source_file") and pair.get("target_file")]
+        if not pairs:
+            messagebox.showinfo(APP_NAME,"原文と日本語出力の組み合わせを見つけられませんでした。"); return
+        label={"normal":"通常翻訳キュー","chinese":"中国語基準翻訳キュー","review":"QA／比較編集"}.get(origin,"QA")
+        if not messagebox.askyesno(APP_NAME,
+            f"{label}の{len(pairs)}ファイルをQAし、注意・警告を除く修復可能な全エラーを自動修正します。\n\n"
+            "変更前ファイルはバックアップし、修正後にエラーが減らなければ自動復元します。\n続行しますか？"):
+            return
+        settings={
+            "provider":self.provider_var.get(), "url":self.url_var.get().strip(),
+            "model":self.model_var.get().strip(), "api_key":self.api_key_var.get().strip(),
+            "preset":self.preset_var.get(), "glossary":self.glossary_path_var.get().strip() or None,
+        }
+        if origin=="review": self.qa_summary_var.set(f"バックアップ・自動QA・修正中… {len(pairs)}ファイル")
+        elif origin=="chinese": self._append_chinese_log(f"QA・自動修正開始: {len(pairs)}ファイル")
+        else: self._append_log(f"QA・自動修正開始: {len(pairs)}ファイル")
+        def work():
+            try:
+                result=core.auto_repair_qa_pairs(
+                    pairs,backup_root=BACKUP_ROOT/"QA自動修復",model=settings["model"],url=settings["url"],
+                    provider=settings["provider"],api_key=settings["api_key"],preset=settings["preset"],
+                    glossary_path=settings["glossary"],max_passes=2,label=f"{origin}_manual_qa")
+                report_path=QA_LOG_ROOT/f'qa_auto_repair_{datetime.now().strftime("%Y%m%d_%H%M%S_%f")}.json'
+                core.save_json(report_path,result)
+                contexts=[]
+                if origin=="review":
+                    for row in result.get("files") or []:
+                        source_path=Path(row.get("source_file") or ""); target_path=Path(row.get("target_file") or "")
+                        if not source_path.exists() or not target_path.exists(): continue
+                        lang,source_entries,_=core.parse_localization_file(source_path)
+                        _,target_entries,_=core.parse_localization_file(target_path)
+                        contexts.append({"source_path":source_path,"target_path":target_path,"lang":lang,
+                                         "source_entries":source_entries,"target_entries":target_entries,
+                                         "issues":list(row.get("issues") or [])})
+                self.events.put(("qa_auto_repair_done",(origin,result,report_path,contexts)))
+            except Exception as exc:
+                self.events.put(("qa_auto_repair_error",(origin,type(exc).__name__,str(exc))))
+        self.qa_repair_thread=threading.Thread(target=work,daemon=True,name=f"qa-auto-repair-{origin}")
+        self.qa_repair_thread.start(); self._refresh_operation_states()
+
+    def _apply_qa_auto_repair_done(self, origin, result, report_path, contexts):
+        self.qa_repair_thread=None
+        summary=result.get("summary") or {}; failures=list(result.get("failures") or [])
+        text=(f"修正前エラー {summary.get('initial_errors',0)} / 修正後 {summary.get('final_errors',0)} / "
+              f"解消 {summary.get('resolved_errors',0)} / 修正キー {summary.get('repaired_keys',0)} / "
+              f"失敗ファイル {summary.get('failed_files',0)}")
+        if origin=="review":
+            self.review_last_qa_repair_result=result
+            self._apply_review_qa_batch_loaded(contexts,failures)
+            self.review_last_qa_repair_result=result
+            self.qa_summary_var.set("QA・自動修正完了: "+text)
+        elif origin=="chinese":
+            self._append_chinese_log("QA・自動修正完了: "+text)
+            self._append_chinese_log(f"修正ログ: {report_path}")
+        else:
+            self._append_log("QA・自動修正完了: "+text)
+            self._append_log(f"修正ログ: {report_path}")
+        self._refresh_operation_states()
+        message=(f"QA・自動修正が完了しました。\n\n{text}\nバックアップ: {result.get('backup_dir','')}\nログ: {report_path}")
+        if failures: messagebox.showwarning(APP_NAME,message)
+        else: messagebox.showinfo(APP_NAME,message)
+
+    def _apply_qa_auto_repair_error(self, origin, error_type, message):
+        self.qa_repair_thread=None; self._refresh_operation_states()
+        if origin=="review": self.qa_summary_var.set("QA・自動修正エラー")
+        record_error("QA・自動修正",detail=f"{error_type}: {message}")
+        messagebox.showerror(APP_NAME,f"QA・自動修正に失敗しました。\n{error_type}: {message}")
+
     def run_selected_translation_qa(self):
-        """Run source-aware QA for the currently selected normal translation queue item."""
-        sel = self.queue_tree.selection() if hasattr(self, "queue_tree") else ()
-        if not sel:
-            messagebox.showinfo(APP_NAME, "翻訳語QAを実行する項目を選択してください。")
-            return
-        try:
-            item = self.queue_items[int(sel[0])]
-        except Exception:
-            messagebox.showerror(APP_NAME, "選択した翻訳項目を取得できませんでした。")
-            return
-        inp = Path(item.get("input", ""))
-        out = Path(item.get("output", ""))
-        if not inp.exists():
-            messagebox.showerror(APP_NAME, "翻訳元が見つかりません。")
-            return
-        if not out.exists():
-            messagebox.showinfo(APP_NAME, "まだ翻訳出力がありません。先に翻訳を実行してください。")
-            return
-        try:
-            result = core.qa_translation_output(inp, out, self.glossary_path_var.get().strip() or None)
-            report_path = out / "translation_qa_report.json"
-            core.save_json(report_path, {"target_language": "japanese", **result})
-            self._log(f"翻訳語QA: error {result['errors']} / warning {result['warnings']} / syntax自動修正 {result['syntax_repaired']} / 未修正 {result['syntax_unresolved']} / 確認 {result['checked_files']}ファイル")
-            if result.get("missing_outputs"):
-                self._log(f"翻訳語QA: 対応する日本語出力がないファイル {result['missing_outputs']}件")
-            messagebox.showinfo(APP_NAME, f"翻訳語QAが完了しました。\n\nエラー: {result['errors']}\n警告: {result['warnings']}\nsyntax検出: {result['syntax_detected']}\n自動修正: {result['syntax_repaired']}\n未修正: {result['syntax_unresolved']}\n確認ファイル: {result['checked_files']}\n\nレポート: {report_path}")
-        except Exception as exc:
-            record_error("通常翻訳語QA", exc)
-            messagebox.showerror(APP_NAME, str(exc))
+        """Back up, QA, and automatically repair selected normal queue items."""
+        entries=self._selected_normal_queue_entries()
+        if not entries:
+            messagebox.showinfo(APP_NAME,"QA・自動修正する通常翻訳項目を選択してください。"); return
+        pairs=[]
+        for _idx,item in entries:
+            inp=Path(item.get("input", "")); out=Path(item.get("output", ""))
+            if inp.exists(): pairs.extend(core.collect_translation_qa_pairs(inp,out,("english","simp_chinese")))
+        self._start_manual_qa_repair(pairs,"normal")
 
     def change_output(self):
         if self._normal_queue_locked(): return
@@ -9699,9 +9777,16 @@ Mod更新後だけ追加翻訳:
         if hasattr(self,"review_export_log_btn"):
             self.review_export_log_btn.configure(state="normal" if enabled else "disabled")
 
+    def _set_review_auto_repair_enabled(self, enabled):
+        if hasattr(self,"review_auto_repair_btn"):
+            active=bool(enabled) and self.qa_repair_thread is None and not self._closing
+            self.review_auto_repair_btn.configure(state="normal" if active else "disabled")
+
     def _clear_pending_review_qa_log(self):
         self.review_last_qa_contexts=[]; self.review_last_qa_errors=[]
+        self.review_last_qa_repair_result=None
         self._set_review_qa_log_enabled(False)
+        self._set_review_auto_repair_enabled(False)
 
     def export_review_qa_log(self):
         contexts=list(self.review_last_qa_contexts or []); failures=list(self.review_last_qa_errors or [])
@@ -9709,13 +9794,22 @@ Mod更新後だけ追加翻訳:
             self._set_review_qa_log_enabled(False)
             return
         try:
-            payload=_build_qa_log_payload(contexts,failures)
+            payload=_build_qa_log_payload(contexts,failures,repair_result=getattr(self,"review_last_qa_repair_result",None))
             path=QA_LOG_ROOT / f'qa_report_{datetime.now().strftime("%Y%m%d_%H%M%S_%f")}.json'
             core.save_json(path,payload)
             messagebox.showinfo(APP_NAME,f'QAログを書き出しました。\n\n{path}')
         except Exception as exc:
             record_error("QAログ書き出し",exc)
             messagebox.showerror(APP_NAME,f'QAログの書き出しに失敗しました。\n{exc}')
+
+    def run_review_auto_repair(self):
+        contexts=list(self.review_batch_contexts or self.review_last_qa_contexts or [])
+        if not _qa_contexts_have_repairable_errors(contexts):
+            self._set_review_auto_repair_enabled(False)
+            messagebox.showinfo(APP_NAME,"現在のQA結果に自動修復できるエラーはありません。"); return
+        pairs=[{"source_file":str(c.get("source_path") or ""),"target_file":str(c.get("target_path") or ""),
+                "source_language":str(c.get("lang") or "english")} for c in contexts]
+        self._start_manual_qa_repair(pairs,"review")
 
     def load_review_pairs(self, pairs):
         pairs=[dict(pair) for pair in (pairs or []) if pair.get("source") and pair.get("target")]
@@ -9805,6 +9899,7 @@ Mod更新後だけ追加翻訳:
                                       "target_path":Path(self.review_dst_var.get()) if self.review_dst_var.get() else "",
                                       "lang":source_lang,"source_entries":source_entries,"target_entries":target_entries,"issues":self.review_issues}]
         self.review_last_qa_errors=[]; self._set_review_qa_log_enabled(True)
+        self._set_review_auto_repair_enabled(_qa_contexts_have_repairable_errors(self.review_last_qa_contexts))
         self.qa_summary_var.set(f'QA: エラー {errs} / 警告 {warns} / キー {len(self.review_target_entries)}')
         self.populate_review(True)
 
@@ -9821,6 +9916,7 @@ Mod更新後だけ追加翻訳:
         self.review_worker=None; self.review_batch_contexts=list(contexts or []); self.review_batch_errors=list(errors or []); self.review_tree_record_map={}
         self.review_last_qa_contexts=list(self.review_batch_contexts); self.review_last_qa_errors=list(self.review_batch_errors)
         self._set_review_qa_log_enabled(bool(self.review_last_qa_contexts or self.review_last_qa_errors))
+        self._set_review_auto_repair_enabled(_qa_contexts_have_repairable_errors(self.review_last_qa_contexts))
         if not self.review_batch_contexts:
             self.qa_summary_var.set(f'QA一括解析失敗: {len(errors)}ファイル')
             if errors: messagebox.showerror(APP_NAME,'QAで読み込めるファイルがありませんでした。\n\n'+'\n'.join(_qa_failure_display(x) for x in errors[:20]))
@@ -10810,9 +10906,14 @@ Mod更新後だけ追加翻訳:
                     self.qa_summary_var.set("QA解析エラー")
                     self.review_last_qa_contexts=[]; self.review_last_qa_errors=[payload]
                     self._set_review_qa_log_enabled(True)
+                    self._set_review_auto_repair_enabled(False)
                     detail=_qa_failure_display(payload)
                     record_error("QAバックグラウンド解析",detail=detail)
                     messagebox.showerror(APP_NAME,detail)
+                elif kind=="qa_auto_repair_done":
+                    self._apply_qa_auto_repair_done(*payload)
+                elif kind=="qa_auto_repair_error":
+                    self._apply_qa_auto_repair_error(*payload)
                 elif kind=="single_overwrite_done":
                     self._apply_single_overwrite_done(*payload)
                 elif kind=="bulk_overwrite_progress":

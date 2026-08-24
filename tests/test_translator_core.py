@@ -206,3 +206,43 @@ def test_auto_qa_repair_backs_up_retranslates_and_adds_missing_key(tmp_path, mon
     assert entries == {"event_text": "こんにちは $NAME$", "missing_text": "不足内容"}
     manifest = json.loads((backup_dir / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["files"][0]["original"] == str(target)
+
+
+def test_manual_auto_repair_continues_after_file_failure(tmp_path, monkeypatch):
+    source = tmp_path / "source" / "english" / "events_l_english.yml"
+    target = tmp_path / "output" / "japanese" / "events_l_japanese.yml"
+    _write(source, 'l_english:\n event_text:0 "English sentence"\n')
+    _write(target, 'l_japanese:\n event_text:0 "English sentence"\n')
+
+    monkeypatch.setattr(core, "translate_batch", lambda *_args, **_kwargs: ["日本語文"])
+    result = core.auto_repair_qa_pairs([
+        {"source_file":str(source),"target_file":str(target),"source_language":"english"},
+        {"source_file":str(tmp_path / "missing.yml"),"target_file":str(tmp_path / "missing_ja.yml"),"source_language":"english"},
+    ],backup_root=tmp_path / "backups")
+
+    assert result["summary"]["files"] == 2
+    assert result["summary"]["completed_files"] == 1
+    assert result["summary"]["failed_files"] == 1
+    assert result["summary"]["final_errors"] == 0
+    assert result["failures"][0]["action"] == "スキップして次のファイルを継続"
+    assert Path(result["backup_dir"]).exists()
+
+
+def test_manual_auto_repair_creates_missing_japanese_output(tmp_path, monkeypatch):
+    source_root = tmp_path / "source"
+    source = source_root / "localization" / "english" / "ui_l_english.yml"
+    output = tmp_path / "output"
+    _write(source, 'l_english:\n ui_key:0 "English interface text"\n')
+    pairs = core.collect_translation_qa_pairs(source_root, output, ("english",))
+    assert len(pairs) == 1
+    target = Path(pairs[0]["target_file"])
+    assert not target.exists()
+
+    monkeypatch.setattr(core, "translate_batch", lambda *_args, **_kwargs: ["日本語インターフェース文"])
+    result = core.auto_repair_qa_pairs(pairs, backup_root=tmp_path / "backups")
+
+    assert result["summary"]["initial_errors"] == 1
+    assert result["summary"]["final_errors"] == 0
+    assert target.exists()
+    _, entries, _ = core.parse_localization_file(target)
+    assert entries == {"ui_key":"日本語インターフェース文"}

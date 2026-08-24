@@ -200,6 +200,14 @@ def test_qa_diff_language_bulk_selection():
     assert [p["source"] for p in main._qa_diff_pairs_for_language(pairs,"simp_chinese")] == ["b"]
 
 
+def test_qa_auto_repair_button_gate_requires_repairable_error():
+    warning=[{"issues":[{"severity":"warning","repairable":False}]}]
+    error=[{"issues":[{"severity":"error","repairable":True}]}]
+    assert main._qa_contexts_have_repairable_errors([]) is False
+    assert main._qa_contexts_have_repairable_errors(warning) is False
+    assert main._qa_contexts_have_repairable_errors(error) is True
+
+
 def test_qa_log_payload_has_diagnostics_without_localization_text():
     contexts=[{
         "source_path":Path("/mods/example/localization/english/example_l_english.yml"),
@@ -228,6 +236,18 @@ def test_qa_log_payload_has_diagnostics_without_localization_text():
     assert "SECRET SOURCE TEXT" not in encoded
     assert "SECRET TARGET TEXT" not in encoded
     assert "SECRET ISSUE TEXT" not in encoded
+
+
+def test_qa_log_payload_includes_auto_repair_diagnostics():
+    repair={"backup_dir":"/backup/run","summary":{"initial_errors":2,"final_errors":0},
+            "files":[{"source_file":"source.yml","target_file":"target.yml","source_language":"english",
+                      "initial_errors":2,"final_errors":0,"repaired":2,"repair_attempts":1,
+                      "backup":"/backup/run/target.yml","rolled_back":False,
+                      "events":[{"key":"key_a","action":"retranslate","result":"updated"}]}],"failures":[]}
+    payload=main._build_qa_log_payload([],[],repair_result=repair)
+    assert payload["auto_repair"]["backup_dir"] == "/backup/run"
+    assert payload["auto_repair"]["files"][0]["repaired"] == 2
+    assert payload["auto_repair"]["files"][0]["events"][0]["result"] == "updated"
 
 
 def test_qa_log_button_is_disabled_without_results_and_enabled_with_results():

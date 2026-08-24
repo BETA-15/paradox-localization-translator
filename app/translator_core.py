@@ -1942,7 +1942,9 @@ def _backup_qa_repair_target(target_path: Path, backup_dir: Path,
     target_path = Path(target_path)
     backup_dir = Path(backup_dir)
     try:
-        relative = target_path.relative_to(Path(relative_root)) if relative_root else Path(target_path.name)
+        if not relative_root:
+            raise ValueError("relative root unavailable")
+        relative = target_path.relative_to(Path(relative_root))
     except ValueError:
         relative = Path(hashlib.sha1(str(target_path.parent).encode()).hexdigest()[:10]) / target_path.name
     destination = backup_dir / "files" / relative
@@ -2070,6 +2072,104 @@ def qa_file_with_auto_repair(target_path: Path, source_path: Path, *,
         "issues": final, "initial_errors": len(initial_errors), "final_errors": len(final_errors),
         "repaired": len(repaired_keys), "repair_attempts": attempts,
         "backup": str(backup_path or ""), "rolled_back": rolled_back, "events": events,
+    }
+
+
+def collect_translation_qa_pairs(input_path: Path, output_path: Path,
+                                 source_langs: Iterable[str] = ("english", "simp_chinese"),
+                                 target_lang: str = DEFAULT_TARGET_LANG) -> List[dict]:
+    """Map source localization files to the Japanese outputs used by translation jobs."""
+    input_path, output_path = Path(input_path), Path(output_path)
+    allowed = set(source_langs or ())
+    if input_path.is_file():
+        files, base_dir = [input_path], input_path.parent
+    else:
+        files, base_dir = gather_yml_files(input_path), input_path
+    pairs = []
+    planned = set()
+    for source in files:
+        try:
+            source_lang = detect_source_lang(source, read_localization_text(source).splitlines()[:5])
+        except Exception:
+            continue
+        if source_lang not in allowed:
+            continue
+        relative = source.parent.relative_to(base_dir) if input_path.is_dir() else Path(".")
+        target = output_path / remap_rel_dir(relative, target_lang) / rename_for_target(
+            source, target_lang, source_lang)
+        token = str(target.resolve())
+        if token in planned:
+            continue
+        planned.add(token)
+        pairs.append({"source_file":str(source), "target_file":str(target),
+                      "source_language":source_lang})
+    return pairs
+
+
+def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
+                         model: str = DEFAULT_MODEL, url: str = DEFAULT_OLLAMA_URL,
+                         provider: str = "Ollama", api_key: str = "", preset: str = "General",
+                         glossary_path=None, controller: Optional[TranslationController] = None,
+                         max_passes: int = 2, label: str = "manual_qa") -> dict:
+    """Repair every error in QA pairs while isolating file failures."""
+    glossary = load_glossary(Path(glossary_path)) if glossary_path else {}
+    backup_dir = create_qa_repair_backup_dir(Path(backup_root), label)
+    results, failures = [], []
+    total_initial = total_final = total_warnings = total_repaired = 0
+    for pair in list(pairs or []):
+        source = Path(pair.get("source_file") or pair.get("source") or "")
+        target = Path(pair.get("target_file") or pair.get("target") or "")
+        source_lang = str(pair.get("source_language") or pair.get("lang") or "english")
+        created_target = False
+        try:
+            if controller:
+                controller.wait_if_paused()
+            if not source.is_file():
+                raise FileNotFoundError(f"原文ファイルが見つかりません: {source}")
+            if not target.exists():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text("\ufeffl_japanese:\n", encoding="utf-8")
+                created_target = True
+            result = qa_file_with_auto_repair(
+                target, source, source_lang=source_lang, glossary=glossary,
+                model=model, url=url, provider=provider, api_key=api_key, preset=preset,
+                controller=controller, chinese_basis=(source_lang == "simp_chinese"),
+                max_passes=max_passes, backup_dir=backup_dir,
+                backup_relative_root=None)
+            if created_target and result.get("final_errors", 0) >= result.get("initial_errors", 0):
+                target.unlink(missing_ok=True)
+                result["rolled_back"] = True
+                result.setdefault("events", []).append({
+                    "pass":result.get("repair_attempts",0), "key":"", "issue_type":"file",
+                    "action":"rollback_created_output", "result":"removed",
+                    "reason":"新規出力のエラーが減らなかったため",
+                })
+            warnings = sum(1 for issue in result.get("issues", []) if issue.get("severity") == "warning")
+            row = {"source_file":str(source), "target_file":str(target),
+                   "source_language":source_lang, "created_target":created_target,
+                   "warnings":warnings, **result}
+            results.append(row)
+            total_initial += int(result.get("initial_errors",0) or 0)
+            total_final += int(result.get("final_errors",0) or 0)
+            total_warnings += warnings
+            total_repaired += int(result.get("repaired",0) or 0)
+        except StopRequested:
+            raise
+        except Exception as exc:
+            if created_target:
+                target.unlink(missing_ok=True)
+            failures.append({"source_file":str(source), "target_file":str(target),
+                             "source_language":source_lang, "stage":"qa_auto_repair",
+                             "error_type":type(exc).__name__, "message":str(exc),
+                             "action":"スキップして次のファイルを継続"})
+    return {
+        "schema":2, "generated_at":time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "mode":"manual_auto_qa_repair", "backup_dir":str(backup_dir),
+        "summary":{"files":len(results)+len(failures), "completed_files":len(results),
+                   "failed_files":len(failures), "initial_errors":total_initial,
+                   "final_errors":total_final, "resolved_errors":max(0,total_initial-total_final),
+                   "warnings":total_warnings, "repaired_keys":total_repaired},
+        "files":results, "failures":failures,
     }
 
 
