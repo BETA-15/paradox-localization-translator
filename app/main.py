@@ -37,7 +37,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.67"
+APP_VERSION = "0.11.68"
 MOD_STATUS_CACHE_VERSION = 15
 TRANSLATION_STATUS_SNAPSHOT_SCHEMA = 2
 MOD_STATUS_EMPTY_IID = "__mod_status_empty__"
@@ -72,6 +72,61 @@ def _dedupe_diff_translation_tasks(contexts, tasks):
             continue
         seen.add(token); out.append((ci,key))
     return out
+
+
+def _qa_failure_display(failure):
+    if not isinstance(failure, dict):
+        return str(failure)
+    name=Path(str(failure.get("source_file") or failure.get("target_file") or "不明ファイル")).name
+    stage=str(failure.get("stage") or "qa")
+    error_type=str(failure.get("error_type") or "Error")
+    message=str(failure.get("message") or "")
+    return f"{name} [{stage}]: {error_type}: {message}".rstrip(": ")
+
+
+def _build_qa_log_payload(contexts, failures, generated_at=None, app_version=None):
+    """Create a text-free, JSON-safe snapshot of the latest manually inspected QA run."""
+    files=[]; issue_total=0; error_total=0; warning_total=0; languages=[]
+    for context in contexts or []:
+        lang=str(context.get("lang") or "")
+        if lang and lang not in languages: languages.append(lang)
+        issues=[]
+        for issue in context.get("issues") or []:
+            severity=str(issue.get("severity") or "")
+            row={"key":str(issue.get("key") or ""),"type":str(issue.get("type") or ""),"severity":severity}
+            issues.append(row); issue_total += 1
+            if severity=="error": error_total += 1
+            elif severity=="warning": warning_total += 1
+        files.append({
+            "source_file":str(context.get("source_path") or ""),
+            "target_file":str(context.get("target_path") or ""),
+            "source_language":lang,
+            "source_keys":len(context.get("source_entries") or {}),
+            "target_keys":len(context.get("target_entries") or {}),
+            "errors":sum(i["severity"]=="error" for i in issues),
+            "warnings":sum(i["severity"]=="warning" for i in issues),
+            "issues":issues,
+        })
+    safe_failures=[]
+    for failure in failures or []:
+        if isinstance(failure,dict):
+            row={k:str(failure.get(k) or "") for k in ("source_file","target_file","source_language","stage","error_type","message","action")}
+            safe_failures.append(row)
+            if row["source_language"] and row["source_language"] not in languages: languages.append(row["source_language"])
+        else:
+            safe_failures.append({"source_file":"","target_file":"","source_language":"","stage":"qa","error_type":"Error","message":str(failure),"action":"スキップして継続"})
+    mode="single" if len(files)+len(safe_failures)<=1 else ("english_bulk" if languages==["english"] else ("simp_chinese_bulk" if languages==["simp_chinese"] else "batch"))
+    return {
+        "schema":1,
+        "generated_at":generated_at or datetime.now().isoformat(timespec="seconds"),
+        "app_version":str(app_version or APP_VERSION),
+        "mode":mode,
+        "source_languages":languages,
+        "summary":{"files":len(files)+len(safe_failures),"completed_files":len(files),"failed_files":len(safe_failures),
+                   "issues":issue_total,"errors":error_total,"warnings":warning_total},
+        "files":files,
+        "failures":safe_failures,
+    }
 
 
 def _compact_status_gap_groups(rows):
@@ -665,6 +720,8 @@ class App(BaseTk):
         self.review_issue_by_key = {}
         self.review_batch_contexts = []
         self.review_batch_errors = []
+        self.review_last_qa_contexts = []
+        self.review_last_qa_errors = []
         self.review_tree_record_map = {}
         self.review_worker = None
         self.diff_load_worker = None
@@ -1926,7 +1983,6 @@ class App(BaseTk):
         chinese_count=sum(pair.get("lang")=="simp_chinese" for pair in pairs)
         ttk.Button(buttons, text=f"英語をすべて ({english_count})", command=lambda:accept_language("english"), state="normal" if english_count else "disabled").pack(side="left")
         ttk.Button(buttons, text=f"簡体字中国語をすべて ({chinese_count})", command=lambda:accept_language("simp_chinese"), state="normal" if chinese_count else "disabled").pack(side="left", padx=(6,0))
-        ttk.Button(buttons, text=f"英語・中国語をすべて ({len(pairs)})", command=lambda:accept_language(None)).pack(side="left", padx=(6,0))
         ttk.Button(buttons, text="選択したファイル", command=accept_selected).pack(side="right")
         ttk.Button(buttons, text="キャンセル", command=win.destroy).pack(side="right", padx=(0,6))
         tree.bind("<Double-1>", accept_selected)
@@ -1999,6 +2055,8 @@ class App(BaseTk):
         self.review_drop_hint.grid(row=2,column=0,columnspan=4,sticky="ew",pady=(7,0))
         qa=ttk.Frame(t); qa.pack(fill="x",pady=(8,5))
         ttk.Button(qa,text="QA再実行",command=self.run_review_qa).pack(side="left")
+        self.review_export_log_btn=ttk.Button(qa,text="QAログを書き出す",command=self.export_review_qa_log,state="disabled")
+        self.review_export_log_btn.pack(side="left",padx=(6,0))
         ttk.Button(qa,text="警告だけ表示",command=lambda:self.populate_review(True)).pack(side="left",padx=(6,0))
         ttk.Button(qa,text="全キー表示",command=lambda:self.populate_review(False)).pack(side="left",padx=(6,0))
         ttk.Button(qa,text="用語不一致を一括統一",command=self.bulk_unify_review_terms).pack(side="left",padx=(8,0))
@@ -9539,6 +9597,28 @@ Mod更新後だけ追加翻訳:
         self.review_batch_contexts=[]
         self._start_review_background(load_files=True)
 
+    def _set_review_qa_log_enabled(self, enabled):
+        if hasattr(self,"review_export_log_btn"):
+            self.review_export_log_btn.configure(state="normal" if enabled else "disabled")
+
+    def _clear_pending_review_qa_log(self):
+        self.review_last_qa_contexts=[]; self.review_last_qa_errors=[]
+        self._set_review_qa_log_enabled(False)
+
+    def export_review_qa_log(self):
+        contexts=list(self.review_last_qa_contexts or []); failures=list(self.review_last_qa_errors or [])
+        if not contexts and not failures:
+            self._set_review_qa_log_enabled(False)
+            return
+        try:
+            payload=_build_qa_log_payload(contexts,failures)
+            path=LOG_ROOT / f'qa_report_{datetime.now().strftime("%Y%m%d_%H%M%S_%f")}.json'
+            core.save_json(path,payload)
+            messagebox.showinfo(APP_NAME,f'QAログを書き出しました。\n\n{path}')
+        except Exception as exc:
+            record_error("QAログ書き出し",exc)
+            messagebox.showerror(APP_NAME,f'QAログの書き出しに失敗しました。\n{exc}')
+
     def load_review_pairs(self, pairs):
         pairs=[dict(pair) for pair in (pairs or []) if pair.get("source") and pair.get("target")]
         if not pairs:
@@ -9557,44 +9637,61 @@ Mod更新後だけ追加翻訳:
     def _start_review_pairs_background(self, pairs):
         if self.review_worker and self.review_worker.is_alive():
             self.qa_summary_var.set('QAをバックグラウンド解析中…'); return
+        self._clear_pending_review_qa_log()
         glossary_path=Path(self.glossary_path_var.get()) if self.glossary_path_var.get() else None
         self.qa_summary_var.set(f'QAを一括解析中… {len(pairs)}ファイル / GUIは操作できます')
         def work():
             contexts=[]; errors=[]
-            glossary=core.load_glossary(glossary_path) if glossary_path else {}
+            try:
+                glossary=core.load_glossary(glossary_path) if glossary_path else {}
+            except Exception as exc:
+                errors.append({"source_file":"","target_file":"","source_language":"","stage":"glossary_read","error_type":type(exc).__name__,"message":str(exc),"action":"QAを中止"})
+                self.events.put(('review_qa_batch_loaded',(contexts,errors))); return
             for pair in pairs:
+                source_path=Path(pair["source"]); target_path=Path(pair["target"]); lang=str(pair.get("lang") or "")
+                stage="source_read"
                 try:
-                    lang,source,_=core.parse_localization_file(Path(pair["source"]))
-                    _,target,_=core.parse_localization_file(Path(pair["target"]))
+                    lang,source,_=core.parse_localization_file(source_path)
+                    stage="target_read"
+                    _,target,_=core.parse_localization_file(target_path)
+                    stage="qa_analysis"
                     issues=core.qa_entries(target,source or None,lang,glossary)
-                    contexts.append({"source_path":Path(pair["source"]),"target_path":Path(pair["target"]),"lang":lang,
+                    contexts.append({"source_path":source_path,"target_path":target_path,"lang":lang,
                                      "source_entries":source,"target_entries":target,"issues":list(issues or [])})
                 except Exception as exc:
-                    errors.append(f'{Path(pair.get("source","")).name}: {exc}')
+                    errors.append({"source_file":str(source_path),"target_file":str(target_path),"source_language":lang,"stage":stage,
+                                   "error_type":type(exc).__name__,"message":str(exc),"action":"スキップして継続"})
             self.events.put(('review_qa_batch_loaded',(contexts,errors)))
         self.review_worker=threading.Thread(target=work,daemon=True,name='review-qa-batch'); self.review_worker.start()
 
     def _start_review_background(self, load_files=False):
         if self.review_worker and self.review_worker.is_alive():
             self.qa_summary_var.set('QAをバックグラウンド解析中…'); return
+        self._clear_pending_review_qa_log()
         dst=Path(self.review_dst_var.get()) if self.review_dst_var.get() else None
         src=Path(self.review_src_var.get()) if self.review_src_var.get() else None
         glossary_path=Path(self.glossary_path_var.get()) if self.glossary_path_var.get() else None
         existing_target=dict(self.review_target_entries); existing_source=dict(self.review_source_entries); existing_lang=self.review_source_lang
         self.qa_summary_var.set('QAをバックグラウンド解析中… GUIは操作できます')
         def work():
+            stage="qa_analysis"
             try:
                 target=existing_target; source=existing_source; source_lang=existing_lang
                 if load_files or not target:
                     if not dst or not dst.exists(): raise RuntimeError('訳文ファイルを選択してください。')
+                    stage="target_read"
                     _,target,_=core.parse_localization_file(dst)
-                    if src and src.exists(): source_lang,source,_=core.parse_localization_file(src)
+                    if src and src.exists():
+                        stage="source_read"; source_lang,source,_=core.parse_localization_file(src)
                     else: source_lang='english'; source={}
+                stage="glossary_read"
                 glossary=core.load_glossary(glossary_path) if glossary_path else {}
+                stage="qa_analysis"
                 issues=core.qa_entries(target,source or None,source_lang,glossary)
                 self.events.put(('review_qa_loaded',(source_lang,source,target,issues)))
             except Exception as exc:
-                self.events.put(('review_qa_error',str(exc)))
+                self.events.put(('review_qa_error',{"source_file":str(src or ""),"target_file":str(dst or ""),"source_language":str(existing_lang or ""),
+                                                    "stage":stage,"error_type":type(exc).__name__,"message":str(exc),"action":"QAを中止"}))
         self.review_worker=threading.Thread(target=work,daemon=True,name='review-qa'); self.review_worker.start()
 
     def _apply_review_qa_loaded(self, source_lang, source_entries, target_entries, issues):
@@ -9603,6 +9700,10 @@ Mod更新後だけ追加翻訳:
         self.review_issues=list(issues or []); self.review_issue_by_key={}
         for issue in self.review_issues: self.review_issue_by_key.setdefault(issue['key'],[]).append(issue)
         errs=sum(x['severity']=='error' for x in self.review_issues); warns=sum(x['severity']=='warning' for x in self.review_issues)
+        self.review_last_qa_contexts=[{"source_path":Path(self.review_src_var.get()) if self.review_src_var.get() else "",
+                                      "target_path":Path(self.review_dst_var.get()) if self.review_dst_var.get() else "",
+                                      "lang":source_lang,"source_entries":source_entries,"target_entries":target_entries,"issues":self.review_issues}]
+        self.review_last_qa_errors=[]; self._set_review_qa_log_enabled(True)
         self.qa_summary_var.set(f'QA: エラー {errs} / 警告 {warns} / キー {len(self.review_target_entries)}')
         self.populate_review(True)
 
@@ -9617,9 +9718,11 @@ Mod更新後だけ追加翻訳:
 
     def _apply_review_qa_batch_loaded(self, contexts, errors):
         self.review_worker=None; self.review_batch_contexts=list(contexts or []); self.review_batch_errors=list(errors or []); self.review_tree_record_map={}
+        self.review_last_qa_contexts=list(self.review_batch_contexts); self.review_last_qa_errors=list(self.review_batch_errors)
+        self._set_review_qa_log_enabled(bool(self.review_last_qa_contexts or self.review_last_qa_errors))
         if not self.review_batch_contexts:
             self.qa_summary_var.set(f'QA一括解析失敗: {len(errors)}ファイル')
-            if errors: messagebox.showerror(APP_NAME,'QAで読み込めるファイルがありませんでした。\n\n'+'\n'.join(errors[:20]))
+            if errors: messagebox.showerror(APP_NAME,'QAで読み込めるファイルがありませんでした。\n\n'+'\n'.join(_qa_failure_display(x) for x in errors[:20]))
             return
         self._activate_review_context(0)
         self.populate_review_batch(True,errors)
@@ -9655,7 +9758,7 @@ Mod更新後だけ追加翻訳:
         failed=len(errors or [])
         self.qa_summary_var.set(f'QA一括: {len(self.review_batch_contexts)}ファイル / エラー {counts["error"]} / 警告 {counts["warning"]} / キー {total_keys}'+(f' / 読込失敗 {failed}' if failed else ''))
         if failed:
-            messagebox.showwarning(APP_NAME,f'{failed}ファイルをスキップし、残りのQAを完了しました。\n\n'+'\n'.join((errors or [])[:20]))
+            messagebox.showwarning(APP_NAME,f'{failed}ファイルをスキップし、残りのQAを完了しました。\n\n'+'\n'.join(_qa_failure_display(x) for x in (errors or [])[:20]))
 
     def populate_review(self,warnings_only):
         if self.review_batch_contexts:
@@ -10604,8 +10707,11 @@ Mod更新後だけ追加翻訳:
                 elif kind=="review_qa_error":
                     self.review_worker=None
                     self.qa_summary_var.set("QA解析エラー")
-                    record_error("QAバックグラウンド解析",detail=str(payload))
-                    messagebox.showerror(APP_NAME,str(payload))
+                    self.review_last_qa_contexts=[]; self.review_last_qa_errors=[payload]
+                    self._set_review_qa_log_enabled(True)
+                    detail=_qa_failure_display(payload)
+                    record_error("QAバックグラウンド解析",detail=detail)
+                    messagebox.showerror(APP_NAME,detail)
                 elif kind=="single_overwrite_done":
                     self._apply_single_overwrite_done(*payload)
                 elif kind=="bulk_overwrite_progress":
