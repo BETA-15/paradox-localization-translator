@@ -246,3 +246,35 @@ def test_manual_auto_repair_creates_missing_japanese_output(tmp_path, monkeypatc
     assert target.exists()
     _, entries, _ = core.parse_localization_file(target)
     assert entries == {"ui_key":"日本語インターフェース文"}
+
+
+def test_manual_auto_repair_reports_file_and_stage_progress(tmp_path, monkeypatch):
+    source = tmp_path / "source_l_english.yml"
+    target = tmp_path / "target_l_japanese.yml"
+    _write(source, 'l_english:\n key_a:0 "English sentence"\n')
+    _write(target, 'l_japanese:\n key_a:0 "English sentence"\n')
+    events = []
+    controller = core.TranslationController(progress_callback=events.append)
+    monkeypatch.setattr(core, "translate_batch", lambda *_args, **_kwargs: ["日本語文"])
+
+    result = core.auto_repair_qa_pairs([
+        {"source_file":str(source),"target_file":str(target),"source_language":"english"}
+    ],backup_root=tmp_path / "backups",controller=controller)
+
+    stages=[event.get("stage") for event in events if event.get("kind")=="qa_repair_progress"]
+    assert stages[0] == "file_start"
+    assert "initial_qa" in stages and "backup" in stages
+    assert "llm_retranslate" in stages and "recheck" in stages
+    assert stages[-1] == "file_done"
+    assert result["interrupted"] is False
+
+
+def test_manual_auto_repair_honors_dedicated_stop_controller(tmp_path):
+    controller = core.TranslationController()
+    controller.request_stop(save=False)
+    result = core.auto_repair_qa_pairs([
+        {"source_file":str(tmp_path / "source.yml"),"target_file":str(tmp_path / "target.yml"),"source_language":"english"}
+    ],backup_root=tmp_path / "backups",controller=controller)
+
+    assert result["interrupted"] is True
+    assert result["summary"]["completed_files"] == 0

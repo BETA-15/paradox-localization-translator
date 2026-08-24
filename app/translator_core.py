@@ -1967,13 +1967,21 @@ def qa_file_with_auto_repair(target_path: Path, source_path: Path, *,
                              controller: Optional[TranslationController] = None,
                              chinese_basis: bool = False, max_passes: int = 2,
                              backup_dir: Optional[Path] = None,
-                             backup_relative_root: Optional[Path] = None) -> dict:
+                             backup_relative_root: Optional[Path] = None,
+                             progress_context: Optional[dict] = None) -> dict:
     """Back up a translated file, repair QA errors, and re-run QA.
 
     Warnings are deliberately never changed. Safe edge-token repair is attempted
     before LLM retranslation. A file is rolled back if repair does not reduce errors.
     """
     target_path, source_path = Path(target_path), Path(source_path)
+    progress_context = dict(progress_context or {})
+    def notify(stage: str, **details):
+        if controller and progress_context:
+            controller.notify(kind="qa_repair_progress",stage=stage,
+                              source_file=str(source_path),target_file=str(target_path),
+                              **progress_context,**details)
+    notify("initial_qa")
     detected_lang, source_entries, _ = parse_localization_file(source_path)
     detected_lang = source_lang or detected_lang
     initial = qa_file(target_path, source_path, source_lang=detected_lang, glossary=glossary)
@@ -1984,6 +1992,7 @@ def qa_file_with_auto_repair(target_path: Path, source_path: Path, *,
         return {"issues": initial, "initial_errors": 0, "final_errors": 0, "repaired": 0,
                 "repair_attempts": 0, "backup": "", "rolled_back": False, "events": events}
     if backup_dir:
+        notify("backup",initial_errors=len(initial_errors))
         backup_path = _backup_qa_repair_target(target_path, Path(backup_dir), backup_relative_root)
 
     repaired_keys = set()
@@ -1995,6 +2004,7 @@ def qa_file_with_auto_repair(target_path: Path, source_path: Path, *,
         errors = [x for x in current if x.get("severity") == "error" and x.get("repairable")]
         if not errors:
             break
+        notify("repair_pass",pass_no=pass_no,repairable_errors=len(errors))
         attempts = pass_no
         _, target_entries, _ = parse_localization_file(target_path)
         updates = {}
@@ -2011,6 +2021,7 @@ def qa_file_with_auto_repair(target_path: Path, source_path: Path, *,
                     events.append({"pass": pass_no, "key": key, "issue_type": "syntax",
                                    "action": "safe_token_repair", "result": "updated"})
         if updates:
+            notify("mechanical_repair",pass_no=pass_no,repair_keys=len(updates))
             upsert_localization_values(target_path, updates)
             repaired_keys.update(updates)
 
@@ -2024,6 +2035,8 @@ def qa_file_with_auto_repair(target_path: Path, source_path: Path, *,
                 retry_by_key[key] = issue.get("type")
         if not retry_by_key:
             continue
+
+        notify("llm_retranslate",pass_no=pass_no,repair_keys=len(retry_by_key))
 
         jobs = []
         for key, issue_type in retry_by_key.items():
@@ -2057,10 +2070,14 @@ def qa_file_with_auto_repair(target_path: Path, source_path: Path, *,
         if updates:
             upsert_localization_values(target_path, updates)
 
+        notify("recheck",pass_no=pass_no,updated_keys=len(updates))
+
+    notify("final_qa")
     final = qa_file(target_path, source_path, source_lang=detected_lang, glossary=glossary)
     final_errors = [x for x in final if x.get("severity") == "error"]
     rolled_back = False
     if repaired_keys and len(final_errors) >= len(initial_errors) and backup_path and backup_path.exists():
+        notify("rollback",final_errors=len(final_errors),initial_errors=len(initial_errors))
         shutil.copy2(backup_path, target_path)
         rolled_back = True
         events.append({"pass": attempts, "key": "", "issue_type": "file",
@@ -2116,7 +2133,9 @@ def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
     backup_dir = create_qa_repair_backup_dir(Path(backup_root), label)
     results, failures = [], []
     total_initial = total_final = total_warnings = total_repaired = 0
-    for pair in list(pairs or []):
+    pair_list = list(pairs or [])
+    interrupted = False
+    for file_index,pair in enumerate(pair_list,1):
         source = Path(pair.get("source_file") or pair.get("source") or "")
         target = Path(pair.get("target_file") or pair.get("target") or "")
         source_lang = str(pair.get("source_language") or pair.get("lang") or "english")
@@ -2124,6 +2143,8 @@ def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
         try:
             if controller:
                 controller.wait_if_paused()
+                controller.notify(kind="qa_repair_progress",stage="file_start",file_no=file_index,
+                                  file_total=len(pair_list),source_file=str(source),target_file=str(target))
             if not source.is_file():
                 raise FileNotFoundError(f"原文ファイルが見つかりません: {source}")
             if not target.exists():
@@ -2135,7 +2156,8 @@ def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
                 model=model, url=url, provider=provider, api_key=api_key, preset=preset,
                 controller=controller, chinese_basis=(source_lang == "simp_chinese"),
                 max_passes=max_passes, backup_dir=backup_dir,
-                backup_relative_root=None)
+                backup_relative_root=None,
+                progress_context={"file_no":file_index,"file_total":len(pair_list)})
             if created_target and result.get("final_errors", 0) >= result.get("initial_errors", 0):
                 target.unlink(missing_ok=True)
                 result["rolled_back"] = True
@@ -2153,8 +2175,15 @@ def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
             total_final += int(result.get("final_errors",0) or 0)
             total_warnings += warnings
             total_repaired += int(result.get("repaired",0) or 0)
+            if controller:
+                controller.notify(kind="qa_repair_progress",stage="file_done",file_no=file_index,
+                                  file_total=len(pair_list),source_file=str(source),target_file=str(target),
+                                  initial_errors=int(result.get("initial_errors",0) or 0),
+                                  final_errors=int(result.get("final_errors",0) or 0),
+                                  repaired=int(result.get("repaired",0) or 0))
         except StopRequested:
-            raise
+            interrupted = True
+            break
         except Exception as exc:
             if created_target:
                 target.unlink(missing_ok=True)
@@ -2164,7 +2193,7 @@ def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
                              "action":"スキップして次のファイルを継続"})
     return {
         "schema":2, "generated_at":time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-        "mode":"manual_auto_qa_repair", "backup_dir":str(backup_dir),
+        "mode":"manual_auto_qa_repair", "backup_dir":str(backup_dir),"interrupted":interrupted,
         "summary":{"files":len(results)+len(failures), "completed_files":len(results),
                    "failed_files":len(failures), "initial_errors":total_initial,
                    "final_errors":total_final, "resolved_errors":max(0,total_initial-total_final),

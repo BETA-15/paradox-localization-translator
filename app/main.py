@@ -37,7 +37,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.71"
+APP_VERSION = "0.11.72"
 MOD_STATUS_CACHE_VERSION = 15
 TRANSLATION_STATUS_SNAPSHOT_SCHEMA = 2
 MOD_STATUS_EMPTY_IID = "__mod_status_empty__"
@@ -844,6 +844,8 @@ class App(BaseTk):
         self.review_tree_record_map = {}
         self.review_worker = None
         self.qa_repair_thread = None
+        self.qa_repair_controller = None
+        self._qa_repair_origin = None
         self.diff_load_worker = None
         self.differential_prepare_thread = None
         self.bulk_overwrite_thread = None
@@ -2580,6 +2582,7 @@ class App(BaseTk):
         controllers = (
             (self.controller, True),
             (self.chinese_controller, True),
+            (getattr(self,"qa_repair_controller",None), False),
             (self.monitor_llm_controller, False),
             (self.benchmark_controller, False),
             (self.proofread_controller, False),
@@ -8197,6 +8200,11 @@ Mod更新後だけ追加翻訳:
     def _start_manual_qa_repair(self, pairs, origin):
         if self.qa_repair_thread is not None:
             messagebox.showinfo(APP_NAME,"QA・自動修正はすでに実行中です。"); return
+        conflicting=any(self._operation_pending(thread) for thread in (
+            self.worker,self.chinese_worker,getattr(self,"benchmark_worker",None),
+            self.diff_translate_thread,self.proofread_thread,self.auto_glossary_thread))
+        if conflicting or self.llm_busy_count>0:
+            messagebox.showinfo(APP_NAME,"別の翻訳用LLM処理が動作中です。完了または停止後にQA・自動修正を開始してください。"); return
         pairs=[dict(pair) for pair in (pairs or []) if pair.get("source_file") and pair.get("target_file")]
         if not pairs:
             messagebox.showinfo(APP_NAME,"原文と日本語出力の組み合わせを見つけられませんでした。"); return
@@ -8213,12 +8221,16 @@ Mod更新後だけ追加翻訳:
         if origin=="review": self.qa_summary_var.set(f"バックアップ・自動QA・修正中… {len(pairs)}ファイル")
         elif origin=="chinese": self._append_chinese_log(f"QA・自動修正開始: {len(pairs)}ファイル")
         else: self._append_log(f"QA・自動修正開始: {len(pairs)}ファイル")
+        self._qa_repair_origin=origin
+        self.qa_repair_controller=core.TranslationController(
+            progress_callback=lambda payload:self.events.put(("qa_repair_event",payload)))
         def work():
             try:
                 result=core.auto_repair_qa_pairs(
                     pairs,backup_root=BACKUP_ROOT/"QA自動修復",model=settings["model"],url=settings["url"],
                     provider=settings["provider"],api_key=settings["api_key"],preset=settings["preset"],
-                    glossary_path=settings["glossary"],max_passes=2,label=f"{origin}_manual_qa")
+                    glossary_path=settings["glossary"],controller=self.qa_repair_controller,
+                    max_passes=2,label=f"{origin}_manual_qa")
                 report_path=QA_LOG_ROOT/f'qa_auto_repair_{datetime.now().strftime("%Y%m%d_%H%M%S_%f")}.json'
                 core.save_json(report_path,result)
                 contexts=[]
@@ -8238,7 +8250,7 @@ Mod更新後だけ追加翻訳:
         self.qa_repair_thread.start(); self._refresh_operation_states()
 
     def _apply_qa_auto_repair_done(self, origin, result, report_path, contexts):
-        self.qa_repair_thread=None
+        self.qa_repair_thread=None; self.qa_repair_controller=None; self._qa_repair_origin=None
         summary=result.get("summary") or {}; failures=list(result.get("failures") or [])
         text=(f"修正前エラー {summary.get('initial_errors',0)} / 修正後 {summary.get('final_errors',0)} / "
               f"解消 {summary.get('resolved_errors',0)} / 修正キー {summary.get('repaired_keys',0)} / "
@@ -8255,12 +8267,47 @@ Mod更新後だけ追加翻訳:
             self._append_log("QA・自動修正完了: "+text)
             self._append_log(f"修正ログ: {report_path}")
         self._refresh_operation_states()
+        self._set_llm_idle("LLM 待機中","QA・自動修正が完了しました")
         message=(f"QA・自動修正が完了しました。\n\n{text}\nバックアップ: {result.get('backup_dir','')}\nログ: {report_path}")
-        if failures: messagebox.showwarning(APP_NAME,message)
+        if result.get("interrupted"):
+            messagebox.showinfo(APP_NAME,"QA・自動修正を停止しました。\n\n"+text+f"\nログ: {report_path}")
+        elif failures: messagebox.showwarning(APP_NAME,message)
         else: messagebox.showinfo(APP_NAME,message)
 
+    def _apply_qa_repair_progress(self, payload):
+        stage=str(payload.get("stage") or "")
+        file_no=int(payload.get("file_no",0) or 0); file_total=int(payload.get("file_total",0) or 0)
+        filename=Path(payload.get("target_file") or payload.get("source_file") or "").name
+        labels={
+            "file_start":"ファイル開始", "initial_qa":"初回QA中", "backup":"バックアップ中",
+            "repair_pass":"修復対象を整理中", "mechanical_repair":"機械修復中",
+            "llm_retranslate":"LLM再翻訳準備中", "recheck":"再QA中",
+            "final_qa":"最終QA中", "rollback":"復元中", "file_done":"ファイル完了",
+        }
+        stage_label=labels.get(stage,stage or "処理中")
+        progress=f"{file_no}/{file_total}" if file_total else ""
+        self.llm_operation="QA自動修正"
+        self.llm_banner.config(bg="#4f46e5")
+        self.llm_status_label.config(bg="#4f46e5",fg="white")
+        self.llm_detail_label.config(bg="#4f46e5",fg="white")
+        self.llm_status_var.set(f"● QA自動修正中 — {stage_label}")
+        detail=" / ".join(x for x in (progress,filename) if x)
+        if payload.get("repairable_errors") is not None: detail+=f" / 修復対象 {payload.get('repairable_errors')}件"
+        if payload.get("repair_keys") is not None: detail+=f" / 対象 {payload.get('repair_keys')}件"
+        self.llm_detail_var.set(detail or "処理状況を確認中")
+        self.llm_stop_btn.config(state="normal")
+        origin=getattr(self,"_qa_repair_origin",None)
+        if origin=="review":
+            self.qa_summary_var.set(f"QA・自動修正 {progress} — {filename} — {stage_label}")
+        if stage=="file_done":
+            summary=(f"{progress} {filename}: error {payload.get('initial_errors',0)}→{payload.get('final_errors',0)} / "
+                     f"修正 {payload.get('repaired',0)}")
+            if origin=="chinese": self._append_chinese_log("QA修正: "+summary)
+            elif origin=="normal": self._append_log("QA修正: "+summary)
+
     def _apply_qa_auto_repair_error(self, origin, error_type, message):
-        self.qa_repair_thread=None; self._refresh_operation_states()
+        self.qa_repair_thread=None; self.qa_repair_controller=None; self._qa_repair_origin=None
+        self._refresh_operation_states(); self._set_llm_idle("LLM 待機中","QA・自動修正でエラーが発生しました")
         if origin=="review": self.qa_summary_var.set("QA・自動修正エラー")
         record_error("QA・自動修正",detail=f"{error_type}: {message}")
         messagebox.showerror(APP_NAME,f"QA・自動修正に失敗しました。\n{error_type}: {message}")
@@ -10702,6 +10749,12 @@ Mod更新後だけ追加翻訳:
             self.save_and_stop(); return
         if self.chinese_controller and self.chinese_worker and self.chinese_worker.is_alive():
             self.stop_chinese_basis_translation(); return
+        if getattr(self,"qa_repair_controller",None) and self.qa_repair_thread and self.qa_repair_thread.is_alive():
+            self.qa_repair_controller.request_stop(save=False)
+            self.llm_status_var.set("QA自動修正 停止要求済み")
+            self.llm_detail_var.set("現在のAPI/LLM応答完了後、安全な位置で停止します")
+            self.llm_stop_btn.config(state="disabled")
+            return
         if self.benchmark_controller and getattr(self,"benchmark_worker",None) and self.benchmark_worker.is_alive():
             self.stop_benchmark(); return
         if self.diff_controller:
@@ -10914,6 +10967,12 @@ Mod更新後だけ追加翻訳:
                     self._apply_qa_auto_repair_done(*payload)
                 elif kind=="qa_auto_repair_error":
                     self._apply_qa_auto_repair_error(*payload)
+                elif kind=="qa_repair_event":
+                    event_kind=payload.get("kind")
+                    if event_kind=="llm_activity": self._handle_llm_activity(payload,"QA自動修正")
+                    elif event_kind=="llm_response": self._show_llm_response(payload,monitor=False)
+                    elif event_kind=="llm_metric": self._record_metric(payload.get("metric"))
+                    elif event_kind=="qa_repair_progress": self._apply_qa_repair_progress(payload)
                 elif kind=="single_overwrite_done":
                     self._apply_single_overwrite_done(*payload)
                 elif kind=="bulk_overwrite_progress":
