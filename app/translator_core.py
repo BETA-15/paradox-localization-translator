@@ -20,6 +20,7 @@ import json
 import math
 import os
 import re
+import shutil
 import sys
 import threading
 import time
@@ -1467,7 +1468,8 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
                     cache_path=None, cache_dir=None, resume=True, verbose=True,
                     include_target_files=True, controller: Optional[TranslationController] = None,
                     glossary_path=None, preset="General", dual_source=False,
-                    auto_qa=True, provider="Ollama", api_key=""):
+                    auto_qa=True, provider="Ollama", api_key="",
+                    qa_backup_root=None, qa_repair_max_passes=2):
     input_path = Path(input_path)
     output_path = Path(output_path)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -1489,6 +1491,11 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
     file_errors = []
     encoding_recoveries = []
     llm_failures = []
+    qa_report = []
+    qa_repair_events = []
+    qa_errors = qa_warnings = qa_repaired = 0
+    qa_backup_dir = (create_qa_repair_backup_dir(Path(qa_backup_root), "normal_translation")
+                     if auto_qa and qa_backup_root else None)
 
     def collect_file_error(path: Path, stage: str, exc: Exception, action: str = "スキップして継続"):
         skipped = action.startswith("スキップ")
@@ -1603,11 +1610,29 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
             if auto_qa and out.exists():
                 try:
                     source_ref = f if source_lang != target_lang else None
-                    qa_result = qa_file_with_syntax_repair(out, source_ref, source_lang=source_lang, glossary=glossary)
+                    if source_ref:
+                        qa_result = qa_file_with_auto_repair(
+                            out, source_ref, source_lang=source_lang, glossary=glossary,
+                            model=model, url=url, provider=provider, api_key=api_key, preset=preset,
+                            controller=controller, chinese_basis=(source_lang == "simp_chinese"),
+                            max_passes=qa_repair_max_passes, backup_dir=qa_backup_dir,
+                            backup_relative_root=output_path)
+                    else:
+                        qa_result = qa_file_with_syntax_repair(out, source_ref, source_lang=source_lang, glossary=glossary)
+                        qa_result.update({"initial_errors":sum(x.get("severity")=="error" for x in qa_result["issues"]),
+                                          "final_errors":sum(x.get("severity")=="error" for x in qa_result["issues"]),
+                                          "repaired":qa_result.get("syntax_repaired",0), "repair_attempts":0,
+                                          "backup":"", "rolled_back":False, "events":[]})
                     issues = qa_result["issues"]
                     severe = sum(1 for x in issues if x["severity"] == "error")
                     warn = sum(1 for x in issues if x["severity"] == "warning")
-                    print(f"  QA: error {severe} / warning {warn} / syntax自動修正 {qa_result['syntax_repaired']}件 / 未修正 {qa_result['syntax_unresolved']}件")
+                    repaired = int(qa_result.get("repaired", qa_result.get("syntax_repaired", 0)) or 0)
+                    qa_errors += severe; qa_warnings += warn; qa_repaired += repaired
+                    qa_repair_events.extend({"source_file":str(f), "target_file":str(out), **event}
+                                            for event in qa_result.get("events", []))
+                    for issue in issues:
+                        qa_report.append({"source_file":str(f), "target_file":str(out), **issue})
+                    print(f"  自動QA・修正: error {severe} / warning {warn} / 修正 {repaired}件 / 試行 {qa_result.get('repair_attempts',0)}回")
                 except StopRequested:
                     raise
                 except Exception as exc:
@@ -1627,6 +1652,15 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
                 "encoding_recoveries": encoding_recoveries, "error_report": str(report_path),
                 "cache": str(cache_file)}
     save_source_manifest(cache_file, current_manifest)
+    qa_report_path = output_path / "translation_qa_repair_report.json"
+    if auto_qa:
+        save_json(qa_report_path, {
+            "schema":2, "generated_at":time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "mode":"normal_translation_auto_qa_repair", "backup_dir":str(qa_backup_dir or ""),
+            "summary":{"errors":qa_errors, "warnings":qa_warnings, "repaired_keys":qa_repaired,
+                       "repair_events":len(qa_repair_events)},
+            "issues":qa_report, "repair_events":qa_repair_events,
+        })
     report_path = save_error_report(interrupted=False)
     if file_errors or total_failed:
         print(f"警告付きで完了しました。スキップ {sum(1 for row in file_errors if row.get('skipped'))}ファイル / 翻訳失敗 {total_failed}件")
@@ -1636,7 +1670,9 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
             "skipped": sum(1 for row in file_errors if row.get("skipped")), "file_errors": file_errors,
             "warnings": sum(1 for row in file_errors if not row.get("skipped")),
             "encoding_recoveries": encoding_recoveries, "error_report": str(report_path),
-            "cache": str(cache_file), "manifest": str(cache_file.parent / SOURCE_MANIFEST_NAME)}
+            "cache": str(cache_file), "manifest": str(cache_file.parent / SOURCE_MANIFEST_NAME),
+            "qa_errors":qa_errors, "qa_warnings":qa_warnings, "qa_repaired":qa_repaired,
+            "qa_report":str(qa_report_path) if auto_qa else "", "qa_backup":str(qa_backup_dir or "")}
 
 
 # ------------------------- QA / proofreading -------------------------
@@ -1661,8 +1697,50 @@ def typo_checks(text: str) -> List[dict]:
     return issues
 
 
+_PROPER_NOUN_KEY_RE = re.compile(
+    r"(?:^dynn_|^dynnp_|^cn_|^nick_|^nickname_|^name_|(?:^|_)(?:character|dynasty|house|clan|given|first|last)_?name(?:_|$))",
+    re.IGNORECASE,
+)
+
+
+def looks_like_proper_noun_candidate(key: str, source: str, target: str,
+                                     source_lang: str = "english",
+                                     source_path: Optional[Path] = None) -> Tuple[bool, str]:
+    """Conservatively identify unchanged proper-name candidates.
+
+    This is intentionally limited to unchanged Simplified-Chinese source text in
+    name/dynasty files or keys. Ordinary sentences remain errors.
+    """
+    if source_lang != "simp_chinese" or (source or "").strip() != (target or "").strip():
+        return False, ""
+    plain = PROTECT_RE.sub("", source or "").strip()
+    if not plain or len(plain) > 48 or re.search(r"[。！？!?；;：:]", plain):
+        return False, ""
+    path_text = str(source_path or "").replace("\\", "/").lower()
+    if "/names/" in path_text or "/dynasties/" in path_text:
+        return True, "中国語原文と同一で、names/dynasties配下の短い表記です"
+    if _PROPER_NOUN_KEY_RE.search(str(key or "")):
+        return True, "中国語原文と同一で、キー名が人物名・家名系の形式です"
+    return False, ""
+
+
+def _qa_issue(key: str, severity: str, issue_type: str, message: str, value: str,
+              *, rule_id: str, repairable: bool, recommended_action: str,
+              reason: str = "", **details) -> dict:
+    row = {
+        "key": key, "severity": severity, "type": issue_type, "message": message,
+        "value": value, "rule_id": rule_id, "repairable": bool(repairable),
+        "recommended_action": recommended_action,
+    }
+    if reason:
+        row["reason"] = reason
+    row.update(details)
+    return row
+
+
 def qa_entries(target_entries: Dict[str,str], source_entries: Optional[Dict[str,str]] = None,
-               source_lang: str = "english", glossary: Optional[dict] = None) -> List[dict]:
+               source_lang: str = "english", glossary: Optional[dict] = None,
+               source_path: Optional[Path] = None) -> List[dict]:
     """QA Japanese localization against an optional source localization.
 
     ``source_lang`` may be ``english`` or ``simp_chinese``.  Chinese-source QA is
@@ -1678,20 +1756,37 @@ def qa_entries(target_entries: Dict[str,str], source_entries: Optional[Dict[str,
         # entry is present, looks_untranslated() below performs the source-aware
         # check so the same issue is not reported twice.
         if (not source_entries or key not in source_entries) and looks_foreign_in_target(value, "japanese"):
-            issues.append({"key": key, "severity": "error", "type": "untranslated", "message": "英語の未翻訳候補", "value": value})
+            issues.append(_qa_issue(key, "error", "untranslated", "英語の未翻訳候補", value,
+                                    rule_id="QA-UNTRANSLATED-EN-001", repairable=False,
+                                    recommended_action="原文を指定して再翻訳"))
         for item in typo_checks(value):
-            issues.append({"key": key, "value": value, **item})
+            issues.append({"key": key, "value": value, "rule_id":"QA-TYPO-001",
+                           "repairable":False, "recommended_action":"内容を確認", **item})
         if '@@' in value:
-            issues.append({"key": key, "severity": "error", "type": "placeholder", "message": "内部プレースホルダ @@N@@ が残っています", "value": value})
+            issues.append(_qa_issue(key, "error", "placeholder", "内部プレースホルダ @@N@@ が残っています", value,
+                                    rule_id="QA-PLACEHOLDER-001", repairable=bool(source_entries and key in source_entries),
+                                    recommended_action="原文から再翻訳"))
         if source_entries and key in source_entries:
             src = source_entries[key]
             if looks_untranslated(src, value, source_lang):
-                msg = "簡体字中国語の原文が未翻訳のままです" if source_lang == "simp_chinese" else "原文が未翻訳のままです"
-                issues.append({"key": key, "severity": "error", "type": "untranslated", "message": msg, "value": value})
+                proper, reason = looks_like_proper_noun_candidate(key, src, value, source_lang, source_path)
+                if proper:
+                    issues.append(_qa_issue(key, "warning", "proper_noun_untranslated",
+                                            "固有名詞の可能性があるため原文同一表記を注意として扱います", value,
+                                            rule_id="QA-PROPER-NOUN-001", repairable=False,
+                                            recommended_action="固有名詞として適切か確認", reason=reason))
+                else:
+                    msg = "簡体字中国語の原文が未翻訳のままです" if source_lang == "simp_chinese" else "原文が未翻訳のままです"
+                    issues.append(_qa_issue(key, "error", "untranslated", msg, value,
+                                            rule_id="QA-UNTRANSLATED-ZH-001" if source_lang == "simp_chinese" else "QA-UNTRANSLATED-EN-002",
+                                            repairable=True, recommended_action="原文から再翻訳"))
             src_tokens = extract_protected_tokens(src)
             dst_tokens = extract_protected_tokens(value)
             if src_tokens != dst_tokens:
-                issues.append({"key": key, "severity": "error", "type": "syntax", "message": "ゲーム変数/タグが原文と一致しません", "value": value})
+                issues.append(_qa_issue(key, "error", "syntax", "ゲーム変数/タグが原文と一致しません", value,
+                                        rule_id="QA-TOKEN-001", repairable=True,
+                                        recommended_action="安全なトークン修復後、必要なら再翻訳",
+                                        expected_tokens=src_tokens, actual_tokens=dst_tokens))
             # Translation-term QA: if a registered source term is present, require
             # its fixed Japanese term in the target.  This is especially useful for
             # Chinese historical/institutional terminology.
@@ -1701,14 +1796,20 @@ def qa_entries(target_entries: Dict[str,str], source_entries: Optional[Dict[str,
                         "key": key, "severity": "warning", "type": "term_mismatch",
                         "message": f"用語集指定『{src_term} → {dst_term}』が訳文に反映されていません",
                         "value": value, "source_term": src_term, "expected_term": dst_term,
+                        "rule_id":"QA-TERM-001", "repairable":False,
+                        "recommended_action":"用語集と訳文を確認",
                     })
     if source_entries:
         missing = set(source_entries) - set(target_entries)
         extra = set(target_entries) - set(source_entries)
         for key in sorted(missing):
-            issues.append({"key": key, "severity": "error", "type": "missing_key", "message": "訳文側にキーがありません", "value": ""})
+            issues.append(_qa_issue(key, "error", "missing_key", "訳文側にキーがありません", "",
+                                    rule_id="QA-MISSING-KEY-001", repairable=True,
+                                    recommended_action="原文から翻訳して追加"))
         for key in sorted(extra):
-            issues.append({"key": key, "severity": "warning", "type": "extra_key", "message": "原文側に存在しないキーです", "value": target_entries[key]})
+            issues.append(_qa_issue(key, "warning", "extra_key", "原文側に存在しないキーです", target_entries[key],
+                                    rule_id="QA-EXTRA-KEY-001", repairable=False,
+                                    recommended_action="古いキーか独自キーか確認"))
     return issues
 
 
@@ -1721,7 +1822,25 @@ def qa_file(target_path: Path, source_path: Optional[Path] = None, source_lang: 
         detected_lang, source_entries, _ = parse_localization_file(Path(source_path))
         if source_lang:
             detected_lang = source_lang
-    return qa_entries(target_entries, source_entries, detected_lang, glossary)
+    issues = qa_entries(target_entries, source_entries, detected_lang, glossary, source_path=source_path)
+    def line_map(lines):
+        result = {}
+        for number, line in enumerate(lines, 1):
+            match = parse_line(line)
+            if match:
+                result[match.group("key").strip()] = number
+        return result
+    _, _, target_lines = parse_localization_file(Path(target_path))
+    target_line_map = line_map(target_lines)
+    source_line_map = {}
+    if source_path and Path(source_path).exists():
+        _, _, source_lines = parse_localization_file(Path(source_path))
+        source_line_map = line_map(source_lines)
+    for issue in issues:
+        key = issue.get("key")
+        issue["source_line"] = source_line_map.get(key)
+        issue["target_line"] = target_line_map.get(key)
+    return issues
 
 
 def _edge_token_counts(source: str) -> Tuple[int, int]:
@@ -1799,6 +1918,158 @@ def qa_file_with_syntax_repair(target_path: Path, source_path: Optional[Path] = 
         "syntax_detected": len(syntax_initial),
         "syntax_repaired": repaired,
         "syntax_unresolved": syntax_unresolved,
+    }
+
+
+def create_qa_repair_backup_dir(backup_root: Path, label: str = "qa_auto_repair") -> Path:
+    safe_label = re.sub(r"[^0-9A-Za-z_.\-\u3040-\u30ff\u4e00-\u9fff]+", "_", label).strip("_") or "qa_auto_repair"
+    root = Path(backup_root) / f"{time.strftime('%Y%m%d_%H%M%S')}_{safe_label}"
+    suffix = 1
+    candidate = root
+    while candidate.exists():
+        candidate = root.with_name(f"{root.name}_{suffix}")
+        suffix += 1
+    candidate.mkdir(parents=True, exist_ok=False)
+    save_json(candidate / "manifest.json", {
+        "schema": 1, "created_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "kind": "qa_auto_repair", "files": [],
+    })
+    return candidate
+
+
+def _backup_qa_repair_target(target_path: Path, backup_dir: Path,
+                             relative_root: Optional[Path] = None) -> Path:
+    target_path = Path(target_path)
+    backup_dir = Path(backup_dir)
+    try:
+        relative = target_path.relative_to(Path(relative_root)) if relative_root else Path(target_path.name)
+    except ValueError:
+        relative = Path(hashlib.sha1(str(target_path.parent).encode()).hexdigest()[:10]) / target_path.name
+    destination = backup_dir / "files" / relative
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if not destination.exists() and target_path.exists():
+        shutil.copy2(target_path, destination)
+        manifest_path = backup_dir / "manifest.json"
+        manifest = load_json(manifest_path, {})
+        files = list(manifest.get("files") or [])
+        files.append({"original": str(target_path), "backup": str(destination)})
+        manifest["files"] = files
+        save_json(manifest_path, manifest)
+    return destination
+
+
+def qa_file_with_auto_repair(target_path: Path, source_path: Path, *,
+                             source_lang: Optional[str] = None, glossary: Optional[dict] = None,
+                             model: str = DEFAULT_MODEL, url: str = DEFAULT_OLLAMA_URL,
+                             provider: str = "Ollama", api_key: str = "", preset: str = "General",
+                             controller: Optional[TranslationController] = None,
+                             chinese_basis: bool = False, max_passes: int = 2,
+                             backup_dir: Optional[Path] = None,
+                             backup_relative_root: Optional[Path] = None) -> dict:
+    """Back up a translated file, repair QA errors, and re-run QA.
+
+    Warnings are deliberately never changed. Safe edge-token repair is attempted
+    before LLM retranslation. A file is rolled back if repair does not reduce errors.
+    """
+    target_path, source_path = Path(target_path), Path(source_path)
+    detected_lang, source_entries, _ = parse_localization_file(source_path)
+    detected_lang = source_lang or detected_lang
+    initial = qa_file(target_path, source_path, source_lang=detected_lang, glossary=glossary)
+    initial_errors = [x for x in initial if x.get("severity") == "error"]
+    events = []
+    backup_path = None
+    if not initial_errors:
+        return {"issues": initial, "initial_errors": 0, "final_errors": 0, "repaired": 0,
+                "repair_attempts": 0, "backup": "", "rolled_back": False, "events": events}
+    if backup_dir:
+        backup_path = _backup_qa_repair_target(target_path, Path(backup_dir), backup_relative_root)
+
+    repaired_keys = set()
+    attempts = 0
+    for pass_no in range(1, max(1, int(max_passes)) + 1):
+        if controller:
+            controller.wait_if_paused()
+        current = qa_file(target_path, source_path, source_lang=detected_lang, glossary=glossary)
+        errors = [x for x in current if x.get("severity") == "error" and x.get("repairable")]
+        if not errors:
+            break
+        attempts = pass_no
+        _, target_entries, _ = parse_localization_file(target_path)
+        updates = {}
+
+        # First use deterministic repair where token position is unambiguous.
+        for issue in errors:
+            if issue.get("type") != "syntax":
+                continue
+            key = issue.get("key")
+            if key in source_entries and key in target_entries:
+                value, changed = repair_syntax_tokens(source_entries[key], target_entries[key])
+                if changed:
+                    updates[key] = value
+                    events.append({"pass": pass_no, "key": key, "issue_type": "syntax",
+                                   "action": "safe_token_repair", "result": "updated"})
+        if updates:
+            upsert_localization_values(target_path, updates)
+            repaired_keys.update(updates)
+
+        current = qa_file(target_path, source_path, source_lang=detected_lang, glossary=glossary)
+        retry_by_key = {}
+        for issue in current:
+            if issue.get("severity") != "error" or not issue.get("repairable"):
+                continue
+            key = issue.get("key")
+            if key in source_entries and issue.get("type") in {"missing_key", "untranslated", "placeholder", "syntax"}:
+                retry_by_key[key] = issue.get("type")
+        if not retry_by_key:
+            continue
+
+        jobs = []
+        for key, issue_type in retry_by_key.items():
+            source_value = source_entries[key]
+            protected, tokens = protect_text(source_value)
+            jobs.append({"key": key, "value": source_value, "protected": protected,
+                         "tokens": tokens, "issue_type": issue_type})
+        try:
+            translated = translate_batch(url, model, jobs, detected_lang, glossary=glossary,
+                                         preset=preset, controller=controller, provider=provider,
+                                         api_key=api_key, chinese_basis=chinese_basis)
+        except StopRequested:
+            raise
+        except Exception as exc:
+            for job in jobs:
+                events.append({"pass": pass_no, "key": job["key"], "issue_type": job["issue_type"],
+                               "action": "retranslate", "result": "failed",
+                               "error_type": type(exc).__name__, "message": str(exc)})
+            break
+        updates = {}
+        for job, translated_value in zip(jobs, translated):
+            restored = restore_text(translated_value, job["tokens"])
+            valid = (not looks_untranslated(job["value"], restored, detected_lang)
+                     and extract_protected_tokens(restored) == extract_protected_tokens(job["value"])
+                     and "@@" not in restored)
+            if valid:
+                updates[job["key"]] = restored
+                repaired_keys.add(job["key"])
+            events.append({"pass": pass_no, "key": job["key"], "issue_type": job["issue_type"],
+                           "action": "retranslate", "result": "updated" if valid else "rejected_by_validation"})
+        if updates:
+            upsert_localization_values(target_path, updates)
+
+    final = qa_file(target_path, source_path, source_lang=detected_lang, glossary=glossary)
+    final_errors = [x for x in final if x.get("severity") == "error"]
+    rolled_back = False
+    if repaired_keys and len(final_errors) >= len(initial_errors) and backup_path and backup_path.exists():
+        shutil.copy2(backup_path, target_path)
+        rolled_back = True
+        events.append({"pass": attempts, "key": "", "issue_type": "file",
+                       "action": "rollback", "result": "restored",
+                       "reason": "修復前よりエラーが減らなかったため"})
+        final = qa_file(target_path, source_path, source_lang=detected_lang, glossary=glossary)
+        final_errors = [x for x in final if x.get("severity") == "error"]
+    return {
+        "issues": final, "initial_errors": len(initial_errors), "final_errors": len(final_errors),
+        "repaired": len(repaired_keys), "repair_attempts": attempts,
+        "backup": str(backup_path or ""), "rolled_back": rolled_back, "events": events,
     }
 
 
@@ -2172,7 +2443,8 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
                                   target_lang=DEFAULT_TARGET_LANG, workers=1, batch_size=40,
                                   cache_path=None, controller: Optional[TranslationController] = None,
                                   glossary_path=None, preset="General", auto_qa=True,
-                                  provider="Ollama", api_key=""):
+                                  provider="Ollama", api_key="", qa_backup_root=None,
+                                  qa_repair_max_passes=2):
     """Translate only Simplified Chinese localization using Chinese wording as the terminology basis."""
     input_path = Path(input_path)
     output_path = Path(output_path)
@@ -2203,6 +2475,10 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
     total_jobs = total_failed = processed = 0
     qa_errors = qa_warnings = 0
     qa_report = []
+    qa_repaired = 0
+    qa_repair_events = []
+    qa_backup_dir = (create_qa_repair_backup_dir(Path(qa_backup_root), "chinese_basis_translation")
+                     if auto_qa and qa_backup_root else None)
     planned = set()
     try:
         for i, f in enumerate(chinese_files, 1):
@@ -2224,15 +2500,22 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
             total_failed += stats["failed"]
             save_cache(cache_file, cache)
             if auto_qa and out.exists():
-                qa_result = qa_file_with_syntax_repair(out, f, source_lang="simp_chinese", glossary=glossary)
+                qa_result = qa_file_with_auto_repair(
+                    out, f, source_lang="simp_chinese", glossary=glossary,
+                    model=model, url=url, provider=provider, api_key=api_key, preset=preset,
+                    controller=controller, chinese_basis=True, max_passes=qa_repair_max_passes,
+                    backup_dir=qa_backup_dir, backup_relative_root=output_path)
                 issues = qa_result["issues"]
                 severe = sum(1 for x in issues if x["severity"] == "error")
                 warn = sum(1 for x in issues if x["severity"] == "warning")
                 qa_errors += severe
                 qa_warnings += warn
+                qa_repaired += int(qa_result.get("repaired", 0) or 0)
+                qa_repair_events.extend({"source_file":str(f), "target_file":str(out), **event}
+                                        for event in qa_result.get("events", []))
                 for issue in issues:
                     qa_report.append({"source_file": str(f), "target_file": str(out), **issue})
-                print(f"  中国語翻訳語QA: error {severe} / warning {warn} / syntax自動修正 {qa_result['syntax_repaired']}件 / 未修正 {qa_result['syntax_unresolved']}件")
+                print(f"  中国語翻訳語 自動QA・修正: error {severe} / warning {warn} / 修正 {qa_result.get('repaired',0)}件 / 試行 {qa_result.get('repair_attempts',0)}回")
             if controller:
                 controller.notify(kind="file_done", file=str(f), file_no=i, file_total=len(chinese_files))
                 if controller.stop_event.is_set():
@@ -2245,9 +2528,17 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
     save_source_manifest(cache_file, current_manifest)
     qa_report_path = output_path / "chinese_basis_qa_report.json"
     if auto_qa:
-        save_json(qa_report_path, {"source_language": "simp_chinese", "errors": qa_errors, "warnings": qa_warnings, "issues": qa_report})
+        save_json(qa_report_path, {
+            "schema":2, "generated_at":time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "mode":"chinese_basis_auto_qa_repair", "source_language":"simp_chinese",
+            "backup_dir":str(qa_backup_dir or ""),
+            "summary":{"errors":qa_errors, "warnings":qa_warnings, "repaired_keys":qa_repaired,
+                       "repair_events":len(qa_repair_events)},
+            "issues":qa_report, "repair_events":qa_repair_events,
+        })
     return {"interrupted": False, "processed_files": processed, "jobs": total_jobs, "failed": total_failed, "cache": str(cache_file), "output": str(output_path),
-            "qa_errors": qa_errors, "qa_warnings": qa_warnings, "qa_report": str(qa_report_path) if auto_qa else ""}
+            "qa_errors": qa_errors, "qa_warnings": qa_warnings, "qa_repaired":qa_repaired,
+            "qa_report": str(qa_report_path) if auto_qa else "", "qa_backup":str(qa_backup_dir or "")}
 
 
 def qa_translation_output(input_path: Path, output_path: Path, glossary_path=None, target_lang: str = DEFAULT_TARGET_LANG) -> dict:

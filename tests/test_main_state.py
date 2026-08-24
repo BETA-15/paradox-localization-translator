@@ -207,7 +207,9 @@ def test_qa_log_payload_has_diagnostics_without_localization_text():
         "lang":"english",
         "source_entries":{"example_key":"SECRET SOURCE TEXT"},
         "target_entries":{"example_key":"SECRET TARGET TEXT"},
-        "issues":[{"key":"example_key","type":"placeholder_mismatch","severity":"error","message":"SECRET ISSUE TEXT"}],
+        "issues":[{"key":"example_key","type":"placeholder_mismatch","severity":"error","message":"SECRET ISSUE TEXT",
+                   "rule_id":"QA-TOKEN-TEST","repairable":True,"recommended_action":"再翻訳",
+                   "source_line":2,"target_line":3,"expected_tokens":["$A$"],"actual_tokens":[]}],
     }]
     failures=[{"source_file":"bad.yml","target_file":"bad_ja.yml","source_language":"english","stage":"source_read",
                "error_type":"UnicodeError","message":"decode failed","action":"スキップして継続"}]
@@ -215,8 +217,13 @@ def test_qa_log_payload_has_diagnostics_without_localization_text():
     payload=main._build_qa_log_payload(contexts,failures,generated_at="2026-08-24T15:00:00",app_version="0.11.68")
     encoded=json.dumps(payload,ensure_ascii=False)
 
-    assert payload["summary"] == {"files":2,"completed_files":1,"failed_files":1,"issues":1,"errors":1,"warnings":0}
-    assert payload["files"][0]["issues"] == [{"key":"example_key","type":"placeholder_mismatch","severity":"error"}]
+    assert payload["summary"] == {"files":2,"completed_files":1,"failed_files":1,"issues":1,"errors":1,"warnings":0,"repairable_errors":1}
+    assert payload["schema"] == 2
+    issue=payload["files"][0]["issues"][0]
+    assert issue["rule_id"] == "QA-TOKEN-TEST"
+    assert issue["repairable"] is True
+    assert issue["source_line"] == 2 and issue["target_line"] == 3
+    assert issue["expected_tokens"] == ["$A$"] and issue["actual_tokens"] == []
     assert payload["failures"][0]["stage"] == "source_read"
     assert "SECRET SOURCE TEXT" not in encoded
     assert "SECRET TARGET TEXT" not in encoded

@@ -37,7 +37,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.69"
+APP_VERSION = "0.11.70"
 MOD_STATUS_CACHE_VERSION = 15
 TRANSLATION_STATUS_SNAPSHOT_SCHEMA = 2
 MOD_STATUS_EMPTY_IID = "__mod_status_empty__"
@@ -85,7 +85,7 @@ def _qa_failure_display(failure):
 
 
 def _build_qa_log_payload(contexts, failures, generated_at=None, app_version=None):
-    """Create a text-free, JSON-safe snapshot of the latest manually inspected QA run."""
+    """Create a text-free but actionable snapshot of the latest inspected QA run."""
     files=[]; issue_total=0; error_total=0; warning_total=0; languages=[]
     for context in contexts or []:
         lang=str(context.get("lang") or "")
@@ -93,7 +93,16 @@ def _build_qa_log_payload(contexts, failures, generated_at=None, app_version=Non
         issues=[]
         for issue in context.get("issues") or []:
             severity=str(issue.get("severity") or "")
-            row={"key":str(issue.get("key") or ""),"type":str(issue.get("type") or ""),"severity":severity}
+            row={
+                "key":str(issue.get("key") or ""), "type":str(issue.get("type") or ""),
+                "severity":severity, "rule_id":str(issue.get("rule_id") or ""),
+                "repairable":bool(issue.get("repairable",False)),
+                "recommended_action":str(issue.get("recommended_action") or ""),
+                "reason":str(issue.get("reason") or ""),
+                "source_line":issue.get("source_line"), "target_line":issue.get("target_line"),
+            }
+            if "expected_tokens" in issue: row["expected_tokens"]=list(issue.get("expected_tokens") or [])
+            if "actual_tokens" in issue: row["actual_tokens"]=list(issue.get("actual_tokens") or [])
             issues.append(row); issue_total += 1
             if severity=="error": error_total += 1
             elif severity=="warning": warning_total += 1
@@ -105,6 +114,8 @@ def _build_qa_log_payload(contexts, failures, generated_at=None, app_version=Non
             "target_keys":len(context.get("target_entries") or {}),
             "errors":sum(i["severity"]=="error" for i in issues),
             "warnings":sum(i["severity"]=="warning" for i in issues),
+            "repairable_errors":sum(i["severity"]=="error" and i["repairable"] for i in issues),
+            "issue_types":{kind:sum(i["type"]==kind for i in issues) for kind in sorted({i["type"] for i in issues})},
             "issues":issues,
         })
     safe_failures=[]
@@ -117,13 +128,14 @@ def _build_qa_log_payload(contexts, failures, generated_at=None, app_version=Non
             safe_failures.append({"source_file":"","target_file":"","source_language":"","stage":"qa","error_type":"Error","message":str(failure),"action":"スキップして継続"})
     mode="single" if len(files)+len(safe_failures)<=1 else ("english_bulk" if languages==["english"] else ("simp_chinese_bulk" if languages==["simp_chinese"] else "batch"))
     return {
-        "schema":1,
+        "schema":2,
         "generated_at":generated_at or datetime.now().isoformat(timespec="seconds"),
         "app_version":str(app_version or APP_VERSION),
         "mode":mode,
         "source_languages":languages,
         "summary":{"files":len(files)+len(safe_failures),"completed_files":len(files),"failed_files":len(safe_failures),
-                   "issues":issue_total,"errors":error_total,"warnings":warning_total},
+                   "issues":issue_total,"errors":error_total,"warnings":warning_total,
+                   "repairable_errors":sum(f.get("repairable_errors",0) for f in files)},
         "files":files,
         "failures":safe_failures,
     }
@@ -1378,7 +1390,7 @@ class App(BaseTk):
         settings=ttk.LabelFrame(left,text="モデル / 接続（共通設定）",padding=9); settings.pack(fill="x",pady=(5,0))
         ttk.Label(settings,text="プロバイダ / URL / モデル / APIキー / バッチ / 並列 / プリセット / 用語集は［モデル / 接続］タブの共通設定を使用します。",wraplength=430,justify="left").pack(anchor="w")
         ttk.Button(settings,text="モデル / 接続を開く",command=lambda:self.notebook.select(self.tab_models)).pack(anchor="w",pady=(6,0))
-        ttk.Checkbutton(settings,text="翻訳後に自動QA",variable=self.autoqa_var,command=self._save_llm_preferences).pack(anchor="w",pady=(7,0))
+        ttk.Checkbutton(settings,text="翻訳後にバックアップ・自動QA・エラー修正",variable=self.autoqa_var,command=self._save_llm_preferences).pack(anchor="w",pady=(7,0))
         ttk.Label(settings,text="QAでは未翻訳原文、キー欠落、ゲーム変数/タグ、誤字脱字、用語集の固定訳を確認します。",foreground="#555",wraplength=430,justify="left").pack(anchor="w",pady=(5,0))
 
         qbox=ttk.LabelFrame(right,text="通常翻訳キュー",padding=8); qbox.pack(fill="both",expand=True)
@@ -1487,8 +1499,8 @@ class App(BaseTk):
         ttk.Label(settings,text="中国語基準翻訳でも、プロバイダ / URL / モデル / APIキー / バッチ / 並列 / プリセット / 用語集は［モデル / 接続］タブの共通設定を使用します。",wraplength=430,justify="left").pack(anchor="w")
         ttk.Button(settings,text="モデル / 接続を開く",command=lambda:self.notebook.select(self.tab_models)).pack(anchor="w",pady=(6,0))
         ttk.Label(settings,text="中国語の漢字語彙を優先し、不要な英語風カタカナ化を避けます。",foreground="#7a4b00",wraplength=430).pack(anchor="w",pady=(6,0))
-        ttk.Checkbutton(settings,text="翻訳後に中国語翻訳語自動QA",variable=self.chinese_autoqa_var,command=self._save_llm_preferences).pack(anchor="w",pady=(7,0))
-        ttk.Label(settings,text="QAでは未翻訳の中国語原文、キー欠落、ゲーム変数/タグ、誤字脱字、用語集の固定訳を確認します。",foreground="#555",wraplength=430,justify="left").pack(anchor="w",pady=(5,0))
+        ttk.Checkbutton(settings,text="翻訳後にバックアップ・中国語翻訳語自動QA・エラー修正",variable=self.chinese_autoqa_var,command=self._save_llm_preferences).pack(anchor="w",pady=(7,0))
+        ttk.Label(settings,text="チェック時は未翻訳、キー欠落、ゲーム変数/タグを自動QA・修正します。固有名詞候補などの注意は修正しません。",foreground="#555",wraplength=430,justify="left").pack(anchor="w",pady=(5,0))
 
         qbox=ttk.LabelFrame(right,text="中国語基準翻訳キュー",padding=8); qbox.pack(fill="both",expand=True)
         qbar=ttk.Frame(qbox); qbar.pack(fill="x",pady=(0,5))
@@ -1827,7 +1839,8 @@ class App(BaseTk):
         snapshot=[(app_state.ensure_queue_item_id(self.chinese_queue_items[i]), dict(self.chinese_queue_items[i])) for i in selected_indices]
         def worker():
             try:
-                total=len(snapshot); completed=0; qa_errors=0; qa_warnings=0
+                total=len(snapshot); completed=0; qa_errors=0; qa_warnings=0; qa_repaired=0
+                qa_reports=[]; qa_backups=[]
                 for pos,(item_id,item) in enumerate(snapshot):
                     if self.chinese_controller.stop_event.is_set(): break
                     live_item=app_state.queue_item_by_id(self.chinese_queue_items,item_id)
@@ -1841,9 +1854,12 @@ class App(BaseTk):
                     cache=Path(item.get("cache", "")) if item.get("cache") else self._new_cache_path(inp)
                     item["output"]=str(out); item["cache"]=str(cache)
                     live_item["output"]=str(out); live_item["cache"]=str(cache)
-                    result=core.run_chinese_basis_translation(inp,out,model=settings["model"],url=settings["url"],workers=settings["workers"],batch_size=settings["batch"],cache_path=cache,controller=self.chinese_controller,glossary_path=settings["glossary"],preset=settings["preset"],auto_qa=settings["autoqa"],provider=settings["provider"],api_key=settings["api_key"])
+                    result=core.run_chinese_basis_translation(inp,out,model=settings["model"],url=settings["url"],workers=settings["workers"],batch_size=settings["batch"],cache_path=cache,controller=self.chinese_controller,glossary_path=settings["glossary"],preset=settings["preset"],auto_qa=settings["autoqa"],provider=settings["provider"],api_key=settings["api_key"],qa_backup_root=BACKUP_ROOT/"QA自動修復")
                     qa_errors += int(result.get("qa_errors",0) or 0)
                     qa_warnings += int(result.get("qa_warnings",0) or 0)
+                    qa_repaired += int(result.get("qa_repaired",0) or 0)
+                    if result.get("qa_report"): qa_reports.append(result["qa_report"])
+                    if result.get("qa_backup"): qa_backups.append(result["qa_backup"])
                     self._register_cache_job(live_item, mode="chinese")
                     if result.get("interrupted"):
                         live_item["status"]="中断"
@@ -1863,7 +1879,7 @@ class App(BaseTk):
                         final_status = "完了"
                     live_item["status"]=final_status
                     self.events.put(("chinese_queue_status",(item_id,final_status)))
-                self.events.put(("chinese_done",{"interrupted":self.chinese_controller.stop_event.is_set(),"processed_files":completed,"jobs":0,"output":str(out_root),"queue_total":total,"qa_errors":qa_errors,"qa_warnings":qa_warnings}))
+                self.events.put(("chinese_done",{"interrupted":self.chinese_controller.stop_event.is_set(),"processed_files":completed,"jobs":0,"output":str(out_root),"queue_total":total,"qa_errors":qa_errors,"qa_warnings":qa_warnings,"qa_repaired":qa_repaired,"qa_reports":qa_reports,"qa_backups":qa_backups}))
             except Exception as exc: self.events.put(("chinese_error",str(exc)))
         self.chinese_worker=threading.Thread(target=worker,daemon=True); self.chinese_worker.start()
         self._refresh_operation_states()
@@ -7344,8 +7360,8 @@ Mod更新後だけ追加翻訳:
         ttk.Label(common,text="ゲームプリセット").grid(row=0,column=0,sticky="w")
         ttk.Combobox(common,textvariable=self.preset_var,values=list(core.GAME_PRESETS),state="readonly",width=15).grid(row=0,column=1,sticky="ew",padx=(6,0))
         ttk.Checkbutton(common,text="既存日本語の未翻訳を修復",variable=self.repair_var,command=self._save_llm_preferences).grid(row=1,column=0,columnspan=2,sticky="w",pady=(6,0))
-        ttk.Checkbutton(common,text="通常翻訳後に自動QA",variable=self.autoqa_var,command=self._save_llm_preferences).grid(row=2,column=0,columnspan=2,sticky="w",pady=(4,0))
-        ttk.Checkbutton(common,text="中国語基準翻訳後に自動QA",variable=self.chinese_autoqa_var,command=self._save_llm_preferences).grid(row=3,column=0,columnspan=2,sticky="w",pady=(4,0))
+        ttk.Checkbutton(common,text="通常翻訳後にバックアップ・自動QA・エラー修正",variable=self.autoqa_var,command=self._save_llm_preferences).grid(row=2,column=0,columnspan=2,sticky="w",pady=(4,0))
+        ttk.Checkbutton(common,text="中国語基準翻訳後にバックアップ・自動QA・エラー修正",variable=self.chinese_autoqa_var,command=self._save_llm_preferences).grid(row=3,column=0,columnspan=2,sticky="w",pady=(4,0))
         ttk.Label(common,text="バッチ").grid(row=4,column=0,sticky="w",pady=(7,0))
         ttk.Spinbox(common,from_=1,to=500,textvariable=self.batch_var,width=8,command=self._save_llm_preferences).grid(row=4,column=1,sticky="w",padx=(6,0),pady=(7,0))
         ttk.Label(common,text="並列").grid(row=5,column=0,sticky="w",pady=(5,0))
@@ -8407,7 +8423,8 @@ Mod更新後だけ追加翻訳:
                 resume=True, verbose=True, include_target_files=bool(st.get("repair",True)), controller=self.controller,
                 glossary_path=st.get("glossary") or None, preset=st.get("preset","CK3"),
                 dual_source=False, auto_qa=bool(st.get("autoqa",True)),
-                provider=st.get("provider","Ollama"), api_key=st.get("api_key", ""))
+                provider=st.get("provider","Ollama"), api_key=st.get("api_key", ""),
+                qa_backup_root=BACKUP_ROOT/"QA自動修復")
             self._register_cache_job(item)
             skipped=int(result.get("skipped",0) or 0)
             failed=int(result.get("failed",0) or 0)
@@ -8421,6 +8438,12 @@ Mod更新後だけ追加翻訳:
             }
             item["translation_error_report"]=result.get("error_report", "")
             self.events.put(("normal_log", f"処理結果: {item_label(item)} / ファイル {result.get('processed',0)} / LLMジョブ {result.get('jobs',0)} / 失敗 {failed} / スキップ {skipped} / 警告 {warnings}"))
+            if bool(st.get("autoqa",True)):
+                self.events.put(("normal_log", f"自動QA・修正: error {result.get('qa_errors',0)} / warning {result.get('qa_warnings',0)} / 修正 {result.get('qa_repaired',0)}"))
+                if result.get("qa_report"):
+                    self.events.put(("normal_log", f"QA修正ログ: {result.get('qa_report')}"))
+                if result.get("qa_backup"):
+                    self.events.put(("normal_log", f"QA修復前バックアップ: {result.get('qa_backup')}"))
             if result.get("encoding_recoveries"):
                 self.events.put(("normal_log", f"自動修復: {item_label(item)} / 文字コード {len(result.get('encoding_recoveries') or [])}ファイル"))
             if skipped or failed or warnings:
@@ -9730,7 +9753,7 @@ Mod更新後だけ追加翻訳:
                     stage="target_read"
                     _,target,_=core.parse_localization_file(target_path)
                     stage="qa_analysis"
-                    issues=core.qa_entries(target,source or None,lang,glossary)
+                    issues=core.qa_file(target_path,source_path,source_lang=lang,glossary=glossary)
                     contexts.append({"source_path":source_path,"target_path":target_path,"lang":lang,
                                      "source_entries":source,"target_entries":target,"issues":list(issues or [])})
                 except Exception as exc:
@@ -9762,7 +9785,10 @@ Mod更新後だけ追加翻訳:
                 stage="glossary_read"
                 glossary=core.load_glossary(glossary_path) if glossary_path else {}
                 stage="qa_analysis"
-                issues=core.qa_entries(target,source or None,source_lang,glossary)
+                if dst and dst.exists():
+                    issues=core.qa_file(dst,src if src and src.exists() else None,source_lang=source_lang,glossary=glossary)
+                else:
+                    issues=core.qa_entries(target,source or None,source_lang,glossary,source_path=src)
                 self.events.put(('review_qa_loaded',(source_lang,source,target,issues)))
             except Exception as exc:
                 self.events.put(('review_qa_error',{"source_file":str(src or ""),"target_file":str(dst or ""),"source_language":str(existing_lang or ""),
@@ -10873,13 +10899,15 @@ Mod更新後だけ追加翻訳:
                         self._set_llm_idle("LLM 待機中","中国語基準翻訳を中断しました")
                     else:
                         self.chinese_progress["value"]=100
-                        qa_e=payload.get('qa_errors',0); qa_w=payload.get('qa_warnings',0)
-                        self.chinese_progress_var.set(f"完了 — {payload.get('processed_files',0)}/{payload.get('queue_total',len(self.chinese_queue_items))}項目 / QA error {qa_e}・warning {qa_w}")
-                        self._append_chinese_log(f"翻訳語QA: error {qa_e} / warning {qa_w}")
+                        qa_e=payload.get('qa_errors',0); qa_w=payload.get('qa_warnings',0); qa_r=payload.get('qa_repaired',0)
+                        self.chinese_progress_var.set(f"完了 — {payload.get('processed_files',0)}/{payload.get('queue_total',len(self.chinese_queue_items))}項目 / QA error {qa_e}・warning {qa_w}・修正 {qa_r}")
+                        self._append_chinese_log(f"翻訳語 自動QA・修正: error {qa_e} / warning {qa_w} / 修正 {qa_r}")
+                        for report in payload.get('qa_reports') or []: self._append_chinese_log(f"QA修正ログ: {report}")
+                        for backup in payload.get('qa_backups') or []: self._append_chinese_log(f"QA修復前バックアップ: {backup}")
                         self._append_chinese_log(f"出力先: {payload.get('output',self.chinese_output_var.get())}")
                         self._set_llm_idle("LLM 待機中","中国語基準翻訳が完了しました")
                         source_notice=self._source_gap_notice_for_items(self.chinese_queue_items)
-                        msg=f"中国語基準翻訳が完了しました。\n翻訳語QA: error {qa_e} / warning {qa_w}"
+                        msg=f"中国語基準翻訳が完了しました。\n翻訳語 自動QA・修正: error {qa_e} / warning {qa_w} / 修正 {qa_r}"
                         if source_notice:
                             msg += "\n\n" + source_notice
                         if not self._closing: messagebox.showinfo(APP_NAME,msg)
