@@ -1493,7 +1493,7 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
     llm_failures = []
     qa_report = []
     qa_repair_events = []
-    qa_errors = qa_warnings = qa_repaired = 0
+    qa_errors = qa_warnings = qa_notices = qa_repaired = 0
     qa_backup_dir = (create_qa_repair_backup_dir(Path(qa_backup_root), "normal_translation")
                      if auto_qa and qa_backup_root else None)
 
@@ -1626,13 +1626,14 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
                     issues = qa_result["issues"]
                     severe = sum(1 for x in issues if x["severity"] == "error")
                     warn = sum(1 for x in issues if x["severity"] == "warning")
+                    notice = sum(1 for x in issues if x["severity"] == "notice")
                     repaired = int(qa_result.get("repaired", qa_result.get("syntax_repaired", 0)) or 0)
-                    qa_errors += severe; qa_warnings += warn; qa_repaired += repaired
+                    qa_errors += severe; qa_warnings += warn; qa_notices += notice; qa_repaired += repaired
                     qa_repair_events.extend({"source_file":str(f), "target_file":str(out), **event}
                                             for event in qa_result.get("events", []))
                     for issue in issues:
                         qa_report.append({"source_file":str(f), "target_file":str(out), **issue})
-                    print(f"  自動QA・修正: error {severe} / warning {warn} / 修正 {repaired}件 / 試行 {qa_result.get('repair_attempts',0)}回")
+                    print(f"  自動QA・修正: error {severe} / warning {warn} / notice {notice} / 修正 {repaired}件 / 試行 {qa_result.get('repair_attempts',0)}回")
                 except StopRequested:
                     raise
                 except Exception as exc:
@@ -1657,7 +1658,7 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
         save_json(qa_report_path, {
             "schema":2, "generated_at":time.strftime("%Y-%m-%dT%H:%M:%S%z"),
             "mode":"normal_translation_auto_qa_repair", "backup_dir":str(qa_backup_dir or ""),
-            "summary":{"errors":qa_errors, "warnings":qa_warnings, "repaired_keys":qa_repaired,
+            "summary":{"errors":qa_errors, "warnings":qa_warnings, "notices":qa_notices, "repaired_keys":qa_repaired,
                        "repair_events":len(qa_repair_events)},
             "issues":qa_report, "repair_events":qa_repair_events,
         })
@@ -1671,7 +1672,7 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
             "warnings": sum(1 for row in file_errors if not row.get("skipped")),
             "encoding_recoveries": encoding_recoveries, "error_report": str(report_path),
             "cache": str(cache_file), "manifest": str(cache_file.parent / SOURCE_MANIFEST_NAME),
-            "qa_errors":qa_errors, "qa_warnings":qa_warnings, "qa_repaired":qa_repaired,
+            "qa_errors":qa_errors, "qa_warnings":qa_warnings, "qa_notices":qa_notices, "qa_repaired":qa_repaired,
             "qa_report":str(qa_report_path) if auto_qa else "", "qa_backup":str(qa_backup_dir or "")}
 
 
@@ -1771,7 +1772,7 @@ def qa_entries(target_entries: Dict[str,str], source_entries: Optional[Dict[str,
             if looks_untranslated(src, value, source_lang):
                 proper, reason = looks_like_proper_noun_candidate(key, src, value, source_lang, source_path)
                 if proper:
-                    issues.append(_qa_issue(key, "warning", "proper_noun_untranslated",
+                    issues.append(_qa_issue(key, "notice", "proper_noun_untranslated",
                                             "固有名詞の可能性があるため原文同一表記を注意として扱います", value,
                                             rule_id="QA-PROPER-NOUN-001", repairable=False,
                                             recommended_action="固有名詞として適切か確認", reason=reason))
@@ -1971,7 +1972,7 @@ def qa_file_with_auto_repair(target_path: Path, source_path: Path, *,
                              progress_context: Optional[dict] = None) -> dict:
     """Back up a translated file, repair QA errors, and re-run QA.
 
-    Warnings are deliberately never changed. Safe edge-token repair is attempted
+    Warnings and notices are deliberately never changed. Safe edge-token repair is attempted
     before LLM retranslation. A file is rolled back if repair does not reduce errors.
     """
     target_path, source_path = Path(target_path), Path(source_path)
@@ -2132,7 +2133,7 @@ def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
     glossary = load_glossary(Path(glossary_path)) if glossary_path else {}
     backup_dir = create_qa_repair_backup_dir(Path(backup_root), label)
     results, failures = [], []
-    total_initial = total_final = total_warnings = total_repaired = 0
+    total_initial = total_final = total_warnings = total_notices = total_repaired = 0
     pair_list = list(pairs or [])
     interrupted = False
     for file_index,pair in enumerate(pair_list,1):
@@ -2167,13 +2168,15 @@ def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
                     "reason":"新規出力のエラーが減らなかったため",
                 })
             warnings = sum(1 for issue in result.get("issues", []) if issue.get("severity") == "warning")
+            notices = sum(1 for issue in result.get("issues", []) if issue.get("severity") == "notice")
             row = {"source_file":str(source), "target_file":str(target),
                    "source_language":source_lang, "created_target":created_target,
-                   "warnings":warnings, **result}
+                   "warnings":warnings, "notices":notices, **result}
             results.append(row)
             total_initial += int(result.get("initial_errors",0) or 0)
             total_final += int(result.get("final_errors",0) or 0)
             total_warnings += warnings
+            total_notices += notices
             total_repaired += int(result.get("repaired",0) or 0)
             if controller:
                 controller.notify(kind="qa_repair_progress",stage="file_done",file_no=file_index,
@@ -2197,7 +2200,7 @@ def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
         "summary":{"files":len(results)+len(failures), "completed_files":len(results),
                    "failed_files":len(failures), "initial_errors":total_initial,
                    "final_errors":total_final, "resolved_errors":max(0,total_initial-total_final),
-                   "warnings":total_warnings, "repaired_keys":total_repaired},
+                   "warnings":total_warnings, "notices":total_notices, "repaired_keys":total_repaired},
         "files":results, "failures":failures,
     }
 
@@ -2602,7 +2605,7 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
         raise RuntimeError("簡体字中国語（l_simp_chinese）のYAMLファイルが見つかりませんでした。")
 
     total_jobs = total_failed = processed = 0
-    qa_errors = qa_warnings = 0
+    qa_errors = qa_warnings = qa_notices = 0
     qa_report = []
     qa_repaired = 0
     qa_repair_events = []
@@ -2637,14 +2640,16 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
                 issues = qa_result["issues"]
                 severe = sum(1 for x in issues if x["severity"] == "error")
                 warn = sum(1 for x in issues if x["severity"] == "warning")
+                notice = sum(1 for x in issues if x["severity"] == "notice")
                 qa_errors += severe
                 qa_warnings += warn
+                qa_notices += notice
                 qa_repaired += int(qa_result.get("repaired", 0) or 0)
                 qa_repair_events.extend({"source_file":str(f), "target_file":str(out), **event}
                                         for event in qa_result.get("events", []))
                 for issue in issues:
                     qa_report.append({"source_file": str(f), "target_file": str(out), **issue})
-                print(f"  中国語翻訳語 自動QA・修正: error {severe} / warning {warn} / 修正 {qa_result.get('repaired',0)}件 / 試行 {qa_result.get('repair_attempts',0)}回")
+                print(f"  中国語翻訳語 自動QA・修正: error {severe} / warning {warn} / notice {notice} / 修正 {qa_result.get('repaired',0)}件 / 試行 {qa_result.get('repair_attempts',0)}回")
             if controller:
                 controller.notify(kind="file_done", file=str(f), file_no=i, file_total=len(chinese_files))
                 if controller.stop_event.is_set():
@@ -2653,7 +2658,7 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
         save_cache(cache_file, cache)
         save_source_manifest(cache_file, current_manifest)
         return {"interrupted": True, "processed_files": processed, "jobs": total_jobs, "failed": total_failed, "cache": str(cache_file),
-                "qa_errors": qa_errors, "qa_warnings": qa_warnings}
+                "qa_errors": qa_errors, "qa_warnings": qa_warnings, "qa_notices": qa_notices}
     save_source_manifest(cache_file, current_manifest)
     qa_report_path = output_path / "chinese_basis_qa_report.json"
     if auto_qa:
@@ -2661,12 +2666,12 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
             "schema":2, "generated_at":time.strftime("%Y-%m-%dT%H:%M:%S%z"),
             "mode":"chinese_basis_auto_qa_repair", "source_language":"simp_chinese",
             "backup_dir":str(qa_backup_dir or ""),
-            "summary":{"errors":qa_errors, "warnings":qa_warnings, "repaired_keys":qa_repaired,
+            "summary":{"errors":qa_errors, "warnings":qa_warnings, "notices":qa_notices, "repaired_keys":qa_repaired,
                        "repair_events":len(qa_repair_events)},
             "issues":qa_report, "repair_events":qa_repair_events,
         })
     return {"interrupted": False, "processed_files": processed, "jobs": total_jobs, "failed": total_failed, "cache": str(cache_file), "output": str(output_path),
-            "qa_errors": qa_errors, "qa_warnings": qa_warnings, "qa_repaired":qa_repaired,
+            "qa_errors": qa_errors, "qa_warnings": qa_warnings, "qa_notices":qa_notices, "qa_repaired":qa_repaired,
             "qa_report": str(qa_report_path) if auto_qa else "", "qa_backup":str(qa_backup_dir or "")}
 
 
@@ -2725,7 +2730,8 @@ def qa_translation_output(input_path: Path, output_path: Path, glossary_path=Non
             issues_all.append({"source_file": str(f), "target_file": str(out), **issue})
     errors = sum(1 for x in issues_all if x.get("severity") == "error")
     warnings = sum(1 for x in issues_all if x.get("severity") == "warning")
-    return {"checked_files": checked, "missing_outputs": missing_outputs, "errors": errors, "warnings": warnings,
+    notices = sum(1 for x in issues_all if x.get("severity") == "notice")
+    return {"checked_files": checked, "missing_outputs": missing_outputs, "errors": errors, "warnings": warnings, "notices":notices,
             "syntax_detected": syntax_detected, "syntax_repaired": syntax_repaired, "syntax_unresolved": syntax_unresolved,
             "issues": issues_all}
 
@@ -2774,7 +2780,8 @@ def qa_chinese_basis_translation(input_path: Path, output_path: Path, glossary_p
             issues_all.append({"source_file": str(f), "target_file": str(out), **issue})
     errors = sum(1 for x in issues_all if x.get("severity") == "error")
     warnings = sum(1 for x in issues_all if x.get("severity") == "warning")
-    return {"checked_files": checked, "missing_outputs": missing_outputs, "errors": errors, "warnings": warnings,
+    notices = sum(1 for x in issues_all if x.get("severity") == "notice")
+    return {"checked_files": checked, "missing_outputs": missing_outputs, "errors": errors, "warnings": warnings, "notices":notices,
             "syntax_detected": syntax_detected, "syntax_repaired": syntax_repaired, "syntax_unresolved": syntax_unresolved,
             "issues": issues_all}
 

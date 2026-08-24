@@ -202,10 +202,18 @@ def test_qa_diff_language_bulk_selection():
 
 def test_qa_auto_repair_button_gate_requires_repairable_error():
     warning=[{"issues":[{"severity":"warning","repairable":False}]}]
+    notice=[{"issues":[{"severity":"notice","repairable":False}]}]
     error=[{"issues":[{"severity":"error","repairable":True}]}]
     assert main._qa_contexts_have_repairable_errors([]) is False
     assert main._qa_contexts_have_repairable_errors(warning) is False
+    assert main._qa_contexts_have_repairable_errors(notice) is False
     assert main._qa_contexts_have_repairable_errors(error) is True
+
+
+def test_qa_severity_group_keeps_notice_separate_from_warning():
+    assert main._qa_severity_group([{"severity":"notice"}]) == "notice"
+    assert main._qa_severity_group([{"severity":"notice"},{"severity":"warning"}]) == "warning"
+    assert main._qa_severity_group([{"severity":"notice"},{"severity":"error"}]) == "error"
 
 
 def test_qa_log_payload_has_diagnostics_without_localization_text():
@@ -225,7 +233,7 @@ def test_qa_log_payload_has_diagnostics_without_localization_text():
     payload=main._build_qa_log_payload(contexts,failures,generated_at="2026-08-24T15:00:00",app_version="0.11.68")
     encoded=json.dumps(payload,ensure_ascii=False)
 
-    assert payload["summary"] == {"files":2,"completed_files":1,"failed_files":1,"issues":1,"errors":1,"warnings":0,"repairable_errors":1}
+    assert payload["summary"] == {"files":2,"completed_files":1,"failed_files":1,"issues":1,"errors":1,"warnings":0,"notices":0,"repairable_errors":1}
     assert payload["schema"] == 2
     issue=payload["files"][0]["issues"][0]
     assert issue["rule_id"] == "QA-TOKEN-TEST"
@@ -236,6 +244,25 @@ def test_qa_log_payload_has_diagnostics_without_localization_text():
     assert "SECRET SOURCE TEXT" not in encoded
     assert "SECRET TARGET TEXT" not in encoded
     assert "SECRET ISSUE TEXT" not in encoded
+
+
+def test_qa_log_payload_counts_notice_separately():
+    contexts=[{
+        "source_path":Path("/mods/example/localization/simp_chinese/names.yml"),
+        "target_path":Path("/mods/example/localization/japanese/names.yml"),
+        "lang":"simp_chinese", "source_entries":{"name_zhang":"張"},
+        "target_entries":{"name_zhang":"張"},
+        "issues":[{"key":"name_zhang","type":"proper_noun_untranslated","severity":"notice",
+                   "rule_id":"QA-PROPER-NOUN-001","repairable":False,
+                   "recommended_action":"固有名詞として適切か確認"}],
+    }]
+
+    payload=main._build_qa_log_payload(contexts,[])
+
+    assert payload["summary"]["errors"] == 0
+    assert payload["summary"]["warnings"] == 0
+    assert payload["summary"]["notices"] == 1
+    assert payload["files"][0]["notices"] == 1
 
 
 def test_qa_log_payload_includes_auto_repair_diagnostics():
