@@ -379,6 +379,8 @@ class FakeWidget:
         if "state" in kwargs:
             self.state_value = kwargs["state"]
 
+    config = configure
+
 
 def _state(**overrides):
     values = {
@@ -438,6 +440,37 @@ def test_busy_ui_greys_out_conflicting_normal_controls():
     assert state.pause_btn.state_value == "normal"
     assert state.stop_btn.state_value == "normal"
     assert state._chinese_queue_controls[0].state_value == "normal"
+
+
+def test_translation_stop_keeps_priority_over_qa_repair_controller():
+    calls=[]
+    state=SimpleNamespace(
+        controller=object(),worker=FakeThread(True),save_and_stop=lambda:calls.append("normal"),
+        chinese_controller=None,chinese_worker=None,qa_repair_controller=SimpleNamespace(request_stop=lambda save=False:calls.append("qa")),
+        qa_repair_thread=FakeThread(True),benchmark_controller=None,diff_controller=None,proofread_controller=None,
+    )
+
+    main.App.stop_current_llm(state)
+
+    assert calls == ["normal"]
+
+
+def test_translation_stop_routes_to_dedicated_qa_controller_when_qa_is_active():
+    calls=[]
+    class Var:
+        def set(self,value): calls.append(value)
+    controller=SimpleNamespace(request_stop=lambda save=False:calls.append(("qa_stop",save)))
+    state=SimpleNamespace(
+        controller=None,worker=None,chinese_controller=None,chinese_worker=None,
+        qa_repair_controller=controller,qa_repair_thread=FakeThread(True),
+        benchmark_controller=None,diff_controller=None,proofread_controller=None,
+        llm_status_var=Var(),llm_detail_var=Var(),llm_stop_btn=FakeWidget(),
+    )
+
+    main.App.stop_current_llm(state)
+
+    assert ("qa_stop",False) in calls
+    assert state.llm_stop_btn.state_value == "disabled"
 
 
 def test_forced_exit_does_not_write_clean_marker(monkeypatch):
