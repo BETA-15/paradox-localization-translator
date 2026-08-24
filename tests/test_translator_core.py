@@ -155,3 +155,54 @@ def test_qa_detects_protected_token_mismatch():
         "english",
     )
     assert any(issue["type"] == "syntax" and issue["severity"] == "error" for issue in issues)
+
+
+def test_qa_downgrades_unchanged_chinese_proper_name_to_warning():
+    issues = core.qa_entries(
+        {"dynn_Liu": "这是刘氏家族的名称"}, {"dynn_Liu": "这是刘氏家族的名称"}, "simp_chinese",
+        source_path=Path("localization/simp_chinese/dynasties/test_l_simp_chinese.yml"),
+    )
+
+    assert any(issue["type"] == "proper_noun_untranslated" and issue["severity"] == "warning"
+               for issue in issues)
+    assert not any(issue["type"] == "untranslated" and issue["severity"] == "error"
+                   for issue in issues)
+
+
+def test_qa_keeps_unchanged_chinese_sentence_as_repairable_error():
+    issues = core.qa_entries(
+        {"event_description": "这是尚未翻译的完整句子。"},
+        {"event_description": "这是尚未翻译的完整句子。"},
+        "simp_chinese", source_path=Path("localization/simp_chinese/events/test.yml"),
+    )
+
+    issue = next(item for item in issues if item["type"] == "untranslated")
+    assert issue["severity"] == "error"
+    assert issue["repairable"] is True
+
+
+def test_auto_qa_repair_backs_up_retranslates_and_adds_missing_key(tmp_path, monkeypatch):
+    source = tmp_path / "source" / "simp_chinese" / "events_l_simp_chinese.yml"
+    target = tmp_path / "output" / "japanese" / "events_l_japanese.yml"
+    _write(source, 'l_simp_chinese:\n event_text:0 "这是尚未翻译的内容 $NAME$"\n missing_text:0 "缺少内容"\n')
+    _write(target, 'l_japanese:\n event_text:0 "这是尚未翻译的内容 $NAME$"\n')
+
+    def translated(_url, _model, jobs, _source_lang, **_kwargs):
+        values = {"event_text": "こんにちは @@0@@", "missing_text": "不足内容"}
+        return [values[job["key"]] for job in jobs]
+
+    monkeypatch.setattr(core, "translate_batch", translated)
+    backup_dir = core.create_qa_repair_backup_dir(tmp_path / "backups", "test")
+    result = core.qa_file_with_auto_repair(
+        target, source, source_lang="simp_chinese", backup_dir=backup_dir,
+        backup_relative_root=tmp_path / "output", max_passes=2,
+    )
+
+    assert result["initial_errors"] == 2
+    assert result["final_errors"] == 0
+    assert result["repaired"] == 2
+    assert Path(result["backup"]).exists()
+    _, entries, _ = core.parse_localization_file(target)
+    assert entries == {"event_text": "こんにちは $NAME$", "missing_text": "不足内容"}
+    manifest = json.loads((backup_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["files"][0]["original"] == str(target)
