@@ -109,6 +109,14 @@ class FakeStatusTree:
         return self.rows[iid][option]
 
 
+class FakeDiscoveryTree:
+    def __init__(self, selected=()):
+        self.selected=tuple(selected)
+
+    def selection(self):
+        return self.selected
+
+
 def test_mod_status_empty_row_distinguishes_search_from_no_scan_results():
     assert main._mod_status_empty_row("reali", 87)[:2] == (
         "検索結果なし", "検索条件「reali」に一致するModはありません"
@@ -143,6 +151,59 @@ def test_mod_status_tree_shows_non_operable_no_match_row():
 
     state.mod_status_tree.selected = (main.MOD_STATUS_EMPTY_IID,)
     assert main.App._selected_mod_status_results(state) == []
+
+
+def test_mod_status_game_filter_unions_selected_locations_of_same_game():
+    state=SimpleNamespace(
+        mod_research_results=[
+            {"mod":"CK3 Workshop Mod","game":"Crusader Kings III"},
+            {"mod":"CK3 Local Mod","game":"Crusader Kings III"},
+            {"mod":"HOI4 Mod","game":"Hearts of Iron IV"},
+        ],
+        detected_mod_locations=[
+            {"game":"Crusader Kings III","kind":"Steam Workshop"},
+            {"game":"Crusader Kings III","kind":"ローカルMod"},
+        ],
+        discovered_mod_tree=FakeDiscoveryTree(("loc_0",)),
+    )
+
+    rows,games=main.App._game_filtered_mod_status_results(state)
+
+    assert games == ["Crusader Kings III"]
+    assert [row["mod"] for row in rows] == ["CK3 Workshop Mod","CK3 Local Mod"]
+
+
+def test_mod_status_tree_explains_selected_game_without_results():
+    details=[]
+    state=SimpleNamespace(
+        mod_status_tree=FakeStatusTree(), mod_status_search_var=FakeVar(""), mod_status_search_result_var=FakeVar(),
+        mod_status_game_filter_var=FakeVar(),
+        mod_research_results=[{"mod":"HOI4 Mod","game":"Hearts of Iron IV"}],
+        detected_mod_locations=[{"game":"Crusader Kings III"}], discovered_mod_tree=FakeDiscoveryTree(("loc_0",)),
+        _mod_status_matches_query=lambda result,query: True,
+        _set_mod_status_selection_actions_enabled=lambda enabled: None,
+        _set_mod_status_detail_text=lambda text: details.append(text),
+    )
+
+    main.App._populate_mod_status_tree(state)
+
+    row=state.mod_status_tree.rows[main.MOD_STATUS_EMPTY_IID]
+    assert row["values"][0] == "表示対象なし"
+    assert "Crusader Kings III" in row["values"][1]
+    assert "Crusader Kings III" in details[-1]
+
+
+def test_qa_diff_language_bulk_selection_and_all_selection():
+    pairs=[{"lang":"english","source":"a"},{"lang":"simp_chinese","source":"b"},{"lang":"english","source":"c"}]
+    assert [p["source"] for p in main._qa_diff_pairs_for_language(pairs,"english")] == ["a","c"]
+    assert [p["source"] for p in main._qa_diff_pairs_for_language(pairs,"simp_chinese")] == ["b"]
+    assert main._qa_diff_pairs_for_language(pairs) == pairs
+
+
+def test_diff_bulk_translation_deduplicates_same_target_key():
+    contexts=[{"target_path":"/tmp/ja.yml"},{"target_path":"/tmp/ja.yml"},{"target_path":"/tmp/other.yml"}]
+    tasks=[(0,"same"),(1,"same"),(2,"same"),(1,"unique")]
+    assert main._dedupe_diff_translation_tasks(contexts,tasks) == [(0,"same"),(2,"same"),(1,"unique")]
 
 
 def test_translation_status_save_schedule_coalesces_rapid_updates():
