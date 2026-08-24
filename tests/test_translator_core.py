@@ -157,14 +157,16 @@ def test_qa_detects_protected_token_mismatch():
     assert any(issue["type"] == "syntax" and issue["severity"] == "error" for issue in issues)
 
 
-def test_qa_downgrades_unchanged_chinese_proper_name_to_warning():
+def test_qa_downgrades_unchanged_chinese_proper_name_to_notice():
     issues = core.qa_entries(
         {"dynn_Liu": "这是刘氏家族的名称"}, {"dynn_Liu": "这是刘氏家族的名称"}, "simp_chinese",
         source_path=Path("localization/simp_chinese/dynasties/test_l_simp_chinese.yml"),
     )
 
-    assert any(issue["type"] == "proper_noun_untranslated" and issue["severity"] == "warning"
+    assert any(issue["type"] == "proper_noun_untranslated" and issue["severity"] == "notice"
                for issue in issues)
+    assert not any(issue["type"] == "proper_noun_untranslated" and issue["severity"] == "warning"
+                   for issue in issues)
     assert not any(issue["type"] == "untranslated" and issue["severity"] == "error"
                    for issue in issues)
 
@@ -278,3 +280,18 @@ def test_manual_auto_repair_honors_dedicated_stop_controller(tmp_path):
 
     assert result["interrupted"] is True
     assert result["summary"]["completed_files"] == 0
+
+
+def test_manual_auto_repair_counts_proper_name_as_notice_not_warning(tmp_path):
+    source = tmp_path / "names" / "source_l_simp_chinese.yml"
+    target = tmp_path / "japanese" / "target_l_japanese.yml"
+    _write(source, 'l_simp_chinese:\n name_zhang:0 "这是张氏家族的名称"\n')
+    _write(target, 'l_japanese:\n name_zhang:0 "这是张氏家族的名称"\n')
+
+    result = core.auto_repair_qa_pairs([
+        {"source_file":str(source),"target_file":str(target),"source_language":"simp_chinese"}
+    ],backup_root=tmp_path / "backups")
+
+    assert result["summary"]["warnings"] == 0
+    assert result["summary"]["notices"] == 1
+    assert result["summary"]["repaired_keys"] == 0

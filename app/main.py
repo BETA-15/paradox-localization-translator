@@ -37,7 +37,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.72"
+APP_VERSION = "0.11.73"
 MOD_STATUS_CACHE_VERSION = 15
 TRANSLATION_STATUS_SNAPSHOT_SCHEMA = 2
 MOD_STATUS_EMPTY_IID = "__mod_status_empty__"
@@ -92,9 +92,17 @@ def _qa_contexts_have_repairable_errors(contexts):
     )
 
 
+def _qa_severity_group(issues):
+    severities={str(issue.get("severity") or "") for issue in (issues or [])}
+    if "error" in severities: return "error"
+    if "warning" in severities: return "warning"
+    if "notice" in severities: return "notice"
+    return "ok"
+
+
 def _build_qa_log_payload(contexts, failures, generated_at=None, app_version=None, repair_result=None):
     """Create a text-free but actionable snapshot of the latest inspected QA run."""
-    files=[]; issue_total=0; error_total=0; warning_total=0; languages=[]
+    files=[]; issue_total=0; error_total=0; warning_total=0; notice_total=0; languages=[]
     for context in contexts or []:
         lang=str(context.get("lang") or "")
         if lang and lang not in languages: languages.append(lang)
@@ -114,6 +122,7 @@ def _build_qa_log_payload(contexts, failures, generated_at=None, app_version=Non
             issues.append(row); issue_total += 1
             if severity=="error": error_total += 1
             elif severity=="warning": warning_total += 1
+            elif severity=="notice": notice_total += 1
         files.append({
             "source_file":str(context.get("source_path") or ""),
             "target_file":str(context.get("target_path") or ""),
@@ -122,6 +131,7 @@ def _build_qa_log_payload(contexts, failures, generated_at=None, app_version=Non
             "target_keys":len(context.get("target_entries") or {}),
             "errors":sum(i["severity"]=="error" for i in issues),
             "warnings":sum(i["severity"]=="warning" for i in issues),
+            "notices":sum(i["severity"]=="notice" for i in issues),
             "repairable_errors":sum(i["severity"]=="error" and i["repairable"] for i in issues),
             "issue_types":{kind:sum(i["type"]==kind for i in issues) for kind in sorted({i["type"] for i in issues})},
             "issues":issues,
@@ -142,7 +152,7 @@ def _build_qa_log_payload(contexts, failures, generated_at=None, app_version=Non
         "mode":mode,
         "source_languages":languages,
         "summary":{"files":len(files)+len(safe_failures),"completed_files":len(files),"failed_files":len(safe_failures),
-                   "issues":issue_total,"errors":error_total,"warnings":warning_total,
+                   "issues":issue_total,"errors":error_total,"warnings":warning_total,"notices":notice_total,
                    "repairable_errors":sum(f.get("repairable_errors",0) for f in files)},
         "files":files,
         "failures":safe_failures,
@@ -1865,7 +1875,7 @@ class App(BaseTk):
         snapshot=[(app_state.ensure_queue_item_id(self.chinese_queue_items[i]), dict(self.chinese_queue_items[i])) for i in selected_indices]
         def worker():
             try:
-                total=len(snapshot); completed=0; qa_errors=0; qa_warnings=0; qa_repaired=0
+                total=len(snapshot); completed=0; qa_errors=0; qa_warnings=0; qa_notices=0; qa_repaired=0
                 qa_reports=[]; qa_backups=[]
                 for pos,(item_id,item) in enumerate(snapshot):
                     if self.chinese_controller.stop_event.is_set(): break
@@ -1883,6 +1893,7 @@ class App(BaseTk):
                     result=core.run_chinese_basis_translation(inp,out,model=settings["model"],url=settings["url"],workers=settings["workers"],batch_size=settings["batch"],cache_path=cache,controller=self.chinese_controller,glossary_path=settings["glossary"],preset=settings["preset"],auto_qa=settings["autoqa"],provider=settings["provider"],api_key=settings["api_key"],qa_backup_root=BACKUP_ROOT/"QA自動修復")
                     qa_errors += int(result.get("qa_errors",0) or 0)
                     qa_warnings += int(result.get("qa_warnings",0) or 0)
+                    qa_notices += int(result.get("qa_notices",0) or 0)
                     qa_repaired += int(result.get("qa_repaired",0) or 0)
                     if result.get("qa_report"): qa_reports.append(result["qa_report"])
                     if result.get("qa_backup"): qa_backups.append(result["qa_backup"])
@@ -1905,7 +1916,7 @@ class App(BaseTk):
                         final_status = "完了"
                     live_item["status"]=final_status
                     self.events.put(("chinese_queue_status",(item_id,final_status)))
-                self.events.put(("chinese_done",{"interrupted":self.chinese_controller.stop_event.is_set(),"processed_files":completed,"jobs":0,"output":str(out_root),"queue_total":total,"qa_errors":qa_errors,"qa_warnings":qa_warnings,"qa_repaired":qa_repaired,"qa_reports":qa_reports,"qa_backups":qa_backups}))
+                self.events.put(("chinese_done",{"interrupted":self.chinese_controller.stop_event.is_set(),"processed_files":completed,"jobs":0,"output":str(out_root),"queue_total":total,"qa_errors":qa_errors,"qa_warnings":qa_warnings,"qa_notices":qa_notices,"qa_repaired":qa_repaired,"qa_reports":qa_reports,"qa_backups":qa_backups}))
             except Exception as exc: self.events.put(("chinese_error",str(exc)))
         self.chinese_worker=threading.Thread(target=worker,daemon=True); self.chinese_worker.start()
         self._refresh_operation_states()
@@ -2180,7 +2191,7 @@ class App(BaseTk):
         self.review_auto_repair_btn.pack(side="left",padx=(6,0))
         self.review_export_log_btn=ttk.Button(qa,text="QAログを書き出す",command=self.export_review_qa_log,state="disabled")
         self.review_export_log_btn.pack(side="left",padx=(6,0))
-        ttk.Button(qa,text="警告だけ表示",command=lambda:self.populate_review(True)).pack(side="left",padx=(6,0))
+        ttk.Button(qa,text="問題・注意だけ表示",command=lambda:self.populate_review(True)).pack(side="left",padx=(6,0))
         ttk.Button(qa,text="全キー表示",command=lambda:self.populate_review(False)).pack(side="left",padx=(6,0))
         ttk.Button(qa,text="用語不一致を一括統一",command=self.bulk_unify_review_terms).pack(side="left",padx=(8,0))
         ttk.Button(qa,text="用語集を自動作成",command=lambda:self.start_auto_glossary_generation("review")).pack(side="left",padx=(8,0))
@@ -8254,6 +8265,7 @@ Mod更新後だけ追加翻訳:
         summary=result.get("summary") or {}; failures=list(result.get("failures") or [])
         text=(f"修正前エラー {summary.get('initial_errors',0)} / 修正後 {summary.get('final_errors',0)} / "
               f"解消 {summary.get('resolved_errors',0)} / 修正キー {summary.get('repaired_keys',0)} / "
+              f"警告 {summary.get('warnings',0)} / 注意 {summary.get('notices',0)} / "
               f"失敗ファイル {summary.get('failed_files',0)}")
         if origin=="review":
             self.review_last_qa_repair_result=result
@@ -8564,7 +8576,7 @@ Mod更新後だけ追加翻訳:
             item["translation_error_report"]=result.get("error_report", "")
             self.events.put(("normal_log", f"処理結果: {item_label(item)} / ファイル {result.get('processed',0)} / LLMジョブ {result.get('jobs',0)} / 失敗 {failed} / スキップ {skipped} / 警告 {warnings}"))
             if bool(st.get("autoqa",True)):
-                self.events.put(("normal_log", f"自動QA・修正: error {result.get('qa_errors',0)} / warning {result.get('qa_warnings',0)} / 修正 {result.get('qa_repaired',0)}"))
+                self.events.put(("normal_log", f"自動QA・修正: error {result.get('qa_errors',0)} / warning {result.get('qa_warnings',0)} / notice {result.get('qa_notices',0)} / 修正 {result.get('qa_repaired',0)}"))
                 if result.get("qa_report"):
                     self.events.put(("normal_log", f"QA修正ログ: {result.get('qa_report')}"))
                 if result.get("qa_backup"):
@@ -9942,12 +9954,13 @@ Mod更新後だけ追加翻訳:
         self.review_issues=list(issues or []); self.review_issue_by_key={}
         for issue in self.review_issues: self.review_issue_by_key.setdefault(issue['key'],[]).append(issue)
         errs=sum(x['severity']=='error' for x in self.review_issues); warns=sum(x['severity']=='warning' for x in self.review_issues)
+        notices=sum(x['severity']=='notice' for x in self.review_issues)
         self.review_last_qa_contexts=[{"source_path":Path(self.review_src_var.get()) if self.review_src_var.get() else "",
                                       "target_path":Path(self.review_dst_var.get()) if self.review_dst_var.get() else "",
                                       "lang":source_lang,"source_entries":source_entries,"target_entries":target_entries,"issues":self.review_issues}]
         self.review_last_qa_errors=[]; self._set_review_qa_log_enabled(True)
         self._set_review_auto_repair_enabled(_qa_contexts_have_repairable_errors(self.review_last_qa_contexts))
-        self.qa_summary_var.set(f'QA: エラー {errs} / 警告 {warns} / キー {len(self.review_target_entries)}')
+        self.qa_summary_var.set(f'QA: エラー {errs} / 警告 {warns} / 注意 {notices} / キー {len(self.review_target_entries)}')
         self.populate_review(True)
 
     def _activate_review_context(self, index):
@@ -9974,7 +9987,7 @@ Mod更新後だけ追加翻訳:
     def populate_review_batch(self, warnings_only, errors=None):
         for x in self.review_tree.get_children(): self.review_tree.delete(x)
         self.review_tree_key_map={}; self.review_tree_record_map={}; parents={}; type_parents={}; n=0
-        counts={"error":0,"warning":0}; total_keys=0
+        counts={"error":0,"warning":0,"notice":0}; total_keys=0
         for ci,c in enumerate(self.review_batch_contexts):
             issue_by_key={}
             for issue in c["issues"]:
@@ -9985,11 +9998,11 @@ Mod更新後だけ追加翻訳:
             for key in keys:
                 issues=issue_by_key.get(key,[])
                 if warnings_only and not issues: continue
-                group='error' if any(i['severity']=='error' for i in issues) else ('warning' if issues else 'ok')
+                group=_qa_severity_group(issues)
                 types=sorted(set(i['type'] for i in issues)) or ['']
                 for typ in types:
                     if group not in parents:
-                        parents[group]=self.review_tree.insert('', 'end', iid=f'qa_batch_group_{group}', text={'error':'エラー','warning':'警告','ok':'問題なし'}[group], open=group!='ok', values=('','',''))
+                        parents[group]=self.review_tree.insert('', 'end', iid=f'qa_batch_group_{group}', text={'error':'エラー','warning':'警告','notice':'注意','ok':'問題なし'}[group], open=group!='ok', values=('','',''))
                     parent=parents[group]
                     if group!='ok':
                         token=(group,typ)
@@ -10000,7 +10013,7 @@ Mod更新後だけ追加翻訳:
                     self.review_tree.insert(parent,'end',iid=iid,values=(typ,file_label,key))
                     self.review_tree_key_map[iid]=key; self.review_tree_record_map[iid]=(ci,key)
         failed=len(errors or [])
-        self.qa_summary_var.set(f'QA一括: {len(self.review_batch_contexts)}ファイル / エラー {counts["error"]} / 警告 {counts["warning"]} / キー {total_keys}'+(f' / 読込失敗 {failed}' if failed else ''))
+        self.qa_summary_var.set(f'QA一括: {len(self.review_batch_contexts)}ファイル / エラー {counts["error"]} / 警告 {counts["warning"]} / 注意 {counts["notice"]} / キー {total_keys}'+(f' / 読込失敗 {failed}' if failed else ''))
         if failed:
             messagebox.showwarning(APP_NAME,f'{failed}ファイルをスキップし、残りのQAを完了しました。\n\n'+'\n'.join(_qa_failure_display(x) for x in (errors or [])[:20]))
 
@@ -10016,7 +10029,7 @@ Mod更新後だけ追加翻訳:
             issues=self.review_issue_by_key.get(key,[])
             if warnings_only and not issues: continue
             if issues:
-                group='error' if any(i['severity']=='error' for i in issues) else 'warning'
+                group=_qa_severity_group(issues)
                 for typ in (sorted(set(i['type'] for i in issues)) or ['その他']): rows.append((group,typ,key))
             else:
                 rows.append(('ok','',key))
@@ -10032,7 +10045,7 @@ Mod更新後だけ追加翻訳:
         def ensure_type(group,typ):
             k=(group,typ)
             if k not in type_parents:
-                parent=ensure_parent(group,{'error':'エラー','warning':'警告','ok':'問題なし'}[group])
+                parent=ensure_parent(group,{'error':'エラー','warning':'警告','notice':'注意','ok':'問題なし'}[group])
                 type_parents[k]=self.review_tree.insert(parent,'end',text=typ,open=True,values=(typ,'',''))
             return type_parents[k]
         end=min(len(rows),start+chunk)
@@ -10045,7 +10058,8 @@ Mod更新後だけ追加翻訳:
             self.after(1,lambda:self._populate_review_rows_chunked(rows,end,parents,type_parents,chunk))
         else:
             errs=sum(x['severity']=='error' for x in self.review_issues); warns=sum(x['severity']=='warning' for x in self.review_issues)
-            self.qa_summary_var.set(f'QA: エラー {errs} / 警告 {warns} / キー {len(self.review_target_entries)}')
+            notices=sum(x['severity']=='notice' for x in self.review_issues)
+            self.qa_summary_var.set(f'QA: エラー {errs} / 警告 {warns} / 注意 {notices} / キー {len(self.review_target_entries)}')
 
     def _selected_review_key(self):
         for iid in self.review_tree.selection():
@@ -11059,15 +11073,15 @@ Mod更新後だけ追加翻訳:
                         self._set_llm_idle("LLM 待機中","中国語基準翻訳を中断しました")
                     else:
                         self.chinese_progress["value"]=100
-                        qa_e=payload.get('qa_errors',0); qa_w=payload.get('qa_warnings',0); qa_r=payload.get('qa_repaired',0)
-                        self.chinese_progress_var.set(f"完了 — {payload.get('processed_files',0)}/{payload.get('queue_total',len(self.chinese_queue_items))}項目 / QA error {qa_e}・warning {qa_w}・修正 {qa_r}")
-                        self._append_chinese_log(f"翻訳語 自動QA・修正: error {qa_e} / warning {qa_w} / 修正 {qa_r}")
+                        qa_e=payload.get('qa_errors',0); qa_w=payload.get('qa_warnings',0); qa_n=payload.get('qa_notices',0); qa_r=payload.get('qa_repaired',0)
+                        self.chinese_progress_var.set(f"完了 — {payload.get('processed_files',0)}/{payload.get('queue_total',len(self.chinese_queue_items))}項目 / QA error {qa_e}・warning {qa_w}・notice {qa_n}・修正 {qa_r}")
+                        self._append_chinese_log(f"翻訳語 自動QA・修正: error {qa_e} / warning {qa_w} / notice {qa_n} / 修正 {qa_r}")
                         for report in payload.get('qa_reports') or []: self._append_chinese_log(f"QA修正ログ: {report}")
                         for backup in payload.get('qa_backups') or []: self._append_chinese_log(f"QA修復前バックアップ: {backup}")
                         self._append_chinese_log(f"出力先: {payload.get('output',self.chinese_output_var.get())}")
                         self._set_llm_idle("LLM 待機中","中国語基準翻訳が完了しました")
                         source_notice=self._source_gap_notice_for_items(self.chinese_queue_items)
-                        msg=f"中国語基準翻訳が完了しました。\n翻訳語 自動QA・修正: error {qa_e} / warning {qa_w} / 修正 {qa_r}"
+                        msg=f"中国語基準翻訳が完了しました。\n翻訳語 自動QA・修正: error {qa_e} / warning {qa_w} / notice {qa_n} / 修正 {qa_r}"
                         if source_notice:
                             msg += "\n\n" + source_notice
                         if not self._closing: messagebox.showinfo(APP_NAME,msg)
