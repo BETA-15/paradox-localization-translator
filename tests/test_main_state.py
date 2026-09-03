@@ -289,6 +289,51 @@ def test_successful_preflight_runs_original_operation_on_gui_queue():
     assert state._llm_preflight_request is None
 
 
+def test_effective_stale_same_path_translation_is_preferred_for_overwrite():
+    conflicts=[
+        {"mod":"Earlier Translation","effective":False,"stale_translation_candidate":True},
+        {"mod":"Unified Japanese Localization","effective":True,"stale_translation_candidate":True},
+    ]
+    state=SimpleNamespace(_source_overwrite_path_conflicts=lambda _item:conflicts)
+
+    preferred,returned=main.App._preferred_later_translation_conflict(state,{})
+
+    assert preferred["mod"]=="Unified Japanese Localization"
+    assert returned==conflicts
+
+
+def test_full_stale_translation_overwrite_replaces_masking_file_and_invalidates_cache(tmp_path):
+    source=tmp_path/"Source"; output=tmp_path/"Output"; translation=tmp_path/"Translation"
+    source_file=source/"localization"/"english"/"autoedu_l_english.yml"
+    generated=output/"japanese"/"autoedu_l_japanese.yml"
+    masking=translation/"localization"/"japanese"/"autoedu_l_japanese.yml"
+    for path,text in (
+        (source/"descriptor.mod",'name="Automatic Education"\n'),
+        (source_file,'l_english:\n shared:0 "Shared"\n new_key:0 "New"\n'),
+        (translation/"descriptor.mod",'name="Unified Japanese Localization"\n'),
+        (generated,'l_japanese:\n shared:0 "新訳"\n new_key:0 "新規"\n'),
+        (masking,'l_japanese:\n shared:0 "旧訳"\n'),
+    ):
+        path.parent.mkdir(parents=True,exist_ok=True); path.write_text(text,encoding="utf-8")
+    invalidated=[]; backup=tmp_path/"backup"; backup.mkdir()
+    state=SimpleNamespace(
+        _generated_japanese_files=lambda _root:[generated],
+        _create_full_localization_snapshot=lambda *_args,**_kwargs:(backup,{}),
+        _invalidate_mod_status_cache_paths=lambda paths:invalidated.extend(paths),
+    )
+    item={"output":str(output),"mod_root":str(source),"mod_name":"Automatic Education"}
+    conflict={"path":str(translation),"localization":str(translation/"localization"),
+              "mod":"Unified Japanese Localization","shared_keys":1,"source_only_keys":1}
+
+    ok,reason=main.App._perform_full_translation_mod_overwrite(
+        state,item,conflict,confirm=False,notify=False)
+
+    assert ok is True and "後順位日本語化Mod更新" in reason
+    assert core.parse_localization_file(masking)[1]["shared"]=="新訳"
+    assert core.parse_localization_file(masking)[1]["new_key"]=="新規"
+    assert invalidated==[translation]
+
+
 def test_qa_log_payload_has_diagnostics_without_localization_text():
     contexts=[{
         "source_path":Path("/mods/example/localization/english/example_l_english.yml"),

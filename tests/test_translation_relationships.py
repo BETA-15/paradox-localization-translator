@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import translator_core as core
+
+
+def _write(path: Path, text: str):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
 
 
 def _entries(prefix: str, count: int, value_prefix: str = "Text"):
@@ -400,3 +406,50 @@ def test_warning_status_is_restored_after_later_status_refinement():
 
     assert result["status"] == "要確認（旧式日本語化）"
     assert result["message"].count("警告:") == 1
+
+
+def test_later_stale_translation_with_same_virtual_path_is_detected(tmp_path):
+    source=tmp_path/"workshop"/"1158310"/"100"; translation=tmp_path/"workshop"/"1158310"/"200"
+    source_loc=source/"localization"; translation_loc=translation/"localization"
+    _write(source/"descriptor.mod", 'name="Automatic Education"\ntags={ "Gameplay" }\n')
+    _write(source_loc/"english"/"autoedu_l_english.yml",
+           'l_english:\n shared_key:0 "Shared"\n new_key_a:0 "New A"\n new_key_b:0 "New B"\n')
+    _write(translation/"descriptor.mod", 'name="Unified Japanese Localization"\ntags={ "Translation" }\n')
+    _write(translation_loc/"japanese"/"autoedu_l_japanese.yml",
+           'l_japanese:\n shared_key:0 "旧訳"\n old_key:0 "旧キー"\n')
+    game_dir=tmp_path/"Documents"/"Paradox Interactive"/"Crusader Kings III"
+    mod_dir=game_dir/"mod"; mod_dir.mkdir(parents=True)
+    _write(mod_dir/"source.mod",f'path="{source}"\n')
+    _write(mod_dir/"translation.mod",f'path="{translation}"\n')
+    (game_dir/"dlc_load.json").write_text(
+        json.dumps({"enabled_mods":["mod/source.mod","mod/translation.mod"]}),encoding="utf-8")
+
+    conflicts=core.find_later_localization_path_conflicts(
+        source,[Path("japanese/autoedu_l_japanese.yml")],game_documents_dir=game_dir)
+
+    assert len(conflicts)==1
+    row=conflicts[0]
+    assert row["mod"]=="Unified Japanese Localization"
+    assert row["source_position"]==0 and row["position"]==1 and row["effective"] is True
+    assert row["path_match_count"]==1 and row["shared_keys"]==1
+    assert row["source_only_keys"]==2 and row["candidate_only_keys"]==1
+    assert row["translation_hint"] is True
+    assert row["stale_translation_candidate"] is True
+
+
+def test_same_path_in_earlier_mod_does_not_mask_source(tmp_path):
+    earlier=tmp_path/"mods"/"earlier"; source=tmp_path/"mods"/"source"
+    _write(earlier/"descriptor.mod",'name="Earlier Translation"\ntags={ "Translation" }\n')
+    _write(earlier/"localization"/"japanese"/"same_l_japanese.yml",'l_japanese:\n key_a:0 "訳"\n')
+    _write(source/"descriptor.mod",'name="Source"\n')
+    _write(source/"localization"/"english"/"same_l_english.yml",'l_english:\n key_a:0 "Text"\n')
+    game_dir=tmp_path/"game"; mod_dir=game_dir/"mod"; mod_dir.mkdir(parents=True)
+    _write(mod_dir/"earlier.mod",f'path="{earlier}"\n')
+    _write(mod_dir/"source.mod",f'path="{source}"\n')
+    (game_dir/"dlc_load.json").write_text(
+        json.dumps({"enabled_mods":["mod/earlier.mod","mod/source.mod"]}),encoding="utf-8")
+
+    conflicts=core.find_later_localization_path_conflicts(
+        source,[Path("japanese/same_l_japanese.yml")],game_documents_dir=game_dir)
+
+    assert conflicts==[]

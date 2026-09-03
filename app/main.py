@@ -37,8 +37,8 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.74"
-MOD_STATUS_CACHE_VERSION = 15
+APP_VERSION = "0.11.75"
+MOD_STATUS_CACHE_VERSION = 16
 TRANSLATION_STATUS_SNAPSHOT_SCHEMA = 2
 MOD_STATUS_EMPTY_IID = "__mod_status_empty__"
 
@@ -3432,6 +3432,8 @@ Mod更新後だけ追加翻訳:
             "  ・構成点・名前・dependenciesは実データ関係ゲート通過後の順位付けだけに使用",
             "  ・手動の日本語化Mod / 通常Mod / 対応元指定は自動判定より優先",
             "  ・l_english内に日本語文を収録する旧式日本語化と、対応元未特定の日本語化Mod形式は警告のみ表示",
+            "  ・有効な後順位Modに同一localization相対パスがある場合、ファイル単位の上書き競合として別途記録",
+            "  ・同一パス、Translation系名前・タグ、1件以上の共通キーが揃う場合は旧版日本語化候補として提示",
             "  ・監査ログでは、初回分類で候補外になった現在の日本語Modも比較対象として表示",
             "",
         ]
@@ -3447,6 +3449,45 @@ Mod更新後だけ追加翻訳:
                 out.append(f"現在の関連付け: 候補『{r.get('translation_candidate_mod')}』（自動関連付けなし）")
             else:
                 out.append("現在の関連付け: なし")
+            try:
+                source_loc=core.mod_localization_root(root)
+                japanese_rels=[]
+                if source_loc:
+                    for fp in core.gather_yml_files(source_loc):
+                        try:
+                            lang,_entries,_lines=core.parse_localization_file(fp)
+                            rel=fp.relative_to(source_loc)
+                            if lang=="japanese":
+                                expected=rel
+                            elif lang in {"english","simp_chinese"}:
+                                expected=(core.remap_rel_dir(rel.parent,"japanese") /
+                                          core.rename_for_target(fp,"japanese",lang))
+                            else:
+                                continue
+                            if expected not in japanese_rels: japanese_rels.append(expected)
+                        except Exception:
+                            continue
+                path_conflicts=core.find_later_localization_path_conflicts(root,japanese_rels)
+            except Exception as exc:
+                path_conflicts=[]
+                out.append(f"同名ファイル競合確認失敗: {exc}")
+            if path_conflicts:
+                out.append("後順位Modとのlocalization同名ファイル競合:")
+                for conflict in path_conflicts:
+                    out += [
+                        (f"  ・{conflict.get('mod')} / ロード順 "
+                         f"{int(conflict.get('source_position',0))+1}→{int(conflict.get('position',0))+1} / "
+                         f"{'実際に優先' if conflict.get('effective') else '後順位'}"),
+                        (f"    同一パス {int(conflict.get('path_match_count',0))}件 / "
+                         f"共通キー {int(conflict.get('shared_keys',0))} / "
+                         f"元Mod側だけ {int(conflict.get('source_only_keys',0))} / "
+                         f"候補側だけ {int(conflict.get('candidate_only_keys',0))}"),
+                        (f"    Translation系名前・タグ: {'あり' if conflict.get('translation_hint') else 'なし'} / "
+                         f"旧版日本語化候補: {'PASS' if conflict.get('stale_translation_candidate') else 'FAIL'}"),
+                    ]
+                    out.extend(f"    パス: {path}" for path in conflict.get("relative_paths",[]))
+            else:
+                out.append("後順位Modとのlocalization同名ファイル競合: なし")
             warnings=list(r.get("translation_warnings") or [])
             if warnings:
                 out.append("警告:")
@@ -7001,6 +7042,107 @@ Mod更新後だけ追加翻訳:
                 files.append(p)
         return files
 
+    def _source_overwrite_layout(self, item):
+        """Return the direct-source overwrite layout without writing any files."""
+        loc_root, mod_root = self._infer_mod_target_for_item(item)
+        if not loc_root or not mod_root:
+            return None, None, []
+        loc_root=Path(loc_root); mod_root=Path(mod_root)
+        out_root = Path(item.get("output", ""))
+        input_path = Path(item.get("input", ""))
+        target_base = loc_root if input_path.is_dir() and input_path.name.lower() == "localization" else mod_root
+        mappings=[]
+        for src in self._generated_japanese_files(out_root):
+            try:
+                rel=src.relative_to(out_root)
+            except ValueError:
+                continue
+            safe_parent = core.remap_rel_dir(rel.parent, "japanese")
+            safe_name = core.rename_for_target(src, "japanese", "japanese")
+            safe_rel = safe_parent / safe_name
+            mappings.append((src,target_base / safe_rel,safe_rel))
+        return loc_root, mod_root, mappings
+
+    def _source_overwrite_path_conflicts(self, item):
+        """Find enabled later Mods that mask files produced by a source overwrite."""
+        loc_root, mod_root, mappings = self._source_overwrite_layout(item)
+        if not mod_root or not mappings:
+            return []
+        relative=[]
+        for _src,_dst,safe_rel in mappings:
+            rel=safe_rel
+            # When target_base is the Mod root, normalize to a path below localization.
+            if rel.parts and rel.parts[0].lower() == "localization":
+                rel=Path(*rel.parts[1:])
+            relative.append(rel)
+        return core.find_later_localization_path_conflicts(mod_root, relative)
+
+    def _preferred_later_translation_conflict(self, item):
+        conflicts=self._source_overwrite_path_conflicts(item)
+        preferred=next((row for row in reversed(conflicts)
+                        if row.get("effective") and row.get("stale_translation_candidate")),None)
+        return preferred,conflicts
+
+    def _perform_full_translation_mod_overwrite(self, item, conflict, confirm=True, notify=True):
+        """Replace stale same-path files in a later Japanese translation Mod."""
+        ext_root=Path(conflict.get("path", "")); ext_loc=Path(conflict.get("localization", ""))
+        out_root=Path(item.get("output", ""))
+        generated=self._generated_japanese_files(out_root)
+        if not ext_root.is_dir() or not ext_loc.is_dir():
+            return False,"後順位の日本語化Modを特定できません"
+        mappings=[]
+        for src in generated:
+            try: rel=src.relative_to(out_root)
+            except ValueError: continue
+            safe_parent=core.remap_rel_dir(rel.parent,"japanese")
+            safe_name=core.rename_for_target(src,"japanese","japanese")
+            safe_rel=safe_parent / safe_name
+            mappings.append((src,ext_loc / safe_rel,safe_rel))
+        if not mappings:
+            return False,"日本語化Modへ書き込む完成済み日本語YAMLがありません"
+        ext_name=conflict.get("mod") or ext_root.name
+        src_name=item.get("mod_name") or Path(item.get("mod_root", "")).name
+        shared=int(conflict.get("shared_keys",0) or 0)
+        source_only=int(conflict.get("source_only_keys",0) or 0)
+        paths="\n".join(f"  ・{path}" for path in conflict.get("relative_paths",[])[:8])
+        if confirm:
+            warning=(
+                "⚠ 後順位の日本語化Modが同名ファイルを上書きしています。\n\n"
+                f"元Mod: {src_name}（ロード順 {int(conflict.get('source_position',0))+1}）\n"
+                f"実際に優先されるMod: {ext_name}（ロード順 {int(conflict.get('position',0))+1}）\n"
+                f"同一パス: {int(conflict.get('path_match_count',0))}件\n{paths}\n"
+                f"共通キー: {shared}件 / 新版側だけのキー: {source_only}件\n\n"
+                "後順位Modの既存localization全体をバックアップしてから、完成済み翻訳で同名ファイルを更新します。\n"
+                "続行しますか？")
+            if not messagebox.askyesno("警告 — 後順位日本語化Modへ上書き",warning,icon="warning"):
+                return False,"キャンセル"
+        stamp=datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        backup_root,_meta=self._create_full_localization_snapshot(
+            ext_root,"同名ファイル競合・旧版日本語化Mod更新",category="上書き",source_mod_name=src_name,
+            state_label="後順位日本語化Modの同名ファイル更新直前（既存localization全体）",stamp=stamp)
+        copied=0; replaced=0
+        try:
+            for src,dst,_rel in mappings:
+                if dst.exists(): replaced += 1
+                dst.parent.mkdir(parents=True,exist_ok=True)
+                shutil.copy2(src,dst); copied += 1
+            coverage=core.analyze_external_translation_coverage(Path(item.get("mod_root") or ext_root),ext_root)
+            validation=("上書き後確認: 欠損なし" if coverage.get("complete") else
+                        f"⚠ 上書き後も欠損あり: {coverage.get('gap_reason','翻訳不足があります')}")
+            self._invalidate_mod_status_cache_paths([ext_root])
+            reason=(f"後順位日本語化Mod更新 {copied} / 置換 {replaced} / 共通キー {shared} / "
+                    f"新版側固有 {source_only} / {validation}")
+            if notify:
+                messagebox.showinfo(APP_NAME,
+                    f"後順位の日本語化Modを更新しました。\n\n対象: {ext_name}\n書き込み: {copied}件\n"
+                    f"既存ファイル置換: {replaced}件\nバックアップ先: {backup_root}\n\n{validation}")
+            return True,reason
+        except Exception as exc:
+            record_error("同名ファイル競合・日本語化Mod上書き",exc,str(ext_root))
+            if notify:
+                messagebox.showerror(APP_NAME,f"後順位日本語化Modへの上書きに失敗しました。\n{exc}\n\nバックアップ先: {backup_root}")
+            return False,str(exc)
+
     def _queue_item_is_completed(self, item):
         status=str(item.get("status", ""))
         return status.startswith("完了") or status == "上書き済み"
@@ -7168,32 +7310,11 @@ Mod更新後だけ追加翻訳:
         return ok
 
     def _perform_source_mod_overwrite(self, item, confirm=True, notify=True):
-        loc_root, mod_root = self._infer_mod_target_for_item(item)
+        loc_root, mod_root, mappings = self._source_overwrite_layout(item)
         if not loc_root:
             return False,"元のModのlocalizationフォルダを特定できません"
-        out_root = Path(item.get("output", ""))
-        generated = self._generated_japanese_files(out_root)
-        if not generated:
-            return False,"完成済み日本語YAMLが出力先に見つかりません"
-
-        input_path = Path(item.get("input", ""))
-        target_base = loc_root if input_path.is_dir() and input_path.name.lower() == "localization" else mod_root
-        mappings=[]
-        for src in generated:
-            try:
-                rel=src.relative_to(out_root)
-            except ValueError:
-                continue
-            # Safety invariant: direct Mod overwrite may only create/update Japanese
-            # localization files.  Even a stale/legacy output tree is remapped into
-            # a Japanese directory so English/Simplified-Chinese files can never be
-            # selected as destinations.
-            safe_parent = core.remap_rel_dir(rel.parent, "japanese")
-            safe_name = core.rename_for_target(src, "japanese", "japanese")
-            safe_rel = safe_parent / safe_name
-            mappings.append((src,target_base / safe_rel,safe_rel))
         if not mappings:
-            return False,"上書き対象を特定できません"
+            return False,"完成済み日本語YAMLが出力先に見つかりません"
 
         existing=sum(1 for _,dst,_ in mappings if dst.exists())
         mod_name=item.get("mod_name") or Path(mod_root).name
@@ -7243,13 +7364,37 @@ Mod更新後だけ追加翻訳:
             messagebox.showinfo(APP_NAME,'上書き処理はすでにバックグラウンドで実行中です。'); return False
         if not self._queue_item_is_completed(item):
             messagebox.showinfo(APP_NAME,'上書きできるのは翻訳完了済みの項目です。'); return False
-        use_external=False
-        if prefer_external and item.get('external_translation_path'):
-            ext_name=item.get('external_translation_mod','') or Path(item.get('external_translation_path','')).name
-            choice=messagebox.askyesnocancel('上書き先の確認',f"日本語化Mod『{ext_name}』が見つかっています。\n\nはい: 日本語化Modへ差分上書き\nいいえ: 元Modへ上書き\nキャンセル: 何もしない",icon='question')
-            if choice is None: return False
-            use_external=bool(choice)
-        target_label=(item.get('external_translation_mod') or '日本語化Mod') if use_external else (item.get('mod_name') or '元Mod')
+        use_external=False; conflict_target=None
+        if prefer_external:
+            preferred,conflicts=self._preferred_later_translation_conflict(item)
+            if preferred:
+                ext_name=preferred.get('mod') or Path(preferred.get('path','')).name
+                paths='\n'.join(f"  ・{p}" for p in preferred.get('relative_paths',[])[:6])
+                choice=messagebox.askyesnocancel(
+                    '同名localizationファイルの競合',
+                    f"元Modへ保存しても、後順位の日本語化Mod『{ext_name}』に同名ファイルがあるため反映されません。\n\n"
+                    f"同一パス:\n{paths}\n共通キー: {preferred.get('shared_keys',0)}件\n"
+                    f"新版側だけのキー: {preferred.get('source_only_keys',0)}件\n\n"
+                    "はい: 後順位の日本語化Modをバックアップして更新\n"
+                    "いいえ: それでも元Modへ保存\nキャンセル: 何もしない",icon='warning')
+                if choice is None: return False
+                if choice: conflict_target=preferred
+            elif item.get('external_translation_path'):
+                ext_name=item.get('external_translation_mod','') or Path(item.get('external_translation_path','')).name
+                choice=messagebox.askyesnocancel('上書き先の確認',f"日本語化Mod『{ext_name}』が見つかっています。\n\nはい: 日本語化Modへ差分上書き\nいいえ: 元Modへ上書き\nキャンセル: 何もしない",icon='question')
+                if choice is None: return False
+                use_external=bool(choice)
+            elif conflicts:
+                effective=next((row for row in conflicts if row.get('effective')),conflicts[-1])
+                if not messagebox.askyesno(
+                    '警告 — 同名ファイル競合',
+                    f"後順位Mod『{effective.get('mod') or Path(effective.get('path','')).name}』に同じlocalizationファイルがあります。\n"
+                    "元Modへ保存しても、ゲームでは後順位Modのファイルが優先される可能性があります。\n\nそれでも元Modへ保存しますか？",
+                    icon='warning'):
+                    return False
+        target_label=((conflict_target.get('mod') or Path(conflict_target.get('path','')).name) if conflict_target
+                      else (item.get('external_translation_mod') or '日本語化Mod') if use_external
+                      else (item.get('mod_name') or '元Mod'))
         if not messagebox.askyesno('警告 — Modへ上書き',f"対象: {target_label}\n\n既存localizationは実行前にバックアップします。\nファイル走査・バックアップ・書き込みはバックグラウンドで実行します。\n続行しますか？",icon='warning'):
             return False
         if not messagebox.askyesno('最終確認','本当に書き込みますか？\nこの操作は対象Modの日本語localizationを変更します。',icon='warning'):
@@ -7258,12 +7403,16 @@ Mod更新後だけ追加翻訳:
         def work():
             try:
                 if item.get('missing_only'):
-                    if use_external:
+                    if conflict_target:
+                        target_root=Path(conflict_target.get('path','')); target_loc=Path(conflict_target.get('localization',''))
+                    elif use_external:
                         target_root=Path(item.get('external_translation_path','')); target_loc=Path(item.get('external_translation_localization',''))
                     else:
                         target_loc,target_root=self._infer_mod_target_for_item(item)
                     if not target_loc or not target_root: ok,reason=False,'不足翻訳の上書き先を特定できません'
                     else: ok,reason=self._merge_missing_only_output(item,Path(target_loc),Path(target_root),confirm=False,notify=False)
+                elif conflict_target:
+                    ok,reason=self._perform_full_translation_mod_overwrite(item,conflict_target,confirm=False,notify=False)
                 elif use_external:
                     ok,reason=self._perform_external_gap_overwrite(item,confirm=False,notify=False)
                 else:
@@ -7296,14 +7445,23 @@ Mod更新後だけ追加翻訳:
             else: skipped_unfinished+=1
         if not eligible:
             messagebox.showinfo(APP_NAME,'選択項目に翻訳完了済みの項目がありません。'); return
-        has_external=any(item.get('external_translation_path') for _,item in eligible); policy='source'
+        conflict_targets={}
+        for _idx,item in eligible:
+            try:
+                preferred,_conflicts=self._preferred_later_translation_conflict(item)
+                if preferred: conflict_targets[id(item)]=preferred
+            except Exception as exc:
+                record_error('一括上書き前の同名ファイル競合確認',exc,item.get('mod_name',''))
+        has_external=any(item.get('external_translation_path') or id(item) in conflict_targets for _,item in eligible); policy='source'
         if has_external:
             choice=messagebox.askyesnocancel('一括上書き先の方針',
-                f'翻訳完了済み {len(eligible)}件を一括上書きします。\n\nはい: 既存日本語化Modがある項目は日本語化Modへ差分上書き\n      日本語化Modがない項目は元Modへ上書き\nいいえ: すべて元Modへ上書き\nキャンセル: 何もしない',icon='question')
+                f'翻訳完了済み {len(eligible)}件を一括上書きします。\n\nはい: 日本語化Modを優先（差分追加または同名ファイル更新）\n      日本語化Modがない項目は元Modへ上書き\nいいえ: すべて元Modへ上書き\nキャンセル: 何もしない',icon='question')
             if choice is None: return
             policy='external' if choice else 'source'
         policy_text='既存日本語化Modを優先' if policy=='external' else 'すべて元Modへ上書き'
         relationship_warning='\n日本語化Modへ上書きする項目について、元Modと上書き先が適切な日本語化Modの関係になっているか確認してください。\n' if policy=='external' else ''
+        if conflict_targets:
+            relationship_warning += f"\n後順位Modの同名ファイルに隠される項目: {len(conflict_targets)}件\n"
         if not messagebox.askyesno('一括上書きの確認',
             f'対象: {len(eligible)}件\n方針: {policy_text}\n未完了のためスキップ予定: {skipped_unfinished}件\n{relationship_warning}\n各Modについて既存ファイルのバックアップを作成してから書き込みます。\n続行しますか？',icon='warning'):
             return
@@ -7314,13 +7472,18 @@ Mod更新後だけ追加翻訳:
                 name=item.get('mod_name') or Path(item.get('input','')).name or '項目'
                 self.events.put(('bulk_overwrite_progress',(pos,len(eligible),name)))
                 try:
+                    conflict_target=conflict_targets.get(id(item)) if policy=='external' else None
                     if item.get('missing_only'):
-                        if policy=='external' and item.get('external_translation_path'):
+                        if conflict_target:
+                            target_root=Path(conflict_target.get('path','')); target_loc=Path(conflict_target.get('localization',''))
+                        elif policy=='external' and item.get('external_translation_path'):
                             target_root=Path(item.get('external_translation_path','')); target_loc=Path(item.get('external_translation_localization',''))
                         else:
                             target_loc,target_root=self._infer_mod_target_for_item(item)
                         if not target_loc or not target_root: ok,reason=False,'不足翻訳の上書き先を特定できません'
                         else: ok,reason=self._merge_missing_only_output(item,Path(target_loc),Path(target_root),confirm=False,notify=False)
+                    elif conflict_target:
+                        ok,reason=self._perform_full_translation_mod_overwrite(item,conflict_target,confirm=False,notify=False)
                     elif policy=='external' and item.get('external_translation_path'):
                         ok,reason=self._perform_external_gap_overwrite(item,confirm=False,notify=False)
                         if not ok and reason in {'日本語化Modへ反映する差分情報がありません','完成済み出力に差分訳が見つかりません'}:
