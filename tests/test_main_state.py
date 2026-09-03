@@ -216,6 +216,79 @@ def test_qa_severity_group_keeps_notice_separate_from_warning():
     assert main._qa_severity_group([{"severity":"notice"},{"severity":"error"}]) == "error"
 
 
+def test_lm_studio_connection_refused_uses_large_local_startup_warning():
+    info=main._llm_connection_alert_content(
+        "LM Studio","http://localhost:1234/v1","qwen/test",
+        "<urlopen error [Errno 61] Connection refused>")
+
+    assert info["heading"] == "LLMと接続できません"
+    assert info["category"] == "local_unavailable"
+    assert "LM Studioが起動していない" in info["message"]
+    assert "Local Serverが開始されていない" in info["message"]
+    assert "http://localhost:1234/v1" in info["message"]
+
+
+def test_cloud_authentication_error_does_not_claim_local_server_is_stopped():
+    info=main._llm_connection_alert_content(
+        "OpenAI","https://api.openai.com/v1","gpt-test","HTTP Error 401: Unauthorized")
+
+    assert info["category"] == "authentication"
+    assert "API認証に失敗" in info["message"]
+    assert "起動していない" not in info["message"]
+
+
+def test_connected_local_server_without_loaded_model_uses_configuration_warning():
+    info=main._llm_connection_alert_content(
+        "LM Studio","http://localhost:1234/v1","qwen/test",
+        "接続には成功しましたが、読み込み済みのモデルがありません")
+
+    assert info["category"] == "configuration"
+    assert "モデル名と接続先" in info["message"]
+
+
+def test_only_connection_class_errors_trigger_runtime_connection_popup():
+    assert main._is_llm_connection_alert_error("Connection refused") is True
+    assert main._is_llm_connection_alert_error("HTTP Error 401: Unauthorized") is True
+    assert main._is_llm_connection_alert_error("LLMから空の応答が返されました") is False
+
+
+def test_normal_translation_waits_for_preflight_before_creating_output():
+    calls=[]
+    state=SimpleNamespace(
+        _closing=False,worker=None,queue_items=[{"input":"/mods/example/localization"}],
+        _begin_llm_preflight=lambda context,callback:calls.append((context,callback)),
+        _ensure_isolated_item_output=lambda *_args,**_kwargs:calls.append("output-created"),
+    )
+
+    main.App._start_normal_selected(state,[0])
+
+    assert calls and calls[0][0] == "通常翻訳"
+    assert "output-created" not in calls
+
+
+def test_successful_preflight_runs_original_operation_on_gui_queue():
+    calls=[]
+    class Var:
+        def set(self,value): calls.append(("connection",value))
+    callback=lambda:calls.append("started")
+    request={"token":"token-1","callback":callback,"provider":"LM Studio",
+             "url":"http://localhost:1234/v1","model":"qwen/test","api_key":""}
+    state=SimpleNamespace(
+        _llm_preflight_request=request,llm_preflight_thread=object(),_llm_connection_alert_key="old",
+        _closing=False,connection_var=Var(),
+        _close_llm_connection_alert=lambda **_kwargs:calls.append("closed"),
+        _set_llm_idle=lambda *_args:calls.append("idle"),
+        _refresh_operation_states=lambda:calls.append("refreshed"),
+        after_idle=lambda fn:fn(),
+    )
+
+    main.App._apply_llm_preflight_done(state,{"token":"token-1","models":["qwen/test"]})
+
+    assert "started" in calls
+    assert state.llm_preflight_thread is None
+    assert state._llm_preflight_request is None
+
+
 def test_qa_log_payload_has_diagnostics_without_localization_text():
     contexts=[{
         "source_path":Path("/mods/example/localization/english/example_l_english.yml"),

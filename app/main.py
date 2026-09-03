@@ -37,7 +37,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.73"
+APP_VERSION = "0.11.74"
 MOD_STATUS_CACHE_VERSION = 15
 TRANSLATION_STATUS_SNAPSHOT_SCHEMA = 2
 MOD_STATUS_EMPTY_IID = "__mod_status_empty__"
@@ -98,6 +98,53 @@ def _qa_severity_group(issues):
     if "warning" in severities: return "warning"
     if "notice" in severities: return "notice"
     return "ok"
+
+
+def _llm_connection_alert_content(provider, url, model="", error=""):
+    """Return user-facing connection guidance without touching Tk widgets."""
+    display=core.provider_display_name(provider)
+    normalized=core.normalize_provider(provider)
+    endpoint=(url or core.default_url_for_provider(provider)).strip()
+    detail=str(error or "").strip()
+    low=detail.lower()
+    transport_tokens=("connection refused","couldn't connect","failed to connect","timed out","timeout",
+                      "network is unreachable","name or service not known","nodename nor servname",
+                      "remote end closed","connection reset","urlopen error")
+    transport_failure=any(token in low for token in transport_tokens)
+    if normalized in {"ollama","lmstudio"} and transport_failure:
+        service="LM Studio" if normalized=="lmstudio" else "Ollama"
+        server_note=("Local Serverが開始されていない" if normalized=="lmstudio"
+                     else "LLMサーバーが開始されていない")
+        guidance=(f"{service}が起動していない、または{server_note}可能性があります。\n\n"
+                  f"{service}を起動し、モデルを読み込んでサーバーを開始してから、再接続を確認してください。")
+        category="local_unavailable"
+    elif normalized in {"ollama","lmstudio"} and not model:
+        guidance=f"{display}に接続するモデルが選択されていません。モデルを読み込んで選択してください。"
+        category="model_missing"
+    elif any(token in low for token in ("401","403","unauthorized","forbidden","api key","authentication")):
+        guidance=f"{display}のAPI認証に失敗しました。APIキー、利用権限、接続先を確認してください。"
+        category="authentication"
+    elif any(token in low for token in ("404","model","not found","モデル","読み込み済み")):
+        guidance=f"{display}のモデルまたはAPI URLを確認できません。モデル名と接続先を確認してください。"
+        category="configuration"
+    else:
+        guidance=f"{display}と通信できません。API URL、モデル、認証情報、サーバー状態を確認してください。"
+        category="unavailable"
+    lines=[guidance,"",f"プロバイダ: {display}",f"接続先: {endpoint}"]
+    if model: lines.append(f"モデル: {model}")
+    if detail: lines.extend(["",f"詳細: {detail}"])
+    return {"title":"LLMに接続できません","heading":"LLMと接続できません",
+            "message":"\n".join(lines),"category":category,"provider":display,"endpoint":endpoint}
+
+
+def _is_llm_connection_alert_error(error):
+    low=str(error or "").lower()
+    return any(token in low for token in (
+        "connection refused","couldn't connect","failed to connect","timed out","timeout",
+        "network is unreachable","name or service not known","nodename nor servname",
+        "remote end closed","connection reset","urlopen error","http error 401",
+        "http error 403","http error 404","unauthorized","forbidden","model not found",
+    ))
 
 
 def _build_qa_log_payload(contexts, failures, generated_at=None, app_version=None, repair_result=None):
@@ -923,6 +970,10 @@ class App(BaseTk):
         self.glossary_import_thread = None
         self.glossary_import_busy = False
         self.connection_var = tk.StringVar(value="LLM接続確認中…")
+        self.llm_preflight_thread = None
+        self._llm_preflight_request = None
+        self._llm_connection_alert_window = None
+        self._llm_connection_alert_key = ""
         self.profile_var = tk.StringVar(value="")
         self.data_root_var = tk.StringVar(value=str(DATA_ROOT))
         self.progress_text = tk.StringVar(value="待機中")
@@ -1118,6 +1169,7 @@ class App(BaseTk):
         overwrite = self._operation_pending(self.bulk_overwrite_thread) and self._bulk_overwrite_queue_kind in {None, "normal"}
         shared_write = any(self._operation_pending(x) for x in (
             self.data_root_move_thread,self.backup_restore_operation_thread,self.diagnostic_thread,getattr(self,"qa_repair_thread",None),
+            getattr(self,"llm_preflight_thread",None),
         ))
         return bool(self._closing or shared_write or self._operation_pending(self.worker) or differential or overwrite or self._operation_pending(self.single_overwrite_thread))
 
@@ -1126,6 +1178,7 @@ class App(BaseTk):
         overwrite = self._operation_pending(self.bulk_overwrite_thread) and self._bulk_overwrite_queue_kind in {None, "chinese"}
         shared_write = any(self._operation_pending(x) for x in (
             self.data_root_move_thread,self.backup_restore_operation_thread,self.diagnostic_thread,getattr(self,"qa_repair_thread",None),
+            getattr(self,"llm_preflight_thread",None),
         ))
         return bool(self._closing or shared_write or self._operation_pending(self.chinese_worker) or differential or overwrite or self._operation_pending(self.single_overwrite_thread))
 
@@ -1140,6 +1193,7 @@ class App(BaseTk):
             ("保存場所コピー", self.data_root_move_thread),
             ("総合診断・修復", self.diagnostic_thread),
             ("QA・自動修正", getattr(self,"qa_repair_thread",None)),
+            ("LLM接続確認", getattr(self,"llm_preflight_thread",None)),
             ("用語取り込み", self.glossary_import_thread),
         )
         return [name for name, thread in checks if self._operation_pending(thread)]
@@ -1856,12 +1910,17 @@ class App(BaseTk):
         self._refresh_chinese_queue_tree()
         self._start_chinese_selected([idx for idx, _item in entries], diff_requested=False)
 
-    def _start_chinese_selected(self, selected_indices, diff_requested=False):
+    def _start_chinese_selected(self, selected_indices, diff_requested=False, _llm_ready=False):
         if self._closing: return
         if self.chinese_worker is not None: return
         selected_indices = sorted(set(int(x) for x in selected_indices if 0 <= int(x) < len(self.chinese_queue_items)))
         if not selected_indices:
             messagebox.showinfo(APP_NAME,"翻訳する項目を選択してください。"); return
+        if not _llm_ready:
+            indices=tuple(selected_indices)
+            self._begin_llm_preflight("中国語基準翻訳",
+                lambda:self._start_chinese_selected(indices,diff_requested=diff_requested,_llm_ready=True))
+            return
         for idx in selected_indices:
             self._ensure_isolated_item_output(self.chinese_queue_items[idx], mode="chinese")
             app_state.ensure_queue_item_id(self.chinese_queue_items[idx])
@@ -2624,6 +2683,7 @@ class App(BaseTk):
             ("翻訳検索", self.search_thread),
             ("QA解析", self.review_worker),
             ("QA・自動修正", getattr(self,"qa_repair_thread",None)),
+            ("LLM接続確認", getattr(self,"llm_preflight_thread",None)),
             ("差分解析", self.diff_load_worker),
             ("差分翻訳", self.diff_translate_thread),
             ("AI校正", self.proofread_thread),
@@ -8208,7 +8268,7 @@ Mod更新後だけ追加翻訳:
         except Exception as e:
             messagebox.showerror(APP_NAME, f"キャッシュの追加に失敗しました。\n{e}")
 
-    def _start_manual_qa_repair(self, pairs, origin):
+    def _start_manual_qa_repair(self, pairs, origin, _llm_ready=False):
         if self.qa_repair_thread is not None:
             messagebox.showinfo(APP_NAME,"QA・自動修正はすでに実行中です。"); return
         conflicting=any(self._operation_pending(thread) for thread in (
@@ -8220,6 +8280,11 @@ Mod更新後だけ追加翻訳:
         if not pairs:
             messagebox.showinfo(APP_NAME,"原文と日本語出力の組み合わせを見つけられませんでした。"); return
         label={"normal":"通常翻訳キュー","chinese":"中国語基準翻訳キュー","review":"QA／比較編集"}.get(origin,"QA")
+        if not _llm_ready:
+            saved_pairs=tuple(dict(pair) for pair in pairs)
+            self._begin_llm_preflight(f"{label}のQA・自動修正",
+                lambda:self._start_manual_qa_repair(saved_pairs,origin,_llm_ready=True))
+            return
         if not messagebox.askyesno(APP_NAME,
             f"{label}の{len(pairs)}ファイルをQAし、注意・警告を除く修復可能な全エラーを自動修正します。\n\n"
             "変更前ファイルはバックアップし、修正後にエラーが減らなければ自動復元します。\n続行しますか？"):
@@ -8494,12 +8559,17 @@ Mod更新後だけ追加翻訳:
         self._refresh_queue_tree()
         self._start_normal_selected([idx for idx, _item in entries], diff_requested=False)
 
-    def _start_normal_selected(self, selected_indices, diff_requested=False):
+    def _start_normal_selected(self, selected_indices, diff_requested=False, _llm_ready=False):
         if self._closing: return
         if self.worker is not None: return
         selected_indices = sorted(set(int(x) for x in selected_indices if 0 <= int(x) < len(self.queue_items)))
         if not selected_indices:
             messagebox.showinfo(APP_NAME, "翻訳する項目を選択してください."); return
+        if not _llm_ready:
+            indices=tuple(selected_indices)
+            self._begin_llm_preflight("通常翻訳",
+                lambda:self._start_normal_selected(indices,diff_requested=diff_requested,_llm_ready=True))
+            return
         for idx in selected_indices:
             self._ensure_isolated_item_output(self.queue_items[idx], mode="normal")
             app_state.ensure_queue_item_id(self.queue_items[idx])
@@ -9356,6 +9426,121 @@ Mod更新後だけ追加翻訳:
         except Exception: pass
 
     # ---------------- models ----------------
+    def _set_llm_connection_error_status(self, provider, url, error=""):
+        info=_llm_connection_alert_content(provider,url,self.model_var.get().strip(),error)
+        self.llm_busy_count=0; self.llm_active_ids.clear(); self.llm_busy_since=None
+        self.llm_banner.config(bg="#b91c1c")
+        self.llm_status_label.config(bg="#b91c1c",fg="white")
+        self.llm_detail_label.config(bg="#b91c1c",fg="white")
+        self.llm_status_var.set("● LLM接続なし")
+        self.llm_detail_var.set(f"{info['provider']} / {info['endpoint']} — 起動状態・モデル・接続設定を確認してください")
+        self.llm_stop_btn.config(state="disabled")
+
+    def _close_llm_connection_alert(self, *, reset_key=False):
+        win=getattr(self,"_llm_connection_alert_window",None)
+        self._llm_connection_alert_window=None
+        if reset_key: self._llm_connection_alert_key=""
+        if win is not None:
+            try: win.grab_release()
+            except (tk.TclError,AttributeError): pass
+            try: win.destroy()
+            except (tk.TclError,AttributeError): pass
+
+    def _show_llm_connection_alert(self, provider, url, model="", error="", *, context="LLM処理", retry_command=None, cancel_command=None, force=False):
+        if self._closing: return
+        info=_llm_connection_alert_content(provider,url,model,error)
+        key=f"{info['category']}|{info['provider']}|{info['endpoint']}"
+        existing=getattr(self,"_llm_connection_alert_window",None)
+        if existing is not None:
+            try: existing.lift(); existing.focus_force(); return
+            except (tk.TclError,AttributeError): self._llm_connection_alert_window=None
+        if not force and self._llm_connection_alert_key==key:
+            return
+        self._llm_connection_alert_key=key
+        self._set_llm_connection_error_status(provider,url,error)
+        win=tk.Toplevel(self); self._llm_connection_alert_window=win
+        win.title(info["title"]); win.geometry("720x440"); win.minsize(620,360)
+        try: win.transient(self)
+        except tk.TclError: pass
+        header=tk.Frame(win,bg="#b91c1c",padx=20,pady=18); header.pack(fill="x")
+        tk.Label(header,text="⚠  "+info["heading"],bg="#b91c1c",fg="white",font=("",20,"bold")).pack(anchor="w")
+        body=ttk.Frame(win,padding=22); body.pack(fill="both",expand=True)
+        ttk.Label(body,text=f"{context}を開始できません。",font=("",13,"bold")).pack(anchor="w",pady=(0,12))
+        ttk.Label(body,text=info["message"],justify="left",wraplength=660).pack(anchor="w",fill="x")
+        buttons=ttk.Frame(body); buttons.pack(side="bottom",fill="x",pady=(18,0))
+        def retry():
+            self._close_llm_connection_alert(reset_key=True)
+            (retry_command or self.refresh_models)()
+        def settings():
+            self._close_llm_connection_alert()
+            self._llm_preflight_request=None
+            self.notebook.select(self.tab_models)
+        def cancel():
+            self._close_llm_connection_alert()
+            self._llm_preflight_request=None
+            self.llm_preflight_thread=None
+            self._refresh_operation_states()
+            if cancel_command: cancel_command()
+        ttk.Button(buttons,text="再接続を確認",command=retry).pack(side="left")
+        ttk.Button(buttons,text="設定を開く",command=settings).pack(side="left",padx=(8,0))
+        ttk.Button(buttons,text="処理を中止",command=cancel).pack(side="right")
+        win.protocol("WM_DELETE_WINDOW",cancel)
+        try: win.grab_set(); win.lift(); win.focus_force()
+        except tk.TclError: pass
+
+    def _launch_llm_preflight(self):
+        request=self._llm_preflight_request
+        if not request or self._closing: return
+        token=uuid.uuid4().hex; request["token"]=token
+        provider=request["provider"]; url=request["url"]; model=request["model"]; api_key=request["api_key"]
+        self.connection_var.set(f"{provider} 接続確認中…")
+        self.llm_status_var.set("● LLM 接続確認中")
+        self.llm_detail_var.set(f"{provider} / {url}")
+        def work():
+            try:
+                if not model:
+                    raise RuntimeError("翻訳に使用するモデルが選択されていません")
+                models=core.list_models(provider,url,timeout=8,api_key=api_key)
+                if core.normalize_provider(provider) in {"ollama","lmstudio"} and not models:
+                    raise RuntimeError("接続には成功しましたが、読み込み済みのモデルがありません")
+                self.events.put(("llm_preflight_done",{"token":token,"models":models}))
+            except Exception as exc:
+                self.events.put(("llm_preflight_error",{"token":token,"error":str(exc)}))
+        self.llm_preflight_thread=threading.Thread(target=work,daemon=True,name="llm-preflight")
+        self.llm_preflight_thread.start(); self._refresh_operation_states()
+
+    def _begin_llm_preflight(self, context, callback):
+        if self.llm_preflight_thread is not None:
+            messagebox.showinfo(APP_NAME,"現在LLMの接続を確認中です。"); return False
+        provider=self.provider_var.get(); url=self.url_var.get().strip() or core.default_url_for_provider(provider)
+        self._llm_preflight_request={"context":context,"callback":callback,"provider":provider,"url":url,
+                                     "model":self.model_var.get().strip(),"api_key":self.api_key_var.get().strip()}
+        self._launch_llm_preflight(); return True
+
+    def _retry_llm_preflight(self):
+        if not self._llm_preflight_request: return
+        self._launch_llm_preflight()
+
+    def _apply_llm_preflight_done(self, payload):
+        request=self._llm_preflight_request
+        if not request or payload.get("token")!=request.get("token"): return
+        callback=request.get("callback"); models=list(payload.get("models") or [])
+        self.llm_preflight_thread=None; self._llm_preflight_request=None; self._llm_connection_alert_key=""
+        self._close_llm_connection_alert(reset_key=True)
+        self.connection_var.set(f"{request['provider']} 接続済み / {len(models)}モデル")
+        self._set_llm_idle("LLM 待機中","接続確認が完了しました")
+        self._refresh_operation_states()
+        if callback and not self._closing: self.after_idle(callback)
+
+    def _apply_llm_preflight_error(self, payload):
+        request=self._llm_preflight_request
+        if not request or payload.get("token")!=request.get("token"): return
+        self.llm_preflight_thread=None; self._refresh_operation_states()
+        error=str(payload.get("error") or "LLM接続確認に失敗しました")
+        record_error("LLM開始前接続確認",detail=f"{request['context']}: {error}")
+        self._show_llm_connection_alert(request["provider"],request["url"],request["model"],error,
+                                        context=request["context"],retry_command=self._retry_llm_preflight,force=True)
+
     def refresh_models(self):
         label=self.provider_var.get()
         key = self.api_key_var.get().strip() or core.env_api_key_for_provider(label)
@@ -9366,14 +9551,17 @@ Mod更新後だけ追加翻訳:
         provider = self.provider_var.get()
         url = self.url_var.get().strip()
         api_key = self.api_key_var.get().strip()
-        threading.Thread(target=self._fetch_models,args=(provider,url,api_key),daemon=True).start()
+        model = self.model_var.get().strip()
+        threading.Thread(target=self._fetch_models,args=(provider,url,api_key,model),daemon=True).start()
 
-    def _fetch_models(self, provider, url, api_key):
+    def _fetch_models(self, provider, url, api_key, model=""):
         try:
             models=core.list_models(provider,url,timeout=8,api_key=api_key)
+            if core.normalize_provider(provider) in {"ollama","lmstudio"} and not models:
+                raise RuntimeError("接続には成功しましたが、読み込み済みのモデルがありません")
             self.events.put(("models",models))
         except Exception as e:
-            self.events.put(("model_error",str(e)))
+            self.events.put(("model_error",{"provider":provider,"url":url,"model":model,"error":str(e)}))
 
     # ---------------- difference inspector / search ----------------
     def load_diff_inspector(self):
@@ -9513,7 +9701,7 @@ Mod更新後だけ追加翻訳:
         except Exception as e:
             record_error("差分訳保存", e); messagebox.showerror(APP_NAME, str(e))
 
-    def translate_diff_items(self, all_missing=False):
+    def translate_diff_items(self, all_missing=False, _llm_ready=False):
         if self._closing:
             return
         if self.diff_controller is not None:
@@ -9522,6 +9710,9 @@ Mod更新後だけ追加翻訳:
         if not self.diff_rows and not self.diff_batch_contexts:
             self.load_diff_inspector()
             if not self.diff_rows: return
+        if not _llm_ready:
+            self._begin_llm_preflight("差分翻訳",lambda:self.translate_diff_items(all_missing,_llm_ready=True))
+            return
         tasks=[]
         if len(self.diff_batch_contexts)>1:
             if all_missing:
@@ -10740,6 +10931,13 @@ Mod更新後だけ追加翻訳:
             self.llm_busy_count=len(self.llm_active_ids)
             if self.llm_busy_count==0:
                 self._set_llm_idle("LLM 待機中", "直前のLLM処理が終了しました")
+            error=str(payload.get("error") or "")
+            if payload.get("success") is False and _is_llm_connection_alert_error(error):
+                self._show_llm_connection_alert(self.provider_var.get(),self.url_var.get().strip(),
+                                                self.model_var.get().strip(),error,
+                                                context=self.llm_operation or "LLM処理",cancel_command=self.stop_current_llm)
+            elif payload.get("success") is True:
+                self._llm_connection_alert_key=""
 
     def _update_llm_elapsed(self):
         if self.llm_busy_count<=0 or self.llm_busy_since is None: return
@@ -10891,12 +11089,25 @@ Mod更新後だけ追加翻訳:
                             if model in previous:
                                 self.benchmark_model_list.selection_set(i)
                     self.connection_var.set(f"{self.provider_var.get()} 接続済み / {len(payload)}モデル")
+                    if self._llm_preflight_request is None:
+                        self._llm_connection_alert_key=""
+                        self._close_llm_connection_alert(reset_key=True)
                 elif kind=="model_error":
-                    p=self.provider_var.get()
+                    failure=payload if isinstance(payload,dict) else {"error":str(payload)}
+                    p=failure.get("provider") or self.provider_var.get()
+                    failure_url=failure.get("url") or self.url_var.get().strip()
+                    failure_model=failure.get("model") or self.model_var.get().strip()
+                    failure_error=str(failure.get("error") or "")
                     if p=="Ollama": self.connection_var.set("Ollamaが起動していません（接続できません）")
                     elif p=="LM Studio": self.connection_var.set("LM Studio Local Serverに接続できません")
                     elif p in {"OpenAI","Anthropic","Gemini"}: self.connection_var.set(f"{p} APIに接続できません。APIキー・モデル・利用権限を確認してください")
                     else: self.connection_var.set("OpenAI互換APIに接続できません。URL/APIキーを確認してください")
+                    if self._llm_preflight_request is None:
+                        self._show_llm_connection_alert(p,failure_url,failure_model,failure_error,context="LLM接続確認")
+                elif kind=="llm_preflight_done":
+                    self._apply_llm_preflight_done(payload)
+                elif kind=="llm_preflight_error":
+                    self._apply_llm_preflight_error(payload)
                 elif kind=="monitor_models":
                     for combo_name in ("monitor_model_combo", "status_monitor_model_combo"):
                         combo=getattr(self,combo_name,None)
