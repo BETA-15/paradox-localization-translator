@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
-TRANSLATION_RELATION_ALGORITHM_VERSION = 2
+TRANSLATION_RELATION_ALGORITHM_VERSION = 3
 LARGE_RELATION_MIN_EFFECTIVE_KEYS = 200
 
 DEFAULT_MODEL = "qwen3.6:latest"
@@ -4295,6 +4295,123 @@ PARADOX_STEAM_GAMES = {
     "Stellaris": {"appid": "281990", "docs": ["Stellaris"]},
     "Europa Universalis V": {"appid": "3450310", "docs": ["Europa Universalis V"]},
 }
+
+
+def enabled_mod_load_order(mod_root: Path, game_documents_dir: Optional[Path] = None) -> List[dict]:
+    """Return enabled Mods in launcher order for the game owning ``mod_root``.
+
+    Descriptor contents are treated only as data. Missing or malformed launcher
+    files produce an empty list so overwrite checks never make normal translation
+    unavailable.
+    """
+    mod_root = Path(mod_root)
+    game_dir = Path(game_documents_dir) if game_documents_dir else None
+    if game_dir is None:
+        normalized = str(mod_root).replace("\\", "/")
+        game = next((cfg for cfg in PARADOX_STEAM_GAMES.values()
+                     if f"/workshop/content/{cfg['appid']}/" in normalized), None)
+        if not game:
+            return []
+        candidates = [
+            Path.home() / "Documents" / "Paradox Interactive" / docs_name
+            for docs_name in game.get("docs", [])
+        ]
+        game_dir = next((p for p in candidates if (p / "dlc_load.json").is_file()), None)
+    if not game_dir:
+        return []
+    load_file = Path(game_dir) / "dlc_load.json"
+    try:
+        enabled = json.loads(load_file.read_text(encoding="utf-8-sig")).get("enabled_mods", [])
+    except Exception:
+        return []
+    rows = []
+    for position, raw_descriptor in enumerate(enabled):
+        descriptor = Path(game_dir) / str(raw_descriptor)
+        try:
+            text = descriptor.read_text(encoding="utf-8-sig", errors="replace")
+        except OSError:
+            continue
+        match = re.search(r'(?im)^\s*path\s*=\s*["\']([^"\']+)["\']', text)
+        if not match:
+            continue
+        root = Path(match.group(1)).expanduser()
+        if not root.is_absolute():
+            root = (Path(game_dir) / root).resolve()
+        if not root.is_dir():
+            continue
+        rows.append({
+            "position": position,
+            "path": str(root),
+            "mod": detect_mod_name(root),
+            "descriptor": str(descriptor),
+        })
+    return rows
+
+
+def find_later_localization_path_conflicts(mod_root: Path, relative_paths: Iterable[Path],
+                                           game_documents_dir: Optional[Path] = None) -> List[dict]:
+    """Find enabled later Mods that mask the same localization virtual paths."""
+    mod_root = Path(mod_root)
+    try:
+        source_id = str(mod_root.expanduser().resolve())
+    except Exception:
+        source_id = str(mod_root)
+    order = enabled_mod_load_order(mod_root, game_documents_dir=game_documents_dir)
+    source_row = next((row for row in order if str(Path(row["path"]).resolve()) == source_id), None)
+    if not source_row:
+        return []
+    safe_paths = []
+    for raw in relative_paths or []:
+        rel = Path(raw)
+        if rel.is_absolute() or ".." in rel.parts:
+            continue
+        if rel not in safe_paths:
+            safe_paths.append(rel)
+    try:
+        source_data = _collect_mod_language_entries(mod_root)
+        source_keys = set(source_data.get("source") or {})
+    except Exception:
+        source_keys = set()
+    conflicts = []
+    for row in order:
+        if int(row["position"]) <= int(source_row["position"]):
+            continue
+        candidate_root = Path(row["path"])
+        loc = mod_localization_root(candidate_root)
+        if not loc:
+            continue
+        matched = [rel for rel in safe_paths if (loc / rel).is_file()]
+        if not matched:
+            continue
+        candidate_keys = set()
+        for rel in matched:
+            try:
+                _lang, entries, _lines = parse_localization_file(loc / rel)
+                candidate_keys.update(entries)
+            except Exception:
+                continue
+        overlap = source_keys & candidate_keys
+        profile = translation_localization_format_profile(candidate_root, english_entries={})
+        conflicts.append({
+            **row,
+            "localization": str(loc),
+            "relative_paths": [str(path) for path in matched],
+            "path_match_count": len(matched),
+            "source_position": int(source_row["position"]),
+            "translation_hint": bool(profile.get("translation_hint")),
+            "descriptor_tags": list(profile.get("descriptor_tags") or []),
+            "source_keys": len(source_keys),
+            "candidate_keys": len(candidate_keys),
+            "shared_keys": len(overlap),
+            "source_only_keys": len(source_keys - candidate_keys),
+            "candidate_only_keys": len(candidate_keys - source_keys),
+            "stale_translation_candidate": bool(profile.get("translation_hint") and overlap),
+        })
+    if conflicts:
+        effective_position = max(int(row["position"]) for row in conflicts)
+        for row in conflicts:
+            row["effective"] = int(row["position"]) == effective_position
+    return conflicts
 
 
 def _windows_drive_roots() -> List[Path]:
