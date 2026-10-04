@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.11.76
+
+- PCにシステムプロキシ（OS設定、VPN・プロキシツール、`HTTP_PROXY`など）があると、Ollama/LM Studioが起動していてもモデル一覧が空になり「起動していません」と表示される問題を修正。localhost・127.0.0.1・LAN内アドレス宛てはプロキシを経由せず直接接続し、クラウドAPIは従来どおりプロキシ設定に従う。
+- API URLの入力ゆれを補正。スキームのないURLへ`http://`を補い、OllamaのURLが`/v1`や`/api`で終わる場合はサーバーのルートへ直す。
+- GitHub ActionsでpytestをCI実行するワークフローを追加し、古くなっていたテスト2件を修正。
+- macOS版にアプリアイコン（`build/AppIcon.icns`）を追加。
+
 ## v0.11.75
 
 - 元Modへの上書き前に、現在のプレイセットで後順位Modが同じlocalization相対パスを持つか確認する機能を追加。

@@ -13,6 +13,7 @@ rm -rf pyinstaller-build dist
 "$PYTHON_BIN" -m PyInstaller \
   --noconfirm --clean --windowed --onedir \
   --name "Paradox Localization Translator" \
+  --icon "$PWD/build/AppIcon.icns" \
   --additional-hooks-dir=. \
   --paths app \
   --collect-all tkinterdnd2 \
