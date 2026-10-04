@@ -246,6 +246,16 @@ def test_connected_local_server_without_loaded_model_uses_configuration_warning(
     assert "モデル名と接続先" in info["message"]
 
 
+def test_thinking_only_model_shows_unusable_model_warning():
+    warning=main.core.thinking_only_model_warning("LM Studio","http://localhost:1234/v1","deepseek/deepseek-r1-0528-qwen3-8b")
+    info=main._llm_connection_alert_content("LM Studio","http://localhost:1234/v1","deepseek/deepseek-r1-0528-qwen3-8b",warning)
+
+    assert info["category"] == "thinking_model"
+    assert info["title"] == "このモデルは使用できません"
+    assert "instruct版" in info["message"]
+    assert "起動していない" not in info["message"]
+
+
 def test_only_connection_class_errors_trigger_runtime_connection_popup():
     assert main._is_llm_connection_alert_error("Connection refused") is True
     assert main._is_llm_connection_alert_error("HTTP Error 401: Unauthorized") is True

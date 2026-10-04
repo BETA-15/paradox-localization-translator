@@ -127,3 +127,11 @@ def test_ollama_disables_thinking_and_explains_thinking_only_models():
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_thinking_only_warning_by_model_name_for_openai_compatible_servers():
+    assert core.thinking_only_model_warning("LM Studio", "http://localhost:1234/v1", "deepseek/deepseek-r1-0528-qwen3-8b")
+    assert core.thinking_only_model_warning("LM Studio", "http://localhost:1234/v1", "qwen3-4b-thinking-2507")
+    assert core.thinking_only_model_warning("LM Studio", "http://localhost:1234/v1", "qwen/qwen3.8-27b") == ""
+    assert core.thinking_only_model_warning("LM Studio", "http://localhost:1234/v1", "google/gemma-4-31b") == ""
+    assert core.thinking_only_model_warning("OpenAI", "", "o1-thinking") == ""

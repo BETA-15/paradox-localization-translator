@@ -111,6 +111,11 @@ def _llm_connection_alert_content(provider, url, model="", error=""):
                       "network is unreachable","name or service not known","nodename nor servname",
                       "remote end closed","connection reset","urlopen error")
     transport_failure=any(token in low for token in transport_tokens)
+    if core.THINKING_ONLY_MARKER in detail:
+        lines=[detail,"",f"プロバイダ: {display}",f"接続先: {endpoint}"]
+        if model: lines.append(f"モデル: {model}")
+        return {"title":"このモデルは使用できません","heading":"推論（Thinking）モデルは使用できません",
+                "message":"\n".join(lines),"category":"thinking_model","provider":display,"endpoint":endpoint}
     if normalized in {"ollama","lmstudio"} and transport_failure:
         service="LM Studio" if normalized=="lmstudio" else "Ollama"
         server_note=("Local Serverが開始されていない" if normalized=="lmstudio"
@@ -9666,6 +9671,9 @@ Mod更新後だけ追加翻訳:
                 models=core.list_models(provider,url,timeout=8,api_key=api_key)
                 if core.normalize_provider(provider) in {"ollama","lmstudio"} and not models:
                     raise RuntimeError("接続には成功しましたが、読み込み済みのモデルがありません")
+                warning=core.thinking_only_model_warning(provider,url,model)
+                if warning:
+                    raise RuntimeError(warning)
                 self.events.put(("llm_preflight_done",{"token":token,"models":models}))
             except Exception as exc:
                 self.events.put(("llm_preflight_error",{"token":token,"error":str(exc)}))
