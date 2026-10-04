@@ -91,3 +91,39 @@ def test_remote_hosts_keep_using_configured_proxy():
     assert core._is_local_llm_host("192.168.1.20") is True
     assert core._is_local_llm_host("api.openai.com") is False
     assert core._is_local_llm_host("8.8.8.8") is False
+
+
+def test_reasoning_is_stripped_from_thinking_model_output():
+    assert core.strip_reasoning("<think>考え中</think>\n1|||訳") == "\n1|||訳"
+    # Qwen3-Thinking系はテンプレートが<think>を書くため、本文には閉じタグだけが残る。
+    assert core.strip_reasoning("Okay, let me think...\n</think>\n\n1|||訳") == "\n\n1|||訳"
+    # 思考の途中で打ち切られた応答は空として扱い、再試行させる。
+    assert core.strip_reasoning("<think>Okay, so I need") == ""
+    assert core.strip_reasoning("1|||訳") == "1|||訳"
+
+
+class _FakeThinkingOllama(_FakeLocalLLM):
+    def do_POST(self):
+        self.server.paths.append(self.path)
+        body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+        self.server.bodies.append(body)
+        if self.path == "/api/show":
+            self._send({"model_info": {"general.finetune": "Thinking"}})
+        elif self.path == "/api/chat":
+            self._send({"message": {"content": "Okay, so I need to translate"}})
+
+
+def test_ollama_disables_thinking_and_explains_thinking_only_models():
+    server = HTTPServer(("127.0.0.1", 0), _FakeThinkingOllama)
+    server.paths, server.bodies = [], []
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = server.server_address[1]
+        with pytest.raises(RuntimeError, match="Thinking専用モデル"):
+            core.call_llm_raw("Ollama", f"http://localhost:{port}", "qwen3:4b", "1|||text", "sys", retries=1)
+        chat = [b for p, b in zip(server.paths, server.bodies) if p == "/api/chat"]
+        assert chat and chat[0]["think"] is False
+    finally:
+        server.shutdown()
+        server.server_close()

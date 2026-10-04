@@ -578,6 +578,46 @@ def _metric(provider: str, model: str, elapsed: float, success: bool,
     }
 
 
+_THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.S | re.I)
+
+
+def strip_reasoning(text: str) -> str:
+    """推論モデルが本文に混ぜた思考過程（<think>…</think>）を取り除く。
+
+    Qwen3-Thinking系はテンプレートが<think>を先に書くため、本文には閉じタグ
+    だけが現れることがある。その場合は最後の</think>より後を回答とみなす。
+    閉じられていない<think>は思考の途中で打ち切られたものなので空として扱う。
+    """
+    text = _THINK_BLOCK_RE.sub("", text or "")
+    lower = text.lower()
+    if "</think>" in lower:
+        text = text[lower.rfind("</think>") + len("</think>"):]
+    elif "<think>" in lower:
+        text = text[:lower.find("<think>")]
+    return text
+
+
+_THINKING_ONLY_CACHE: Dict[Tuple[str, str], bool] = {}
+
+
+def is_thinking_only_ollama_model(base: str, model: str, timeout: float = 5) -> bool:
+    """Ollamaのモデルが思考を止められないThinking専用版（例: qwen3:4b = Qwen3-4B-Thinking-2507）か。"""
+    key = (base, model)
+    if key not in _THINKING_ONLY_CACHE:
+        result = "thinking" in (model or "").lower()
+        if not result:
+            try:
+                req = urllib.request.Request(base + "/api/show", data=json.dumps({"model": model}).encode("utf-8"),
+                                             headers={"Content-Type": "application/json"})
+                with _urlopen(req, timeout=timeout) as r:
+                    info = json.loads(r.read().decode("utf-8")).get("model_info") or {}
+                result = "thinking" in str(info.get("general.finetune") or "").lower()
+            except Exception:
+                result = False
+        _THINKING_ONLY_CACHE[key] = result
+    return _THINKING_ONLY_CACHE[key]
+
+
 def call_llm_raw(provider: str, url: str, model: str, user_content: str, system_prompt: str,
                  timeout: int = 300, retries: int = 5,
                  controller: Optional[TranslationController] = None,
@@ -601,7 +641,8 @@ def call_llm_raw(provider: str, url: str, model: str, user_content: str, system_
                     "model": model,
                     "messages": [{"role": "system", "content": system_prompt},
                                  {"role": "user", "content": user_content}],
-                    "stream": False, "options": {"temperature": temperature},
+                    # 思考を切り替えられるモデル（qwen3:8bなど）は思考を止めて訳だけを返させる。
+                    "stream": False, "think": False, "options": {"temperature": temperature},
                 }
             elif p in {"lmstudio", "openai_compat"}:
                 if p == "lmstudio" and not base.endswith('/v1'):
@@ -668,7 +709,12 @@ def call_llm_raw(provider: str, url: str, model: str, user_content: str, system_
                 content = "".join(x.get("text", "") for x in parts if x.get("text"))
                 usage = body.get("usageMetadata") or {}
                 completion_tokens = int(usage.get("candidatesTokenCount") or 0)
-            content = (content or "").strip().strip('`').strip()
+            if (p == "ollama" and "</think>" not in (content or "").lower()
+                    and is_thinking_only_ollama_model(base, model)):
+                # Thinking専用モデルの本文に</think>が無いのは、思考の途中で終わった応答。
+                # 思考中の「1|||…」のような行を訳として取り込まないよう空として扱う。
+                content = ""
+            content = strip_reasoning(content).strip().strip('`').strip()
             if not content:
                 raise RuntimeError("LLMから空の応答が返されました")
             if controller:
@@ -683,8 +729,13 @@ def call_llm_raw(provider: str, url: str, model: str, user_content: str, system_
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError,
                 json.JSONDecodeError, ConnectionError, OSError, RuntimeError, KeyError, IndexError) as e:
             last_err = e
+            if p == "ollama" and is_thinking_only_ollama_model(base, model):
+                last_err = RuntimeError(
+                    f"{e}（{model} は思考を止められないThinking専用モデルです。"
+                    "1回の翻訳で長く考え込み、時間切れや空の応答になりやすいため、"
+                    "qwen3:4b-instruct-2507 などのinstruct版を選んでください）")
             if controller:
-                controller.notify(kind="llm_activity", state="retry" if attempt + 1 < retries else "end", activity_id=activity_id, provider=provider_display_name(provider), model=model, success=False, error=str(e), attempt=attempt + 1, retries=retries)
+                controller.notify(kind="llm_activity", state="retry" if attempt + 1 < retries else "end", activity_id=activity_id, provider=provider_display_name(provider), model=model, success=False, error=str(last_err), attempt=attempt + 1, retries=retries)
             if attempt + 1 < retries:
                 for _ in range(min(5 * (attempt + 1), 30) * 5):
                     if controller and controller.stop_event.is_set():
