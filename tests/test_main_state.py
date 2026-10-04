@@ -15,8 +15,8 @@ main = importlib.import_module("main")
 
 
 def test_relation_algorithm_change_invalidates_old_status_cache_generation():
-    assert main.MOD_STATUS_CACHE_VERSION == 15
-    assert main.core.TRANSLATION_RELATION_ALGORITHM_VERSION == 2
+    assert main.MOD_STATUS_CACHE_VERSION == 16
+    assert main.core.TRANSLATION_RELATION_ALGORITHM_VERSION == 3
     assert main._translation_status_snapshot_is_current({"schema": 1}) is False
     assert main._translation_status_snapshot_is_current({
         "schema": 2,
@@ -25,8 +25,8 @@ def test_relation_algorithm_change_invalidates_old_status_cache_generation():
     }) is False
     assert main._translation_status_snapshot_is_current({
         "schema": 2,
-        "mod_status_cache_version": 15,
-        "relation_algorithm_version": 2,
+        "mod_status_cache_version": 16,
+        "relation_algorithm_version": 3,
     }) is True
 
 
@@ -329,8 +329,8 @@ def test_full_stale_translation_overwrite_replaces_masking_file_and_invalidates_
         state,item,conflict,confirm=False,notify=False)
 
     assert ok is True and "後順位日本語化Mod更新" in reason
-    assert core.parse_localization_file(masking)[1]["shared"]=="新訳"
-    assert core.parse_localization_file(masking)[1]["new_key"]=="新規"
+    assert main.core.parse_localization_file(masking)[1]["shared"]=="新訳"
+    assert main.core.parse_localization_file(masking)[1]["new_key"]=="新規"
     assert invalidated==[translation]
 
 
