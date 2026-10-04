@@ -26,6 +26,7 @@ import threading
 import time
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -480,13 +481,55 @@ def _headers_for_provider(provider: str, api_key: str = "") -> dict:
     return headers
 
 
+def _is_local_llm_host(host: str) -> bool:
+    """localhost・ループバック・LAN内のアドレスならTrue。"""
+    import ipaddress
+    h = (host or "").strip().strip("[]").lower()
+    if h in {"localhost", "0.0.0.0"} or h.endswith(".localhost") or h.endswith(".local"):
+        return True
+    try:
+        ip = ipaddress.ip_address(h)
+    except ValueError:
+        return False
+    return ip.is_loopback or ip.is_private or ip.is_link_local or ip.is_unspecified
+
+
+_NO_PROXY_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def _urlopen(req: urllib.request.Request, timeout: float):
+    """ローカル/LAN内のLLMサーバーへはシステムや環境変数のプロキシを経由しない。
+
+    Windows/macOSのシステムプロキシやHTTP_PROXYが設定されていると、urllibは
+    localhost宛てでもプロキシへ送るため、起動中のOllama/LM Studioへ接続できなくなる。
+    """
+    host = urllib.parse.urlsplit(req.full_url).hostname or ""
+    if _is_local_llm_host(host):
+        return _NO_PROXY_OPENER.open(req, timeout=timeout)
+    return urllib.request.urlopen(req, timeout=timeout)
+
+
+def _base_url_for_provider(provider: str, url: str) -> str:
+    """入力されたAPI URLを正規化する（スキーム補完、末尾の/除去、Ollamaの/v1除去）。"""
+    base = (url or "").strip() or default_url_for_provider(provider)
+    if "://" not in base:
+        base = "http://" + base
+    base = base.rstrip('/')
+    if normalize_provider(provider) == "ollama":
+        for suffix in ("/v1", "/api"):
+            if base.endswith(suffix):
+                base = base[: -len(suffix)]
+                break
+    return base
+
+
 def list_models(provider: str, url: str, timeout: int = 5, api_key: str = "") -> List[str]:
     p = normalize_provider(provider)
-    base = (url or default_url_for_provider(provider)).rstrip('/')
+    base = _base_url_for_provider(provider, url)
     if p == "ollama":
         endpoint = base + "/api/tags"
         req = urllib.request.Request(endpoint)
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with _urlopen(req, timeout=timeout) as r:
             data = json.loads(r.read().decode("utf-8"))
         return [m.get("name") for m in data.get("models", []) if m.get("name")]
     if p in {"lmstudio", "openai", "openai_compat"}:
@@ -494,19 +537,19 @@ def list_models(provider: str, url: str, timeout: int = 5, api_key: str = "") ->
             base += '/v1'
         endpoint = base + "/models"
         req = urllib.request.Request(endpoint, headers=_headers_for_provider(provider, api_key))
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with _urlopen(req, timeout=timeout) as r:
             data = json.loads(r.read().decode("utf-8"))
         return [m.get("id") for m in data.get("data", []) if m.get("id")]
     if p == "anthropic":
         endpoint = base + "/models"
         req = urllib.request.Request(endpoint, headers=_headers_for_provider(provider, api_key))
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with _urlopen(req, timeout=timeout) as r:
             data = json.loads(r.read().decode("utf-8"))
         return [m.get("id") for m in data.get("data", []) if m.get("id")]
     if p == "gemini":
         endpoint = base + "/models"
         req = urllib.request.Request(endpoint, headers=_headers_for_provider(provider, api_key))
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with _urlopen(req, timeout=timeout) as r:
             data = json.loads(r.read().decode("utf-8"))
         out = []
         for m in data.get("models", []):
@@ -541,7 +584,7 @@ def call_llm_raw(provider: str, url: str, model: str, user_content: str, system_
                  temperature: float = 0.2, api_key: str = "") -> str:
     """Call local or cloud LLM APIs and emit per-request performance metrics."""
     p = normalize_provider(provider)
-    base = (url or default_url_for_provider(provider)).rstrip('/')
+    base = _base_url_for_provider(provider, url)
     last_err = None
     overall_start = time.perf_counter()
     activity_id = f"{threading.get_ident()}-{time.time_ns()}"
@@ -591,7 +634,7 @@ def call_llm_raw(provider: str, url: str, model: str, user_content: str, system_
             else:
                 raise RuntimeError(f"未対応のプロバイダです: {provider}")
             req = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers)
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with _urlopen(req, timeout=timeout) as resp:
                 body = json.loads(resp.read().decode("utf-8"))
             elapsed = max(time.perf_counter() - started, 1e-6)
             completion_tokens = 0
