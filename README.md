@@ -26,6 +26,12 @@ Paradox Interactive系ゲームのModローカライズを、**ローカルLLM�
 
 ---
 
+## v0.11.76 の改善
+
+- PCにプロキシ設定やVPNがあっても、Ollama・LM Studioのモデル一覧が表示されるようになりました。ローカル・LAN内のLLMへはプロキシを通さず直接つなぎます。
+- `localhost:11434` のように`http://`を省いたURLや、Ollamaの`/v1`・`/api`付きURLもそのまま使えます。
+- macOS版にアプリアイコンが付きました。
+
 ## v0.11.75 の改善
 
 - 元Modへ日本語ファイルを書き込む前に、後順位Modの同一localizationパスによって隠されないか確認します。
