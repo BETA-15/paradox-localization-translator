@@ -597,25 +597,30 @@ def strip_reasoning(text: str) -> str:
     return text
 
 
-_THINKING_ONLY_CACHE: Dict[Tuple[str, str], bool] = {}
+_OLLAMA_SHOW_CACHE: Dict[Tuple[str, str], dict] = {}
+
+
+def _ollama_show(base: str, model: str, timeout: float = 5) -> dict:
+    """Ollamaの /api/show の結果（取得できなければ空の辞書）。モデルごとに1回だけ問い合わせる。"""
+    key = (base, model)
+    if key not in _OLLAMA_SHOW_CACHE:
+        try:
+            req = urllib.request.Request(base + "/api/show", data=json.dumps({"model": model}).encode("utf-8"),
+                                         headers={"Content-Type": "application/json"})
+            with _urlopen(req, timeout=timeout) as r:
+                data = json.loads(r.read().decode("utf-8"))
+            _OLLAMA_SHOW_CACHE[key] = data if isinstance(data, dict) else {}
+        except Exception:
+            _OLLAMA_SHOW_CACHE[key] = {}
+    return _OLLAMA_SHOW_CACHE[key]
 
 
 def is_thinking_only_ollama_model(base: str, model: str, timeout: float = 5) -> bool:
     """Ollamaのモデルが思考を止められないThinking専用版（例: qwen3:4b = Qwen3-4B-Thinking-2507）か。"""
-    key = (base, model)
-    if key not in _THINKING_ONLY_CACHE:
-        result = "thinking" in (model or "").lower()
-        if not result:
-            try:
-                req = urllib.request.Request(base + "/api/show", data=json.dumps({"model": model}).encode("utf-8"),
-                                             headers={"Content-Type": "application/json"})
-                with _urlopen(req, timeout=timeout) as r:
-                    info = json.loads(r.read().decode("utf-8")).get("model_info") or {}
-                result = "thinking" in str(info.get("general.finetune") or "").lower()
-            except Exception:
-                result = False
-        _THINKING_ONLY_CACHE[key] = result
-    return _THINKING_ONLY_CACHE[key]
+    if "thinking" in (model or "").lower():
+        return True
+    info = _ollama_show(base, model, timeout).get("model_info") or {}
+    return "thinking" in str(info.get("general.finetune") or "").lower()
 
 
 _THINKING_NAME_RE = re.compile(r"thinking|qwq|(^|[/:_-])r1([._:-]|$)", re.I)
@@ -637,6 +642,75 @@ def thinking_only_model_warning(provider: str, url: str, model: str) -> str:
     return (f"{model} は思考を止められない{THINKING_ONLY_MARKER}のため、翻訳には使用できません。"
             "1回の翻訳で長く考え込み、時間切れや空の応答になります。"
             "qwen3:4b-instruct-2507 などのinstruct版（思考なし）のモデルを選んでください。")
+
+
+_EMBEDDING_NAME_RE = re.compile(r"embed", re.I)
+
+EMBEDDING_ONLY_MARKER = "埋め込み専用モデル"
+
+
+def _lmstudio_model_type(base: str, model: str, timeout: float = 5) -> str:
+    """LM Studio 独自の /api/v0/models から種類（llm・vlm・embeddings）を得る。分からなければ空文字。"""
+    root = base[:-3] if base.endswith("/v1") else base
+    try:
+        req = urllib.request.Request(root + "/api/v0/models")
+        with _urlopen(req, timeout=timeout) as r:
+            data = json.loads(r.read().decode("utf-8"))
+    except Exception:
+        return ""
+    for row in data.get("data") or []:
+        if isinstance(row, dict) and row.get("id") == model:
+            return str(row.get("type") or "")
+    return ""
+
+
+def is_embedding_only_model(provider: str, url: str, model: str) -> bool:
+    """文章を生成できない埋め込み（embedding）専用モデルか。"""
+    p = normalize_provider(provider)
+    if _EMBEDDING_NAME_RE.search(model or ""):
+        return True
+    base = _base_url_for_provider(provider, url)
+    if p == "ollama":
+        capabilities = _ollama_show(base, model).get("capabilities") or []
+        return "embedding" in capabilities and "completion" not in capabilities
+    if p == "lmstudio":
+        return _lmstudio_model_type(base, model) == "embeddings"
+    return False
+
+
+def embedding_only_model_warning(provider: str, url: str, model: str) -> str:
+    """翻訳に使えない埋め込み専用モデルなら利用者向けの説明を返す。問題なければ空文字。"""
+    p = normalize_provider(provider)
+    if p not in {"ollama", "lmstudio", "openai_compat"} or not model:
+        return ""
+    if not is_embedding_only_model(provider, url, model):
+        return ""
+    return (f"{model} は文章を検索用の数値に変える{EMBEDDING_ONLY_MARKER}のため、翻訳には使用できません。"
+            "文章を書けないので、翻訳を始めても訳文が返りません。"
+            "qwen3:8b や gemma3 などの、文章を生成するモデルを選んでください。")
+
+
+def unusable_model_warning(provider: str, url: str, model: str) -> str:
+    """翻訳開始前に止めるべきモデル（埋め込み専用・Thinking専用）なら説明を返す。問題なければ空文字。"""
+    return (embedding_only_model_warning(provider, url, model)
+            or thinking_only_model_warning(provider, url, model))
+
+
+# Ollama は num_ctx を省くとサーバー側の既定値（例: 256K）でモデルを読み込み、メモリを大きく使う。
+# 値が依頼ごとに変わるとモデルの読み直しが起きるので、決まった段階の中から選ぶ。
+OLLAMA_NUM_CTX_STEPS = (8192, 16384, 32768)
+
+
+def ollama_num_ctx(system_prompt: str, user_content: str) -> int:
+    """1回の依頼に要る文脈長（入力＋同じくらいの出力＋余裕）を、段階の値に切り上げて返す。"""
+    # UTF-8 の3バイトを1トークンと見積もる（日本語・中国語はほぼ1文字1トークン、英語は多めに見積もられる）。
+    prompt_tokens = (len((system_prompt or "").encode("utf-8")) + len((user_content or "").encode("utf-8"))) // 3
+    output_tokens = len((user_content or "").encode("utf-8")) // 3
+    needed = prompt_tokens + output_tokens + 1024
+    for step in OLLAMA_NUM_CTX_STEPS:
+        if needed <= step:
+            return step
+    return OLLAMA_NUM_CTX_STEPS[-1]
 
 
 def call_llm_raw(provider: str, url: str, model: str, user_content: str, system_prompt: str,
@@ -663,7 +737,9 @@ def call_llm_raw(provider: str, url: str, model: str, user_content: str, system_
                     "messages": [{"role": "system", "content": system_prompt},
                                  {"role": "user", "content": user_content}],
                     # 思考を切り替えられるモデル（qwen3:8bなど）は思考を止めて訳だけを返させる。
-                    "stream": False, "think": False, "options": {"temperature": temperature},
+                    "stream": False, "think": False,
+                    "options": {"temperature": temperature,
+                                "num_ctx": ollama_num_ctx(system_prompt, user_content)},
                 }
             elif p in {"lmstudio", "openai_compat"}:
                 if p == "lmstudio" and not base.endswith('/v1'):
@@ -750,7 +826,7 @@ def call_llm_raw(provider: str, url: str, model: str, user_content: str, system_
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError,
                 json.JSONDecodeError, ConnectionError, OSError, RuntimeError, KeyError, IndexError) as e:
             last_err = e
-            warning = thinking_only_model_warning(provider, url, model)
+            warning = unusable_model_warning(provider, url, model)
             if warning:
                 last_err = RuntimeError(f"{e}（{warning}）")
             if controller:
