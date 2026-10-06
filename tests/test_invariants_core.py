@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
 
 import translator_core as core
 
@@ -39,11 +38,13 @@ def test_restore_rescues_placeholder_with_broken_suffix():
     assert core.restore_text("こんにちは @@0", tokens) == "こんにちは $NAME$"
 
 
-@pytest.mark.xfail(strict=True, reason="既知の不具合: 救済用の正規表現 @@(\\d+)\\D{0,2} が後ろの訳文を最大2文字食べる")
 def test_restore_rescue_keeps_following_text():
-    """INV-03（既知の不具合）: 崩れたプレースホルダの直後の訳文を消さない。"""
+    """INV-03: 崩れたプレースホルダの直後の訳文を消さない（v0.11.78 で修正）。"""
     _, tokens = core.protect_text("Hello $NAME$")
     assert core.restore_text("こんにちは @@0 さん", tokens) == "こんにちは $NAME$ さん"
+    assert core.restore_text("こんにちは @@0さん", tokens) == "こんにちは $NAME$さん"
+    assert core.restore_text("こんにちは @@0@ さん", tokens) == "こんにちは $NAME$ さん"
+    assert core.restore_text("こんにちは @@0@さん", tokens) == "こんにちは $NAME$さん"
 
 
 def test_unknown_placeholder_index_is_left_visible_for_qa():
