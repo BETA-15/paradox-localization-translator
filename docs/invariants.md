@@ -13,8 +13,9 @@ README.md と CHANGELOG.md に書かれた約束ごと（利用者に約束し�
 |---|---|---|---|---|
 | 追加前 | 57 | 28 | 2 | 27 |
 | 追加後 | 57 | 50 | 1 | 6 |
+| v0.11.78 | 57 | 51 | 0 | 6 |
 
-「テストなし」（なし＋一部）は 29 件（51%）から 7 件（12%）になりました。
+「テストなし」（なし＋一部）は 29 件（51%）から 7 件（12%）になりました。v0.11.78 で INV-03 の不具合を直し、6 件（11%）です。
 
 ## 翻訳と構文の保護
 
@@ -22,7 +23,7 @@ README.md と CHANGELOG.md に書かれた約束ごと（利用者に約束し�
 |---|---|---|---|---|
 | INV-01 | 翻訳中はゲーム構文をプレースホルダに置き換えて保護し、あとで元に戻す（README「Paradoxゲーム構文を保護」） | `test_translator_core.py::test_placeholder_round_trip` | あり | あり |
 | INV-02 | README に挙げた構文（`[...]`、`$...$`、`£...£`、`@...!`、`§Y…§!`、`#tooltip;…#!`、`\n`）をすべて保護する（同上） | `test_invariants_core.py::test_all_documented_syntax_forms_are_protected_and_restored` | なし | あり |
-| INV-03 | LLM が記号を多少崩しても復元する救済処理がある（同上） | `test_restore_rescues_placeholder_with_broken_suffix`、`test_unknown_placeholder_index_is_left_visible_for_qa`、`test_restore_rescue_keeps_following_text`（xfail） | なし | 一部（下の「見つかった不具合」） |
+| INV-03 | LLM が記号を多少崩しても復元する救済処理がある（同上） | `test_restore_rescues_placeholder_with_broken_suffix`、`test_unknown_placeholder_index_is_left_visible_for_qa`、`test_restore_rescue_keeps_following_text` | なし | あり（v0.11.78 で修正。下の「見つかった不具合」） |
 | INV-04 | 訳文中の `"` はエスケープして YAML を壊さない | `test_written_values_escape_quotes_without_double_escaping` | なし | あり |
 | INV-05 | 日本語 YAML に残った英語を未翻訳として検出する（README「未翻訳箇所の自動修復」） | `test_english_left_in_japanese_output_is_untranslated` | 一部 | あり |
 | INV-06 | 「翻訳成功」として誤ってキャッシュされた英語原文を不良キャッシュとして再翻訳する（同上） | `test_cached_english_source_is_rejected_as_bad_cache` | なし | あり |
@@ -115,4 +116,4 @@ README.md と CHANGELOG.md に書かれた約束ごと（利用者に約束し�
 
 ## 見つかった不具合
 
-- **INV-03：崩れたプレースホルダの救済で、直後の訳文が最大2文字消える。** 救済用の正規表現 `PLACEHOLDER_FALLBACK_RE`（`@@(\d+)\D{0,2}`、`app/translator_core.py`）は、崩れた閉じ記号だけでなく後ろの普通の文字まで飲み込みます。例：`こんにちは @@0 さん` → `こんにちは $NAME$ん`（「 さ」が消える）。`test_restore_rescue_keeps_following_text` を `xfail(strict=True)` で置いてあり、直すとこのテストが XPASS で失敗するので、そのとき xfail を外してください。直すかどうかは計画部門・著者の判断です（このブランチではコードを変えていません）。
+- **INV-03：崩れたプレースホルダの救済で、直後の訳文が最大2文字消えていた（v0.11.78 で修正）。** 救済用の正規表現 `PLACEHOLDER_FALLBACK_RE` が `@@(\d+)\D{0,2}` で、崩れた閉じ記号だけでなく後ろの普通の文字まで飲み込んでいました（例：`こんにちは @@0 さん` → `こんにちは $NAME$ん`）。`@@(\d+)@?` に直し、消すのは閉じ記号の残りの `@` だけにしました。`test_restore_rescue_keeps_following_text` が `@@0`・`@@0@` と空白の有無の4つの形を確かめます。

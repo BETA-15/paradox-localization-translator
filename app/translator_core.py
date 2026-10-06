@@ -80,7 +80,8 @@ PROTECT_RE = re.compile('(' + '|'.join(PROTECT_PATTERNS) + ')')
 PLACEHOLDER_PREFIX = "@@"
 PLACEHOLDER_SUFFIX = "@@"
 PLACEHOLDER_RE = re.compile(re.escape(PLACEHOLDER_PREFIX) + r'(\d+)' + re.escape(PLACEHOLDER_SUFFIX))
-PLACEHOLDER_FALLBACK_RE = re.compile(re.escape(PLACEHOLDER_PREFIX) + r'(\d+)\D{0,2}')
+# 閉じ記号が崩れたプレースホルダ（@@0@・@@0）。消してよいのは閉じ記号の残りの @ だけで、後ろの訳文は残す。
+PLACEHOLDER_FALLBACK_RE = re.compile(re.escape(PLACEHOLDER_PREFIX) + r'(\d+)@?')
 
 GAME_PRESETS = {
     "General": "Paradox Interactiveゲーム全般。簡潔で自然なUI日本語を優先する。",
