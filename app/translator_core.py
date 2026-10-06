@@ -618,6 +618,27 @@ def is_thinking_only_ollama_model(base: str, model: str, timeout: float = 5) -> 
     return _THINKING_ONLY_CACHE[key]
 
 
+_THINKING_NAME_RE = re.compile(r"thinking|qwq|(^|[/:_-])r1([._:-]|$)", re.I)
+
+THINKING_ONLY_MARKER = "Thinking専用モデル"
+
+
+def thinking_only_model_warning(provider: str, url: str, model: str) -> str:
+    """翻訳に使えない（思考を止められない）推論モデルなら利用者向けの説明を返す。問題なければ空文字。"""
+    p = normalize_provider(provider)
+    if p not in {"ollama", "lmstudio", "openai_compat"} or not model:
+        return ""
+    if p == "ollama":
+        thinking = is_thinking_only_ollama_model(_base_url_for_provider(provider, url), model)
+    else:
+        thinking = bool(_THINKING_NAME_RE.search(model))
+    if not thinking:
+        return ""
+    return (f"{model} は思考を止められない{THINKING_ONLY_MARKER}のため、翻訳には使用できません。"
+            "1回の翻訳で長く考え込み、時間切れや空の応答になります。"
+            "qwen3:4b-instruct-2507 などのinstruct版（思考なし）のモデルを選んでください。")
+
+
 def call_llm_raw(provider: str, url: str, model: str, user_content: str, system_prompt: str,
                  timeout: int = 300, retries: int = 5,
                  controller: Optional[TranslationController] = None,
@@ -729,11 +750,9 @@ def call_llm_raw(provider: str, url: str, model: str, user_content: str, system_
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError,
                 json.JSONDecodeError, ConnectionError, OSError, RuntimeError, KeyError, IndexError) as e:
             last_err = e
-            if p == "ollama" and is_thinking_only_ollama_model(base, model):
-                last_err = RuntimeError(
-                    f"{e}（{model} は思考を止められないThinking専用モデルです。"
-                    "1回の翻訳で長く考え込み、時間切れや空の応答になりやすいため、"
-                    "qwen3:4b-instruct-2507 などのinstruct版を選んでください）")
+            warning = thinking_only_model_warning(provider, url, model)
+            if warning:
+                last_err = RuntimeError(f"{e}（{warning}）")
             if controller:
                 controller.notify(kind="llm_activity", state="retry" if attempt + 1 < retries else "end", activity_id=activity_id, provider=provider_display_name(provider), model=model, success=False, error=str(last_err), attempt=attempt + 1, retries=retries)
             if attempt + 1 < retries:
