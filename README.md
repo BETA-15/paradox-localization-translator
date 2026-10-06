@@ -1128,7 +1128,10 @@ Windows SmartScreenが未署名アプリとして警告する場合がありま�
 
 app/
 ├── main.py
+├── app_state.py
 └── translator_core.py
+
+tests/
 
 build/
 ├── build_macos_standalone.sh
