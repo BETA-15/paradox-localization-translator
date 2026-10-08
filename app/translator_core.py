@@ -3000,6 +3000,45 @@ def detect_mod_name(mod_root: Path) -> str:
     return mod_root.name or str(mod_root)
 
 
+# CK3・Victoria 3・EU5 は "localization"、HOI4・Stellaris・EU4 は "localisation"。
+LOCALIZATION_DIR_NAMES = ("localization", "localisation")
+# localisation を使うゲーム（Steam の appid と書類フォルダ名）。
+_LOCALISATION_GAME_MARKERS = (
+    "/workshop/content/394360/", "/workshop/content/281990/", "/workshop/content/236850/",
+    "/hearts of iron iv/", "/stellaris/", "/europa universalis iv/",
+)
+
+
+def is_localization_dir_name(name: str) -> bool:
+    """localization / localisation のどちらの綴りでも True。"""
+    return str(name).lower() in LOCALIZATION_DIR_NAMES
+
+
+def _existing_localization_dir(mod_root: Path) -> Optional[Path]:
+    for name in LOCALIZATION_DIR_NAMES:
+        loc = mod_root / name
+        if loc.is_dir():
+            return loc
+    return None
+
+
+def localization_dir_path(mod_root: Path) -> Path:
+    """Mod の localization フォルダの場所を返す（まだ無ければ、作るべき場所）。
+
+    既にあればその綴りを使い、無ければ Mod の置き場所から判断したゲームの綴りにする。
+    """
+    mod_root = Path(mod_root)
+    if is_localization_dir_name(mod_root.name):
+        return mod_root
+    existing = _existing_localization_dir(mod_root)
+    if existing is not None:
+        return existing
+    normalized = (str(mod_root).replace("\\", "/").lower().rstrip("/")) + "/"
+    if any(marker in normalized for marker in _LOCALISATION_GAME_MARKERS):
+        return mod_root / "localisation"
+    return mod_root / "localization"
+
+
 def find_mod_roots(root: Path) -> List[Path]:
     """Find likely mod roots below *root* without crawling arbitrary deep trees.
 
@@ -3013,15 +3052,15 @@ def find_mod_roots(root: Path) -> List[Path]:
         return []
     if root.is_file():
         return []
-    if root.name.lower() == "localization":
+    if is_localization_dir_name(root.name):
         return [root.parent]
-    if (root / "localization").is_dir():
+    if _existing_localization_dir(root) is not None:
         return [root]
 
     found: List[Path] = []
     try:
         for child in sorted(p for p in root.iterdir() if p.is_dir()):
-            if (child / "localization").is_dir():
+            if _existing_localization_dir(child) is not None:
                 found.append(child)
     except OSError:
         pass
@@ -3031,7 +3070,8 @@ def find_mod_roots(root: Path) -> List[Path]:
     # Fallback for layouts such as <root>/<category>/<mod>/localization.
     seen = set()
     try:
-        for loc in root.glob("*/*/localization"):
+        locs = [loc for name in LOCALIZATION_DIR_NAMES for loc in root.glob(f"*/*/{name}")]
+        for loc in locs:
             if loc.is_dir():
                 mod = loc.parent
                 key = str(mod.resolve())
@@ -3044,12 +3084,9 @@ def find_mod_roots(root: Path) -> List[Path]:
 
 def mod_localization_root(mod_root: Path) -> Optional[Path]:
     mod_root = Path(mod_root)
-    if mod_root.name.lower() == "localization" and mod_root.is_dir():
+    if is_localization_dir_name(mod_root.name) and mod_root.is_dir():
         return mod_root
-    loc = mod_root / "localization"
-    if loc.is_dir():
-        return loc
-    return None
+    return _existing_localization_dir(mod_root)
 
 
 
@@ -3232,7 +3269,7 @@ def _mod_content_profile(mod_root: Path, japanese_files: int = 0,
         children = []
     for child in children:
         name = child.name.lower()
-        if name in {"localization", ".git", ".github", "__pycache__"}:
+        if name in {*LOCALIZATION_DIR_NAMES, ".git", ".github", "__pycache__"}:
             continue
         if child.is_file():
             if name in {"descriptor.mod", "thumbnail.png"} or name.endswith(".mod"):
@@ -3242,7 +3279,7 @@ def _mod_content_profile(mod_root: Path, japanese_files: int = 0,
         if not child.is_dir():
             continue
         # A nested independent Mod is a hard boundary for profiling.
-        if (child / "descriptor.mod").exists() and (child / "localization").exists():
+        if (child / "descriptor.mod").exists() and _existing_localization_dir(child) is not None:
             continue
         count = 0
         try:
@@ -3297,7 +3334,7 @@ def build_translation_mod_index(mod_roots: Iterable[Path]) -> List[dict]:
         other_language_files = sum(int(v or 0) for k, v in language_files.items()
                                    if k not in {"japanese", "english", "simp_chinese"})
         language_keys = {lang: set(entries or {}) for lang, entries in (data.get("languages") or {}).items()}
-        loc_root = Path(data.get("localization") or root / "localization")
+        loc_root = Path(data.get("localization") or localization_dir_path(root))
         localization_folder_names = []
         seen_folder_names = set()
         for raw_file in data.get("japanese_files") or []:
@@ -3308,7 +3345,7 @@ def build_translation_mod_index(mod_roots: Iterable[Path]) -> List[dict]:
                 parts = list(Path(raw_file).parent.parts)
             for part in parts:
                 low = part.lower()
-                if low in {"localization", "japanese", "ja"}:
+                if low in {*LOCALIZATION_DIR_NAMES, "japanese", "ja"}:
                     continue
                 if part and low not in seen_folder_names:
                     seen_folder_names.add(low)
@@ -4711,7 +4748,7 @@ def _count_mod_roots_fast(parent: Path) -> int:
         for child in parent.iterdir():
             if not child.is_dir():
                 continue
-            if (child / "localization").is_dir() or (child / "descriptor.mod").exists():
+            if _existing_localization_dir(child) is not None or (child / "descriptor.mod").exists():
                 count += 1
     except OSError:
         pass

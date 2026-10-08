@@ -1,5 +1,9 @@
 # Changelog
 
+## 未リリース（v0.11.78 に同梱予定）
+
+- Hearts of Iron IV・Stellaris・Europa Universalis IV の Mod を認識しない問題を修正。これらのゲームは `localization` ではなく `localisation` フォルダを使うため、Mod の検出（Steam Workshop・ローカルMod）、翻訳状況、キュー追加、QA、日本語化Modへの上書き、バックアップ復元がすべて素通りしていた。両方の綴りを同じように扱い、書き戻すときは既存フォルダの綴り（無い場合はゲームに合わせた綴り）を使う。
+
 ## v0.11.77
 
 - 推論（Thinking）モデルで翻訳が進まない問題を修正。Ollamaの`qwen3:4b`（Qwen3-4B-Thinking-2507）などは1回の依頼で数千〜1万トークン以上考え込み、5分の制限時間切れと再試行を繰り返していた。
