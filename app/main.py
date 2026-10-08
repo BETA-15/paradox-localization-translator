@@ -37,7 +37,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.77"
+APP_VERSION = "0.11.78"
 MOD_STATUS_CACHE_VERSION = 16
 TRANSLATION_STATUS_SNAPSHOT_SCHEMA = 2
 MOD_STATUS_EMPTY_IID = "__mod_status_empty__"
@@ -116,6 +116,11 @@ def _llm_connection_alert_content(provider, url, model="", error=""):
         if model: lines.append(f"モデル: {model}")
         return {"title":"このモデルは使用できません","heading":"推論（Thinking）モデルは使用できません",
                 "message":"\n".join(lines),"category":"thinking_model","provider":display,"endpoint":endpoint}
+    if core.EMBEDDING_ONLY_MARKER in detail:
+        lines=[detail,"",f"プロバイダ: {display}",f"接続先: {endpoint}"]
+        if model: lines.append(f"モデル: {model}")
+        return {"title":"このモデルは使用できません","heading":"埋め込み専用モデルは翻訳に使用できません",
+                "message":"\n".join(lines),"category":"embedding_model","provider":display,"endpoint":endpoint}
     if normalized in {"ollama","lmstudio"} and transport_failure:
         service="LM Studio" if normalized=="lmstudio" else "Ollama"
         server_note=("Local Serverが開始されていない" if normalized=="lmstudio"
@@ -1715,10 +1720,10 @@ class App(BaseTk):
         isolated_output = self._isolated_output_path(path, output_root, mod_name or "")
         item={"input":str(path),"mod_name":mod_name or path.name,"status":"待機","output":str(isolated_output),"output_isolated_v2":True}
         app_state.ensure_queue_item_id(item)
-        if path.is_dir() and path.name.lower()=="localization":
+        if path.is_dir() and core.is_localization_dir_name(path.name):
             item["mod_localization"]=str(path); item["mod_root"]=str(path.parent)
-        elif path.is_dir() and (path/"localization").is_dir():
-            item["mod_root"]=str(path); item["mod_localization"]=str(path/"localization")
+        elif path.is_dir() and core.mod_localization_root(path) is not None:
+            item["mod_root"]=str(path); item["mod_localization"]=str(core.mod_localization_root(path))
         self.chinese_queue_items.append(item); self._refresh_chinese_queue_tree(); self._save_workspace_state("chinese_queue_changed")
         return item,msg
 
@@ -2047,7 +2052,7 @@ class App(BaseTk):
                     pass
 
             # For a localization directory retain its parent Mod name so multiple entries are distinguishable.
-            if p.name.lower() == "localization" and p.parent.name:
+            if core.is_localization_dir_name(p.name) and p.parent.name:
                 return str(Path(p.parent.name) / p.name)
             if p.is_dir():
                 return p.name or str(p)
@@ -2212,7 +2217,7 @@ class App(BaseTk):
                 messagebox.showinfo(APP_NAME, "QA / 差分調査へ送る場合は、翻訳状況一覧からModを1件だけ選択してください。")
                 return
             r = results[0]
-            source_root = Path(r.get("localization") or (Path(r.get("path", "")) / "localization"))
+            source_root = Path(r.get("localization") or core.localization_dir_path(Path(r.get("path", ""))))
             external = r.get("external_translation_localization", "")
             target_root = Path(external) if external and Path(external).exists() else source_root
             source_langs = ("english", "simp_chinese")
@@ -3877,7 +3882,7 @@ Mod更新後だけ追加翻訳:
                         continue
                     p=Path(raw)
                     # external_translation_localization can point directly at localization.
-                    if p.name.lower() == 'localization':
+                    if core.is_localization_dir_name(p.name):
                         p=p.parent
                     try: key=str(p.resolve())
                     except Exception: key=str(p)
@@ -3908,7 +3913,7 @@ Mod更新後だけ追加翻訳:
             seen.add(key); roots.append(p)
         for raw in list(getattr(self, 'monitor_target_paths', []) or []):
             p=Path(raw)
-            if p.name.lower() == 'localization': p=p.parent
+            if core.is_localization_dir_name(p.name): p=p.parent
             try: key=str(p.resolve())
             except Exception: key=str(p)
             if key in seen or not p.exists():
@@ -4074,11 +4079,11 @@ Mod更新後だけ追加翻訳:
 
     def _create_full_localization_snapshot(self, target_root, backup_kind, *, category='上書き', source_mod_name='', state_label='', stamp=None):
         target_root=Path(target_root)
-        if target_root.name.lower() == 'localization':
+        if core.is_localization_dir_name(target_root.name):
             loc=target_root
             target_root=target_root.parent
         else:
-            loc=target_root / 'localization'
+            loc=core.localization_dir_path(target_root)
         mod_name=core.detect_mod_name(target_root) if target_root.exists() else target_root.name
         game_name=self._backup_game_name_for_root(target_root)
         stamp=stamp or datetime.now().strftime('%Y%m%d_%H%M%S_%f')
@@ -4481,7 +4486,7 @@ Mod更新後だけ追加翻訳:
         def work():
             try:
                 safety_root,_=self._create_full_localization_snapshot(target,'復元前退避',category='復元前退避',state_label='バックアップ復元を実行する直前のlocalization全体')
-                target_loc=target/'localization'
+                target_loc=core.localization_dir_path(target)
                 if e.get('exact'):
                     snapshot=Path(e['snapshot'])
                     if target_loc.exists(): shutil.rmtree(target_loc)
@@ -5141,7 +5146,7 @@ Mod更新後だけ追加翻訳:
                     changed=self._apply_localization_removal_plan(plan)
                     moved=0
                     for target_root,values in move_values_by_target.items():
-                        loc_root=core.mod_localization_root(Path(target_root)) or (Path(target_root)/"localization")
+                        loc_root=core.localization_dir_path(Path(target_root))
                         out=Path(loc_root)/"japanese"/"zzz_paradox_localization_translator_consolidated_l_japanese.yml"
                         moved += core.upsert_localization_values(out,values,"japanese")
                     if moved: logs.append(f"本体/日本語化Mod統合: {moved}キーを選択側へ統合")
@@ -6798,10 +6803,10 @@ Mod更新後だけ追加翻訳:
             if root and root.is_dir():
                 return loc, root
             return loc, loc.parent
-        if inp.is_dir() and inp.name.lower() == "localization":
+        if inp.is_dir() and core.is_localization_dir_name(inp.name):
             return inp, inp
-        if inp.is_dir() and (inp / "localization").is_dir():
-            return inp / "localization", inp
+        if inp.is_dir() and core.mod_localization_root(inp) is not None:
+            return core.mod_localization_root(inp), inp
         return None, None
 
     def _selected_queue_items_for_kind(self, queue_kind):
@@ -7013,7 +7018,7 @@ Mod更新後だけ追加翻訳:
             # Direct Chinese/English folder selection may point below localization.
             # Walk upward so the sibling source language can still be compared.
             for candidate in [root, *root.parents]:
-                if candidate.name.lower() == "localization":
+                if core.is_localization_dir_name(candidate.name):
                     root = candidate
                     break
             if not root.exists():
@@ -7055,7 +7060,7 @@ Mod更新後だけ追加翻訳:
         loc_root=Path(loc_root); mod_root=Path(mod_root)
         out_root = Path(item.get("output", ""))
         input_path = Path(item.get("input", ""))
-        target_base = loc_root if input_path.is_dir() and input_path.name.lower() == "localization" else mod_root
+        target_base = loc_root if input_path.is_dir() and core.is_localization_dir_name(input_path.name) else mod_root
         mappings=[]
         for src in self._generated_japanese_files(out_root):
             try:
@@ -7077,7 +7082,7 @@ Mod更新後だけ追加翻訳:
         for _src,_dst,safe_rel in mappings:
             rel=safe_rel
             # When target_base is the Mod root, normalize to a path below localization.
-            if rel.parts and rel.parts[0].lower() == "localization":
+            if rel.parts and core.is_localization_dir_name(rel.parts[0]):
                 rel=Path(*rel.parts[1:])
             relative.append(rel)
         return core.find_later_localization_path_conflicts(mod_root, relative)
@@ -7851,9 +7856,9 @@ Mod更新後だけ追加翻訳:
     # ---------------- queue ----------------
     def _output_identity_source(self, p: Path) -> Path:
         p = Path(p)
-        if p.is_dir() and p.name.lower() == "localization":
+        if p.is_dir() and core.is_localization_dir_name(p.name):
             return p.parent
-        if p.is_dir() and (p / "localization").is_dir():
+        if p.is_dir() and core.mod_localization_root(p) is not None:
             return p
         return p
 
@@ -8023,10 +8028,10 @@ Mod更新後だけ追加翻訳:
         p = Path(item.get("input", ""))
         loc, mod_root = self._infer_mod_target_for_item(item)
         if not loc or not Path(loc).is_dir():
-            if p.is_dir() and p.name.lower() == "localization":
+            if p.is_dir() and core.is_localization_dir_name(p.name):
                 loc, mod_root = p, p
-            elif p.is_dir() and (p / "localization").is_dir():
-                loc, mod_root = p / "localization", p
+            elif p.is_dir() and core.mod_localization_root(p) is not None:
+                loc, mod_root = core.mod_localization_root(p), p
             else:
                 loc, mod_root = p, p
 
@@ -9671,7 +9676,7 @@ Mod更新後だけ追加翻訳:
                 models=core.list_models(provider,url,timeout=8,api_key=api_key)
                 if core.normalize_provider(provider) in {"ollama","lmstudio"} and not models:
                     raise RuntimeError("接続には成功しましたが、読み込み済みのモデルがありません")
-                warning=core.thinking_only_model_warning(provider,url,model)
+                warning=core.unusable_model_warning(provider,url,model)
                 if warning:
                     raise RuntimeError(warning)
                 self.events.put(("llm_preflight_done",{"token":token,"models":models}))
