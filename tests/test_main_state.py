@@ -256,6 +256,34 @@ def test_thinking_only_model_shows_unusable_model_warning():
     assert "起動していない" not in info["message"]
 
 
+def test_embedding_only_model_shows_unusable_model_warning():
+    warning=main.core.embedding_only_model_warning("LM Studio","http://localhost:1234/v1","text-embedding-nomic-embed-text-v1.5")
+    info=main._llm_connection_alert_content("LM Studio","http://localhost:1234/v1","text-embedding-nomic-embed-text-v1.5",warning)
+
+    assert info["category"] == "embedding_model"
+    assert info["title"] == "このモデルは使用できません"
+    assert "起動していない" not in info["message"]
+
+
+def test_preflight_stops_before_start_when_model_is_embedding_only(monkeypatch):
+    monkeypatch.setattr(main.core,"list_models",lambda *_args,**_kwargs:["nomic-embed-text:latest"])
+    events=queue.Queue()
+    var=SimpleNamespace(set=lambda _value:None)
+    state=SimpleNamespace(
+        _closing=False,events=events,connection_var=var,llm_status_var=var,llm_detail_var=var,
+        _refresh_operation_states=lambda:None,
+        _llm_preflight_request={"provider":"Ollama","url":"http://localhost:11434",
+                                "model":"nomic-embed-text:latest","api_key":""},
+    )
+
+    main.App._launch_llm_preflight(state)
+    state.llm_preflight_thread.join(timeout=10)
+
+    kind,payload=events.get_nowait()
+    assert kind == "llm_preflight_error"
+    assert main.core.EMBEDDING_ONLY_MARKER in payload["error"]
+
+
 def test_only_connection_class_errors_trigger_runtime_connection_popup():
     assert main._is_llm_connection_alert_error("Connection refused") is True
     assert main._is_llm_connection_alert_error("HTTP Error 401: Unauthorized") is True
