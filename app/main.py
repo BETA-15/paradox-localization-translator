@@ -37,7 +37,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.78"
+APP_VERSION = "0.11.79"
 MOD_STATUS_CACHE_VERSION = 16
 TRANSLATION_STATUS_SNAPSHOT_SCHEMA = 2
 MOD_STATUS_EMPTY_IID = "__mod_status_empty__"
@@ -963,6 +963,7 @@ class App(BaseTk):
 
         self.provider_var = tk.StringVar(value=last_translation.get("provider", "Ollama"))
         self.api_key_var = tk.StringVar(value="")
+        self._api_key_provider = self.provider_var.get(); self._api_keys_by_provider = {}
         self.url_var = tk.StringVar(value=last_translation.get("url") or core.default_url_for_provider(last_translation.get("provider", "Ollama")))
         self.model_var = tk.StringVar(value=last_translation.get("model") or core.DEFAULT_MODEL)
         self.preset_var = tk.StringVar(value="CK3")
@@ -1046,6 +1047,7 @@ class App(BaseTk):
         self.monitor_provider_var = tk.StringVar(value=last_monitor.get("provider", "Ollama"))
         self.monitor_url_var = tk.StringVar(value=last_monitor.get("url") or core.default_url_for_provider(last_monitor.get("provider", "Ollama")))
         self.monitor_api_key_var = tk.StringVar(value="")
+        self._monitor_api_key_provider = self.monitor_provider_var.get(); self._monitor_api_keys_by_provider = {}
         self.monitor_model_var = tk.StringVar(value=last_monitor.get("model", ""))
         self.monitor_connection_var = tk.StringVar(value="監視用LLM: 未確認")
         self.monitor_status_var = tk.StringVar(value="監視停止中")
@@ -1221,29 +1223,43 @@ class App(BaseTk):
                     pass
 
     def _refresh_operation_states(self):
-        """Keep unavailable operations visibly greyed out while workers own their data."""
+        """Keep unavailable operations visibly greyed out while workers own their data.
+
+        0.1秒ごとに呼ばれるので、状態が変わっていなければ画面の設定し直しを省く
+        （待機中の CPU 使用を抑える）。ほかの場所で直接変えた状態も戻るよう、1秒に1回は必ず設定し直す。
+        """
         normal_locked = self._normal_queue_locked()
         chinese_locked = self._chinese_queue_locked()
+        normal_can_control = self._thread_is_active(self.worker) and not (self.controller and self.controller.stop_event.is_set())
+        chinese_can_control = self._thread_is_active(self.chinese_worker) and not (self.chinese_controller and self.chinese_controller.stop_event.is_set())
+        data_root_locked = bool(self._closing or self._active_file_operation_names())
+        signature = (normal_locked, chinese_locked, normal_can_control, chinese_can_control, data_root_locked,
+                     len(self._normal_queue_controls), len(self._chinese_queue_controls),
+                     len(self._cross_queue_controls), len(self._data_root_controls),
+                     id(getattr(self, "review_batch_contexts", None)), id(getattr(self, "review_last_qa_contexts", None)))
+        now = time.monotonic()
+        if (signature == getattr(self, "_operation_state_signature", None)
+                and now - getattr(self, "_operation_state_refreshed_at", 0.0) < 1.0):
+            return
+        self._operation_state_signature = signature
+        self._operation_state_refreshed_at = now
         self._set_control_group_state(self._normal_queue_controls, normal_locked)
         self._set_control_group_state(self._chinese_queue_controls, chinese_locked)
         self._set_control_group_state(self._cross_queue_controls, normal_locked or chinese_locked)
 
         if hasattr(self, "start_btn"):
             self.start_btn.configure(state="disabled" if normal_locked else "normal")
-        normal_can_control = self._thread_is_active(self.worker) and not (self.controller and self.controller.stop_event.is_set())
         if hasattr(self, "pause_btn"):
             self.pause_btn.configure(state="normal" if normal_can_control else "disabled")
         if hasattr(self, "stop_btn"):
             self.stop_btn.configure(state="normal" if normal_can_control else "disabled")
         if hasattr(self, "chinese_start_btn"):
             self.chinese_start_btn.configure(state="disabled" if chinese_locked else "normal")
-        chinese_can_control = self._thread_is_active(self.chinese_worker) and not (self.chinese_controller and self.chinese_controller.stop_event.is_set())
         if hasattr(self, "chinese_pause_btn"):
             self.chinese_pause_btn.configure(state="normal" if chinese_can_control else "disabled")
         if hasattr(self, "chinese_stop_btn"):
             self.chinese_stop_btn.configure(state="normal" if chinese_can_control else "disabled")
 
-        data_root_locked = bool(self._closing or self._active_file_operation_names())
         self._set_control_group_state(self._data_root_controls, data_root_locked)
         if hasattr(self,"review_auto_repair_btn"):
             self._set_review_auto_repair_enabled(
@@ -5631,6 +5647,13 @@ Mod更新後だけ追加翻訳:
 
     def on_monitor_provider_change(self):
         provider=self.monitor_provider_var.get()
+        # 監視用LLMも、前のプロバイダのキーを別の相手へ送らない（起動中だけ覚える）。
+        if not hasattr(self, "_monitor_api_keys_by_provider"): self._monitor_api_keys_by_provider={}
+        old=getattr(self, "_monitor_api_key_provider", None)
+        if old != provider:
+            if old is not None: self._monitor_api_keys_by_provider[old]=self.monitor_api_key_var.get().strip()
+            self.monitor_api_key_var.set(self._monitor_api_keys_by_provider.get(provider, ""))
+            self._monitor_api_key_provider=provider
         self.monitor_url_var.set(core.default_url_for_provider(provider))
         self.monitor_model_var.set("")
         self.monitor_connection_var.set("監視用LLM: 未確認")
@@ -7700,7 +7723,22 @@ Mod更新後だけ追加翻訳:
 
         self.refresh_model_stats_ui(); self.refresh_profiles_ui()
 
+    def _swap_api_key_for_provider(self):
+        """プロバイダを切り替えたら、前のプロバイダのキーを別の相手へ送らないよう入れ替える。
+
+        キーはこの起動中だけ覚え、ディスクには保存しない。
+        """
+        if not hasattr(self, "_api_keys_by_provider"): self._api_keys_by_provider={}
+        old=getattr(self, "_api_key_provider", None)
+        new=self.provider_var.get()
+        if old == new: return
+        if old is not None:
+            self._api_keys_by_provider[old]=self.api_key_var.get().strip()
+        self.api_key_var.set(self._api_keys_by_provider.get(new, ""))
+        self._api_key_provider=new
+
     def on_provider_change(self):
+        self._swap_api_key_for_provider()
         self.url_var.set(core.default_url_for_provider(self.provider_var.get()))
         self.model_var.set("")
         self.refresh_models()
@@ -7821,6 +7859,7 @@ Mod更新後だけ追加翻訳:
         if not p: return
         self.provider_var.set(p.get("provider","Ollama")); self.url_var.set(p.get("url",core.default_url_for_provider(self.provider_var.get())))
         self.model_var.set(p.get("model","")); self.batch_var.set(p.get("batch",40)); self.workers_var.set(p.get("workers",1)); self.preset_var.set(p.get("preset","CK3")); self.profile_var.set(name)
+        self._swap_api_key_for_provider()
         self.refresh_models()
 
     def apply_selected_profile(self): self._apply_profile(self.profile_var.get())

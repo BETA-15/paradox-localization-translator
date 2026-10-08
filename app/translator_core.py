@@ -457,7 +457,8 @@ def env_api_key_for_provider(provider: str) -> str:
         "openai": ["OPENAI_API_KEY"],
         "anthropic": ["ANTHROPIC_API_KEY"],
         "gemini": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
-        "openai_compat": ["PLT_API_KEY", "OPENAI_API_KEY"],
+        # OpenAI互換の業者へ OpenAI のキー（OPENAI_API_KEY）を渡さない。
+        "openai_compat": ["PLT_API_KEY"],
     }.get(p, [])
     import os
     for name in names:
@@ -495,7 +496,31 @@ def _is_local_llm_host(host: str) -> bool:
     return ip.is_loopback or ip.is_private or ip.is_link_local or ip.is_unspecified
 
 
-_NO_PROXY_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+_API_KEY_HEADERS = ("authorization", "x-api-key", "x-goog-api-key")
+
+
+class _NoCrossOriginKeyRedirect(urllib.request.HTTPRedirectHandler):
+    """リダイレクト先が別の相手（方式・ホスト・ポートのどれかが違う）なら、API キーの見出しを外す。
+
+    urllib は既定でリダイレクト先にも同じ見出しを付けるため、キーが別のサーバーへ渡ってしまう。
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new is None:
+            return None
+        old_u = urllib.parse.urlsplit(req.full_url)
+        new_u = urllib.parse.urlsplit(new.full_url)
+        same_origin = (old_u.scheme, old_u.hostname, old_u.port) == (new_u.scheme, new_u.hostname, new_u.port)
+        if not same_origin:
+            for name in list(new.headers):
+                if name.lower() in _API_KEY_HEADERS:
+                    del new.headers[name]
+        return new
+
+
+_NO_PROXY_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoCrossOriginKeyRedirect())
+_DEFAULT_OPENER = urllib.request.build_opener(_NoCrossOriginKeyRedirect())
 
 
 def _urlopen(req: urllib.request.Request, timeout: float):
@@ -507,14 +532,16 @@ def _urlopen(req: urllib.request.Request, timeout: float):
     host = urllib.parse.urlsplit(req.full_url).hostname or ""
     if _is_local_llm_host(host):
         return _NO_PROXY_OPENER.open(req, timeout=timeout)
-    return urllib.request.urlopen(req, timeout=timeout)
+    return _DEFAULT_OPENER.open(req, timeout=timeout)
 
 
 def _base_url_for_provider(provider: str, url: str) -> str:
     """入力されたAPI URLを正規化する（スキーム補完、末尾の/除去、Ollamaの/v1除去）。"""
     base = (url or "").strip() or default_url_for_provider(provider)
     if "://" not in base:
-        base = "http://" + base
+        # 方式の無い URL は、手元・LAN内のサーバーだけ http、ほかは暗号化する https を補う。
+        host = urllib.parse.urlsplit("//" + base).hostname or ""
+        base = ("http://" if _is_local_llm_host(host) else "https://") + base
     base = base.rstrip('/')
     if normalize_provider(provider) == "ollama":
         for suffix in ("/v1", "/api"):
