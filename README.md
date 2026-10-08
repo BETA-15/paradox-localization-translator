@@ -26,6 +26,12 @@ Paradox Interactive系ゲームのModローカライズを、**ローカルLLM�
 
 ---
 
+## v0.11.79 の改善
+
+- 何もしていないときもCPUを使い続けていた問題を直しました（待機中の使用率が平均 約15% → 1% 未満）。
+- プロバイダを切り替えたとき、前に入れたAPIキーが別の会社へ送られないようにしました。
+- 「https://」を付けずに入力したクラウドのURLは、暗号化する https で送るようにしました。
+
 ## v0.11.78 の改善
 
 - Hearts of Iron IV・Stellaris・Europa Universalis IV の Mod を認識しない問題を直しました。これらのゲームは `localisation` フォルダ（CK3 などは `localization`）を使うため、Mod の検出・翻訳状況・上書き・復元で見落とされていました。
