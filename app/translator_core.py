@@ -34,6 +34,16 @@ from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 TRANSLATION_RELATION_ALGORITHM_VERSION = 3
 LARGE_RELATION_MIN_EFFECTIVE_KEYS = 200
+# 紐付けの判定に使う「情報量で重み付けした一致率」の境目。
+# 実データ（HOI4 の Mod 84件・928組）では、元Modごとの最大の一致率が 15% 以下と 40% 以上の
+# 2つの山に分かれ、その間が空いていた。境目はこの谷に置く。
+RELATION_AUTO_SOURCE_RATE = 0.50          # 元Mod側の重み付き一致率がこれ以上なら自動で紐付け
+RELATION_AUTO_PARTIAL_SOURCE_RATE = 0.30  # または元Mod側がこれ以上で、
+RELATION_AUTO_PARTIAL_CANDIDATE_RATE = 0.50  # 日本語化Mod側がこれ以上なら自動で紐付け
+RELATION_CANDIDATE_SOURCE_RATE = 0.15     # 元Mod側がこれ以上なら候補として示す
+# 大きな Mod の一部だけを訳した日本語化：日本語化Mod側の重み付き一致率がこれ以上で、
+# 共通キーが LARGE_RELATION_MIN_EFFECTIVE_KEYS 件以上なら、元Mod側が低くても自動で紐付ける。
+RELATION_PARTIAL_TRANSLATION_CANDIDATE_RATE = 0.80
 
 DEFAULT_MODEL = "qwen3.6:latest"
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
@@ -3913,6 +3923,45 @@ def prepare_translation_source_profile(source_language_entries: dict,
     }
 
 
+def relation_key_weights(key_sets: Iterable[set]) -> Dict[str, float]:
+    """キーごとの情報量（IDF）。w(k) = log(N / そのキーを持つ Mod の数)。
+
+    多くの Mod に出てくるキー（国名など）ほど 0 に近く、1つの Mod にしか無いキーほど大きい。
+    """
+    sets = [set(x) for x in key_sets if x]
+    n = len(sets)
+    counts: Dict[str, int] = {}
+    for keys in sets:
+        for k in keys:
+            counts[k] = counts.get(k, 0) + 1
+    return {k: math.log(n / c) if n and c else 0.0 for k, c in counts.items()}
+
+
+def weighted_rate(part: set, whole: set, weights: Optional[Dict[str, float]]) -> float:
+    """whole の重みの合計のうち part が占める割合。重みが無ければ件数の割合。"""
+    if not whole:
+        return 0.0
+    if not weights:
+        return len(part & whole) / len(whole)
+    default = max(weights.values()) if weights else 1.0  # プールに無いキーは「その Mod にしか無い」扱い
+    total = sum(weights.get(k, default) for k in whole)
+    if total <= 0:
+        return 0.0
+    return sum(weights.get(k, default) for k in (part & whole)) / total
+
+
+def relation_weighted_tier(source_rate: float, candidate_rate: float, overlap_keys: int = 0) -> str:
+    if source_rate >= RELATION_AUTO_SOURCE_RATE or (
+            source_rate >= RELATION_AUTO_PARTIAL_SOURCE_RATE and candidate_rate >= RELATION_AUTO_PARTIAL_CANDIDATE_RATE):
+        return "auto"
+    if (candidate_rate >= RELATION_PARTIAL_TRANSLATION_CANDIDATE_RATE
+            and overlap_keys >= LARGE_RELATION_MIN_EFFECTIVE_KEYS):
+        return "auto"  # 日本語化Modの中身のほとんどがこの元Modのもの（一部だけの日本語化）
+    if source_rate >= RELATION_CANDIDATE_SOURCE_RATE:
+        return "candidate"
+    return "reject"
+
+
 def translation_relation_evidence(source_language_entries: dict, row: dict,
                                   source_profile: Optional[dict] = None) -> dict:
     """Return source/candidate relation evidence after vanilla and text filtering."""
@@ -3970,12 +4019,17 @@ def translation_relation_evidence(source_language_entries: dict, row: dict,
     }
     source_rate = len(effective_overlap) / max(1, len(source_effective_keys))
     candidate_rate = len(effective_overlap) / max(1, len(candidate_effective_keys))
+    key_weights = row.get("relation_key_weights") or {}
+    weighted_source_rate = weighted_rate(effective_overlap, source_effective_keys, key_weights)
+    weighted_candidate_rate = weighted_rate(effective_overlap, candidate_effective_keys, key_weights)
+    weighted_tier = relation_weighted_tier(weighted_source_rate, weighted_candidate_rate, len(effective_overlap))
     if len(source_effective_keys) >= 100:
         required_match_count = LARGE_RELATION_MIN_EFFECTIVE_KEYS
         source_rate_pass = source_rate >= 0.40
         candidate_rate_pass = candidate_rate >= 0.40
         count_pass = len(effective_overlap) >= required_match_count
-        relation_gate = bool(count_pass and (source_rate_pass or candidate_rate_pass))
+        # 今までの条件に加え、情報量で重み付けした一致率でも紐付けない水準でないこと。
+        relation_gate = bool(count_pass and (source_rate_pass or candidate_rate_pass) and weighted_tier != "reject")
         threshold_label = (
             f"有効キー100以上 → {LARGE_RELATION_MIN_EFFECTIVE_KEYS}キーかつ双方向40%のどちらか"
         )
@@ -3984,7 +4038,7 @@ def translation_relation_evidence(source_language_entries: dict, row: dict,
         source_rate_pass = source_rate >= 0.20
         candidate_rate_pass = candidate_rate >= 0.20
         count_pass = len(effective_overlap) >= required_match_count
-        relation_gate = bool(count_pass and source_rate_pass)
+        relation_gate = bool(count_pass and source_rate_pass and weighted_tier != "reject")
         threshold_label = "有効キー100未満 → 元Mod側20%"
     return {
         "raw_source_keys": len(source_keys),
@@ -4007,6 +4061,10 @@ def translation_relation_evidence(source_language_entries: dict, row: dict,
         "effective_candidate_rate_pass": candidate_rate_pass,
         "relation_gate": relation_gate,
         "threshold_label": threshold_label,
+        "weighted_source_rate": weighted_source_rate,
+        "weighted_candidate_rate": weighted_candidate_rate,
+        "weighted_tier": weighted_tier,
+        "weighted": bool(key_weights),
         "_effective_overlap_set": effective_overlap,
         "_source_effective_set": source_effective_keys,
         "_candidate_effective_set": candidate_effective_keys,
@@ -4101,7 +4159,8 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict,
         source_path and source_path in multi_sources and
         int(evidence.get("effective_overlap_keys", 0) or 0) >= LARGE_RELATION_MIN_EFFECTIVE_KEYS
     )
-    numeric_gate = bool(evidence.get("relation_gate") or multi_relation_gate)
+    weighted_tier = str(evidence.get("weighted_tier") or "auto")
+    numeric_gate = bool(evidence.get("relation_gate") or (multi_relation_gate and weighted_tier != "reject"))
     final_gate = bool(numeric_gate and translation_shape_gate and base_role_gate)
 
     effective_overlap_n = int(evidence.get("effective_overlap_keys", 0) or 0)
@@ -4128,6 +4187,8 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict,
         classification = "candidate"
     else:
         classification = "rejected"
+    if classification == "auto" and weighted_tier == "candidate" and not multi_relation_gate:
+        classification = "candidate"  # 総合和訳（複数の元Modをまとめて訳したもの）は元Modごとの一致率が低くてよい
 
     reasons = [
         f"生共通キー {evidence['raw_overlap_keys']}件 / バニラ持ち込み除外 {evidence['vanilla_carryover_keys']}件",
@@ -4146,6 +4207,12 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict,
          f"原文同梱 {role['candidate_paired_source_rate']*100:.1f}%"),
         f"候補役割: {role['candidate_base_classification']} / {role['candidate_localization_shape']}",
     ]
+    reasons.append(
+        f"情報量で重み付けした一致率（多くのModに共通するキーほど軽く数える）: "
+        f"元Mod側 {float(evidence.get('weighted_source_rate',0.0))*100:.1f}% / "
+        f"日本語化Mod側 {float(evidence.get('weighted_candidate_rate',0.0))*100:.1f}% → "
+        + {"auto": "自動で紐付けできる水準", "candidate": "候補の水準", "reject": "紐付けない水準"}.get(weighted_tier, weighted_tier)
+    )
     if multi_relation_gate:
         reasons.append(
             f"総合和訳集合ゲート: 候補有効キー和集合率 {float(row.get('multi_translation_union_coverage', 0.0))*100:.1f}% → PASS"
@@ -4167,6 +4234,9 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict,
         "precision": float(evidence.get("effective_candidate_rate", 0.0) or 0.0),
         "coverage": float(evidence.get("effective_source_rate", 0.0) or 0.0),
         "source_match_ratio": float(evidence.get("effective_source_rate", 0.0) or 0.0),
+        "weighted_coverage": float(evidence.get("weighted_source_rate", 0.0) or 0.0),
+        "weighted_precision": float(evidence.get("weighted_candidate_rate", 0.0) or 0.0),
+        "weighted_tier": weighted_tier,
         "overlap_keys": effective_overlap_n,
         "source_keys": source_effective_n,
         "japanese_keys": int(role.get("candidate_total_keys", 0) or 0),
@@ -4215,6 +4285,23 @@ def assign_translation_candidate_owners(source_roots: Iterable[Path], translatio
                 "english": dict(data.get("english") or {}),
                 "simp_chinese": dict(data.get("simp_chinese") or {}),
             }))
+    # プール全体の Mod の原文（英語・中国語）のキーから、キーごとの情報量を計算して各候補に持たせる。
+    # 日本語のキーは数えない（訳されたキーほど「よく出る共通キー」と見なされて軽くなってしまうため）。
+    keys_by_mod: Dict[str, set] = {}
+    for source_id, entries in sources:
+        keys_by_mod.setdefault(source_id, set()).update(entries.get("english") or {}, entries.get("simp_chinese") or {})
+    for row in rows:
+        try:
+            row_id = str(Path(row.get("path", "")).expanduser().resolve())
+        except Exception:
+            row_id = str(row.get("path", ""))
+        for lang in ("english", "simp_chinese"):
+            entries = (row.get("source_language_entries") or {}).get(lang) or {}
+            if entries:
+                keys_by_mod.setdefault(row_id, set()).update(entries)
+    pool_weights = relation_key_weights(keys_by_mod.values())
+    for row in rows:
+        row["relation_key_weights"] = pool_weights
     source_profile_cache = {}
     for row in rows:
         role = classify_translation_candidate_role(row)
@@ -4223,9 +4310,7 @@ def assign_translation_candidate_owners(source_roots: Iterable[Path], translatio
             continue
         if role.get("candidate_base_translation") and not manual_translation:
             continue
-        contributors = []
-        overlap_union = set()
-        candidate_universe = set()
+        found = []  # (元Mod, 共通キー, 候補側の有効キー)
         for source_id, source_entries in sources:
             try:
                 if Path(source_id).resolve() == Path(row.get("path", "")).resolve():
@@ -4247,9 +4332,26 @@ def assign_translation_candidate_owners(source_roots: Iterable[Path], translatio
             evidence = translation_relation_evidence(source_entries, row, source_profile=source_profile)
             if int(evidence.get("effective_overlap_keys", 0) or 0) < LARGE_RELATION_MIN_EFFECTIVE_KEYS:
                 continue
+            if evidence.get("weighted_tier") == "reject":
+                continue  # 共通キーだけの重なりは総合和訳の元Modに数えない
+            found.append((source_id, set(evidence.get("_effective_overlap_set") or set()),
+                          set(evidence.get("_candidate_effective_set") or set())))
+        # 総合和訳は、元Modごとに「ほかの元Modとは共有しない部分」を訳している。
+        # どの元Modも同じ共通キー（国名など）で同じ部分を説明しているだけなら、総合和訳とは見なさない。
+        key_owners: Dict[str, int] = {}
+        for _sid, overlap, _cand in found:
+            for k in overlap:
+                key_owners[k] = key_owners.get(k, 0) + 1
+        contributors = []
+        overlap_union = set()
+        candidate_universe = set()
+        for source_id, overlap, cand in found:
+            exclusive = sum(1 for k in overlap if key_owners.get(k) == 1)
+            if exclusive < LARGE_RELATION_MIN_EFFECTIVE_KEYS:
+                continue
             contributors.append(source_id)
-            overlap_union.update(evidence.get("_effective_overlap_set") or set())
-            candidate_universe.update(evidence.get("_candidate_effective_set") or set())
+            overlap_union.update(overlap)
+            candidate_universe.update(cand)
         union_coverage = len(overlap_union) / max(1, len(candidate_universe))
         if len(contributors) >= 2 and union_coverage >= 0.70:
             row["multi_translation_source_paths"] = contributors
@@ -4336,9 +4438,13 @@ def find_external_japanese_translation(mod_root: Path, translation_index: Option
         return None
     src_data = _collect_mod_language_entries(Path(mod_root))
     source_entries = src_data.get("source", {})
-    for row in ranked:
-        if row.get("classification") != "auto":
-            continue
+    # 自動で紐付けできる候補が複数あるときは、手動指定を最優先にし、次に元Modをいちばん多く
+    # （情報量で重み付けして）訳しているものを選ぶ。構成の点数は同点のときの順位付けだけに使う。
+    autos = [row for row in ranked if row.get("classification") == "auto"]
+    autos.sort(key=lambda r: (bool(r.get("manual_relation")),
+                              float(r.get("weighted_coverage", r.get("coverage", 0.0)) or 0.0),
+                              float(r.get("score", 0.0) or 0.0)), reverse=True)
+    for row in autos:
         cand_path = Path(row.get("path", ""))
         ja = row.get("japanese", {}) or {}
         gaps = _external_gap_candidates(source_entries, ja, src_data.get("english", {}), src_data.get("simp_chinese", {}))
@@ -4352,6 +4458,8 @@ def find_external_japanese_translation(mod_root: Path, translation_index: Option
             "source_keys": row.get("source_keys", len(source_entries)),
             "gap_count": len(gaps), "gaps": gaps, "complete": len(gaps) == 0,
             "score": row.get("score", 0.0), "classification": row.get("classification", "auto"),
+            "weighted_coverage": row.get("weighted_coverage", row.get("coverage", 0.0)),
+            "weighted_precision": row.get("weighted_precision", row.get("precision", 0.0)),
             "reasons": list(row.get("reasons") or []), "profile": dict(row.get("profile") or {}),
         }
     return None
@@ -4479,6 +4587,8 @@ def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "engl
             "translation_candidate_score": review_candidate.get("score", 0.0),
             "translation_candidate_precision": review_candidate.get("precision", 0.0),
             "translation_candidate_coverage": review_candidate.get("coverage", 0.0),
+            "translation_candidate_weighted_coverage": review_candidate.get("weighted_coverage", review_candidate.get("coverage", 0.0)),
+            "translation_candidate_weighted_precision": review_candidate.get("weighted_precision", review_candidate.get("precision", 0.0)),
             "translation_candidate_reasons": list(review_candidate.get("reasons") or []),
         })
     if external:
@@ -4492,6 +4602,8 @@ def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "engl
             "external_translation_coverage": external.get("coverage", 0.0),
             "external_translation_precision": external.get("precision", 0.0),
             "external_translation_score": external.get("score", 0.0),
+            "external_translation_weighted_coverage": external.get("weighted_coverage", external.get("coverage", 0.0)),
+            "external_translation_weighted_precision": external.get("weighted_precision", external.get("precision", 0.0)),
             "external_translation_confidence": external.get("classification", "auto"),
             "external_translation_reasons": list(external.get("reasons") or []),
         })
@@ -4970,6 +5082,8 @@ def build_relation_report(results: Iterable[dict]) -> dict:
         target_path = str(get("path", "") or "")
         coverage = float(get("coverage", 0.0) or 0.0)
         precision = float(get("precision", 0.0) or 0.0)
+        w_coverage = float(get("weighted_coverage", coverage) or 0.0)
+        w_precision = float(get("weighted_precision", precision) or 0.0)
         reasons = [str(x) for x in (get("reasons", []) or [])]
         rows.append({
             "ゲーム": str(r.get("game") or ""),
@@ -4982,11 +5096,13 @@ def build_relation_report(results: Iterable[dict]) -> dict:
             "点数": round(float(get("score", 0.0) or 0.0), 1) if prefix else "",
             "元Mod側の一致率": f"{coverage*100:.1f}%" if prefix else "",
             "日本語化Mod側の一致率": f"{precision*100:.1f}%" if prefix else "",
+            "重み付き一致率（元Mod側）": f"{w_coverage*100:.1f}%" if prefix else "",
+            "重み付き一致率（日本語化Mod側）": f"{w_precision*100:.1f}%" if prefix else "",
             "要確認": "",
             "根拠": " / ".join(reasons[:6]),
             "元Modの場所": str(r.get("path") or ""),
             "紐付け先の場所": target_path,
-            "_coverage": coverage,
+            "_coverage": w_coverage,
         })
 
     by_target: Dict[str, list] = {}
@@ -5002,7 +5118,7 @@ def build_relation_report(results: Iterable[dict]) -> dict:
         if row["種別"].startswith("候補"):
             flags.append("候補のみ（自動では紐付けていない）")
         if row["_coverage"] < RELATION_REPORT_LOW_COVERAGE:
-            flags.append(f"元Modのキーとの一致が少ない（{row['元Mod側の一致率']}）")
+            flags.append(f"元Modのキーとの一致が少ない（重み付き {row['重み付き一致率（元Mod側）']}）")
         related = _relation_names_look_related(row["元Mod"], row["紐付け先"])
         if related is False:
             flags.append("名前が似ていない")
@@ -5046,18 +5162,20 @@ def relation_report_markdown(report: dict, title: str = "紐付けレポート")
     rows = report.get("rows") or []
     flagged = [r for r in rows if r.get("要確認")]
     out = [f"# {title}", "",
+           "一致率の「重み付き」は、多くのModに共通して出てくるキー（国名など）ほど軽く数えた割合です"
+           "（キーの重み = log(Mod数 ÷ そのキーを持つMod数)）。", "",
            f"元Mod {len(rows)}件のうち、紐付けあり {sum(1 for r in rows if r.get('紐付け先'))}件、"
            f"要確認 {len(flagged)}件。", "",
-           "「要確認」の印の意味：候補のみ＝自動では紐付けていない／一致が少ない＝元Modのキーのうち日本語化Modにもある割合が"
-           f"{RELATION_REPORT_LOW_COVERAGE*100:.0f}%未満／名前が似ていない＝名前に共通の語が無い／"
+           "「要確認」の印の意味：候補のみ＝自動では紐付けていない／一致が少ない＝元Modのキーのうち日本語化Modにもある割合"
+           f"（重み付き）が{RELATION_REPORT_LOW_COVERAGE*100:.0f}%未満／名前が似ていない＝名前に共通の語が無い／"
            "複数に紐付き＝同じ日本語化Modが2つ以上の元Modに紐付いている（総合和訳なら正しいこともある）。", "",
            "## 元Modごとの紐付け（要確認を先に表示）", "",
-           "| 要確認 | ゲーム | 元Mod | 元Modの保管場所 | 状態 | 紐付け先 | 紐付け先の保管場所 | 種別 | 点数 | 元Mod側の一致率 | 日本語化Mod側の一致率 |",
+           "| 要確認 | ゲーム | 元Mod | 元Modの保管場所 | 状態 | 紐付け先 | 紐付け先の保管場所 | 種別 | 点数 | 重み付き一致率（元Mod側） | 重み付き一致率（日本語化Mod側） |",
            "|---|---|---|---|---|---|---|---|---:|---:|---:|"]
     for r in rows:
         out.append("| " + " | ".join(cell(r.get(k, "")) for k in (
             "要確認", "ゲーム", "元Mod", "元Modの保管場所", "状態", "紐付け先", "紐付け先の保管場所",
-            "種別", "点数", "元Mod側の一致率", "日本語化Mod側の一致率")) + " |")
+            "種別", "点数", "重み付き一致率（元Mod側）", "重み付き一致率（日本語化Mod側）")) + " |")
     out += ["", "## 日本語化Modごとの紐付け先", "",
             "| 日本語化Mod | 保管場所 | 元Modの数 | 元Mod |", "|---|---|---:|---|"]
     for t in report.get("by_translation") or []:
