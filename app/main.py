@@ -37,7 +37,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.79"
+APP_VERSION = "0.11.80"
 MOD_STATUS_CACHE_VERSION = 16
 TRANSLATION_STATUS_SNAPSHOT_SCHEMA = 2
 MOD_STATUS_EMPTY_IID = "__mod_status_empty__"
@@ -3396,6 +3396,7 @@ Mod更新後だけ追加翻訳:
         ttk.Separator(bottom2,orient="vertical").pack(side="left",fill="y",padx=8)
         ttk.Button(bottom2,text="判定ログを表示",command=self.show_translation_judgement_log).pack(side="left")
         ttk.Button(bottom2,text="判定ログを書き出す",command=self.export_translation_judgement_log).pack(side="left",padx=(6,0))
+        ttk.Button(bottom2,text="紐付けレポートを書き出す",command=self.export_relation_report).pack(side="left",padx=(6,0))
         ttk.Separator(bottom2,orient="vertical").pack(side="left",fill="y",padx=8)
         ttk.Button(bottom2,text="結果を消去",command=self.clear_mod_status_results).pack(side="left")
         ttk.Button(bottom2,text="キャッシュ再読込",command=self._restore_cached_mod_status).pack(side="left",padx=(6,0))
@@ -3718,6 +3719,34 @@ Mod更新後だけ追加翻訳:
         except Exception as exc:
             record_error('日本語化Mod判定ログ書き出し',exc); messagebox.showerror(APP_NAME,f'判定ログの書き出しに失敗しました。\n{exc}')
             return None
+
+    def export_relation_report(self):
+        """元Modと日本語化Modの紐付けを一覧表（CSV と Markdown）に書き出し、ズレていそうなものに印を付ける。"""
+        results=[dict(r) for r in (self.mod_research_results or []) if r.get("path")]
+        if not results:
+            messagebox.showinfo(APP_NAME,"翻訳状況の調査結果がありません。先にMod調査を実行してください。")
+            return None
+        for r in results:
+            if not r.get("game"):
+                r["game"]=self._backup_game_name_for_root(Path(r.get("path","")))
+        try:
+            report=core.build_relation_report(results)
+            stamp=datetime.now().strftime('%Y%m%d_%H%M%S')
+            JUDGEMENT_LOG_ROOT.mkdir(parents=True,exist_ok=True)
+            csv_path=JUDGEMENT_LOG_ROOT / f"紐付けレポート_{stamp}.csv"
+            md_path=JUDGEMENT_LOG_ROOT / f"紐付けレポート_{stamp}.md"
+            # Excel で文字化けしないよう BOM 付き UTF-8 で書く。
+            csv_path.write_text(core.relation_report_csv(report),encoding="utf-8-sig")
+            md_path.write_text(core.relation_report_markdown(
+                report,title=f"{APP_NAME} v{APP_VERSION} 紐付けレポート（{datetime.now().strftime('%Y-%m-%d %H:%M')}）"),encoding="utf-8")
+        except Exception as exc:
+            record_error("紐付けレポート", exc)
+            messagebox.showerror(APP_NAME,f"紐付けレポートを書き出せませんでした: {exc}")
+            return None
+        flagged=sum(1 for r in report["rows"] if r.get("要確認"))
+        self.mod_status_summary_var.set(f"紐付けレポートを書き出しました（{len(report['rows'])}件、要確認 {flagged}件）")
+        self._open_path(JUDGEMENT_LOG_ROOT)
+        return md_path
 
     def export_translation_judgement_log(self):
         if self.judgement_log_thread and self.judgement_log_thread.is_alive():
@@ -5614,6 +5643,43 @@ Mod更新後だけ追加翻訳:
                     all_roots.append(rp)
         return all_roots, missing
 
+    def _game_wide_translation_pool(self, rows, roots):
+        """日本語化Modの照合相手を、選んだ場所と同じゲームの全保管場所（ローカル・Workshop など）に広げる。
+
+        調べる対象は選んだ場所のまま。ゲームが分からない行は、選んだ場所だけで照合する。
+        """
+        pool=[]; seen=set()
+        def add(root):
+            rp=Path(root)
+            try: key=str(rp.resolve())
+            except Exception: key=str(rp)
+            if key not in seen:
+                seen.add(key); pool.append(rp)
+        for root in roots or []:
+            add(root)
+        games={str(r.get("game") or "") for r in rows or [] if r.get("game")}
+        if games:
+            same_game=[r for r in list(getattr(self,"detected_mod_locations",[]) or []) if r.get("game") in games]
+            extra,_=self._collect_mod_roots_from_location_rows(same_game)
+            for root in extra:
+                add(root)
+        return pool
+
+    @staticmethod
+    def _results_without_roots(results, roots):
+        """これから調べ直すModの古い結果だけを除き、ほかの保管場所の結果は残す。"""
+        drop=set()
+        for root in roots or []:
+            try: drop.add(str(Path(root).resolve()))
+            except Exception: drop.add(str(Path(root)))
+        kept=[]
+        for r in results or []:
+            try: key=str(Path(r.get("path","")).resolve())
+            except Exception: key=str(Path(r.get("path","")))
+            if key not in drop:
+                kept.append(r)
+        return kept
+
     def research_selected_discovered_location(self):
         rows = self._selected_discovered_locations()
         if not rows:
@@ -5624,8 +5690,9 @@ Mod更新後だけ追加翻訳:
             messagebox.showinfo(APP_NAME, "選択した場所からlocalizationを持つModを確認できませんでした。\n\n" + counts)
             self.mod_discovery_status_var.set("調査対象のlocalizationを確認できませんでした")
             return
-        self.mod_discovery_status_var.set(f"{len(rows)}か所 / {len(all_roots)} Modを調査中")
-        self._start_mod_research(all_roots, replace=True, translation_pool=all_roots)
+        pool=self._game_wide_translation_pool(rows, all_roots)
+        self.mod_discovery_status_var.set(f"{len(rows)}か所 / {len(all_roots)} Modを調査中（日本語化Modは同じゲームの{len(pool)} Modと照合）")
+        self._start_mod_research(all_roots, replace=True, translation_pool=pool)
         if missing:
             record_error("Mod場所一括調査", detail="存在しない検出場所: " + " | ".join(missing))
 
@@ -5642,7 +5709,7 @@ Mod更新後だけ追加翻訳:
         if not roots:
             messagebox.showinfo(APP_NAME, "監視対象からlocalizationを持つModを確認できませんでした。")
             return
-        self._start_mod_research(roots, replace=True, translation_pool=roots)
+        self._start_mod_research(roots, replace=True, translation_pool=self._game_wide_translation_pool(rows, roots))
         self.monitor_status_var.set(f"再調査中 — {len(roots)} Mod")
 
     def on_monitor_provider_change(self):
@@ -6463,10 +6530,10 @@ Mod更新後だけ追加翻訳:
         self.mod_status_summary_var.set(f"バックグラウンド調査中: 0/{len(roots)}")
         self._set_monitor_scan_status(f"● 未翻訳Mod探索開始 — 0/{len(roots)}", "Mod一覧と別日本語化Modを確認しています")
         if replace:
+            # 調べ直すModの古い結果だけを除く。別の保管場所（ローカル／Workshop）の結果は残して一緒に見られるようにする。
             self.mod_status_search_var.set("")
             self.mod_status_search_result_var.set("")
-            self.mod_research_results=[]
-            self.events.put(("mod_status_results",[]))
+            self.events.put(("mod_status_results",App._results_without_roots(self.mod_research_results, roots)))
         self._mod_research_worker_settings = self._snapshot_monitor_worker_settings()
         self.mod_research_thread=threading.Thread(target=self._mod_research_worker,args=(roots,translation_pool),daemon=True)
         self.mod_research_thread.start()
@@ -6616,7 +6683,9 @@ Mod更新後だけ追加翻訳:
             except Exception:key=str(root)
             if root.exists() and key not in seen:
                 seen.add(key); pool.append(root)
-        self._start_mod_research(roots, replace=False, translation_pool=pool or roots)
+        games=[{"game":r.get("game") or self._backup_game_name_for_root(Path(r.get("path","")))} for r in selected]
+        pool=self._game_wide_translation_pool(games, pool or roots)
+        self._start_mod_research(roots, replace=False, translation_pool=pool)
 
     def queue_selected_mods_to_chinese_basis(self):
         """翻訳状況で選択したうち、簡体字中国語localizationを持つModだけ中国語基準キューへ追加する。"""
@@ -11616,9 +11685,9 @@ Mod更新後だけ追加翻訳:
                     self.monitor_thread=None
                     messagebox.showerror(APP_NAME,"未翻訳監視エラー: "+payload)
                 elif kind=="mod_status_results":
-                    self.mod_research_results=[]
+                    self.mod_research_results=list(payload or [])
                     self._populate_mod_status_tree()
-                    self.mod_status_summary_var.set("調査結果: 0件")
+                    self.mod_status_summary_var.set(f"調査結果: {len(self.mod_research_results)}件")
                 elif kind=="mod_status_append":
                     self.mod_research_results.append(payload)
                     self._populate_mod_status_tree()

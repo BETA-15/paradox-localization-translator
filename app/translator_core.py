@@ -4912,3 +4912,162 @@ def discover_paradox_mod_locations(home: Optional[Path] = None, platform: Option
                 add(game, "ローカルMod", mod_dir, meta["appid"])
 
     return sorted(results, key=lambda x: (x["game"].lower(), x["kind"], x["path"].lower()))
+
+
+# ---------------------------------------------------------------------------
+# 紐付けレポート（元Mod ⇔ 日本語化Mod の紐付けを一覧にし、ズレていそうなものに印を付ける）
+# ---------------------------------------------------------------------------
+
+# 元Mod側のキーのうち日本語化Modにもある割合がこれより低い紐付けは「要確認」にする。
+RELATION_REPORT_LOW_COVERAGE = 0.20
+_RELATION_NAME_STOPWORDS = {
+    "japanese", "japan", "translation", "translated", "localisation", "localization", "mod", "mods",
+    "the", "and", "for", "jp", "ja", "jpn", "日本語化", "日本語", "翻訳", "和訳",
+}
+
+
+def mod_location_kind(path: str) -> str:
+    """Mod の保管場所の種類（Steam Workshop / ローカル）。"""
+    raw = str(path or "").replace("\\", "/").lower()
+    if not raw:
+        return ""
+    return "Steam Workshop" if "/workshop/content/" in raw else "ローカル"
+
+
+def _relation_name_tokens(name: str) -> set:
+    low = str(name or "").lower()
+    words = set(re.findall(r"[a-z0-9]{3,}", low))
+    words |= set(re.findall(r"[぀-ヿ一-鿿]{2,}", low))
+    return {w for w in words if w not in _RELATION_NAME_STOPWORDS}
+
+
+def _relation_names_look_related(a: str, b: str) -> Optional[bool]:
+    """名前に共通の語があれば True、無ければ False、判断できなければ None。"""
+    ta, tb = _relation_name_tokens(a), _relation_name_tokens(b)
+    if not ta or not tb:
+        return None
+    if ta & tb:
+        return True
+    na = re.sub(r"\W+", "", str(a or "").lower()); nb = re.sub(r"\W+", "", str(b or "").lower())
+    return bool(na and nb and (na in nb or nb in na))
+
+
+def build_relation_report(results: Iterable[dict]) -> dict:
+    """翻訳状況の調査結果から、紐付けの一覧（rows）と日本語化Modごとの集計（by_translation）を作る。"""
+    rows = []
+    for r in results or []:
+        if not r.get("path"):
+            continue
+        if r.get("external_translation_mod"):
+            prefix, kind = "external_translation", "自動で紐付け"
+            if r.get("external_translation_confidence") == "candidate":
+                kind = "候補（自動では紐付けず）"
+        elif r.get("translation_candidate_mod"):
+            prefix, kind = "translation_candidate", "候補（自動では紐付けず）"
+        else:
+            prefix, kind = "", ""
+        get = (lambda k, d=None: r.get(f"{prefix}_{k}", d)) if prefix else (lambda k, d=None: d)
+        target_path = str(get("path", "") or "")
+        coverage = float(get("coverage", 0.0) or 0.0)
+        precision = float(get("precision", 0.0) or 0.0)
+        reasons = [str(x) for x in (get("reasons", []) or [])]
+        rows.append({
+            "ゲーム": str(r.get("game") or ""),
+            "元Mod": str(r.get("mod") or ""),
+            "元Modの保管場所": mod_location_kind(r.get("path", "")),
+            "状態": str(r.get("status") or ""),
+            "紐付け先": str(get("mod", "") or ""),
+            "紐付け先の保管場所": mod_location_kind(target_path),
+            "種別": kind,
+            "点数": round(float(get("score", 0.0) or 0.0), 1) if prefix else "",
+            "元Mod側の一致率": f"{coverage*100:.1f}%" if prefix else "",
+            "日本語化Mod側の一致率": f"{precision*100:.1f}%" if prefix else "",
+            "要確認": "",
+            "根拠": " / ".join(reasons[:6]),
+            "元Modの場所": str(r.get("path") or ""),
+            "紐付け先の場所": target_path,
+            "_coverage": coverage,
+        })
+
+    by_target: Dict[str, list] = {}
+    for row in rows:
+        if row["紐付け先の場所"]:
+            by_target.setdefault(row["紐付け先の場所"], []).append(row)
+
+    for row in rows:
+        flags = []
+        if not row["紐付け先"]:
+            row["要確認"] = ""
+            continue
+        if row["種別"].startswith("候補"):
+            flags.append("候補のみ（自動では紐付けていない）")
+        if row["_coverage"] < RELATION_REPORT_LOW_COVERAGE:
+            flags.append(f"元Modのキーとの一致が少ない（{row['元Mod側の一致率']}）")
+        related = _relation_names_look_related(row["元Mod"], row["紐付け先"])
+        if related is False:
+            flags.append("名前が似ていない")
+        linked = by_target.get(row["紐付け先の場所"], [])
+        auto_links = [x for x in linked if x["種別"] == "自動で紐付け"]
+        # 自動の紐付けが2つ以上あるとき、または候補が「すでに別の元Modに使われている日本語化Mod」を指すとき。
+        if len(linked) > 1 and (len(auto_links) > 1 or row["種別"] != "自動で紐付け"):
+            flags.append("同じ日本語化Modが複数の元Modに紐付いている")
+        row["要確認"] = "、".join(flags)
+
+    by_translation = []
+    for target_path, linked in sorted(by_target.items(), key=lambda kv: kv[1][0]["紐付け先"].lower()):
+        by_translation.append({
+            "日本語化Mod": linked[0]["紐付け先"],
+            "保管場所": linked[0]["紐付け先の保管場所"],
+            "元Modの数": len(linked),
+            "元Mod": "、".join(f"{x['元Mod']}（{x['種別'] or '—'}）" for x in linked),
+            "場所": target_path,
+        })
+    for row in rows:
+        row.pop("_coverage", None)
+    rows.sort(key=lambda x: (0 if x["要確認"] else 1, x["ゲーム"], x["元Mod"].lower()))
+    return {"rows": rows, "by_translation": by_translation}
+
+
+def relation_report_csv(report: dict) -> str:
+    import csv, io
+    rows = report.get("rows") or []
+    buf = io.StringIO()
+    fields = list(rows[0].keys()) if rows else ["ゲーム", "元Mod", "紐付け先", "要確認"]
+    w = csv.DictWriter(buf, fieldnames=fields, lineterminator="\n")
+    w.writeheader()
+    for row in rows:
+        w.writerow(row)
+    return buf.getvalue()
+
+
+def relation_report_markdown(report: dict, title: str = "紐付けレポート") -> str:
+    def cell(v):
+        return str(v).replace("|", "／").replace("\n", " ")
+    rows = report.get("rows") or []
+    flagged = [r for r in rows if r.get("要確認")]
+    out = [f"# {title}", "",
+           f"元Mod {len(rows)}件のうち、紐付けあり {sum(1 for r in rows if r.get('紐付け先'))}件、"
+           f"要確認 {len(flagged)}件。", "",
+           "「要確認」の印の意味：候補のみ＝自動では紐付けていない／一致が少ない＝元Modのキーのうち日本語化Modにもある割合が"
+           f"{RELATION_REPORT_LOW_COVERAGE*100:.0f}%未満／名前が似ていない＝名前に共通の語が無い／"
+           "複数に紐付き＝同じ日本語化Modが2つ以上の元Modに紐付いている（総合和訳なら正しいこともある）。", "",
+           "## 元Modごとの紐付け（要確認を先に表示）", "",
+           "| 要確認 | ゲーム | 元Mod | 元Modの保管場所 | 状態 | 紐付け先 | 紐付け先の保管場所 | 種別 | 点数 | 元Mod側の一致率 | 日本語化Mod側の一致率 |",
+           "|---|---|---|---|---|---|---|---|---:|---:|---:|"]
+    for r in rows:
+        out.append("| " + " | ".join(cell(r.get(k, "")) for k in (
+            "要確認", "ゲーム", "元Mod", "元Modの保管場所", "状態", "紐付け先", "紐付け先の保管場所",
+            "種別", "点数", "元Mod側の一致率", "日本語化Mod側の一致率")) + " |")
+    out += ["", "## 日本語化Modごとの紐付け先", "",
+            "| 日本語化Mod | 保管場所 | 元Modの数 | 元Mod |", "|---|---|---:|---|"]
+    for t in report.get("by_translation") or []:
+        out.append("| " + " | ".join(cell(t.get(k, "")) for k in ("日本語化Mod", "保管場所", "元Modの数", "元Mod")) + " |")
+    if flagged:
+        out += ["", "## 要確認の根拠", ""]
+        for r in flagged:
+            out += [f"### {cell(r['元Mod'])} → {cell(r['紐付け先'])}",
+                    f"- 要確認：{r['要確認']}",
+                    f"- 根拠：{r.get('根拠') or '（記録なし）'}",
+                    f"- 元Modの場所：{r['元Modの場所']}",
+                    f"- 紐付け先の場所：{r['紐付け先の場所']}", ""]
+    return "\n".join(out) + "\n"
