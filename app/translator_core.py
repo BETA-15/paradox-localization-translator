@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
-TRANSLATION_RELATION_ALGORITHM_VERSION = 3
+TRANSLATION_RELATION_ALGORITHM_VERSION = 4  # v0.11.80: 情報量で重み付けした一致率を追加（古い調査結果を使い回さない）
 LARGE_RELATION_MIN_EFFECTIVE_KEYS = 200
 # 紐付けの判定に使う「情報量で重み付けした一致率」の境目。
 # 実データ（HOI4 の Mod 84件・928組）では、元Modごとの最大の一致率が 15% 以下と 40% 以上の
@@ -44,6 +44,10 @@ RELATION_CANDIDATE_SOURCE_RATE = 0.15     # 元Mod側がこれ以上なら候補
 # 大きな Mod の一部だけを訳した日本語化：日本語化Mod側の重み付き一致率がこれ以上で、
 # 共通キーが LARGE_RELATION_MIN_EFFECTIVE_KEYS 件以上なら、元Mod側が低くても自動で紐付ける。
 RELATION_PARTIAL_TRANSLATION_CANDIDATE_RATE = 0.80
+# 一部だけの日本語化と見なすには、共通キーが「その元Modに固有のキー」でもあること。
+# 共通キーの重みの平均が、最も重いキー（1つの Mod にしか無いキー）の重みのこれ以上であること。
+# 割合は全部が国名などの共通キーでも 100% になるため、割合だけでは区別できない。
+RELATION_PARTIAL_MIN_SPECIFICITY = 0.50
 
 DEFAULT_MODEL = "qwen3.6:latest"
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
@@ -3923,10 +3927,20 @@ def prepare_translation_source_profile(source_language_entries: dict,
     }
 
 
-def relation_key_weights(key_sets: Iterable[set]) -> Dict[str, float]:
-    """キーごとの情報量（IDF）。w(k) = log(N / そのキーを持つ Mod の数)。
+class RelationKeyWeights(dict):
+    """キー → 情報量。プールに無いキーの重み（default）を1回だけ計算して持つ。"""
 
-    多くの Mod に出てくるキー（国名など）ほど 0 に近く、1つの Mod にしか無いキーほど大きい。
+    def __init__(self, values: Dict[str, float], default: float):
+        super().__init__(values)
+        self.default = default
+
+
+def relation_key_weights(key_sets: Iterable[set]) -> "RelationKeyWeights":
+    """キーごとの情報量（IDF）。w(k) = log((N + 1) / そのキーを持つ Mod の数)。
+
+    多くの Mod に出てくるキー（国名など）ほど軽く、1つの Mod にしか無いキーほど重い。
+    N+1 にしているのは、Mod が少ないとき（例：元Mod 1つと日本語化Modだけ）に重みが全部 0 になり、
+    どの組も紐付かなくなるのを防ぐため。
     """
     sets = [set(x) for x in key_sets if x]
     n = len(sets)
@@ -3934,7 +3948,8 @@ def relation_key_weights(key_sets: Iterable[set]) -> Dict[str, float]:
     for keys in sets:
         for k in keys:
             counts[k] = counts.get(k, 0) + 1
-    return {k: math.log(n / c) if n and c else 0.0 for k, c in counts.items()}
+    values = {k: math.log((n + 1) / c) for k, c in counts.items() if c}
+    return RelationKeyWeights(values, math.log(n + 1) if n else 1.0)
 
 
 def weighted_rate(part: set, whole: set, weights: Optional[Dict[str, float]]) -> float:
@@ -3943,19 +3958,34 @@ def weighted_rate(part: set, whole: set, weights: Optional[Dict[str, float]]) ->
         return 0.0
     if not weights:
         return len(part & whole) / len(whole)
-    default = max(weights.values()) if weights else 1.0  # プールに無いキーは「その Mod にしか無い」扱い
+    # プールに無いキーは「その Mod にしか無い」扱い（最も重い）
+    default = getattr(weights, "default", None)
+    if default is None:
+        default = max(weights.values()) if weights else 1.0
     total = sum(weights.get(k, default) for k in whole)
     if total <= 0:
-        return 0.0
+        return len(part & whole) / len(whole)
     return sum(weights.get(k, default) for k in (part & whole)) / total
 
 
-def relation_weighted_tier(source_rate: float, candidate_rate: float, overlap_keys: int = 0) -> str:
+def relation_overlap_specificity(overlap: set, weights: Optional[Dict[str, float]]) -> float:
+    """共通キーの重みの平均 ÷ 最も重いキーの重み（0〜1）。重みが無ければ 1。"""
+    if not weights or not overlap:
+        return 1.0 if not weights else 0.0
+    default = getattr(weights, "default", None) or max(weights.values())
+    if default <= 0:
+        return 1.0
+    return min(1.0, sum(weights.get(k, default) for k in overlap) / (len(overlap) * default))
+
+
+def relation_weighted_tier(source_rate: float, candidate_rate: float, overlap_keys: int = 0,
+                           specificity: float = 1.0) -> str:
     if source_rate >= RELATION_AUTO_SOURCE_RATE or (
             source_rate >= RELATION_AUTO_PARTIAL_SOURCE_RATE and candidate_rate >= RELATION_AUTO_PARTIAL_CANDIDATE_RATE):
         return "auto"
     if (candidate_rate >= RELATION_PARTIAL_TRANSLATION_CANDIDATE_RATE
-            and overlap_keys >= LARGE_RELATION_MIN_EFFECTIVE_KEYS):
+            and overlap_keys >= LARGE_RELATION_MIN_EFFECTIVE_KEYS
+            and specificity >= RELATION_PARTIAL_MIN_SPECIFICITY):
         return "auto"  # 日本語化Modの中身のほとんどがこの元Modのもの（一部だけの日本語化）
     if source_rate >= RELATION_CANDIDATE_SOURCE_RATE:
         return "candidate"
@@ -4020,9 +4050,35 @@ def translation_relation_evidence(source_language_entries: dict, row: dict,
     source_rate = len(effective_overlap) / max(1, len(source_effective_keys))
     candidate_rate = len(effective_overlap) / max(1, len(candidate_effective_keys))
     key_weights = row.get("relation_key_weights") or {}
-    weighted_source_rate = weighted_rate(effective_overlap, source_effective_keys, key_weights)
-    weighted_candidate_rate = weighted_rate(effective_overlap, candidate_effective_keys, key_weights)
-    weighted_tier = relation_weighted_tier(weighted_source_rate, weighted_candidate_rate, len(effective_overlap))
+    if key_weights:
+        # 元Mod側の重みの合計は、候補ごとに変わらないので元Modごとに1回だけ計算する。
+        cache = source_profile.setdefault("_weight_sum_cache", {})
+        cache_key = id(key_weights)
+        if cache_key not in cache:
+            default = getattr(key_weights, "default", None) or max(key_weights.values())
+            cache[cache_key] = (sum(key_weights.get(k, default) for k in source_effective_keys), default)
+        src_total, default = cache[cache_key]
+        if src_total > 0:
+            weighted_source_rate = sum(key_weights.get(k, default) for k in effective_overlap) / src_total
+        else:
+            weighted_source_rate = len(effective_overlap) / max(1, len(source_effective_keys))
+    else:
+        weighted_source_rate = weighted_rate(effective_overlap, source_effective_keys, key_weights)
+    if key_weights:
+        # 日本語化Mod側の重みの合計も、日本語化Modごとに1回だけ計算する。
+        default = getattr(key_weights, "default", None) or max(key_weights.values())
+        row_cache = row.setdefault("_relation_weight_cache", {})
+        cand_key = (id(key_weights), len(candidate_effective_keys))
+        if cand_key not in row_cache:
+            row_cache[cand_key] = sum(key_weights.get(k, default) for k in candidate_effective_keys)
+        cand_total = row_cache[cand_key]
+        weighted_candidate_rate = (sum(key_weights.get(k, default) for k in effective_overlap) / cand_total
+                                   if cand_total > 0 else len(effective_overlap) / max(1, len(candidate_effective_keys)))
+    else:
+        weighted_candidate_rate = weighted_rate(effective_overlap, candidate_effective_keys, key_weights)
+    overlap_specificity = relation_overlap_specificity(effective_overlap, key_weights)
+    weighted_tier = relation_weighted_tier(weighted_source_rate, weighted_candidate_rate, len(effective_overlap),
+                                           overlap_specificity)
     if len(source_effective_keys) >= 100:
         required_match_count = LARGE_RELATION_MIN_EFFECTIVE_KEYS
         source_rate_pass = source_rate >= 0.40
@@ -4064,6 +4120,7 @@ def translation_relation_evidence(source_language_entries: dict, row: dict,
         "weighted_source_rate": weighted_source_rate,
         "weighted_candidate_rate": weighted_candidate_rate,
         "weighted_tier": weighted_tier,
+        "overlap_specificity": overlap_specificity,
         "weighted": bool(key_weights),
         "_effective_overlap_set": effective_overlap,
         "_source_effective_set": source_effective_keys,
