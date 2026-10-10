@@ -5220,7 +5220,7 @@ def relation_report_markdown(report: dict, title: str = "紐付けレポート")
     flagged = [r for r in rows if r.get("要確認")]
     out = [f"# {title}", "",
            "一致率の「重み付き」は、多くのModに共通して出てくるキー（国名など）ほど軽く数えた割合です"
-           "（キーの重み = log(Mod数 ÷ そのキーを持つMod数)）。", "",
+           "（キーの重み = log((Mod数 + 1) ÷ そのキーを原文に持つMod数)）。", "",
            f"元Mod {len(rows)}件のうち、紐付けあり {sum(1 for r in rows if r.get('紐付け先'))}件、"
            f"要確認 {len(flagged)}件。", "",
            "「要確認」の印の意味：候補のみ＝自動では紐付けていない／一致が少ない＝元Modのキーのうち日本語化Modにもある割合"
