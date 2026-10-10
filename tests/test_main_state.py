@@ -16,7 +16,7 @@ main = importlib.import_module("main")
 
 def test_relation_algorithm_change_invalidates_old_status_cache_generation():
     assert main.MOD_STATUS_CACHE_VERSION == 16
-    assert main.core.TRANSLATION_RELATION_ALGORITHM_VERSION == 3
+    assert main.core.TRANSLATION_RELATION_ALGORITHM_VERSION == 4
     assert main._translation_status_snapshot_is_current({"schema": 1}) is False
     assert main._translation_status_snapshot_is_current({
         "schema": 2,
@@ -27,6 +27,11 @@ def test_relation_algorithm_change_invalidates_old_status_cache_generation():
         "schema": 2,
         "mod_status_cache_version": 16,
         "relation_algorithm_version": 3,
+    }) is False  # v0.11.80 より前の照合の結果は使い回さない
+    assert main._translation_status_snapshot_is_current({
+        "schema": 2,
+        "mod_status_cache_version": 16,
+        "relation_algorithm_version": 4,
     }) is True
 
 

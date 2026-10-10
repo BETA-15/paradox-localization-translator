@@ -97,3 +97,15 @@ def test_shared_generic_keys_do_not_make_a_multi_translation_pack(tmp_path):
     assert idx["+JP Country Names"]["multi_translation_source_paths"] == []
     ranked = {r["mod"]: r for r in core.rank_external_japanese_translations(mods["alpha"], list(idx.values()))}
     assert ranked["+JP Country Names"]["classification"] != "auto"
+
+
+def test_tiny_pool_with_one_source_still_links(tmp_path):
+    # 元Mod 1つと、その日本語化Modだけ（ゲームが分からず照合範囲が選択だけのときなど）
+    ws = tmp_path / "workshop" / "content" / "394360"
+    src = ws / "solo"
+    _write(src, "english", {f"solo_key_{i}": f"text {i}" for i in range(300)}, "Solo Mod")
+    jp = ws / "solo_jp"
+    _write(jp, "japanese", {f"solo_key_{i}": f"訳 {i}" for i in range(300)}, "+JP Solo Mod")
+    idx = core.assign_translation_candidate_owners([src, jp], core.build_translation_mod_index([jp]))
+    found = core.find_external_japanese_translation(src, idx)
+    assert found is not None and found["mod"] == "+JP Solo Mod"
