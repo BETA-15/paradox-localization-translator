@@ -8208,12 +8208,8 @@ Mod更新後だけ追加翻訳:
             root = Path(raw) if raw else OUTPUT_ROOT
         target_lang = core.DEFAULT_TARGET_LANG if mode == "chinese" else _item_target_lang(item)
         expected = self._isolated_output_path(inp, root, item.get("mod_name", ""), target_lang=target_lang)
-        if target_lang != core.DEFAULT_TARGET_LANG and item.get("output_isolated_v2"):
-            # v0.12.0 で日本語以外を訳した項目は、出力先が「…_japanese」（日本語と共有）になっている。
-            # 訳した出力を見失わないよう、記録している出力先をそのまま使い、移さない。
-            shared = self._isolated_output_path(inp, root, item.get("mod_name", ""), target_lang=core.DEFAULT_TARGET_LANG)
-            if item.get("output") == str(shared):
-                return
+        # v0.12.0 で日本語以外を訳した項目（出力先が日本語と共有の「…_japanese」）も、ここで「…_<言語>」へ向け直す。
+        # 古い出力のファイルは動かさない（「…_japanese」の中に残る）。キャッシュは CACHE_ROOT にあるので訳し直しにはならない。
         if item.get("output") != str(expected) or not item.get("output_isolated_v2"):
             item["output"] = str(expected)
             item["output_isolated_v2"] = True

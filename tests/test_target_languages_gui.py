@@ -117,11 +117,18 @@ def test_queue_items_get_a_per_language_output_and_old_items_are_corrected(tmp_p
     main.App._append_queue(state, mod, target_lang="japanese")
     fr, ja = state.queue_items
     assert fr["output"].endswith("_french") and ja["output"].endswith("_japanese") and fr["output"] != ja["output"]
-    # v0.12.0 で保存したフランス語の項目（出力先が _japanese）は、訳した出力を見失わないよう、そのまま使う（移さない）
+    # v0.12.0 で保存したフランス語の項目（出力先が _japanese）は、次に始めるときに _french へ向け直す。
+    # キャッシュの場所は変えない（訳し直しにならない）。古い出力のファイルは動かさない。
+    cache = tmp_path / "cache" / "job" / "translate_cache.json"
     old = {"input": str(mod), "mod_name": "Example", "target_lang": "french", "output_isolated_v2": True,
-           "output": ja["output"]}
+           "output": ja["output"], "cache": str(cache)}
+    old_output = Path(ja["output"]); (old_output / "french").mkdir(parents=True)
+    (old_output / "french" / "ev_l_french.yml").write_text('l_french:\n a:0 "Texte"\n', encoding="utf-8")
     main.App._ensure_isolated_item_output(state, old)
-    assert old["output"] == ja["output"]
+    assert old["output"] == fr["output"]
+    assert old["cache"] == str(cache)
+    assert main._cache_for_target(old["cache"], "french") == cache.parent / "target_french" / cache.name
+    assert (old_output / "french" / "ev_l_french.yml").exists()
     # 新しく足したフランス語の項目は、フランス語の出力先のまま
     main.App._ensure_isolated_item_output(state, fr)
     assert fr["output"].endswith("_french")
@@ -162,3 +169,22 @@ def test_same_mod_in_japanese_and_french_keeps_outputs_and_reports_apart(tmp_pat
         assert len(json.loads((out / "translation_error_report.json").read_text(encoding="utf-8"))["attempts"]) == 1
         assert (out / "translation_qa_repair_report.json").exists()
     assert main.core.parse_localization_file(outputs["japanese"] / "japanese" / "ev_l_japanese.yml")[1]["a"] == texts["japanese"]
+
+
+def test_redirected_output_reuses_the_cache_without_calling_the_llm(tmp_path, monkeypatch):
+    """v0.12.0 の項目を _french へ向け直しても、キャッシュから出力でき、訳し直しにならない。"""
+    src = tmp_path / "mod" / "localization" / "english"; src.mkdir(parents=True)
+    (src / "ev_l_english.yml").write_text('l_english:\n a:0 "The council approved the law"\n', encoding="utf-8")
+    calls = []
+    monkeypatch.setattr(main.core, "translate_batch",
+                        lambda _u, _m, jobs, _s, *a, **k: calls.append(1) or ["Le conseil a approuvé la loi" for _ in jobs])
+    cache = main._cache_for_target(tmp_path / "cache" / "job" / "translate_cache.json", "french")
+    old_out, new_out = tmp_path / "out" / "Mod_x_japanese", tmp_path / "out" / "Mod_x_french"
+    main.core.run_translation(tmp_path / "mod" / "localization", old_out, target_lang="french", cache_path=cache,
+                              verbose=False, auto_qa=False)
+    calls.clear()
+    main.core.run_translation(tmp_path / "mod" / "localization", new_out, target_lang="french", cache_path=cache,
+                              verbose=False, auto_qa=False)
+    assert calls == []
+    assert main.core.parse_localization_file(new_out / "french" / "ev_l_french.yml")[1]["a"] == "Le conseil a approuvé la loi"
+    assert (old_out / "french" / "ev_l_french.yml").exists()
