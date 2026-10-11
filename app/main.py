@@ -1759,60 +1759,59 @@ class App(BaseTk):
         left=ttk.Frame(main,padding=(0,0,6,0)); right=ttk.Frame(main,padding=(6,0,0,0))
         main.add(left,weight=2); main.add(right,weight=3)
 
-        intro=ttk.LabelFrame(left,text="中国語の漢字を基準に日本語化",padding=9); intro.pack(fill="x")
-        ttk.Label(intro,text=("簡体字中国語のlocalizationを直接読み込み、中国語原文の漢字語彙・制度名・官職名・歴史用語を第一基準として日本語化します。\n"
-                              "英語ファイルは不要です。簡体字は日本語で一般的な字体へ整え、文章は自然な日本語にします。"),
+        intro=ttk.LabelFrame(left,text=i18n.t("u2.intro_title", target_name=i18n.t("lang." + core.DEFAULT_TARGET_LANG)),padding=9); intro.pack(fill="x")
+        ttk.Label(intro,text=(i18n.t("u2.intro_description", target_name=i18n.t("lang." + core.DEFAULT_TARGET_LANG))),
                   wraplength=430,foreground="#333",justify="left").pack(fill="x")
 
-        src=ttk.LabelFrame(left,text="入力 / 出力",padding=9); src.pack(fill="x",pady=(5,0)); src.columnconfigure(0,weight=1)
-        ttk.Label(src,text="中国語YAML / フォルダ").grid(row=0,column=0,sticky="w")
+        src=ttk.LabelFrame(left,text=i18n.t("u2.input_output"),padding=9); src.pack(fill="x",pady=(5,0)); src.columnconfigure(0,weight=1)
+        ttk.Label(src,text=i18n.t("u2.chinese_input")).grid(row=0,column=0,sticky="w")
         self.chinese_input_entry=ttk.Entry(src,textvariable=self.chinese_input_var,state="readonly"); self.chinese_input_entry.grid(row=1,column=0,sticky="ew",pady=(3,0))
         pickbar=ttk.Frame(src); pickbar.grid(row=2,column=0,sticky="ew",pady=(5,0))
         chinese_add_menu=tk.Menu(pickbar,tearoff=False)
-        chinese_add_menu.add_command(label="中国語YAMLファイルを追加",command=self.pick_chinese_file)
-        chinese_add_menu.add_command(label="中国語localizationフォルダを追加",command=self.pick_chinese_folder)
-        self.chinese_add_menu_button=ttk.Menubutton(pickbar,text="追加",menu=chinese_add_menu)
+        chinese_add_menu.add_command(label=i18n.t("u2.add_yaml"),command=self.pick_chinese_file)
+        chinese_add_menu.add_command(label=i18n.t("u2.add_localization"),command=self.pick_chinese_folder)
+        self.chinese_add_menu_button=ttk.Menubutton(pickbar,text=i18n.t("u2.add"),menu=chinese_add_menu)
         self.chinese_add_menu_button.pack(side="left")
-        ttk.Label(pickbar,text="選択するとそのまま中国語基準翻訳キューへ追加します",foreground="#666").pack(side="left",padx=(8,0))
+        ttk.Label(pickbar,text=i18n.t("u2.selection_hint"),foreground="#666").pack(side="left",padx=(8,0))
         ttk.Label(src,textvariable=self.chinese_status_var,foreground="#555",wraplength=430,justify="left").grid(row=3,column=0,sticky="w",pady=(4,0))
         ttk.Separator(src,orient="horizontal").grid(row=4,column=0,sticky="ew",pady=5)
-        ttk.Label(src,text="出力先ルート").grid(row=5,column=0,sticky="w")
+        ttk.Label(src,text=i18n.t("u2.output_root")).grid(row=5,column=0,sticky="w")
         self.chinese_output_entry=ttk.Entry(src,textvariable=self.chinese_output_var)
         self.chinese_output_entry.grid(row=6,column=0,sticky="ew",pady=(3,0))
         outbar=ttk.Frame(src); outbar.grid(row=7,column=0,sticky="ew",pady=(5,0))
-        self.chinese_pick_output_btn=ttk.Button(outbar,text="選択",command=self.pick_chinese_output)
+        self.chinese_pick_output_btn=ttk.Button(outbar,text=i18n.t("u2.select"),command=self.pick_chinese_output)
         self.chinese_pick_output_btn.pack(side="left")
-        ttk.Button(outbar,text="開く",command=lambda:self._open_path(Path(self.chinese_output_var.get()))).pack(side="left",padx=(5,0))
+        ttk.Button(outbar,text=i18n.t("u2.open"),command=lambda:self._open_path(Path(self.chinese_output_var.get()))).pack(side="left",padx=(5,0))
 
-        settings=ttk.LabelFrame(left,text="モデル / 接続（共通設定）",padding=9); settings.pack(fill="x",pady=(5,0))
-        ttk.Label(settings,text="中国語基準翻訳でも、プロバイダ / URL / モデル / APIキー / バッチ / 並列 / プリセット / 用語集は［モデル / 接続］タブの共通設定を使用します。",wraplength=430,justify="left").pack(anchor="w")
-        ttk.Button(settings,text="モデル / 接続を開く",command=lambda:self.notebook.select(self.tab_models)).pack(anchor="w",pady=(6,0))
-        ttk.Label(settings,text="中国語の漢字語彙を優先し、不要な英語風カタカナ化を避けます。",foreground="#7a4b00",wraplength=430).pack(anchor="w",pady=(6,0))
-        ttk.Checkbutton(settings,text="翻訳後にバックアップ・中国語翻訳語自動QA・エラー修正",variable=self.chinese_autoqa_var,command=self._save_llm_preferences).pack(anchor="w",pady=(7,0))
-        ttk.Label(settings,text="チェック時は未翻訳、キー欠落、ゲーム変数/タグを自動QA・修正します。固有名詞候補などの注意は修正しません。",foreground="#555",wraplength=430,justify="left").pack(anchor="w",pady=(5,0))
+        settings=ttk.LabelFrame(left,text=i18n.t("u2.shared_settings"),padding=9); settings.pack(fill="x",pady=(5,0))
+        ttk.Label(settings,text=i18n.t("u2.shared_settings_hint"),wraplength=430,justify="left").pack(anchor="w")
+        ttk.Button(settings,text=i18n.t("u2.open_settings"),command=lambda:self.notebook.select(self.tab_models)).pack(anchor="w",pady=(6,0))
+        ttk.Label(settings,text=i18n.t("u2.vocabulary_hint"),foreground="#7a4b00",wraplength=430).pack(anchor="w",pady=(6,0))
+        ttk.Checkbutton(settings,text=i18n.t("u2.autoqa"),variable=self.chinese_autoqa_var,command=self._save_llm_preferences).pack(anchor="w",pady=(7,0))
+        ttk.Label(settings,text=i18n.t("u2.autoqa_hint"),foreground="#555",wraplength=430,justify="left").pack(anchor="w",pady=(5,0))
 
-        qbox=ttk.LabelFrame(right,text="中国語基準翻訳キュー",padding=8); qbox.pack(fill="both",expand=True)
+        qbox=ttk.LabelFrame(right,text=i18n.t("u2.queue_title"),padding=8); qbox.pack(fill="both",expand=True)
         qbar=ttk.Frame(qbox); qbar.pack(fill="x",pady=(0,5))
-        self.chinese_remove_btn=ttk.Button(qbar,text="選択削除",command=self.remove_chinese_queue_selected); self.chinese_remove_btn.pack(side="left")
-        self.chinese_clear_btn=ttk.Button(qbar,text="全消去",command=self.clear_chinese_queue); self.chinese_clear_btn.pack(side="left",padx=(5,0))
-        self.chinese_change_output_btn=ttk.Button(qbar,text="出力先変更",command=self.change_chinese_output_for_selected); self.chinese_change_output_btn.pack(side="left",padx=(10,0))
-        ttk.Button(qbar,text="キャッシュを見る",command=self.view_selected_chinese_cache).pack(side="left",padx=(5,0))
-        self.chinese_import_cache_btn=ttk.Button(qbar,text="キャッシュを追加",command=self.import_cache_to_selected_chinese); self.chinese_import_cache_btn.pack(side="left",padx=(5,0))
+        self.chinese_remove_btn=ttk.Button(qbar,text=i18n.t("u2.remove_selected"),command=self.remove_chinese_queue_selected); self.chinese_remove_btn.pack(side="left")
+        self.chinese_clear_btn=ttk.Button(qbar,text=i18n.t("u2.clear_all"),command=self.clear_chinese_queue); self.chinese_clear_btn.pack(side="left",padx=(5,0))
+        self.chinese_change_output_btn=ttk.Button(qbar,text=i18n.t("u2.change_output"),command=self.change_chinese_output_for_selected); self.chinese_change_output_btn.pack(side="left",padx=(10,0))
+        ttk.Button(qbar,text=i18n.t("u2.view_cache"),command=self.view_selected_chinese_cache).pack(side="left",padx=(5,0))
+        self.chinese_import_cache_btn=ttk.Button(qbar,text=i18n.t("u2.add_cache"),command=self.import_cache_to_selected_chinese); self.chinese_import_cache_btn.pack(side="left",padx=(5,0))
 
         qbar2=ttk.Frame(qbox); qbar2.pack(fill="x",pady=(0,5))
-        self.chinese_overwrite_btn=ttk.Button(qbar2,text="選択項目を一括上書き",command=self.overwrite_selected_chinese_translation); self.chinese_overwrite_btn.pack(side="left")
-        self.chinese_qa_btn=ttk.Button(qbar2,text="選択項目のQA・自動修正を実行",command=self.run_selected_chinese_qa); self.chinese_qa_btn.pack(side="left",padx=(6,0))
-        self.chinese_glossary_btn=ttk.Button(qbar2,text="用語集を自動作成",command=lambda:self.start_auto_glossary_generation("chinese")); self.chinese_glossary_btn.pack(side="left",padx=(6,0))
-        self.chinese_send_qa_btn=ttk.Button(qbar2,text="QA / 比較編集へ",command=lambda:self._send_pair_to_qa_or_diff("chinese","review")); self.chinese_send_qa_btn.pack(side="left",padx=(6,0))
-        self.chinese_send_diff_btn=ttk.Button(qbar2,text="差分調査へ",command=lambda:self._send_pair_to_qa_or_diff("chinese","diff")); self.chinese_send_diff_btn.pack(side="left",padx=(6,0))
-        self.chinese_transfer_btn=ttk.Button(qbar,text="通常翻訳キューへ渡す",command=lambda:self.transfer_selected_queue_to_opposite("chinese",False)); self.chinese_transfer_btn.pack(side="left",padx=(10,0))
-        self.chinese_transfer_missing_btn=ttk.Button(qbar2,text="英語不足分だけをキューへ追加",command=lambda:self.transfer_selected_queue_to_opposite("chinese",True)); self.chinese_transfer_missing_btn.pack(side="left",padx=(6,0))
-        ttk.Label(qbox,text="上書き: 複数選択に対応。最初に上書き方針を1回だけ選び、完了済み項目をまとめて処理します。成功した項目は「上書き済み」と表示します。",foreground="#8a5a00",wraplength=900,justify="left").pack(fill="x",anchor="w",pady=(0,5))
+        self.chinese_overwrite_btn=ttk.Button(qbar2,text=i18n.t("u2.overwrite_selected"),command=self.overwrite_selected_chinese_translation); self.chinese_overwrite_btn.pack(side="left")
+        self.chinese_qa_btn=ttk.Button(qbar2,text=i18n.t("u2.qa_selected"),command=self.run_selected_chinese_qa); self.chinese_qa_btn.pack(side="left",padx=(6,0))
+        self.chinese_glossary_btn=ttk.Button(qbar2,text=i18n.t("u2.auto_glossary"),command=lambda:self.start_auto_glossary_generation("chinese")); self.chinese_glossary_btn.pack(side="left",padx=(6,0))
+        self.chinese_send_qa_btn=ttk.Button(qbar2,text=i18n.t("u2.send_to_qa"),command=lambda:self._send_pair_to_qa_or_diff("chinese","review")); self.chinese_send_qa_btn.pack(side="left",padx=(6,0))
+        self.chinese_send_diff_btn=ttk.Button(qbar2,text=i18n.t("u2.send_to_diff"),command=lambda:self._send_pair_to_qa_or_diff("chinese","diff")); self.chinese_send_diff_btn.pack(side="left",padx=(6,0))
+        self.chinese_transfer_btn=ttk.Button(qbar,text=i18n.t("u2.send_to_normal"),command=lambda:self.transfer_selected_queue_to_opposite("chinese",False)); self.chinese_transfer_btn.pack(side="left",padx=(10,0))
+        self.chinese_transfer_missing_btn=ttk.Button(qbar2,text=i18n.t("u2.queue_missing_english"),command=lambda:self.transfer_selected_queue_to_opposite("chinese",True)); self.chinese_transfer_missing_btn.pack(side="left",padx=(6,0))
+        ttk.Label(qbox,text=i18n.t("u2.overwrite_hint"),foreground="#8a5a00",wraplength=900,justify="left").pack(fill="x",anchor="w",pady=(0,5))
         cols=("mod","input","output","status")
         chinese_queue_table=ttk.Frame(qbox)
         chinese_queue_table.pack(fill="both",expand=True)
         self.chinese_queue_tree=ttk.Treeview(chinese_queue_table,columns=cols,show="headings",height=10,selectmode="extended")
-        for c,txt,w in (("mod","Mod / 項目",240),("input","中国語localization",430),("output","出力",390),("status","状態",230)):
+        for c,txt,w in (("mod",i18n.t("u2.mod_item"),240),("input",i18n.t("u2.chinese_localization"),430),("output",i18n.t("u2.output"),390),("status",i18n.t("u2.status"),230)):
             self.chinese_queue_tree.heading(c,text=txt)
             self.chinese_queue_tree.column(c,width=w,minwidth=120,stretch=False,anchor="center" if c=="status" else "w")
         self._enable_ctrl_multiselect(self.chinese_queue_tree)
@@ -1832,17 +1831,17 @@ class App(BaseTk):
         self._cross_queue_controls.extend([self.chinese_transfer_btn,self.chinese_transfer_missing_btn])
 
         actions=ttk.Frame(right); actions.pack(fill="x",pady=(7,0))
-        self.chinese_start_btn=ttk.Button(actions,text="翻訳開始",command=self.start_chinese_basis_translation); self.chinese_start_btn.pack(side="left")
-        self.chinese_pause_btn=ttk.Button(actions,text="一時停止",command=self.toggle_chinese_pause,state="disabled"); self.chinese_pause_btn.pack(side="left",padx=(6,0))
-        self.chinese_stop_btn=ttk.Button(actions,text="セーブして中断",command=self.save_and_stop_chinese_translation,state="disabled"); self.chinese_stop_btn.pack(side="left",padx=(6,0))
-        ttk.Button(actions,text="出力を開く",command=self.open_selected_chinese_output).pack(side="left",padx=(6,0))
+        self.chinese_start_btn=ttk.Button(actions,text=i18n.t("u2.start"),command=self.start_chinese_basis_translation); self.chinese_start_btn.pack(side="left")
+        self.chinese_pause_btn=ttk.Button(actions,text=i18n.t("u2.pause"),command=self.toggle_chinese_pause,state="disabled"); self.chinese_pause_btn.pack(side="left",padx=(6,0))
+        self.chinese_stop_btn=ttk.Button(actions,text=i18n.t("u2.save_stop"),command=self.save_and_stop_chinese_translation,state="disabled"); self.chinese_stop_btn.pack(side="left",padx=(6,0))
+        ttk.Button(actions,text=i18n.t("u2.open_output"),command=self.open_selected_chinese_output).pack(side="left",padx=(6,0))
         ttk.Label(actions,textvariable=self.chinese_progress_var).pack(side="right")
         self.chinese_progress=ttk.Progressbar(right,mode="determinate",maximum=100); self.chinese_progress.pack(fill="x",pady=(6,7))
 
-        logbox=ttk.LabelFrame(right,text="中国語基準翻訳ログ",padding=6); logbox.pack(fill="both",expand=True)
+        logbox=ttk.LabelFrame(right,text=i18n.t("u2.log_title"),padding=6); logbox.pack(fill="both",expand=True)
         lbar=ttk.Frame(logbox); lbar.pack(fill="x",pady=(0,4))
-        ttk.Button(lbar,text="エラーログを開く",command=lambda:self._open_path(LOG_ROOT)).pack(side="left")
-        ttk.Button(lbar,text="診断ログを収集",command=self.collect_error_logs).pack(side="left",padx=(5,0))
+        ttk.Button(lbar,text=i18n.t("u2.open_error_log"),command=lambda:self._open_path(LOG_ROOT)).pack(side="left")
+        ttk.Button(lbar,text=i18n.t("u2.collect_logs"),command=self.collect_error_logs).pack(side="left",padx=(5,0))
         self.chinese_log=tk.Text(logbox,height=6,wrap="word",state="disabled")
         y=ttk.Scrollbar(logbox,command=self.chinese_log.yview); self.chinese_log.configure(yscrollcommand=y.set)
         self.chinese_log.pack(side="left",fill="both",expand=True); y.pack(side="right",fill="y")
@@ -1858,20 +1857,20 @@ class App(BaseTk):
 
     def _validate_chinese_input(self, path: Path):
         if not path.exists():
-            return False,"選択したパスが存在しません。"
+            return False,i18n.t("u2.path_missing")
         if path.is_file():
             try: lang,_,_=core.parse_localization_file(path)
-            except Exception as exc: return False,f"YAMLを読み込めません: {exc}"
-            if lang!="simp_chinese": return False,f"このファイルは l_simp_chinese ではありません（検出: {lang}）。"
-            return True,f"簡体字中国語YAMLを確認しました: {path.name}"
+            except Exception as exc: return False,i18n.t("u2.yaml_read_error", error=exc)
+            if lang!="simp_chinese": return False,i18n.t("u2.wrong_language", language=lang)
+            return True,i18n.t("u2.yaml_confirmed", filename=path.name)
         count=0
         for f in core.gather_yml_files(path):
             try:
                 lang,_,_=core.parse_localization_file(f)
                 if lang=="simp_chinese": count+=1
             except Exception: pass
-        if not count: return False,"フォルダ内に l_simp_chinese のYAMLが見つかりませんでした。"
-        return True,f"簡体字中国語YAMLを {count} ファイル検出しました。"
+        if not count: return False,i18n.t("u2.folder_no_yaml")
+        return True,i18n.t("u2.yaml_count", count=count)
 
     def _refresh_chinese_queue_tree(self):
         if not hasattr(self,"chinese_queue_tree"): return
@@ -1887,17 +1886,17 @@ class App(BaseTk):
 
     def _append_chinese_queue(self, path, mod_name=""):
         if self._chinese_queue_locked():
-            return None,"中国語基準キューは処理中のため変更できません。"
+            return None,i18n.t("u2.queue_locked")
         path=Path(path); ok,msg=self._validate_chinese_input(path)
         if not ok: return None,msg
         key=str(path.resolve())
         for item in self.chinese_queue_items:
             try:
-                if str(Path(item.get("input","")).resolve())==key: return item,"すでに中国語基準キューに追加されています。"
+                if str(Path(item.get("input","")).resolve())==key: return item,i18n.t("u2.already_queued")
             except Exception: pass
         output_root = Path(self.chinese_output_var.get().strip() or str(OUTPUT_ROOT/"中国語基準翻訳"))
         isolated_output = self._isolated_output_path(path, output_root, mod_name or "")
-        item={"input":str(path),"mod_name":mod_name or path.name,"status":"待機","output":str(isolated_output),"output_isolated_v2":True}
+        item={"input":str(path),"mod_name":mod_name or path.name,"status":status_value("waiting"),"output":str(isolated_output),"output_isolated_v2":True}
         app_state.ensure_queue_item_id(item)
         if path.is_dir() and core.is_localization_dir_name(path.name):
             item["mod_localization"]=str(path); item["mod_root"]=str(path.parent)
@@ -1926,7 +1925,7 @@ class App(BaseTk):
             return None
         sel=self.chinese_queue_tree.selection()
         if not sel:
-            messagebox.showinfo(APP_NAME,"中国語基準翻訳キューから項目を1つ選択してください。")
+            messagebox.showinfo(APP_NAME,i18n.t("u2.select_queue_item"))
             return None
         try:
             idx=int(sel[0].split("_",1)[1])
@@ -1938,17 +1937,17 @@ class App(BaseTk):
         if self._chinese_queue_locked(): return
         item=self._selected_chinese_queue_item()
         if not item: return
-        raw=filedialog.askdirectory(title="選択した中国語基準翻訳の出力先を変更")
+        raw=filedialog.askdirectory(title=i18n.t("u2.change_output_title"))
         if not raw: return
         item["output"]=str(Path(raw))
-        self._append_chinese_log(f"出力先変更: {item.get('mod_name','項目')} → {raw}")
+        self._append_chinese_log(i18n.t("u2.output_changed", mod_name=item.get('mod_name',i18n.t('u2.item')), path=raw))
 
     def open_selected_chinese_output(self):
         item=self._selected_chinese_queue_item()
         if not item: return
         raw=item.get("output","")
         if not raw:
-            messagebox.showinfo(APP_NAME,"この項目の出力先が設定されていません。")
+            messagebox.showinfo(APP_NAME,i18n.t("u2.output_unset"))
             return
         self._open_path(Path(raw))
 
@@ -1957,7 +1956,7 @@ class App(BaseTk):
         if not item: return
         raw=item.get("cache","")
         if not raw:
-            messagebox.showinfo(APP_NAME,"この項目にはまだキャッシュがありません。翻訳を開始すると作成されます。")
+            messagebox.showinfo(APP_NAME,i18n.t("u2.cache_missing"))
             return
         cache=Path(raw)
         self._open_path(cache.parent if cache.parent.exists() else cache)
@@ -1966,7 +1965,7 @@ class App(BaseTk):
         if self._chinese_queue_locked(): return
         item=self._selected_chinese_queue_item()
         if not item: return
-        raw=filedialog.askopenfilename(title="中国語基準翻訳キャッシュを追加",filetypes=[("JSON","*.json"),("All files","*")])
+        raw=filedialog.askopenfilename(title=i18n.t("u2.import_cache_title"),filetypes=[("JSON","*.json"),("All files","*")])
         if not raw: return
         src=Path(raw)
         try:
@@ -1975,23 +1974,23 @@ class App(BaseTk):
             cache.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(src,cache)
             item["cache"]=str(cache)
-            self._append_chinese_log(f"キャッシュ追加: {item.get('mod_name','項目')} ← {src.name}")
+            self._append_chinese_log(i18n.t("u2.cache_imported", mod_name=item.get('mod_name',i18n.t('u2.item')), filename=src.name))
         except Exception as exc:
-            record_error("中国語基準キャッシュ追加",exc,str(src))
-            messagebox.showerror(APP_NAME,f"キャッシュを追加できませんでした。\n{exc}")
+            record_error(i18n.t("u2.import_cache_error_context"),exc,str(src))
+            messagebox.showerror(APP_NAME,i18n.t("u2.cache_import_failed", error=exc))
 
     def overwrite_selected_chinese_translation(self):
         """Overwrite all selected completed Chinese-basis jobs in one batch."""
         entries=self._selected_chinese_queue_entries()
         if not entries:
-            messagebox.showinfo(APP_NAME,"中国語基準翻訳キューから上書きする項目を選択してください。")
+            messagebox.showinfo(APP_NAME,i18n.t("u2.select_overwrite"))
             return
         self._bulk_overwrite_queue_entries(entries, queue_kind="chinese")
 
     def run_selected_chinese_qa(self):
         entries=self._selected_chinese_queue_entries()
         if not entries:
-            messagebox.showinfo(APP_NAME,"QA・自動修正する中国語基準翻訳項目を選択してください。"); return
+            messagebox.showinfo(APP_NAME,i18n.t("u2.select_qa")); return
         pairs=[]
         for _idx,item in entries:
             inp=Path(item.get("input", "")); out=Path(item.get("output", ""))
@@ -1999,7 +1998,7 @@ class App(BaseTk):
         self._start_manual_qa_repair(pairs,"chinese")
 
     def pick_chinese_file(self):
-        raw=filedialog.askopenfilename(title="簡体字中国語YAMLを追加",filetypes=[("Paradox YAML","*.yml *.yaml"),("All files","*")])
+        raw=filedialog.askopenfilename(title=i18n.t("u2.pick_yaml_title"),filetypes=[("Paradox YAML","*.yml *.yaml"),("All files","*")])
         if not raw:return
         path=Path(raw)
         self.chinese_input_var.set(str(path))
@@ -2008,7 +2007,7 @@ class App(BaseTk):
         if not item: messagebox.showwarning(APP_NAME,msg)
 
     def pick_chinese_folder(self):
-        raw=filedialog.askdirectory(title="簡体字中国語localizationを含むフォルダを追加")
+        raw=filedialog.askdirectory(title=i18n.t("u2.pick_folder_title"))
         if not raw:return
         path=Path(raw)
         self.chinese_input_var.set(str(path))
@@ -2017,7 +2016,7 @@ class App(BaseTk):
         if not item: messagebox.showwarning(APP_NAME,msg)
 
     def pick_chinese_output(self):
-        raw=filedialog.askdirectory(title="中国語基準翻訳の出力先")
+        raw=filedialog.askdirectory(title=i18n.t("u2.pick_output_title"))
         if raw:self.chinese_output_var.set(raw)
 
     def on_chinese_drop_paths(self,event):
@@ -2031,7 +2030,7 @@ class App(BaseTk):
             if item: added+=1
         if paths:
             self.chinese_input_var.set(str(paths[0])); ok,msg=self._validate_chinese_input(paths[0]); self.chinese_status_var.set(msg)
-        if not added and paths: messagebox.showinfo(APP_NAME,"ドロップした項目に l_simp_chinese のYAMLが見つかりませんでした。")
+        if not added and paths: messagebox.showinfo(APP_NAME,i18n.t("u2.drop_no_yaml"))
         return event.action if hasattr(event,"action") else None
 
     def _ask_translation_mode(self, title="翻訳方法を選択"):
@@ -2087,9 +2086,9 @@ class App(BaseTk):
                 self._refresh_chinese_queue_tree()
         entries = self._selected_chinese_queue_entries()
         if not entries:
-            messagebox.showinfo(APP_NAME, "翻訳する項目を選択してください。")
+            messagebox.showinfo(APP_NAME, i18n.t("u2.select_translation"))
             return
-        mode = self._ask_translation_mode("中国語基準翻訳 — 翻訳方法")
+        mode = self._ask_translation_mode(i18n.t("u2.translation_mode"))
         if mode is None:
             return
         if mode == "diff":
@@ -2104,7 +2103,7 @@ class App(BaseTk):
         if self.chinese_worker is not None: return
         selected_indices = sorted(set(int(x) for x in selected_indices if 0 <= int(x) < len(self.chinese_queue_items)))
         if not selected_indices:
-            messagebox.showinfo(APP_NAME,"翻訳する項目を選択してください。"); return
+            messagebox.showinfo(APP_NAME,i18n.t("u2.select_translation")); return
         if not _llm_ready:
             indices=tuple(selected_indices)
             self._begin_llm_preflight("中国語基準翻訳",
@@ -2116,9 +2115,9 @@ class App(BaseTk):
         self._refresh_chinese_queue_tree()
         out_root=Path(self.chinese_output_var.get().strip() or str(OUTPUT_ROOT/"中国語基準翻訳")); out_root.mkdir(parents=True,exist_ok=True)
         self.chinese_log.config(state="normal"); self.chinese_log.delete("1.0","end"); self.chinese_log.config(state="disabled")
-        self.chinese_progress["value"]=0; self.chinese_progress_var.set("キュー翻訳準備中…"); self.llm_operation="中国語基準翻訳"
+        self.chinese_progress["value"]=0; self.chinese_progress_var.set(i18n.t("u2.preparing")); self.llm_operation="中国語基準翻訳"
         self.chinese_controller=core.TranslationController(progress_callback=lambda x:self.events.put(("chinese_progress",x)))
-        self.chinese_start_btn.config(state="disabled"); self.chinese_pause_btn.config(state="normal", text="一時停止"); self.chinese_stop_btn.config(state="normal")
+        self.chinese_start_btn.config(state="disabled"); self.chinese_pause_btn.config(state="normal", text=i18n.t("u2.pause")); self.chinese_stop_btn.config(state="normal")
         settings={"provider":self.provider_var.get(),"url":self.url_var.get().strip(),"model":self.model_var.get().strip(),"api_key":self.api_key_var.get().strip(),"preset":self.preset_var.get(),"batch":max(1,self.batch_var.get()),"workers":max(1,self.workers_var.get()),"glossary":self.glossary_path_var.get().strip() or None,"autoqa":self.chinese_autoqa_var.get(),"normalize_spacing":_normalize_spacing_enabled(self)}
         snapshot=[(app_state.ensure_queue_item_id(self.chinese_queue_items[i]), dict(self.chinese_queue_items[i])) for i in selected_indices]
         def worker():
@@ -2129,7 +2128,7 @@ class App(BaseTk):
                     if self.chinese_controller.stop_event.is_set(): break
                     live_item=app_state.queue_item_by_id(self.chinese_queue_items,item_id)
                     if live_item is None:
-                        raise RuntimeError("中国語基準キュー項目が処理中に失われました")
+                        raise RuntimeError(i18n.t("u2.queue_item_lost"))
                     live_item["status"]=status_value("translating")
                     self.events.put(("chinese_queue_status",(item_id,status_value("translating"))))
                     self.events.put(("chinese_queue_current",(pos+1,total,item.get("mod_name",""))))
@@ -2139,7 +2138,7 @@ class App(BaseTk):
                     item["output"]=str(out); item["cache"]=str(cache)
                     live_item["output"]=str(out); live_item["cache"]=str(cache)
                     result=core.run_chinese_basis_translation(inp,out,model=settings["model"],url=settings["url"],workers=settings["workers"],batch_size=settings["batch"],cache_path=cache,controller=self.chinese_controller,glossary_path=settings["glossary"],preset=settings["preset"],auto_qa=settings["autoqa"],provider=settings["provider"],api_key=settings["api_key"],qa_backup_root=BACKUP_ROOT/"QA自動修復",normalize_spacing=settings["normalize_spacing"])
-                    self.events.put(("chinese_log", f"半角スペース除去: {result.get('spaces_removed',0)}個"))
+                    self.events.put(("chinese_log", i18n.t("u2.spaces_removed", count=result.get('spaces_removed',0))))
                     qa_errors += int(result.get("qa_errors",0) or 0)
                     qa_warnings += int(result.get("qa_warnings",0) or 0)
                     qa_notices += int(result.get("qa_notices",0) or 0)
@@ -2175,20 +2174,20 @@ class App(BaseTk):
             return
         if self.chinese_controller.pause_event.is_set():
             self.chinese_controller.resume()
-            self.chinese_pause_btn.config(text="一時停止")
-            self.chinese_progress_var.set("再開しました")
+            self.chinese_pause_btn.config(text=i18n.t("u2.pause"))
+            self.chinese_progress_var.set(i18n.t("u2.resumed"))
         else:
             self.chinese_controller.pause()
-            self.chinese_pause_btn.config(text="再開")
-            self.chinese_progress_var.set("一時停止中 — 現在のLLM応答完了後に停止します")
+            self.chinese_pause_btn.config(text=i18n.t("u2.resume"))
+            self.chinese_progress_var.set(i18n.t("u2.pausing"))
 
     def save_and_stop_chinese_translation(self):
         self._save_workspace_state("chinese_save_stop")
         if self.chinese_controller:
             self.chinese_controller.request_stop(save=True)
-            self.chinese_progress_var.set("セーブして中断中 — 現在のLLM応答完了を待っています")
+            self.chinese_progress_var.set(i18n.t("u2.stopping"))
             self.chinese_stop_btn.config(state="disabled")
-            self.chinese_pause_btn.config(state="disabled", text="一時停止")
+            self.chinese_pause_btn.config(state="disabled", text=i18n.t("u2.pause"))
 
     def stop_chinese_basis_translation(self):
         # 旧内部呼び出しとの互換用。中国語基準翻訳は常にキャッシュを保存して安全に中断する。
@@ -6564,7 +6563,7 @@ class App(BaseTk):
         """翻訳状況で選択したうち、簡体字中国語localizationを持つModだけ中国語基準キューへ追加する。"""
         selected=self._selected_mod_status_results()
         if not selected:
-            messagebox.showinfo(APP_NAME,"翻訳状況の一覧からModを選択してください。")
+            messagebox.showinfo(APP_NAME,i18n.t("u2.select_status_mods"))
             return
         added=0; skipped=[]
         for result in selected:
@@ -6594,11 +6593,11 @@ class App(BaseTk):
         if added:
             try:self.notebook.select(self.tab_chinese)
             except Exception:pass
-            self.chinese_status_var.set(f"翻訳状況から中国語localizationを持つ {added} Modをキューへ追加しました。")
+            self.chinese_status_var.set(i18n.t("u2.status_mods_added", count=added))
         if skipped:
-            self._append_chinese_log("中国語なしのため除外: "+"、".join(skipped[:10])+(f" ほか{len(skipped)-10}件" if len(skipped)>10 else ""))
+            self._append_chinese_log((i18n.t("u2.skipped_mods_more", mods="、".join(skipped[:10]), count=len(skipped)-10) if len(skipped)>10 else i18n.t("u2.skipped_mods", mods="、".join(skipped[:10]))))
         if not added:
-            messagebox.showinfo(APP_NAME,"選択したModには簡体字中国語（l_simp_chinese）が見つかりませんでした。")
+            messagebox.showinfo(APP_NAME,i18n.t("u2.selected_no_chinese"))
 
     def queue_selected_mod_from_status(self, start_now=False):
         """翻訳状況で選択したModをすべて通常翻訳キューへ追加する。"""
@@ -6755,7 +6754,7 @@ class App(BaseTk):
         if added:
             try:self.notebook.select(self.tab_chinese)
             except Exception:pass
-        messagebox.showinfo(APP_NAME, f"選択した {len(selected)} Modを除外し、中国語localizationがある {added} Modを中国語基準キューへ追加しました。\n中国語なし: {no_chinese}件\nlocalizationなし: {invalid}件")
+        messagebox.showinfo(APP_NAME, i18n.t("u2.mods_excluded_summary", selected_count=len(selected), added_count=added, no_chinese_count=no_chinese, invalid_count=invalid))
 
     def translate_all_except_selected_mods(self):
         """旧呼び出し互換。現在は開始せず通常翻訳キューへ追加する。"""

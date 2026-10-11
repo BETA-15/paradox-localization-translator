@@ -36,27 +36,6 @@ PENDING = {
     'app/main.py::App.transfer_selected_queue_to_opposite': ('U1_translate_queue', 13),
 
     # ---- U2_chinese（この単位の行だけを直す。ほかの単位の塊には触らない）
-    'app/main.py::App._append_chinese_queue': ('U2_chinese', 3),
-    'app/main.py::App._build_chinese_tab': ('U2_chinese', 42),
-    'app/main.py::App._selected_chinese_queue_item': ('U2_chinese', 1),
-    'app/main.py::App._start_chinese_selected': ('U2_chinese', 3),
-    'app/main.py::App._start_chinese_selected.worker': ('U2_chinese', 2),
-    'app/main.py::App._validate_chinese_input': ('U2_chinese', 6),
-    'app/main.py::App.change_chinese_output_for_selected': ('U2_chinese', 2),
-    'app/main.py::App.import_cache_to_selected_chinese': ('U2_chinese', 4),
-    'app/main.py::App.on_chinese_drop_paths': ('U2_chinese', 1),
-    'app/main.py::App.open_selected_chinese_output': ('U2_chinese', 1),
-    'app/main.py::App.overwrite_selected_chinese_translation': ('U2_chinese', 1),
-    'app/main.py::App.pick_chinese_file': ('U2_chinese', 1),
-    'app/main.py::App.pick_chinese_folder': ('U2_chinese', 1),
-    'app/main.py::App.pick_chinese_output': ('U2_chinese', 1),
-    'app/main.py::App.queue_all_except_selected_mods_chinese': ('U2_chinese', 1),
-    'app/main.py::App.queue_selected_mods_to_chinese_basis': ('U2_chinese', 5),
-    'app/main.py::App.run_selected_chinese_qa': ('U2_chinese', 1),
-    'app/main.py::App.save_and_stop_chinese_translation': ('U2_chinese', 2),
-    'app/main.py::App.start_chinese_basis_translation': ('U2_chinese', 2),
-    'app/main.py::App.toggle_chinese_pause': ('U2_chinese', 4),
-    'app/main.py::App.view_selected_chinese_cache': ('U2_chinese', 1),
 
     # ---- U3_review_diff_search（この単位の行だけを直す。ほかの単位の塊には触らない）
     'app/main.py::App._apply_diff_inspector_batch_loaded': ('U3_review_diff_search', 9),
