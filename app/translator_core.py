@@ -359,6 +359,13 @@ def save_cache(path: Path, cache: dict):
     save_json(path, cache)
 
 
+def glossary_path_for_language(base_path, target_lang) -> Path:
+    base_path = Path(base_path)
+    if target_lang == DEFAULT_TARGET_LANG:
+        return base_path
+    return base_path.with_name(f"{base_path.stem}_{target_lang}.json")
+
+
 def load_glossary(path: Optional[Path]) -> dict:
     if not path:
         return {}

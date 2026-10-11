@@ -100,7 +100,7 @@ def _qa_severity_group(issues):
     return "ok"
 
 
-TARGET_LANG_NOTE=("QA／比較編集タブも、ここで選んだ翻訳先の基準で確認します。日本語以外の翻訳先では、Mod調査・日本語化Modの判定と紐付け・差分だけ翻訳・中国語基準翻訳・用語集は使えません"
+TARGET_LANG_NOTE=("QA／比較編集タブも、ここで選んだ翻訳先の基準で確認します。日本語以外の翻訳先では、Mod調査・日本語化Modの判定と紐付け・差分だけ翻訳・中国語基準翻訳は使えません"
                   "（日本語のみ）。日本語以外の品質チェックは日本語より簡易です（ラテン文字の言語どうしは「原文と同じ」だけを確認します）。")
 
 
@@ -125,6 +125,30 @@ def _item_target_lang(item):
 def _current_target_lang(app):
     var=getattr(app,"target_lang_var",None)
     return _target_lang_from_choice(var.get()) if var is not None else core.DEFAULT_TARGET_LANG
+
+
+def _glossary_language(app):
+    var=getattr(app,"glossary_lang_var",None)
+    return _target_lang_from_choice(var.get()) if var is not None else core.DEFAULT_TARGET_LANG
+
+
+def _selected_glossary_path(app):
+    return core.glossary_path_for_language(app.glossary_path_var.get() or DEFAULT_GLOSSARY,
+                                           _glossary_language(app))
+
+
+def _existing_language_glossary(base_path, target_lang):
+    if not base_path:
+        return None
+    path=core.glossary_path_for_language(base_path,target_lang)
+    return path if path.is_file() else None
+
+
+def _japanese_glossary_only(app):
+    if _glossary_language(app) == core.DEFAULT_TARGET_LANG:
+        return True
+    messagebox.showinfo(APP_NAME,"この機能は日本語の用語集だけで使えます")
+    return False
 
 
 def _cache_for_target(cache_path, lang):
@@ -1048,6 +1072,8 @@ class App(BaseTk):
         self.autoqa_var = tk.BooleanVar(value=True)
         self.chinese_autoqa_var = tk.BooleanVar(value=bool(last_translation.get("chinese_autoqa", True)))
         self.glossary_path_var = tk.StringVar(value=str(DEFAULT_GLOSSARY))
+        self.glossary_lang_var = tk.StringVar(value=_target_lang_choice(core.DEFAULT_TARGET_LANG))
+        self.glossary_actual_path_var = tk.StringVar()
         self.auto_glossary_status_var = tk.StringVar(value="自動用語作成: 待機中")
         self.auto_glossary_controller = None
         self.auto_glossary_thread = None
@@ -2500,6 +2526,15 @@ class App(BaseTk):
 
     def _build_glossary_tab(self):
         t=self.tab_glossary
+        language_bar=ttk.Frame(t); language_bar.pack(fill="x",pady=(0,6))
+        ttk.Label(language_bar,text="言語").pack(side="left")
+        language_choice=ttk.Combobox(language_bar,textvariable=self.glossary_lang_var,
+                                    values=[_target_lang_choice(lang) for lang in core.TARGET_LANGUAGES],state="readonly")
+        language_choice.pack(side="left",padx=6)
+        language_choice.bind("<<ComboboxSelected>>",lambda event:self.load_glossary_ui(silent=True))
+        ttk.Label(t,textvariable=self.glossary_actual_path_var).pack(fill="x",pady=(0,6))
+        self.glossary_path_var.trace_add("write",lambda *args:self.glossary_actual_path_var.set(
+            f"この言語のファイル: {_selected_glossary_path(self)}"))
         top=ttk.LabelFrame(t,text="用語集設定",padding=8); top.pack(fill="x",pady=(0,6))
         ttk.Label(top,text="用語集ファイル").pack(side="left")
         ttk.Entry(top,textvariable=self.glossary_path_var).pack(side="left",fill="x",expand=True,padx=6)
@@ -9022,13 +9057,15 @@ Mod更新後だけ追加翻訳:
             target_lang=_item_target_lang(item)
             cache_file=_cache_for_target(self._ensure_item_cache(item), target_lang)
             st=getattr(self,"translation_start_settings",{})
+            glossary_path=(st.get("glossary") or None) if target_lang == core.DEFAULT_TARGET_LANG else _existing_language_glossary(st.get("glossary"),target_lang)
             if target_lang != core.DEFAULT_TARGET_LANG:
-                self.events.put(("normal_log", f"翻訳先: {_target_lang_choice(target_lang)}（用語集は日本語専用のため使いません）"))
+                glossary_note=f"用語集: {glossary_path.name}" if glossary_path else "この言語の用語集はありません"
+                self.events.put(("normal_log", f"翻訳先: {_target_lang_choice(target_lang)}（{glossary_note}）"))
             result=core.run_translation(
                 item["input"], item["output"], model=st.get("model", ""), url=st.get("url", ""),
                 workers=max(1,int(st.get("workers",1) or 1)), batch_size=max(1,int(st.get("batch",40) or 40)), cache_path=cache_file,
                 resume=True, verbose=True, include_target_files=bool(st.get("repair",True)), controller=self.controller,
-                glossary_path=(st.get("glossary") or None) if target_lang == core.DEFAULT_TARGET_LANG else None,
+                glossary_path=glossary_path,
                 preset=st.get("preset","CK3"),
                 dual_source=False, auto_qa=bool(st.get("autoqa",True)),
                 provider=st.get("provider","Ollama"), api_key=st.get("api_key", ""),
@@ -10150,7 +10187,7 @@ Mod更新後だけ追加翻訳:
         self.llm_operation = "差分翻訳"
         self.diff_message_var.set(f"差分翻訳中… {len(tasks)}件")
         target_lang = _current_target_lang(self)
-        glossary_path = self.glossary_path_var.get().strip() if target_lang == core.DEFAULT_TARGET_LANG else ""  # 用語集は日本語専用
+        glossary_path = _existing_language_glossary(self.glossary_path_var.get().strip(),target_lang)
         diff_settings = {
             "url": self.url_var.get().strip(), "model": self.model_var.get().strip(),
             "preset": self.preset_var.get(), "provider": self.provider_var.get(),
@@ -10492,8 +10529,7 @@ Mod更新後だけ追加翻訳:
             self.qa_summary_var.set('QAをバックグラウンド解析中…'); return
         self._clear_pending_review_qa_log()
         target_lang=_current_target_lang(self)
-        glossary_path=(Path(self.glossary_path_var.get()) if self.glossary_path_var.get() and target_lang == core.DEFAULT_TARGET_LANG
-                       else None)  # 用語集は日本語専用
+        glossary_path=_existing_language_glossary(self.glossary_path_var.get(),target_lang)
         self.qa_summary_var.set(f'QAを一括解析中… {len(pairs)}ファイル / GUIは操作できます')
         def work():
             contexts=[]; errors=[]
@@ -10526,8 +10562,7 @@ Mod更新後だけ追加翻訳:
         dst=Path(self.review_dst_var.get()) if self.review_dst_var.get() else None
         src=Path(self.review_src_var.get()) if self.review_src_var.get() else None
         target_lang=_current_target_lang(self)
-        glossary_path=(Path(self.glossary_path_var.get()) if self.glossary_path_var.get() and target_lang == core.DEFAULT_TARGET_LANG
-                       else None)  # 用語集は日本語専用
+        glossary_path=_existing_language_glossary(self.glossary_path_var.get(),target_lang)
         existing_target=dict(self.review_target_entries); existing_source=dict(self.review_source_entries); existing_lang=self.review_source_lang
         self.qa_summary_var.set('QAをバックグラウンド解析中… GUIは操作できます')
         def work():
@@ -10697,6 +10732,7 @@ Mod更新後だけ追加翻訳:
                     self.review_tree.selection_set(iid); self.review_tree.see(iid); break
 
     def save_review_glossary_term(self):
+        target_lang=_current_target_lang(self)
         key=self._selected_review_key()
         if not key:
             messagebox.showinfo(APP_NAME, "用語集へ保存する項目をQA / 比較編集の一覧から選択してください。")
@@ -10707,9 +10743,9 @@ Mod更新後だけ追加翻訳:
             messagebox.showinfo(APP_NAME, "選択した項目に原文がありません。")
             return
         if not dst:
-            messagebox.showinfo(APP_NAME, "日本語訳を入力してから用語集へ保存してください。")
+            messagebox.showinfo(APP_NAME, f"{core.target_language_label(target_lang)}訳を入力してから用語集へ保存してください。")
             return
-        p=Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY)
+        p=core.glossary_path_for_language(self.glossary_path_var.get() or DEFAULT_GLOSSARY,target_lang)
         gl=core.load_glossary(p)
         old=gl.get(src)
         if old is not None and old != dst:
@@ -10720,9 +10756,10 @@ Mod更新後だけ追加翻訳:
                 return
         gl[src]=dst
         core.save_glossary(p,gl)
-        self.glossary_path_var.set(str(p))
+        if target_lang == core.DEFAULT_TARGET_LANG: self.glossary_path_var.set(str(p))
         # QA / 比較編集から明示的に保存した語は「手動用語」として扱う。
-        variants=self._glossary_variant_metadata()
+        variants=core.load_json(core.glossary_variants_path(p),{})
+        if not isinstance(variants,dict): variants={}
         variants.pop(src,None)
         core.save_json(core.glossary_variants_path(p),variants)
         self.load_glossary_ui(silent=True)
@@ -10744,7 +10781,7 @@ Mod更新後だけ追加翻訳:
         self.llm_operation = "AI誤字脱字校正"
         self.proofread_controller=core.TranslationController(progress_callback=lambda p:self.events.put(("proofread_progress",p)))
         target_lang = _current_target_lang(self)
-        glossary_path = self.glossary_path_var.get().strip() if target_lang == core.DEFAULT_TARGET_LANG else ""  # 用語集は日本語専用
+        glossary_path = _existing_language_glossary(self.glossary_path_var.get().strip(),target_lang)
         proofread_settings = {
             "url": self.url_var.get().strip(), "model": self.model_var.get().strip(),
             "preset": self.preset_var.get(), "provider": self.provider_var.get(),
@@ -10762,6 +10799,7 @@ Mod更新後だけ追加翻訳:
         self.proofread_thread.start()
 
     def bulk_unify_review_terms(self):
+        if not _japanese_glossary_only(self): return
         src = Path(self.review_src_var.get()) if self.review_src_var.get() else None
         dst = Path(self.review_dst_var.get()) if self.review_dst_var.get() else None
         if not src or not src.exists() or not dst or not dst.exists():
@@ -10824,6 +10862,7 @@ Mod更新後だけ追加翻訳:
         return []
 
     def start_auto_glossary_generation(self, origin):
+        if not _japanese_glossary_only(self): return
         if self._closing:
             return
         if self.glossary_import_busy:
@@ -10862,7 +10901,7 @@ Mod更新後だけ追加翻訳:
 
     # ---------------- glossary ----------------
     def _glossary_variant_metadata(self):
-        p=Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY)
+        p=_selected_glossary_path(self)
         data=core.load_json(core.glossary_variants_path(p), {})
         return data if isinstance(data,dict) else {}
 
@@ -10938,6 +10977,7 @@ Mod更新後だけ追加翻訳:
             self.auto_glossary_status_var.set(status)
 
     def _start_glossary_import_thread(self, worker, status="用語取り込みをバックグラウンドで開始しました…"):
+        if not _japanese_glossary_only(self): return False
         if self.auto_glossary_controller is not None:
             messagebox.showinfo(APP_NAME,"自動用語作成中です。完了してから用語取り込みを実行してください。")
             return False
@@ -10981,6 +11021,7 @@ Mod更新後だけ追加翻訳:
         return {"records":records,"japanese_keys":len(jp_entries),"japanese_files":jp_files,"english":english_count,"chinese":chinese_count,"unmatched":unmatched,"source_files":source_files,"root":Path(root)}
 
     def _start_japanese_glossary_import(self, targets, source_kind, label, mode):
+        if not _japanese_glossary_only(self): return
         targets=[Path(x) for x in targets if Path(x).exists()]
         if not targets:
             return
@@ -11096,6 +11137,7 @@ Mod更新後だけ追加翻訳:
         }
 
     def _save_imported_glossary_candidates(self, candidates, label, stats=None):
+        if not _japanese_glossary_only(self): return
         if not candidates:
             msg="取り込み可能な用語候補が見つかりませんでした。"
             if stats:
@@ -11136,6 +11178,7 @@ Mod更新後だけ追加翻訳:
         self._start_japanese_glossary_import(targets,source_kind,label,mode)
 
     def import_glossary_from_base_game(self):
+        if not _japanese_glossary_only(self): return
         if self.glossary_import_busy:
             messagebox.showinfo(APP_NAME,"用語取り込みはすでにバックグラウンドで実行中です。")
             return
@@ -11156,6 +11199,7 @@ Mod更新後だけ追加翻訳:
         self._start_glossary_import_thread(worker,status=f"{game} 本体からの用語取り込みを開始しました…")
 
     def import_glossary_from_japanese_source(self, kind):
+        if not _japanese_glossary_only(self): return
         if self.glossary_import_busy:
             messagebox.showinfo(APP_NAME,"用語取り込みはすでにバックグラウンドで実行中です。")
             return
@@ -11187,6 +11231,7 @@ Mod更新後だけ追加翻訳:
         return self._collect_qa_diff_pairs(loc,loc,source_langs=("english","simp_chinese"))
 
     def on_glossary_import_drop_paths(self,event):
+        if not _japanese_glossary_only(self): return
         if self.glossary_import_busy:
             self.auto_glossary_status_var.set("用語取り込みはすでにバックグラウンドで実行中です。")
             return event.action if hasattr(event,"action") else None
@@ -11213,7 +11258,13 @@ Mod更新後だけ追加翻訳:
         if p: self.glossary_path_var.set(p); self.load_glossary_ui(silent=True)
 
     def load_glossary_ui(self,silent=False):
-        p=Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY)
+        p=_selected_glossary_path(self)
+        label=core.target_language_label(_glossary_language(self))
+        if hasattr(self,"glossary_actual_path_var"):
+            self.glossary_actual_path_var.set(f"この言語のファイル: {p}")
+        for tree_name in ("glossary_tree","auto_glossary_tree"):
+            tree=getattr(self,tree_name,None)
+            if tree is not None: tree.heading("dst",text=label)
         gl=core.load_glossary(p)
         variants=self._glossary_variant_metadata()
         if hasattr(self,"glossary_tree"):
@@ -11229,7 +11280,7 @@ Mod更新後だけ追加翻訳:
         if not silent: self.progress_text.set(f"用語集 {len(gl)}件を読み込みました")
 
     def save_glossary_ui(self):
-        p=Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY)
+        p=_selected_glossary_path(self)
         gl={}
         if hasattr(self,"glossary_tree"):
             for iid in self.glossary_tree.get_children():
@@ -11239,15 +11290,17 @@ Mod更新後だけ追加翻訳:
             for iid in self.auto_glossary_tree.get_children():
                 vals=self.auto_glossary_tree.item(iid,"values")
                 if len(vals)>=2: gl[str(vals[0])]=str(vals[1])
-        core.save_glossary(p,gl); self.glossary_path_var.set(str(p)); self.progress_text.set(f"用語集保存: {p}")
+        core.save_glossary(p,gl)
+        if _glossary_language(self) == core.DEFAULT_TARGET_LANG: self.glossary_path_var.set(str(p))
+        self.progress_text.set(f"用語集保存: {p}")
 
     def add_glossary_term(self):
         src=simpledialog.askstring("用語追加","原語（英語/中国語）")
         if not src: return
-        dst=simpledialog.askstring("用語追加",f"「{src}」の固定日本語訳")
+        dst=simpledialog.askstring("用語追加",f"「{src}」の固定{core.target_language_label(_glossary_language(self))}訳")
         if dst:
             # 手動追加した語は自動分類メタデータから外し、左側へ表示する。
-            p=Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY)
+            p=_selected_glossary_path(self)
             variants=self._glossary_variant_metadata(); variants.pop(src,None); core.save_json(core.glossary_variants_path(p),variants)
             self.glossary_tree.insert("","end",values=(src,dst)); self.save_glossary_ui(); self.load_glossary_ui(silent=True)
 
@@ -11257,7 +11310,7 @@ Mod更新後だけ追加翻訳:
         src,dst=self.glossary_tree.item(sel[0],"values")
         nsrc=simpledialog.askstring("用語編集","原語",initialvalue=src)
         if not nsrc: return
-        ndst=simpledialog.askstring("用語編集","日本語",initialvalue=dst)
+        ndst=simpledialog.askstring("用語編集",core.target_language_label(_glossary_language(self)),initialvalue=dst)
         if ndst is not None: self.glossary_tree.item(sel[0],values=(nsrc,ndst)); self.save_glossary_ui()
 
     def delete_glossary_term(self):
