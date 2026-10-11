@@ -94,3 +94,17 @@ def test_main_calls_the_dictionary_as_i18n_t():
         bare = [node.lineno for node in ast.walk(tree)
                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "t"]
         assert not bare, f"{name}: 素の t(...) を i18n.t(...) に直す: 行 {bare[:20]}"
+
+
+def test_widget_labels_are_never_japanese_literals():
+    """画面の部品の text=・label=・title=・message= に日本語をじかに書かない。
+    訳さない値の一覧（フォルダの名前など）と同じ語でも、画面に出すなら辞書から引く（段階1でタブの名前が漏れた）。"""
+    import ast
+    import re
+    jp = re.compile(r"[぀-ヿ一-鿿]")
+    tree = ast.parse((ROOT / "app" / "main.py").read_text(encoding="utf-8"))
+    found = [(node.value.lineno, node.value.value[:30]) for node in ast.walk(tree)
+             if isinstance(node, ast.keyword) and node.arg in ("text", "label", "title", "message")
+             and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
+             and jp.search(node.value.value)]
+    assert not found, f"辞書に移す: {found[:20]}"
