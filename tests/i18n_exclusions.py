@@ -107,9 +107,27 @@ U6_VALUES = set()
 U6_COMPARISONS = set()
 
 # ---- U7_diag_backup
-U7_OWNERS = set()
+U7_OWNERS = {
+    # 残るのは既存バックアップ種別だけ。共有 VALUES に足すと他単位の走査数が変わる。
+    ('app/main.py', '_collect_backup_restore_entries_background'),
+    # 残るのは復元時に比較する内部状態「翻訳中」だけ（表示文は辞書へ移動済み）。
+    ('app/main.py', 'restore_session'),
+}
 # ---- U7_diag_backup（値）
-U7_VALUES = set()
+U7_VALUES = {
+    # 保存先の安全化・旧形式フォルダ名の判定。画面言語でパスや復元候補を変えない。
+    r'[^0-9A-Za-zぁ-んァ-ヶ一-龯 _\-().\[\]]+',
+    r'_(?:差分上書き|不足分上書き)$',
+    r'_(?:不足分上書き|差分上書き)$',
+    'f"第{generation:04d}回_{stamp}"',
+    # バックアップ種別・診断結果の既存 kind ID。保存値と他単位の判定を維持する。
+    '総合診断修復', '差分上書き',
+    '本体/日本語化Mod重複', 'localization欠落', 'YAML読込エラー',
+    '日本語化Mod（複数対応可）', '日本語化Mod候補（未確定）',
+    '英語原文なし', '簡体字中国語なし', '日本語なし',
+    '同一Mod内の完全重複', '同一Mod内の訳競合', '不要日本語キー',
+    '不要日本語ファイル', '修復基準なし', '日本語ファイル異常増加', '異常なし',
+}
 # ---- U7_diag_backup（比較）
 U7_COMPARISONS = set()
 
