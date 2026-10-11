@@ -127,6 +127,11 @@ def _current_target_lang(app):
     return _target_lang_from_choice(var.get()) if var is not None else core.DEFAULT_TARGET_LANG
 
 
+def _normalize_spacing_enabled(app):
+    var = getattr(app, "normalize_spacing_var", None)
+    return bool(var.get()) if var is not None else True
+
+
 def _glossary_language(app):
     var=getattr(app,"glossary_lang_var",None)
     return _target_lang_from_choice(var.get()) if var is not None else core.DEFAULT_TARGET_LANG
@@ -1099,6 +1104,7 @@ class App(BaseTk):
         self.workers_var = tk.IntVar(value=max(1, int(last_translation.get("workers", 1) or 1)))
         self.performance_preset_var = tk.StringVar(value="標準（40 / 1）")
         self.repair_var = tk.BooleanVar(value=True)
+        self.normalize_spacing_var = tk.BooleanVar(value=bool(last_translation.get("normalize_spacing", True)))
         self.dual_var = tk.BooleanVar(value=False)
         self.autoqa_var = tk.BooleanVar(value=True)
         self.chinese_autoqa_var = tk.BooleanVar(value=bool(last_translation.get("chinese_autoqa", True)))
@@ -2095,7 +2101,7 @@ class App(BaseTk):
         self.chinese_progress["value"]=0; self.chinese_progress_var.set("キュー翻訳準備中…"); self.llm_operation="中国語基準翻訳"
         self.chinese_controller=core.TranslationController(progress_callback=lambda x:self.events.put(("chinese_progress",x)))
         self.chinese_start_btn.config(state="disabled"); self.chinese_pause_btn.config(state="normal", text="一時停止"); self.chinese_stop_btn.config(state="normal")
-        settings={"provider":self.provider_var.get(),"url":self.url_var.get().strip(),"model":self.model_var.get().strip(),"api_key":self.api_key_var.get().strip(),"preset":self.preset_var.get(),"batch":max(1,self.batch_var.get()),"workers":max(1,self.workers_var.get()),"glossary":self.glossary_path_var.get().strip() or None,"autoqa":self.chinese_autoqa_var.get()}
+        settings={"provider":self.provider_var.get(),"url":self.url_var.get().strip(),"model":self.model_var.get().strip(),"api_key":self.api_key_var.get().strip(),"preset":self.preset_var.get(),"batch":max(1,self.batch_var.get()),"workers":max(1,self.workers_var.get()),"glossary":self.glossary_path_var.get().strip() or None,"autoqa":self.chinese_autoqa_var.get(),"normalize_spacing":_normalize_spacing_enabled(self)}
         snapshot=[(app_state.ensure_queue_item_id(self.chinese_queue_items[i]), dict(self.chinese_queue_items[i])) for i in selected_indices]
         def worker():
             try:
@@ -2114,7 +2120,8 @@ class App(BaseTk):
                     cache=Path(item.get("cache", "")) if item.get("cache") else self._new_cache_path(inp)
                     item["output"]=str(out); item["cache"]=str(cache)
                     live_item["output"]=str(out); live_item["cache"]=str(cache)
-                    result=core.run_chinese_basis_translation(inp,out,model=settings["model"],url=settings["url"],workers=settings["workers"],batch_size=settings["batch"],cache_path=cache,controller=self.chinese_controller,glossary_path=settings["glossary"],preset=settings["preset"],auto_qa=settings["autoqa"],provider=settings["provider"],api_key=settings["api_key"],qa_backup_root=BACKUP_ROOT/"QA自動修復")
+                    result=core.run_chinese_basis_translation(inp,out,model=settings["model"],url=settings["url"],workers=settings["workers"],batch_size=settings["batch"],cache_path=cache,controller=self.chinese_controller,glossary_path=settings["glossary"],preset=settings["preset"],auto_qa=settings["autoqa"],provider=settings["provider"],api_key=settings["api_key"],qa_backup_root=BACKUP_ROOT/"QA自動修復",normalize_spacing=settings["normalize_spacing"])
+                    self.events.put(("chinese_log", f"半角スペース除去: {result.get('spaces_removed',0)}個"))
                     qa_errors += int(result.get("qa_errors",0) or 0)
                     qa_warnings += int(result.get("qa_warnings",0) or 0)
                     qa_notices += int(result.get("qa_notices",0) or 0)
@@ -5930,6 +5937,7 @@ Mod更新後だけ追加翻訳:
                     "batch": max(1, self.batch_var.get()),
                     "workers": max(1, self.workers_var.get()),
                     "chinese_autoqa": bool(self.chinese_autoqa_var.get()),
+                    "normalize_spacing": _normalize_spacing_enabled(self),
                 },
                 "monitor_llm": {
                     "provider": self.monitor_provider_var.get(),
@@ -7894,6 +7902,7 @@ Mod更新後だけ追加翻訳:
         ttk.Checkbutton(common,text="既存日本語の未翻訳を修復",variable=self.repair_var,command=self._save_llm_preferences).grid(row=1,column=0,columnspan=2,sticky="w",pady=(6,0))
         ttk.Checkbutton(common,text="通常翻訳後にバックアップ・自動QA・エラー修正",variable=self.autoqa_var,command=self._save_llm_preferences).grid(row=2,column=0,columnspan=2,sticky="w",pady=(4,0))
         ttk.Checkbutton(common,text="中国語基準翻訳後にバックアップ・自動QA・エラー修正",variable=self.chinese_autoqa_var,command=self._save_llm_preferences).grid(row=3,column=0,columnspan=2,sticky="w",pady=(4,0))
+        ttk.Checkbutton(common,text="日本語・中国語の文字の間の半角スペースを取り除く",variable=self.normalize_spacing_var,command=self._save_llm_preferences).grid(row=11,column=0,columnspan=2,sticky="w",pady=(4,0))
         ttk.Label(common,text="バッチ").grid(row=4,column=0,sticky="w",pady=(7,0))
         ttk.Spinbox(common,from_=1,to=500,textvariable=self.batch_var,width=8,command=self._save_llm_preferences).grid(row=4,column=1,sticky="w",padx=(6,0),pady=(7,0))
         ttk.Label(common,text="並列").grid(row=5,column=0,sticky="w",pady=(5,0))
@@ -8747,6 +8756,7 @@ Mod更新後だけ追加翻訳:
             "変更前ファイルはバックアップし、修正後にエラーが減らなければ自動復元します。\n続行しますか？"):
             return
         settings={
+            "normalize_spacing":_normalize_spacing_enabled(self),
             "provider":self.provider_var.get(), "url":self.url_var.get().strip(),
             "model":self.model_var.get().strip(), "api_key":self.api_key_var.get().strip(),
             "preset":self.preset_var.get(), "glossary":self.glossary_path_var.get().strip() or None,
@@ -8763,7 +8773,8 @@ Mod更新後だけ追加翻訳:
                     pairs,backup_root=BACKUP_ROOT/"QA自動修復",model=settings["model"],url=settings["url"],
                     provider=settings["provider"],api_key=settings["api_key"],preset=settings["preset"],
                     glossary_path=settings["glossary"],controller=self.qa_repair_controller,
-                    max_passes=2,label=f"{origin}_manual_qa")
+                    max_passes=2,label=f"{origin}_manual_qa",
+                    normalize_spacing=settings["normalize_spacing"])
                 report_path=QA_LOG_ROOT/f'qa_auto_repair_{datetime.now().strftime("%Y%m%d_%H%M%S_%f")}.json'
                 core.save_json(report_path,result)
                 contexts=[]
@@ -8788,7 +8799,7 @@ Mod更新後だけ追加翻訳:
         text=(f"修正前エラー {summary.get('initial_errors',0)} / 修正後 {summary.get('final_errors',0)} / "
               f"解消 {summary.get('resolved_errors',0)} / 修正キー {summary.get('repaired_keys',0)} / "
               f"警告 {summary.get('warnings',0)} / 注意 {summary.get('notices',0)} / "
-              f"失敗ファイル {summary.get('failed_files',0)}")
+              f"失敗ファイル {summary.get('failed_files',0)} / 半角スペース除去 {summary.get('spaces_removed',0)}個")
         if origin=="review":
             self.review_last_qa_repair_result=result
             self._apply_review_qa_batch_loaded(contexts,failures)
@@ -9060,7 +9071,8 @@ Mod更新後だけ追加翻訳:
             "api_key":self.api_key_var.get().strip(), "preset":self.preset_var.get(),
             "batch":max(1,self.batch_var.get()), "workers":max(1,self.workers_var.get()),
             "glossary":self.glossary_path_var.get().strip() or None, "dual":False,
-            "repair":self.repair_var.get(), "autoqa":self.autoqa_var.get()}
+            "repair":self.repair_var.get(), "autoqa":self.autoqa_var.get(),
+            "normalize_spacing":_normalize_spacing_enabled(self)}
         self._active_normal_item_ids = [app_state.ensure_queue_item_id(self.queue_items[idx]) for idx in selected_indices]
         mode_label = "差分だけ翻訳" if diff_requested else "一からすべて翻訳"
         self._append_log(f"翻訳開始: {len(selected_indices)}項目 / {mode_label}")
@@ -9110,7 +9122,8 @@ Mod更新後だけ追加翻訳:
                 preset=st.get("preset","CK3"),
                 dual_source=False, auto_qa=bool(st.get("autoqa",True)),
                 provider=st.get("provider","Ollama"), api_key=st.get("api_key", ""),
-                qa_backup_root=BACKUP_ROOT/"QA自動修復", target_lang=target_lang)
+                qa_backup_root=BACKUP_ROOT/"QA自動修復", target_lang=target_lang,
+                normalize_spacing=bool(st.get("normalize_spacing", True)))
             self._register_cache_job(item)
             skipped=int(result.get("skipped",0) or 0)
             failed=int(result.get("failed",0) or 0)
@@ -9124,6 +9137,7 @@ Mod更新後だけ追加翻訳:
             }
             item["translation_error_report"]=result.get("error_report", "")
             self.events.put(("normal_log", f"処理結果: {item_label(item)} / ファイル {result.get('processed',0)} / LLMジョブ {result.get('jobs',0)} / 失敗 {failed} / スキップ {skipped} / 警告 {warnings}"))
+            self.events.put(("normal_log", f"半角スペース除去: {result.get('spaces_removed',0)}個"))
             if bool(st.get("autoqa",True)):
                 self.events.put(("normal_log", f"自動QA・修正: error {result.get('qa_errors',0)} / warning {result.get('qa_warnings',0)} / notice {result.get('qa_notices',0)} / 修正 {result.get('qa_repaired',0)}"))
                 if result.get("qa_report"):
@@ -9595,6 +9609,7 @@ Mod更新後だけ追加翻訳:
                 "workers":self._workspace_scalar(self.workers_var,1),
                 "performance_preset":self._workspace_scalar(self.performance_preset_var,"標準（40 / 1）"),
                 "repair":bool(self._workspace_scalar(self.repair_var,True)),
+                "normalize_spacing":_normalize_spacing_enabled(self),
                 "dual":bool(self._workspace_scalar(self.dual_var,False)),
                 "autoqa":bool(self._workspace_scalar(self.autoqa_var,True)),
                 "chinese_autoqa":bool(self._workspace_scalar(self.chinese_autoqa_var,True)),
@@ -9707,6 +9722,7 @@ Mod更新後だけ追加翻訳:
             m=data.get("models") or {}
             self.provider_var.set(m.get("provider",self.provider_var.get())); self.url_var.set(m.get("url",self.url_var.get())); self.model_var.set(m.get("model",self.model_var.get()))
             self.preset_var.set(m.get("preset",self.preset_var.get())); self.batch_var.set(max(1,int(m.get("batch",self.batch_var.get()) or 40))); self.workers_var.set(max(1,int(m.get("workers",self.workers_var.get()) or 1)))
+            self.normalize_spacing_var.set(bool(m.get("normalize_spacing",_normalize_spacing_enabled(self))))
             self.performance_preset_var.set(m.get("performance_preset",self.performance_preset_var.get())); self.repair_var.set(bool(m.get("repair",self.repair_var.get()))); self.dual_var.set(bool(m.get("dual",self.dual_var.get())))
             self.autoqa_var.set(bool(m.get("autoqa",self.autoqa_var.get()))); self.chinese_autoqa_var.set(bool(m.get("chinese_autoqa",self.chinese_autoqa_var.get()))); self.profile_var.set(m.get("profile",self.profile_var.get()))
             self._set_target_lang(m.get("target_lang",self.target_lang_var.get()),save=False)
@@ -9759,6 +9775,7 @@ Mod更新後だけ追加翻訳:
                     "dual":st.get("dual",False),"autoqa":st.get("autoqa",True),"glossary":st.get("glossary") or str(DEFAULT_GLOSSARY)}
         return {"provider":self.provider_var.get(),"url":self.url_var.get(),"model":self.model_var.get(),"preset":self.preset_var.get(),
                 "batch":self.batch_var.get(),"workers":self.workers_var.get(),"repair":self.repair_var.get(),
+                "normalize_spacing":_normalize_spacing_enabled(self),
                 "dual":self.dual_var.get(),"autoqa":self.autoqa_var.get(),"glossary":self.glossary_path_var.get()}
 
     def _append_resume_history(self, event: str, data: dict):
@@ -9866,6 +9883,7 @@ Mod更新後だけ追加翻訳:
         self.current_queue_index=max(0,int(data.get("queue_index",0) or 0))
         s=data.get("settings",{})
         self.provider_var.set(s.get("provider",self.provider_var.get())); self.url_var.set(s.get("url",self.url_var.get())); self.model_var.set(s.get("model",self.model_var.get())); self.preset_var.set(s.get("preset",self.preset_var.get()))
+        self.normalize_spacing_var.set(bool(s.get("normalize_spacing", True)))
         self.batch_var.set(s.get("batch",40)); self.workers_var.set(s.get("workers",1)); self.repair_var.set(s.get("repair",True)); self.dual_var.set(s.get("dual",False)); self.autoqa_var.set(s.get("autoqa",True)); self.glossary_path_var.set(s.get("glossary",str(DEFAULT_GLOSSARY)))
         for item in self.queue_items:
             self._ensure_item_cache(item)
@@ -10274,6 +10292,7 @@ Mod更新後だけ追加翻訳:
         target_lang = _current_target_lang(self)
         glossary_path = _existing_language_glossary(self.glossary_path_var.get().strip(),target_lang)
         diff_settings = {
+            "normalize_spacing": _normalize_spacing_enabled(self),
             "url": self.url_var.get().strip(), "model": self.model_var.get().strip(),
             "preset": self.preset_var.get(), "provider": self.provider_var.get(),
             "api_key": self.api_key_var.get().strip(),
@@ -10282,6 +10301,7 @@ Mod更新後だけ追加翻訳:
             try:
                 glossary = core.load_glossary(Path(glossary_path)) if glossary_path else {}
                 outputs = {}
+                spaces_removed = 0
                 untranslated = []
                 for i, (ci,key) in enumerate(tasks, 1):
                     if self.diff_controller.stop_event.is_set(): raise core.StopRequested()
@@ -10308,6 +10328,9 @@ Mod更新後だけ追加翻訳:
                         # 原文のまま・使えない訳は訳文のファイルへ書き戻さず、「未翻訳のまま」として結果に出す。
                         untranslated.append({"file":Path(context["target_path"]).name,"key":key,"reason":problem})
                         continue
+                    if diff_settings["normalize_spacing"]:
+                        translated, removed = core.normalize_cjk_spacing(translated, target_lang)
+                        spaces_removed += removed
                     outputs.setdefault(str(context["target_path"]),{})[key]=translated
                 backups = self._backup_before_diff_write(list(outputs)) if outputs else []
                 for target_path,values in outputs.items():
@@ -10317,6 +10340,7 @@ Mod更新後だけ追加翻訳:
                         list(outputs) + [str(contexts[ci]["source_path"]) for ci,_key in tasks])
                 self.events.put(("diff_translate_done", {
                     "written": sum(len(v) for v in outputs.values()), "untranslated": untranslated,
+                    "spaces_removed": spaces_removed,
                     "backups": [str(x) for x in backups], "total": len(tasks)}))
             except core.StopRequested:
                 self.events.put(("diff_translate_stopped", None))
@@ -12172,6 +12196,8 @@ Mod更新後だけ追加翻訳:
                         messagebox.showerror(APP_NAME,"翻訳検索エラー: "+str(payload.get("error","")))
                 elif kind=="normal_log":
                     self._append_log(str(payload))
+                elif kind=="chinese_log":
+                    self._append_chinese_log(str(payload))
                 elif kind=="queue_refresh": self._refresh_queue_tree()
                 elif kind=="done":
                     self.worker=None
@@ -12224,6 +12250,7 @@ Mod更新後だけ追加翻訳:
                         else:
                             self.load_diff_inspector()
                     message=f"差分翻訳完了: 書き込み {result.get('written',0)}件"
+                    message+=f" / 半角スペース除去 {result.get('spaces_removed',0)}個"
                     if left: message+=f" / 未翻訳のまま {len(left)}件（原文のまま・使えない訳は書き込みませんでした）"
                     self.diff_message_var.set(message)
                     if left and not self._closing:
