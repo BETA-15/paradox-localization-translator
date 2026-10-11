@@ -1007,7 +1007,10 @@ def test_csv_renders_current_language_and_preserves_legacy_messages(structured):
 def test_source_overwrite_uses_the_items_localized_target_name(ui_language, target_language):
     i18n.set_ui_language(ui_language)
     app = SimpleNamespace(_source_overwrite_layout=lambda item: ("localization", "mod", []))
-    function = method("_perform_source_mod_overwrite", _item_target_lang=lambda item: item["target_lang"])
+    import main
+    function = method("_perform_source_mod_overwrite",
+                      _overwrite_target_lang=main._overwrite_target_lang,
+                      _overwrite_language_problem=main._overwrite_language_problem)
     success, reason = function(app, {"target_lang": target_language}, confirm=False, notify=False)
     assert not success
     target_name = i18n.t("lang." + target_language)

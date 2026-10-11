@@ -1,6 +1,8 @@
 """U1 翻訳/キュー（japanese）。key の頭は単位の名前にする。"""
 
 STRINGS = {
+    'u1.no_target_yaml': '翻訳済み{target_name} YAMLがありません。',
+    'u1.confirm_target_missing_overwrite': '不足していた翻訳 {count}件だけを既存{target_name}本文へ追加します。\n\n対象: {target}\n\n既存の値は置き換えません。続行しますか？',
     "u1.normal_translation": "通常翻訳",
     "u1.intro": "英語などのParadox localizationを{target_name}化します。YAMLまたはMod / localizationフォルダを追加すると、直接翻訳キューへ登録します。\nLLM・バッチ・並列・プリセット・用語集などは［モデル / 接続］タブの共通設定を使用します。",
     "u1.target_language": "翻訳先の言語",
