@@ -119,6 +119,7 @@ Used to set game-specific translation prompt guidelines, such as those for CK3.
 
 Chinese-based translation:
 Add Simplified Chinese YAML to the dedicated tab to translate into Japanese, using Chinese vocabulary written in Chinese characters, institutional terms, and culture-specific terms as the primary reference. English files are not required.
+You can choose Japanese or Korean as the target language. Korean is best for mods set in East Asia (many official and institutional Chinese-character terms). For Western titles and religious terms, the normal translation from English matches the official translation more closely.
 
 Repair untranslated text in existing Japanese:
 If English or other languages remain within l_japanese, only those parts are targeted for repair.
@@ -366,4 +367,4 @@ The tool is free, and all features are available to everyone (MIT license).
 - If it includes machine translation, mentioning this in the description helps users make an informed decision.
 '''),
 ]
-SOURCE_HASHES = {'intro': 'dc0e64262c52', 's00_overview': '86806c036a97', 's01_requirements': 'f6c2c4898718', 's02_first_checks': '14b9ad4e46a0', 's03_translate_queue': '6ab52988b922', 's04_batch_workers': '0ad57aad8db6', 's05_llm_settings': '597d344ef4d2', 's06_cache': 'd27a06535b1f', 's07_review': '4a2a555e35c3', 's08_diff': 'fabd48ddcbe8', 's09_search': '331764e4826a', 's10_glossary': '53d7ea5353a3', 's11_models': '101883be6b22', 's12_monitor': 'b317e0f4bc37', 's13_status': 'a282e4a247a4', 's14_data_folder': 'ed13479fe44b', 's15_logs_diagnostics': '78e7512742d6', 's16_close_button': 'bf95d994339e', 's17_safety': 'a3ae50ab1c28', 's18_common_uses': '092ce6ee5923', 'unofficial': '4f1fb69113b7', 'publishing': '13a1da9a3844'}
+SOURCE_HASHES = {'intro': 'dc0e64262c52', 's00_overview': '86806c036a97', 's01_requirements': 'f6c2c4898718', 's02_first_checks': '14b9ad4e46a0', 's03_translate_queue': '6ab52988b922', 's04_batch_workers': '0ad57aad8db6', 's05_llm_settings': '44dcc2f17ee5', 's06_cache': 'd27a06535b1f', 's07_review': '4a2a555e35c3', 's08_diff': 'fabd48ddcbe8', 's09_search': '331764e4826a', 's10_glossary': '53d7ea5353a3', 's11_models': '101883be6b22', 's12_monitor': 'b317e0f4bc37', 's13_status': 'a282e4a247a4', 's14_data_folder': 'ed13479fe44b', 's15_logs_diagnostics': '78e7512742d6', 's16_close_button': 'bf95d994339e', 's17_safety': 'a3ae50ab1c28', 's18_common_uses': '092ce6ee5923', 'unofficial': '4f1fb69113b7', 'publishing': '13a1da9a3844'}
