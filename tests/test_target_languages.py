@@ -52,3 +52,30 @@ def test_cache_keys_are_separated_by_target_language_except_japanese_unchanged()
     keys = {lang: core.translation_cache_key(*args, target_lang=lang) for lang in OFFICIAL}
     assert len(set(keys.values())) == len(OFFICIAL)
     assert keys["japanese"] == japanese
+
+
+def test_non_japanese_prompts_use_the_english_template_for_the_target():
+    for lang in OFFICIAL:
+        if lang == "japanese":
+            continue
+        source = "simp_chinese" if lang == "english" else "english"
+        prompt = core.build_system_prompt(source, {"Duke": "Herzog"}, "HOI4", target_lang=lang)
+        name = core.target_language_name(lang)
+        assert f"into natural, readable {name}" in prompt
+        assert f"Translate the {core.target_language_name(source)} game text" in prompt
+        assert "Hearts of Iron IV" in prompt and "- Duke => Herzog" in prompt
+        assert "@@0@@" in prompt and "日本語" not in prompt
+    assert "Simplified Chinese characters" in core.build_system_prompt("english", target_lang="simp_chinese")
+    # 中国語の参考訳は翻訳先が中国語のときは付けない。中国語基準翻訳は日本語専用
+    assert "ZH_REF" not in core.build_system_prompt("english", dual_source=True, target_lang="simp_chinese")
+    assert "ZH_REF" in core.build_system_prompt("english", dual_source=True, target_lang="french")
+    assert "中国語基準" not in core.build_system_prompt("simp_chinese", chinese_basis=True, target_lang="korean")
+
+
+def test_non_japanese_proofreading_prompt(monkeypatch):
+    sent = []
+    monkeypatch.setattr(core, "call_llm_raw", lambda _p, _u, _m, user, system, **_k: sent.append((system, user)) or "Bonjour @@0@@")
+    assert core.proofread_text("u", "m", "Bonjur $NAME$", "Hello $NAME$", target_lang="french") == "Bonjour $NAME$"
+    system, user = sent[0]
+    assert "French localization" in system and "日本語" not in system
+    assert user == "Source for reference: Hello [VAR]\nFrench: Bonjur @@0@@"

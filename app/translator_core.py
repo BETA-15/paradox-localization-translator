@@ -184,6 +184,26 @@ GAME_PRESETS = {
     "EU5": "Europa Universalis V。中世後期から近世・近代初期の政治・外交・宗教・交易・軍事・制度語彙を重視する。",
 }
 
+# 日本語以外の翻訳先で使う英語版のプリセット（日本語版 GAME_PRESETS と同じキー）。
+GAME_PRESETS_EN = {
+    "General": "Paradox Interactive games in general. Prefer short, natural UI wording.",
+    "CK3": "Crusader Kings III. Use medieval vocabulary for titles, feudalism, courts, religion and institutions.",
+    "Victoria 3": "Victoria 3. Use 19th-century political, economic, industrial and diplomatic terms.",
+    "HOI4": "Hearts of Iron IV. Use early 20th-century military, political, diplomatic and equipment terms.",
+    "Stellaris": "Stellaris. Translate science-fiction, space politics, technology, ship and alien-civilization terms naturally.",
+    "EU5": ("Europa Universalis V. Use late-medieval to early-modern vocabulary for politics, diplomacy, "
+            "religion, trade, warfare and institutions."),
+}
+
+# 言語ごとの書き方の注意（英語版の指示文に足す）。
+_TARGET_STYLE_NOTES = {
+    "simp_chinese": "Write in Simplified Chinese characters, not Traditional Chinese.",
+    "braz_por": "Use Brazilian Portuguese spelling and vocabulary, not European Portuguese.",
+    "spanish": "Use neutral Spanish that reads naturally in a game interface.",
+    "korean": "Write in Hangul; do not leave English words untranslated unless they are proper names.",
+    "russian": "Write in Cyrillic; do not leave English words untranslated unless they are proper names.",
+}
+
 
 class StopRequested(Exception):
     pass
@@ -985,7 +1005,9 @@ def benchmark_model(provider: str, url: str, model: str,
 
 def build_system_prompt(source_lang: str, glossary: Optional[dict] = None,
                         preset: str = "General", dual_source: bool = False,
-                        chinese_basis: bool = False) -> str:
+                        chinese_basis: bool = False, target_lang: str = DEFAULT_TARGET_LANG) -> str:
+    if (target_lang or DEFAULT_TARGET_LANG) != DEFAULT_TARGET_LANG:
+        return _build_system_prompt_other(source_lang, glossary, preset, dual_source, target_lang)
     lang_label = {"english": "英語", "simp_chinese": "簡体字中国語"}.get(source_lang, source_lang)
     preset_text = GAME_PRESETS.get(preset, GAME_PRESETS["General"])
     glossary_text = ""
@@ -1017,6 +1039,38 @@ def build_system_prompt(source_lang: str, glossary: Optional[dict] = None,
 4. 原文のテンプレート構造や改行表現を維持する。
 5. 簡体字中国語をそのまま日本語として流用せず、日本語の字体・語法に直す。
 6. 原文をそのまま返さず、翻訳可能な自然言語は必ず日本語化する。{dual_text}{chinese_basis_text}{glossary_text}
+"""
+
+
+def _build_system_prompt_other(source_lang: str, glossary: Optional[dict], preset: str,
+                               dual_source: bool, target_lang: str) -> str:
+    """日本語以外の翻訳先の指示文（英語で書いたテンプレート）。中国語基準翻訳は日本語専用なので使わない。"""
+    source_name = target_language_name(source_lang)
+    target_name = target_language_name(target_lang)
+    preset_text = GAME_PRESETS_EN.get(preset, GAME_PRESETS_EN["General"])
+    style = _TARGET_STYLE_NOTES.get(target_lang, "")
+    style_text = f"\n7. {style}" if style else ""
+    glossary_text = ""
+    if glossary:
+        pairs = [f"- {k} => {v}" for k, v in glossary.items()]
+        glossary_text = "\nGlossary (use these translations where they apply):\n" + "\n".join(pairs)
+    dual_text = ""
+    if dual_source and target_lang != "simp_chinese":
+        dual_text = (f"\nSome inputs have a Simplified Chinese reference translation after `{DUAL_SEP.strip()}`. "
+                     "Use the English text for the in-game meaning and the Chinese reference for institutional terms "
+                     f"and proper names. Do not output [VAR] from the reference.")
+    return f"""You are a professional localizer for Paradox Interactive games.
+Translate the {source_name} game text into natural, readable {target_name}.
+Game context: {preset_text}
+
+Each input line starts with `N|||`. Reply only with lines in the form `N|||translated text`, using the same numbers.
+Rules:
+1. Never change, delete or move placeholders such as @@0@@ @@1@@.
+2. Keep the number of lines and the numbering. No explanations, notes, Markdown or extra blank lines.
+3. Keep UI labels short. Use historical, military and political terms that fit the context in {target_name}.
+4. Keep the template structure and line-break markers of the source.
+5. Do not return the source text unchanged. Translate all natural-language text into {target_name}; proper names may stay as they are when that is usual in {target_name}.
+6. Output {target_name} only.{style_text}{dual_text}{glossary_text}
 """
 
 
@@ -2835,9 +2889,20 @@ def bulk_unify_qa_terms(target_path: Path, source_path: Path, glossary_path: Pat
 def proofread_text(url: str, model: str, text: str, source_text: str = "",
                    glossary: Optional[dict] = None, preset: str = "General",
                    provider: str = "Ollama", api_key: str = "",
-                   controller: Optional[TranslationController] = None) -> str:
+                   controller: Optional[TranslationController] = None,
+                   target_lang: str = DEFAULT_TARGET_LANG) -> str:
     protected, tokens = protect_text(text)
     glossary_text = "\n".join(f"{k}=>{v}" for k,v in (glossary or {}).items())
+    if (target_lang or DEFAULT_TARGET_LANG) != DEFAULT_TARGET_LANG:
+        target_name = target_language_name(target_lang)
+        system = f"""You are a proofreader for the {target_name} localization of a Paradox game. Fix only typos, missing words, grammar mistakes, duplicated words and unnatural {target_name}.
+Do not change the meaning, and never change placeholders such as @@0@@. Reply with the corrected text only.
+Game context: {GAME_PRESETS_EN.get(preset, GAME_PRESETS_EN['General'])}
+Glossary:\n{glossary_text}"""
+        user = (f"Source for reference: {PROTECT_RE.sub('[VAR]', source_text)}\n{target_name}: {protected}"
+                if source_text else protected)
+        raw = call_llm_raw(provider, url, model, user, system, api_key=api_key, controller=controller)
+        return restore_text(raw.strip().strip('`').strip(), tokens)
     system = f"""あなたはParadoxゲーム日本語ローカライズの校正者です。誤字、脱字、助詞、重複、不自然な日本語だけを修正してください。
 意味を勝手に変えず、@@0@@ 等のプレースホルダは絶対に変更しないでください。回答は修正後本文だけ。
 プリセット: {GAME_PRESETS.get(preset, GAME_PRESETS['General'])}
