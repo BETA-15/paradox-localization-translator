@@ -278,3 +278,15 @@ def test_dual_source_with_english_source_keeps_the_same_cache_key(tmp_path, monk
     calls.clear()
     core.run_translation(src, out, verbose=False, auto_qa=False, dual_source=True)
     assert calls == []
+
+
+def test_chinese_check_from_v0_11_81_applies_only_to_japanese_targets():
+    zh = "议会通过了新法律，并决定扩大铁路建设。"
+    assert core.unusable_translation("The council passed the law.", zh, "english", "japanese") is True
+    assert core.unusable_translation("The council passed the law.", zh, "english", "simp_chinese") is False
+    assert core.cache_entry_is_valid("The council passed the law.", zh, "english", "simp_chinese")
+    assert core.foreign_in_output(zh, "simp_chinese") is False
+    # 韓国語は文字の種類の判定で中国語を弾く（v0.12.0）
+    assert core.unusable_translation("The council passed the law.", zh, "english", "korean") is True
+    assert not [i for i in core.qa_entries({"a": zh}, {"a": "The council passed the law."}, "english",
+                                           target_lang="simp_chinese") if i["severity"] == "error"]
