@@ -7,6 +7,7 @@
 EXCLUDED_OWNERS = {
     "app/translator_core.py": {
         "build_system_prompt",              # LLM への指示文（日本語は一字一句固定）
+        "_korean_chinese_basis_instructions",
         "proofread_text",                   # 校正の指示文
         "resolve_auto_glossary_conflicts",  # 用語統一の指示文
         "classify_monitor_candidates",      # 軽量QAの指示文

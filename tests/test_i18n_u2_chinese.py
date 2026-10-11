@@ -110,7 +110,9 @@ def test_original_japanese_display(key, fields, expected):
 
 def test_all_keys_have_english_and_matching_fields():
     i18n.set_ui_language("english")
-    assert set(JAPANESE) == set(ENGLISH) == {key for key, _, _ in ORIGINALS}
+    additions = {"u2.target_language", "u2.supported_targets_reason", "u2.korean_basis_hint", "u2.korean_intro_description",
+                 "u2.korean_auto_glossary_unavailable"}
+    assert set(JAPANESE) == set(ENGLISH) == {key for key, _, _ in ORIGINALS} | additions
     for key, fields, _ in ORIGINALS:
         assert i18n.t(key, **fields) == ENGLISH[key].format(**fields)
         japanese_fields = {name for _, name, _, _ in Formatter().parse(JAPANESE[key]) if name}

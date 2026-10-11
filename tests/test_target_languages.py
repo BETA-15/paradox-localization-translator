@@ -66,10 +66,12 @@ def test_non_japanese_prompts_use_the_english_template_for_the_target():
         assert "Hearts of Iron IV" in prompt and "- Duke => Herzog" in prompt
         assert "@@0@@" in prompt and "日本語" not in prompt
     assert "Simplified Chinese characters" in core.build_system_prompt("english", target_lang="simp_chinese")
-    # 中国語の参考訳は翻訳先が中国語のときは付けない。中国語基準翻訳は日本語専用
+    # 中国語の参考訳は翻訳先が中国語のときは付けない。
     assert "ZH_REF" not in core.build_system_prompt("english", dual_source=True, target_lang="simp_chinese")
     assert "ZH_REF" in core.build_system_prompt("english", dual_source=True, target_lang="french")
-    assert "中国語基準" not in core.build_system_prompt("simp_chinese", chinese_basis=True, target_lang="korean")
+    assert "Chinese-basis translation" in core.build_system_prompt("simp_chinese", chinese_basis=True, target_lang="korean")
+    for language in set(core.TARGET_LANGUAGES) - set(core.CHINESE_BASIS_TARGETS):
+        assert "Chinese-basis translation" not in core.build_system_prompt("simp_chinese", chinese_basis=True, target_lang=language)
 
 
 def test_non_japanese_proofreading_prompt(monkeypatch):
