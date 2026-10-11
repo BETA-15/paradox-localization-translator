@@ -12,6 +12,11 @@ import ui_status
 
 SNAPSHOTS = json.loads(r'''
 [
+  ["u9.script_han_in_target","訳文に漢字が混入しています（2字。韓国語の括弧内の漢字の添え書きは注意扱い）",{"count":2}],
+  ["u9.script_kana_in_target","訳文にかなが混入しています（2字）",{"count":2}],
+  ["u9.script_hangul_in_target","訳文にハングルが混入しています（2字）",{"count":2}],
+  ["u9.script_cyrillic_in_target","訳文にキリル文字が混入しています（2字）",{"count":2}],
+  ["u9.english_left_in_target","訳文に英語が残っている可能性があります（略語・型番・固有名詞なら問題ありません）",{}],
   ["u9.unsupported_game_language","sample は日本語（l_sample）を読めません。翻訳しても、ゲームの中には表示されません。sample が読める言語: sample",{"game":"sample","target_name":"日本語","target_lang":"sample","supported_game":"sample","supported_languages":"sample"}],
   ["u9.glossary_unsupported_format","対応していない形式です（sample）。このアプリの用語集は {\"原語\": \"訳語\"} 形式のJSONです。ParaTranz の用語集は『ParaTranz の用語集を取り込む』から取り込めます。",{"format_name":"sample"}],
   ["u9.thinking_only_warning","sample は思考を止められないThinking専用モデルのため、翻訳には使用できません。1回の翻訳で長く考え込み、時間切れや空の応答になります。qwen3:4b-instruct-2507 などのinstruct版（思考なし）のモデルを選んでください。",{"model":"sample","marker":"Thinking専用モデル"}],

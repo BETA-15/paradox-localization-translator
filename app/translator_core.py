@@ -2480,6 +2480,106 @@ def _qa_issue(key: str, severity: str, issue_type: str, message: str, value: str
     return row
 
 
+_QA_SCRIPT_PATTERNS = {
+    "han": re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\U00020000-\U0002ee5f\U0002f800-\U0002fa1f\U00030000-\U000323af]'),
+    "kana": re.compile(r'[\u3041-\u3096\u309d-\u309f\u30a1-\u30fa\u30fd-\u30ff\u31f0-\u31ff\uff66-\uff9f\U0001b000-\U0001b16f]'),
+    "hangul": re.compile(r'[\u1100-\u11ff\u3130-\u318f\ua960-\ua97f\uac00-\ud7af\ud7b0-\ud7ff]'),
+    "cyrillic": re.compile(r'[\u0400-\u052f\u1c80-\u1c8f\u2de0-\u2dff\ua640-\ua69f\U0001e030-\U0001e08f]'),
+}
+_QA_ENGLISH_FUNCTION_WORDS = frozenset({
+    "the", "of", "and", "to", "in", "on", "for", "by", "with", "from", "is", "are",
+    "this", "that", "your", "you", "will", "has", "have", "can", "be", "not",
+})
+_QA_ENGLISH_DISTINCTIVE_WORDS = frozenset({
+    "the", "of", "and", "with", "this", "that", "your", "you", "will", "has", "have", "are",
+})
+_QA_ICON_TOKEN_RE = re.compile(r'@[A-Za-z_][A-Za-z0-9_]*!')
+_QA_NAME_FILE_RE = re.compile(r'(?:^|_)(?:names|dynasties)(?:_l_[a-z_]+)?$', re.IGNORECASE)
+_QA_NAME_PARTICLES = frozenset({'de', 'del', 'della', 'di', 'da', 'do', 'dos', 'du', 'des',
+                               'van', 'von', 'der', 'den', 'la', 'le', 'of', 'al', 'el', 'bin', 'ibn'})
+_QA_KOREAN_HAN_ANNOTATION_RE = re.compile(
+    "(?<=" + _QA_SCRIPT_PATTERNS["hangul"].pattern + ")"
+    + r'(?:\([\s' + _QA_SCRIPT_PATTERNS["han"].pattern[1:-1] + r']+\)|（[\s'
+    + _QA_SCRIPT_PATTERNS["han"].pattern[1:-1] + r']+）)')
+
+
+def _qa_visible_text(value: str) -> str:
+    plain = _QA_ICON_TOKEN_RE.sub(' ', value or '')
+    return PLACEHOLDER_RE.sub(' ', _SPACING_TOKEN_RE.sub(' ', PROTECT_RE.sub(' ', plain))).strip()
+
+
+def script_mixture_issues(value: str, target_lang: str) -> List[Tuple[str, str, dict]]:
+    """Return QA-only script contamination; Japanese behavior is deliberately unchanged."""
+    if target_lang == DEFAULT_TARGET_LANG or target_lang not in TARGET_LANGUAGES:
+        return []
+    plain = _qa_visible_text(value)
+    script = target_language_script(target_lang)
+    issues = []
+    for kind, pattern in _QA_SCRIPT_PATTERNS.items():
+        if kind == script:
+            continue
+        characters = pattern.findall(plain)
+        if not characters:
+            continue
+        annotation_characters = []
+        if target_lang == "korean" and kind == "han":
+            annotations = _QA_KOREAN_HAN_ANNOTATION_RE.findall(plain)
+            annotation_characters = pattern.findall(''.join(annotations))
+        outside_count = len(characters) - len(annotation_characters)
+        if outside_count:
+            severity = "notice" if kind == "cyrillic" and script != "latin" else "warning"
+            issues.append((kind, severity, {"count": outside_count}))
+        if annotation_characters:
+            issues.append((kind, "notice", {"count": len(annotation_characters)}))
+    return issues
+
+
+def english_left_in_target(value: str, target_lang: str) -> bool:
+    """Conservative QA notice, independent of translation/retry validation."""
+    if target_lang in {DEFAULT_TARGET_LANG, "english"} or target_lang not in TARGET_LANGUAGES:
+        return False
+    plain = _qa_visible_text(value)
+    words = re.findall(r"[^\W_]+(?:['’][^\W_]+)?", plain)
+    words = [word for word in words if not any(character.isdigit() for character in word)
+             and not word.isupper()]
+    if target_language_script(target_lang) == "latin":
+        if len(words) < 3:
+            return False
+        lower_words = [word.lower() for word in words]
+        function_count = sum(word in _QA_ENGLISH_FUNCTION_WORDS for word in lower_words)
+        distinctive_count = sum(word in _QA_ENGLISH_DISTINCTIVE_WORDS for word in lower_words)
+        return distinctive_count >= 2 and function_count / len(words) >= 0.4
+    english_words = re.findall(r"[A-Za-z0-9_]+(?:['’][A-Za-z0-9_]+)?", plain)
+    english_words = [word for word in english_words if not word.isupper()
+                     and not re.search(r'[0-9_]', word)]
+    return sum(len(word) for word in english_words) >= 4 and (
+        len(english_words) >= 2 or any(len(word) >= 4 for word in english_words))
+
+
+def _qa_same_as_source_candidate(key: str, source: str, target: str, source_lang: str,
+                                 target_lang: str, source_path: Optional[Path]) -> bool:
+    if (target_lang == DEFAULT_TARGET_LANG or target_lang not in TARGET_LANGUAGES or source_lang == target_lang
+            or source.strip() != target.strip()):
+        return False
+    plain = _qa_visible_text(source)
+    if len(plain) <= 3 or not any(character.isalpha() for character in plain):
+        return False
+    words = re.findall(r"[^\W\d_]+(?:['’][^\W\d_]+)?", plain)
+    if not words or all(word.isupper() for word in words):
+        return False
+    name_words = [re.sub(r"^[dl]['’]", '', word, flags=re.IGNORECASE) for word in words]
+    if any(word[0].isupper() for word in name_words) and all(
+            word[0].isupper() or word.lower() in _QA_NAME_PARTICLES for word in name_words):
+        return False
+    if re.fullmatch(r'[A-Za-z0-9_.+\-/]+', plain) and any(character.isdigit() for character in plain):
+        return False
+    path_text = str(source_path or '').replace('\\', '/').lower()
+    if (_PROPER_NOUN_KEY_RE.search(key) or '/names/' in path_text or '/dynasties/' in path_text
+            or _QA_NAME_FILE_RE.search(Path(path_text).stem)):
+        return False
+    return True
+
+
 def qa_entries(target_entries: Dict[str,str], source_entries: Optional[Dict[str,str]] = None,
                source_lang: str = "english", glossary: Optional[dict] = None,
                source_path: Optional[Path] = None, target_lang: str = DEFAULT_TARGET_LANG) -> List[dict]:
@@ -2494,6 +2594,17 @@ def qa_entries(target_entries: Dict[str,str], source_entries: Optional[Dict[str,
     issues = []
     glossary = glossary or {}
     for key, value in target_entries.items():
+        for kind, severity, detail in script_mixture_issues(value, target_lang):
+            message_key = 'u9.script_' + kind + '_in_target'
+            issues.append(_qa_issue(key, severity, "script_" + kind, i18n.t(message_key, **detail), value,
+                                    rule_id="QA-SCRIPT-" + kind.upper() + "-001", repairable=False,
+                                    recommended_action=i18n.t('u9.review_content'),
+                                    message_parts=[ui_status.message_part(message_key, **detail)], **detail))
+        if english_left_in_target(value, target_lang):
+            issues.append(_qa_issue(key, "notice", "english_left", i18n.t('u9.english_left_in_target'), value,
+                                    rule_id="QA-ENGLISH-LEFT-001", repairable=False,
+                                    recommended_action=i18n.t('u9.review_content'),
+                                    message_parts=[ui_status.message_part('u9.english_left_in_target')]))
         _, removable_spaces = normalize_cjk_spacing(value, target_lang)
         if removable_spaces:
             issues.append(_qa_issue(key, "notice", "cjk_space",
@@ -2531,9 +2642,8 @@ def qa_entries(target_entries: Dict[str,str], source_entries: Optional[Dict[str,
                     issues.append(_qa_issue(key, "error", "untranslated", msg, value,
                                             rule_id="QA-UNTRANSLATED-ZH-001" if source_lang == "simp_chinese" else "QA-UNTRANSLATED-EN-002",
                                             repairable=True, recommended_action=i18n.t('u9.retranslate_unchanged'), message_parts=[ui_status.message_part('u9.untranslated_chinese_source') if source_lang == "simp_chinese" else ui_status.message_part('u9.untranslated_source')]))
-            elif (target_lang != DEFAULT_TARGET_LANG and target_language_script(target_lang) == "latin"
-                  and src.strip() == value.strip() and re.search(r"[^\W\d_]{4,}", PROTECT_RE.sub("", src))):
-                issues.append(_qa_issue(key, "notice", "same_as_source",
+            elif _qa_same_as_source_candidate(key, src, value, source_lang, target_lang, source_path):
+                issues.append(_qa_issue(key, "warning", "same_as_source",
                                         i18n.t('u9.identical_source'), value,
                                         rule_id="QA-SAME-AS-SOURCE-001", repairable=False,
                                         recommended_action=i18n.t('u9.review_identical_source'), message_parts=[ui_status.message_part('u9.identical_source')]))
