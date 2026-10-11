@@ -5,8 +5,11 @@
 """
 
 PENDING = {
+    # ---- P0_shared（この単位の行だけを直す。ほかの単位の塊には触らない）
     # 外部LLMエラーの判定語。「モデル」は他単位の画面ラベルにも使うため、全体除外しない。
     'app/main.py::_llm_connection_alert_content': ('P0_shared', 1),
+
+    # ---- U1_translate_queue（この単位の行だけを直す。ほかの単位の塊には触らない）
     'app/main.py::App._annotate_translation_index_with_base_game_keys': ('U1_translate_queue', 1),
     'app/main.py::App._build_translate_tab': ('U1_translate_queue', 48),
     'app/main.py::App._extract_drop_paths': ('U1_translate_queue', 1),
@@ -31,6 +34,8 @@ PENDING = {
     'app/main.py::App.start_queue': ('U1_translate_queue', 3),
     'app/main.py::App.toggle_pause': ('U1_translate_queue', 4),
     'app/main.py::App.transfer_selected_queue_to_opposite': ('U1_translate_queue', 13),
+
+    # ---- U2_chinese（この単位の行だけを直す。ほかの単位の塊には触らない）
     'app/main.py::App._append_chinese_queue': ('U2_chinese', 3),
     'app/main.py::App._build_chinese_tab': ('U2_chinese', 42),
     'app/main.py::App._selected_chinese_queue_item': ('U2_chinese', 1),
@@ -52,6 +57,8 @@ PENDING = {
     'app/main.py::App.start_chinese_basis_translation': ('U2_chinese', 2),
     'app/main.py::App.toggle_chinese_pause': ('U2_chinese', 4),
     'app/main.py::App.view_selected_chinese_cache': ('U2_chinese', 1),
+
+    # ---- U3_review_diff_search（この単位の行だけを直す。ほかの単位の塊には触らない）
     'app/main.py::App._apply_diff_inspector_batch_loaded': ('U3_review_diff_search', 9),
     'app/main.py::App._apply_diff_inspector_loaded': ('U3_review_diff_search', 5),
     'app/main.py::App._apply_differential_prepare_done': ('U3_review_diff_search', 4),
@@ -103,6 +110,8 @@ PENDING = {
     'app/main.py::App.stop_mod_research': ('U3_review_diff_search', 1),
     'app/main.py::App.translate_diff_items': ('U3_review_diff_search', 3),
     'app/main.py::App.translate_diff_items.work': ('U3_review_diff_search', 1),
+
+    # ---- U4_glossary（この単位の行だけを直す。ほかの単位の塊には触らない）
     'app/main.py::App._auto_glossary_kind_summary': ('U4_glossary', 2),
     'app/main.py::App._build_glossary_tab': ('U4_glossary', 35),
     'app/main.py::App._choose_game_for_glossary_import': ('U4_glossary', 4),
@@ -131,6 +140,8 @@ PENDING = {
     'app/main.py::App.show_glossary_notation_rules': ('U4_glossary', 9),
     'app/main.py::App.show_selected_glossary_note': ('U4_glossary', 1),
     'app/main.py::App.start_auto_glossary_generation': ('U4_glossary', 7),
+
+    # ---- U5_models_settings（この単位の行だけを直す。ほかの単位の塊には触らない）
     'app/main.py::App._apply_data_root_change': ('U5_models_settings', 10),
     'app/main.py::App._apply_llm_preflight_done': ('U5_models_settings', 3),
     'app/main.py::App._apply_llm_preflight_error': ('U5_models_settings', 2),
@@ -167,6 +178,8 @@ PENDING = {
     'app/main.py::App.stop_benchmark': ('U5_models_settings', 2),
     'app/main.py::App.stop_current_llm': ('U5_models_settings', 6),
     'app/main.py::App.view_selected_cache': ('U5_models_settings', 5),
+
+    # ---- U6_status_mods（この単位の行だけを直す。ほかの単位の塊には触らない）
     'app/main.py::App._apply_bulk_overwrite_done': ('U6_status_mods', 4),
     'app/main.py::App._apply_judgement_log_ready': ('U6_status_mods', 1),
     'app/main.py::App._apply_single_overwrite_done': ('U6_status_mods', 4),
@@ -224,6 +237,8 @@ PENDING = {
     'app/main.py::App.stop_monitor': ('U6_status_mods', 4),
     'app/main.py::App.stop_monitor_llm': ('U6_status_mods', 2),
     'app/main.py::App.use_selected_discovered_location': ('U6_status_mods', 1),
+
+    # ---- U7_diag_backup（この単位の行だけを直す。ほかの単位の塊には触らない）
     'app/main.py::App._analyze_localization_health': ('U7_diag_backup', 39),
     'app/main.py::App._apply_restored_diagnostic_state': ('U7_diag_backup', 4),
     'app/main.py::App._apply_restored_mod_status': ('U7_diag_backup', 1),
@@ -263,6 +278,8 @@ PENDING = {
     'app/main.py::App._translation_status_rows_for_restore': ('U7_diag_backup', 2),
     'app/main.py::App.collect_error_logs': ('U7_diag_backup', 3),
     'app/main.py::App.restore_session': ('U7_diag_backup', 3),
+
+    # ---- U9_core（この単位の行だけを直す。ほかの単位の塊には触らない）
     'app/translator_core.py::<module>': ('U9_core', 24),
     'app/translator_core.py::_external_gap_candidates': ('U9_core', 3),
     'app/translator_core.py::_normalize_mod_name_for_match': ('U9_core', 2),

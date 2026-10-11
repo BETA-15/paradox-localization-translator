@@ -32,6 +32,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
+import i18n  # 画面・ログの文（第3段）。LLM への指示文とキャッシュのキーには使わない
+
 TRANSLATION_RELATION_ALGORITHM_VERSION = 4  # v0.11.80: 情報量で重み付けした一致率を追加（古い調査結果を使い回さない）
 LARGE_RELATION_MIN_EFFECTIVE_KEYS = 200
 # 紐付けの判定に使う「情報量で重み付けした一致率」の境目。

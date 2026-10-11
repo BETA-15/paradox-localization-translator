@@ -59,3 +59,77 @@ ALLOWED_COMPARISONS = {
     ("app/translator_core.py", "_is_katakana_word_char", "ーヽヾ"),
     ("app/translator_core.py", "_classify_glossary_term_kind", "增加"),
 }
+
+
+# 4. 段階1の単位ごとの追加（並行して作業するので、自分の単位の塊だけに足す。ほかの単位の塊には触らない）
+#    OWNERS は (ファイル, 関数) の組、VALUES は文字列、COMPARISONS は ALLOWED_COMPARISONS と同じ形。足すときは理由をコメントに書く。
+
+# ---- U1_translate_queue
+U1_OWNERS = set()
+# ---- U1_translate_queue（値）
+U1_VALUES = set()
+# ---- U1_translate_queue（比較）
+U1_COMPARISONS = set()
+
+# ---- U2_chinese
+U2_OWNERS = set()
+# ---- U2_chinese（値）
+U2_VALUES = set()
+# ---- U2_chinese（比較）
+U2_COMPARISONS = set()
+
+# ---- U3_review_diff_search
+U3_OWNERS = set()
+# ---- U3_review_diff_search（値）
+U3_VALUES = set()
+# ---- U3_review_diff_search（比較）
+U3_COMPARISONS = set()
+
+# ---- U4_glossary
+U4_OWNERS = set()
+# ---- U4_glossary（値）
+U4_VALUES = set()
+# ---- U4_glossary（比較）
+U4_COMPARISONS = set()
+
+# ---- U5_models_settings
+U5_OWNERS = set()
+# ---- U5_models_settings（値）
+U5_VALUES = set()
+# ---- U5_models_settings（比較）
+U5_COMPARISONS = set()
+
+# ---- U6_status_mods
+U6_OWNERS = set()
+# ---- U6_status_mods（値）
+U6_VALUES = set()
+# ---- U6_status_mods（比較）
+U6_COMPARISONS = set()
+
+# ---- U7_diag_backup
+U7_OWNERS = set()
+# ---- U7_diag_backup（値）
+U7_VALUES = set()
+# ---- U7_diag_backup（比較）
+U7_COMPARISONS = set()
+
+# ---- U8_help
+U8_OWNERS = set()
+# ---- U8_help（値）
+U8_VALUES = set()
+# ---- U8_help（比較）
+U8_COMPARISONS = set()
+
+# ---- U9_core
+U9_OWNERS = set()
+# ---- U9_core（値）
+U9_VALUES = set()
+# ---- U9_core（比較）
+U9_COMPARISONS = set()
+
+_UNITS = ((U1_OWNERS, U1_VALUES, U1_COMPARISONS), (U2_OWNERS, U2_VALUES, U2_COMPARISONS), (U3_OWNERS, U3_VALUES, U3_COMPARISONS), (U4_OWNERS, U4_VALUES, U4_COMPARISONS), (U5_OWNERS, U5_VALUES, U5_COMPARISONS), (U6_OWNERS, U6_VALUES, U6_COMPARISONS), (U7_OWNERS, U7_VALUES, U7_COMPARISONS), (U8_OWNERS, U8_VALUES, U8_COMPARISONS), (U9_OWNERS, U9_VALUES, U9_COMPARISONS))
+for _owners, _values, _comparisons in _UNITS:
+    for _file, _owner in _owners:
+        EXCLUDED_OWNERS.setdefault(_file, set()).add(_owner)
+    EXCLUDED_VALUES |= _values
+    ALLOWED_COMPARISONS |= _comparisons
