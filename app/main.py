@@ -100,6 +100,35 @@ def _qa_severity_group(issues):
     return "ok"
 
 
+DIFF_TRANSLATE_ATTEMPTS = 2  # 差分翻訳で、使えない訳が返ったときに訳し直す回数（最初の1回を含む）
+
+
+def _diff_translation_problem(source_text, translated, source_lang):
+    """差分翻訳の訳文が書き込めるかを確かめる。書けないなら理由、書けるなら空文字。
+
+    通常翻訳（process_file）と同じく、原文のまま・未翻訳に見えるもの・ゲーム変数やタグが原文と食い違うもの・
+    内部の @@N@@ が残ったものは書き込まない。
+    """
+    text=str(translated or "")
+    if not text.strip():
+        return "LLMの応答が空でした"
+    if "@@" in text:
+        return "内部の記号（@@N@@）が残りました"
+    if core.extract_protected_tokens(text) != core.extract_protected_tokens(source_text):
+        return "ゲーム変数・タグが原文と一致しません"
+    if text.strip() == str(source_text or "").strip() or core.looks_untranslated(source_text, text, source_lang):
+        return "原文のまま、または翻訳として使えない応答でした"
+    return ""
+
+
+def _mod_root_of_localization_file(path):
+    """localization（localisation）フォルダの中のファイルなら、その親（Mod のフォルダ）を返す。"""
+    for parent in Path(path).parents:
+        if core.is_localization_dir_name(parent.name):
+            return parent.parent
+    return None
+
+
 def _llm_connection_alert_content(provider, url, model="", error=""):
     """Return user-facing connection guidance without touching Tk widgets."""
     display=core.provider_display_name(provider)
@@ -9973,7 +10002,10 @@ Mod更新後だけ追加翻訳:
         key=keys[0]
         value = self.diff_dst_text.get("1.0", "end-1c")
         try:
-            core.upsert_localization_values(Path(self.diff_dst_var.get()), {key:value})
+            target=Path(self.diff_dst_var.get())
+            self._backup_before_diff_write([str(target)])
+            core.upsert_localization_values(target, {key:value})
+            self._invalidate_status_after_diff_write([str(target), self.diff_src_var.get()])
             if len(self.diff_batch_contexts)>1:
                 pairs=[{"source":c["source_path"],"target":c["target_path"],"lang":c["lang"]} for c in self.diff_batch_contexts]
                 self.load_diff_pairs(pairs)
@@ -9984,6 +10016,47 @@ Mod更新後だけ追加翻訳:
                     self.diff_tree.selection_set(iid); self.diff_tree.see(iid); break
         except Exception as e:
             record_error("差分訳保存", e); messagebox.showerror(APP_NAME, str(e))
+
+    def _backup_before_diff_write(self, target_paths):
+        """差分翻訳・差分訳の保存で書き込む前に、ほかの上書きと同じ方式でバックアップを取る。
+
+        Mod の localization の中のファイルなら、その Mod の localization 全体を「上書き」として保存する。
+        それ以外の場所のファイルは、ファイル単位で写しを取る（復元用の manifest.json 付き）。
+        """
+        backups=[]; done=set(); loose=[]
+        for raw in target_paths:
+            path=Path(raw)
+            mod_root=_mod_root_of_localization_file(path)
+            if mod_root is None:
+                if path.exists(): loose.append(path)
+                continue
+            key=str(mod_root)
+            if key in done: continue
+            done.add(key)
+            root,_manifest=self._create_full_localization_snapshot(
+                mod_root,"差分翻訳",category="上書き",
+                state_label="差分翻訳の書き込み直前のlocalization全体")
+            backups.append(root)
+        if loose:
+            backup_dir=core.create_qa_repair_backup_dir(BACKUP_ROOT/"差分翻訳","diff_translate")
+            for path in loose:
+                core._backup_qa_repair_target(path,backup_dir)
+            backups.append(backup_dir)
+        return backups
+
+    def _invalidate_status_after_diff_write(self, paths):
+        """書き込んだファイルの Mod と、原文の Mod の翻訳状況のキャッシュを捨てる（再調査で状態を変えるため）。
+
+        翻訳状況の一覧のキャッシュは元Mod の localization だけを見て使い回すので、
+        日本語化Mod など別の場所へ書いたときは、ここで捨てないと再調査しても状態が変わらない。
+        """
+        roots=[]
+        for raw in paths:
+            root=_mod_root_of_localization_file(raw)
+            if root is not None and str(root) not in roots:
+                roots.append(str(root))
+        if roots:
+            self._invalidate_mod_status_cache_paths(roots)
 
     def translate_diff_items(self, all_missing=False, _llm_ready=False):
         if self._closing:
@@ -10035,17 +10108,41 @@ Mod更新後だけ追加翻訳:
             try:
                 glossary = core.load_glossary(Path(glossary_path)) if glossary_path else {}
                 outputs = {}
+                untranslated = []
                 for i, (ci,key) in enumerate(tasks, 1):
                     if self.diff_controller.stop_event.is_set(): raise core.StopRequested()
                     context=contexts[ci]; source_lang=context["lang"]
                     self.events.put(("diff_translate_status", (i, len(tasks), f'{Path(context["source_path"]).name} / {key}')))
-                    translated=core.translate_single_text(diff_settings["url"], diff_settings["model"], context["source_entries"][key], source_lang,
-                                                          glossary, diff_settings["preset"], diff_settings["provider"], diff_settings["api_key"], self.diff_controller,
-                                                          chinese_basis=(source_lang == "simp_chinese"))
+                    source_text=context["source_entries"][key]
+                    problem=""
+                    for _attempt in range(DIFF_TRANSLATE_ATTEMPTS):
+                        if self.diff_controller.stop_event.is_set(): raise core.StopRequested()
+                        try:
+                            translated=core.translate_single_text(diff_settings["url"], diff_settings["model"], source_text, source_lang,
+                                                                  glossary, diff_settings["preset"], diff_settings["provider"], diff_settings["api_key"], self.diff_controller,
+                                                                  chinese_basis=(source_lang == "simp_chinese"))
+                        except core.StopRequested:
+                            raise
+                        except Exception as exc:
+                            translated=""; problem=f"翻訳に失敗しました: {type(exc).__name__}: {exc}"
+                            continue
+                        problem=_diff_translation_problem(source_text, translated, source_lang)
+                        if not problem:
+                            break
+                    if problem:
+                        # 原文のまま・使えない訳は日本語ファイルへ書き戻さず、「未翻訳のまま」として結果に出す。
+                        untranslated.append({"file":Path(context["target_path"]).name,"key":key,"reason":problem})
+                        continue
                     outputs.setdefault(str(context["target_path"]),{})[key]=translated
+                backups = self._backup_before_diff_write(list(outputs)) if outputs else []
                 for target_path,values in outputs.items():
                     core.upsert_localization_values(Path(target_path),values)
-                self.events.put(("diff_translate_done", len(tasks)))
+                if outputs:
+                    self._invalidate_status_after_diff_write(
+                        list(outputs) + [str(contexts[ci]["source_path"]) for ci,_key in tasks])
+                self.events.put(("diff_translate_done", {
+                    "written": sum(len(v) for v in outputs.values()), "untranslated": untranslated,
+                    "backups": [str(x) for x in backups], "total": len(tasks)}))
             except core.StopRequested:
                 self.events.put(("diff_translate_stopped", None))
             except Exception as e:
@@ -11865,14 +11962,22 @@ Mod更新後だけ追加翻訳:
                 elif kind=="diff_translate_status":
                     i,total,key=payload; self.diff_message_var.set(f"差分翻訳中 {i}/{total} — {key}")
                 elif kind=="diff_translate_done":
-                    self.diff_controller=None; self.diff_translate_thread=None; self._set_llm_idle("LLM 待機中",f"差分翻訳 {payload}件が完了しました")
+                    result=payload if isinstance(payload,dict) else {"written":payload,"untranslated":[],"backups":[],"total":payload}
+                    left=list(result.get("untranslated") or [])
+                    self.diff_controller=None; self.diff_translate_thread=None; self._set_llm_idle("LLM 待機中",f"差分翻訳 {result.get('written',0)}件が完了しました")
                     if not self._closing:
                         if len(self.diff_batch_contexts)>1:
                             pairs=[{"source":c["source_path"],"target":c["target_path"],"lang":c["lang"]} for c in self.diff_batch_contexts]
                             self.load_diff_pairs(pairs)
                         else:
                             self.load_diff_inspector()
-                    self.diff_message_var.set(f"差分翻訳完了: {payload}件")
+                    message=f"差分翻訳完了: 書き込み {result.get('written',0)}件"
+                    if left: message+=f" / 未翻訳のまま {len(left)}件（原文のまま・使えない訳は書き込みませんでした）"
+                    self.diff_message_var.set(message)
+                    if left and not self._closing:
+                        lines="\n".join(f"・{row['file']} / {row['key']}: {row['reason']}" for row in left[:15])
+                        more=f"\nほか {len(left)-15}件" if len(left)>15 else ""
+                        messagebox.showwarning(APP_NAME,f"次のキーは翻訳できなかったため、書き込まずに未翻訳のまま残しました。\n\n{lines}{more}\n\nモデルや設定を変えて、もう一度試してください。")
                 elif kind=="diff_translate_stopped":
                     self.diff_controller=None; self.diff_translate_thread=None; self._set_llm_idle("LLM 待機中","差分翻訳を停止しました"); self.diff_message_var.set("差分翻訳を停止しました")
                 elif kind=="diff_translate_error":
