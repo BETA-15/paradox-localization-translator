@@ -166,7 +166,9 @@ LOOSE_LINE_PATTERN = re.compile(
 HEADER_PATTERN = re.compile(r'^\s*l_(?P<lang>[a-z_]+)\s*:\s*$')
 
 PROTECT_PATTERNS = [
-    r'\[[^\[\]]*\]', r'\$[^\$]+\$', r'£[^£]+£', r'@[A-Za-z_]+!',
+    # £ のアイコンは「£名前£」のほか、閉じの £ を書かない「£名前」（後ろの空白や記号で終わる）と、「£名前|コマ番号」がある（HOI4）。
+    # 以前の £[^£]+£ は閉じの無いアイコンを守れず、「£A  £B」では次のアイコンの £ までを1つと取り違えた（v0.12.0 で修正）。
+    r'\[[^\[\]]*\]', r'\$[^\$]+\$', r'£[A-Za-z0-9_\-]+(?:\|[A-Za-z0-9_]+)?£?', r'@[A-Za-z_]+!',
     r'§[A-Za-z!]', r'#[A-Za-z_]+(?:;[^#]*)?', r'#!', r'\\n', r'\\"',
 ]
 PROTECT_RE = re.compile('(' + '|'.join(PROTECT_PATTERNS) + ')')
@@ -227,7 +229,7 @@ PLACEHOLDER_SUFFIX = "@@"
 PLACEHOLDER_RE = re.compile(re.escape(PLACEHOLDER_PREFIX) + r'(\d+)' + re.escape(PLACEHOLDER_SUFFIX))
 # 閉じ記号が崩れたプレースホルダ（@@0@・@@0）。消してよいのは閉じ記号の残りの @ だけで、後ろの訳文は残す。
 PLACEHOLDER_FALLBACK_RE = re.compile(re.escape(PLACEHOLDER_PREFIX) + r'(\d+)@?')
-_SPACING_TOKEN_RE = re.compile(r"£[A-Za-z0-9_\-]+£|£[A-Za-z0-9_\-]+|" + PROTECT_RE.pattern)
+_SPACING_TOKEN_RE = PROTECT_RE  # 閉じの無い £ のアイコンも PROTECT_RE が1つの記号として見分ける
 
 GAME_PRESETS = {
     "General": "Paradox Interactiveゲーム全般。簡潔で自然なUI日本語を優先する。",
