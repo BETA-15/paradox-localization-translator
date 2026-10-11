@@ -9,6 +9,9 @@
 - LANG：抜き出す言語（korean, russian, german, simp_chinese など）。
 - OUT_DIR：作る Mod のフォルダ（中身は消して作り直す）。**Steam Workshop・ゲームの mod フォルダの中には作らない**（作ろうとしたら止める）。
 - --english-copy：訳ではなく、l_english の値をそのまま l_<LANG> として写した「英語の写し」を作る（翻訳 Mod とみなさないことの試験用）。
+- --drop N：抜き出す l_<LANG> のファイルのうち、N 個おきに1個を入れない（欠損のある翻訳 Mod。紐付けの「欠損あり」の試験用）。
+- --stripped-source DIR：元の Mod を DIR に写し、その中から l_<LANG> のファイルを取り除く。元の Mod が訳を同梱していると
+  「Mod の中に訳あり」になって外の翻訳 Mod の照合が働かないため、この写しを元の Mod として試す。
 """
 from __future__ import annotations
 
@@ -44,7 +47,19 @@ def _language_files(mod_root: Path, lang: str) -> list:
     return loc, out
 
 
-def make(source: Path, lang: str, out: Path, name: str = "", english_copy: bool = False) -> dict:
+def strip_source(source: Path, lang: str, dest: Path) -> dict:
+    """元の Mod を dest に写し、l_<lang> のファイルを取り除く（元の Mod は読むだけ）。"""
+    _check_out_dir(dest)
+    if dest.exists():
+        shutil.rmtree(dest)
+    shutil.copytree(source, dest, ignore=shutil.ignore_patterns("*.png", "*.dds", "*.tga", "*.ogg", "*.wav", "*.mp3"))
+    _loc, files = _language_files(dest, lang)
+    for fp in files:
+        fp.unlink()
+    return {"stripped_source": str(dest), "removed_files": len(files)}
+
+
+def make(source: Path, lang: str, out: Path, name: str = "", english_copy: bool = False, drop: int = 0) -> dict:
     _check_out_dir(out)
     source_name = core.detect_mod_name(source) or source.name
     loc, files = _language_files(source, "english" if english_copy else lang)
@@ -54,7 +69,11 @@ def make(source: Path, lang: str, out: Path, name: str = "", english_copy: bool 
         shutil.rmtree(out)
     loc_name = loc.name  # localization か localisation（ゲームに合わせる）
     keys = 0
-    for fp in files:
+    dropped = 0
+    for index, fp in enumerate(files):
+        if drop and index % drop == drop - 1:
+            dropped += 1
+            continue
         rel = fp.relative_to(loc)
         text = core.read_localization_text(fp)
         if english_copy:
@@ -70,7 +89,7 @@ def make(source: Path, lang: str, out: Path, name: str = "", english_copy: bool 
                   f'dependencies={{\n\t"{source_name}"\n}}\n')
     (out / "descriptor.mod").write_text(descriptor, encoding="utf-8")
     return {"source": str(source), "source_name": source_name, "lang": lang, "out": str(out), "name": mod_name,
-            "files": len(files), "keys": keys, "english_copy": english_copy}
+            "files": len(files) - dropped, "dropped_files": dropped, "keys": keys, "english_copy": english_copy}
 
 
 def main(argv=None) -> int:
@@ -80,8 +99,12 @@ def main(argv=None) -> int:
     parser.add_argument("out")
     parser.add_argument("--name", default="")
     parser.add_argument("--english-copy", action="store_true")
+    parser.add_argument("--drop", type=int, default=0)
+    parser.add_argument("--stripped-source", default="")
     args = parser.parse_args(argv)
-    print(make(Path(args.source), args.lang, Path(args.out), args.name, args.english_copy))
+    print(make(Path(args.source), args.lang, Path(args.out), args.name, args.english_copy, args.drop))
+    if args.stripped_source:
+        print(strip_source(Path(args.source), args.lang, Path(args.stripped_source)))
     return 0
 
 
