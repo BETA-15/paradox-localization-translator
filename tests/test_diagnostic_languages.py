@@ -114,7 +114,13 @@ def test_english_diagnostic_uses_other_source_languages(tmp_path):
 
 
 def test_japanese_diagnostic_matches_head(tmp_path):
-    contents = subprocess.run(["git", "show", "HEAD:app/main.py"], capture_output=True, text=True, check=True, timeout=20).stdout
+    # 比べる相手は L4c の前の版（dc13312）。HEAD にすると、コミットした後は自分自身と比べることになる。
+    # 履歴の無い取り出し（浅い clone など）では比べられないので飛ばす。
+    shown = subprocess.run(["git", "show", "dc13312:app/main.py"], capture_output=True, text=True, timeout=20,
+                           cwd=Path(__file__).resolve().parents[1])
+    if shown.returncode != 0:
+        pytest.skip("L4c の前の版（dc13312）が履歴に無い")
+    contents = shown.stdout
     original_class = next(node for node in ast.parse(contents).body if isinstance(node, ast.ClassDef) and node.name == "App")
     original = next(node for node in original_class.body if isinstance(node, ast.FunctionDef) and node.name == "_analyze_localization_health")
     namespace = dict(vars(main))
