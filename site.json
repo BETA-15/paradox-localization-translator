@@ -42,10 +42,10 @@
     "lines": {
       "l_japanese": "[ROOT.Char.GetFirstName]は何も恐れない。§Y武勇 +2§!",
       "l_french": "[ROOT.Char.GetFirstName] ne craint rien. §Y+2 en Prouesse§!",
-      "l_german": "[ROOT.Char.GetFirstName] fürchtet nichts. §Y+2 Kampfkraft§!",
-      "l_spanish": "[ROOT.Char.GetFirstName] no teme a nada. §Y+2 de Proeza§!",
-      "l_korean": "[ROOT.Char.GetFirstName]은(는) 아무것도 두려워하지 않습니다. §Y무용 +2§!",
-      "l_polish": "[ROOT.Char.GetFirstName] niczego się nie boi. §Y+2 do Sprawności§!",
+      "l_german": "[ROOT.Char.GetFirstName] fürchtet nichts. §Y+2 Kampfgeschick§!",
+      "l_spanish": "[ROOT.Char.GetFirstName] no teme a nada. §Y+2 de Destreza§!",
+      "l_korean": "[ROOT.Char.GetFirstName]은(는) 아무것도 두려워하지 않는다. §Y기량 +2§!",
+      "l_polish": "[ROOT.Char.GetFirstName] niczego się nie boi. §Y+2 do Waleczności§!",
       "l_braz_por": "[ROOT.Char.GetFirstName] não teme nada. §Y+2 de Destreza§!",
       "l_russian": "[ROOT.Char.GetFirstName] ничего не боится. §Y+2 к доблести§!",
       "l_simp_chinese": "[ROOT.Char.GetFirstName]无所畏惧。§Y勇武 +2§!",
@@ -55,9 +55,9 @@
 
   "shots_fallback": "ja",
   "shots": [
-    {"file": "translate", "w": 1480, "h": 1008},
-    {"file": "qa", "w": 1480, "h": 1008},
-    {"file": "survey", "w": 1480, "h": 1008},
-    {"file": "model", "w": 1480, "h": 1008}
+    {"file": "translate", "w": 1480, "h": 1012},
+    {"file": "qa", "w": 1480, "h": 1012},
+    {"file": "survey", "w": 1480, "h": 1012},
+    {"file": "model", "w": 1480, "h": 1012}
   ]
 }

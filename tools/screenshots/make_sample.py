@@ -30,7 +30,7 @@ for i in range(140):
     en += [f' {k}:0 "{words[i % 10]} {i // 10 + 1}"',
            f' {k}_desc:0 "Increases trade route capacity in [SCOPE.sState(\'state\').GetName] by §Y+{i % 5 + 1}§!."']
     if i < 118:  # leave the last 22 items (44 keys) untranslated
-        jp += [f' {k}:0 "{ja[i % 10]} {i // 10 + 1}"',
+        jp += [f' {k}:0 "{ja[i % 10]}（{i // 10 + 1}）"',
                f' {k}_desc:0 "[SCOPE.sState(\'state\').GetName]の交易路の容量が§Y+{i % 5 + 1}§!増える。"']
 
 
