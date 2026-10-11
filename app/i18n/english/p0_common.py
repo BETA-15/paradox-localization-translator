@@ -56,7 +56,7 @@ STRINGS = {
     'p0.no_scan_results': 'No scan results',
     'p0.no_translation_status_scan_results': 'No Translation status scan results',
     'p0.unknown_file': 'Unknown file',
-    'p0.the_qa_comparison_editor_also': 'The QA / Comparison editor also checks against the selected target language. Mod scanning, translation mod detection and linking, missing-only translation, and Chinese-based translation are available only for Japanese. Quality checks for other target languages are simpler than for Japanese (between Latin-script languages, only identical-to-source text is checked).',
+    'p0.the_qa_comparison_editor_also': 'The QA / Comparison editor also checks against the selected target language. Quality checks for target languages other than Japanese are simpler (mixed-in scripts, text identical to the source, and leftover English). When the target is English, the mod scan does not match external translation mods.',
     'p0.this_feature_is_available_only': 'This feature is available only for Japanese glossaries',
     'p0.missing_only_translation_is_available': 'Missing-only translation is available only for items targeting Japanese. For other languages, use full translation.',
     'p0.the_llm_response_was_empty': 'The LLM response was empty',

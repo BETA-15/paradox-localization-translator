@@ -56,7 +56,7 @@ STRINGS = {
     'p0.no_scan_results': '調査結果なし',
     'p0.no_translation_status_scan_results': '翻訳状況の調査結果がありません',
     'p0.unknown_file': '不明ファイル',
-    'p0.the_qa_comparison_editor_also': 'QA／比較編集タブも、ここで選んだ翻訳先の基準で確認します。日本語以外の翻訳先では、Mod調査・日本語化Modの判定と紐付け・差分だけ翻訳・中国語基準翻訳は使えません（日本語のみ）。日本語以外の品質チェックは日本語より簡易です（ラテン文字の言語どうしは「原文と同じ」だけを確認します）。',
+    'p0.the_qa_comparison_editor_also': 'QA／比較編集タブも、ここで選んだ翻訳先の基準で確認します。日本語以外の品質チェックは日本語より簡易です（文字の種類の混入・原文と同じ値・英語の残りを確認します）。翻訳先が英語のときは、Mod調査で外の翻訳Modを照合しません。',
     'p0.this_feature_is_available_only': 'この機能は日本語の用語集だけで使えます',
     'p0.missing_only_translation_is_available': '「差分だけ翻訳」は翻訳先が日本語の項目だけで使えます。日本語以外の項目は「一からすべて翻訳」を使ってください。',
     'p0.the_llm_response_was_empty': 'LLMの応答が空でした',

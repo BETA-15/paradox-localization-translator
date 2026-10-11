@@ -42,7 +42,7 @@ STRINGS = {
     'u6.how_it_works': '仕組み',
     'u6.while_idle_only_yaml_modification_times': '待機中は監視対象のYAML更新時刻とサイズだけを確認します。変更があった対象だけ解析し、曖昧候補だけ監視専用LLMへ送ります。自動翻訳・ファイル書換えは行いません。',
     'u6.japanese_translation_status_by_mod': 'Modごとの{target_name}翻訳状況',
-    'u6.mod_research_translation_mod_assessment_and': '（Mod調査・{target_name}化Modの判定と紐付けは日本語のみ）',
+    'u6.mod_research_translation_mod_assessment_and': '（Mod調査・{target_name}化Modの判定と紐付け）',
     'u6.target_relation_scope': '（Mod調査・{target_name}化Modの判定と紐付け）',
     'u6.game_mod_location': 'ゲーム / Mod場所',
     'u6.detect_game_mod_locations': 'ゲーム/Mod場所を自動検出',
