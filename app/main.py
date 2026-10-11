@@ -246,6 +246,11 @@ def _llm_connection_alert_content(provider, url, model="", error=""):
         if model: lines.append(f"モデル: {model}")
         return {"title":"このモデルは使用できません","heading":"推論（Thinking）モデルは使用できません",
                 "message":"\n".join(lines),"category":"thinking_model","provider":display,"endpoint":endpoint}
+    if core.REASONING_MODEL_MARKER in detail:
+        lines=[detail,"",f"プロバイダ: {display}",f"接続先: {endpoint}"]
+        if model: lines.append(f"モデル: {model}")
+        return {"title":"このモデルは使用できません","heading":"考える過程を出すモデルは翻訳に向きません",
+                "message":"\n".join(lines),"category":"reasoning_model","provider":display,"endpoint":endpoint}
     if core.EMBEDDING_ONLY_MARKER in detail:
         lines=[detail,"",f"プロバイダ: {display}",f"接続先: {endpoint}"]
         if model: lines.append(f"モデル: {model}")
@@ -10010,7 +10015,7 @@ Mod更新後だけ追加翻訳:
                 models=core.list_models(provider,url,timeout=8,api_key=api_key)
                 if core.normalize_provider(provider) in {"ollama","lmstudio"} and not models:
                     raise RuntimeError("接続には成功しましたが、読み込み済みのモデルがありません")
-                warning=core.unusable_model_warning(provider,url,model)
+                warning=core.unusable_model_warning(provider,url,model) or core.reasoning_model_probe_warning(provider,url,model,api_key)
                 if warning:
                     raise RuntimeError(warning)
                 self.events.put(("llm_preflight_done",{"token":token,"models":models}))

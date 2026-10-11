@@ -1104,10 +1104,37 @@ def ollama_num_ctx(system_prompt: str, user_content: str) -> int:
     return OLLAMA_NUM_CTX_STEPS[-1]
 
 
+REASONING_MODEL_MARKER = "考える過程に時間を使うモデル"
+
+
+class ReasoningModelError(RuntimeError):
+    """応答が考える過程だけで、訳が返らなかった（考える過程を止められないモデル）。再試行しても同じなので繰り返さない。"""
+
+
+def reasoning_model_warning_text(model: str) -> str:
+    return (f"{model} は{REASONING_MODEL_MARKER}のため、翻訳に向きません。"
+            "1回の翻訳で長く考え込み、時間切れや空の応答になります。instruct 版など、考える過程を出さないモデルに替えてください。")
+
+
+# LM Studio が reasoning_effort を受け付けなかった（HTTP 400）サーバーとモデル。2回目からは送らない。
+_LMSTUDIO_NO_REASONING_EFFORT: set = set()
+
+
+def _response_reasoning(p: str, body: dict) -> str:
+    """応答に含まれる考える過程（LM Studio・OpenAI 互換の reasoning_content、Ollama の thinking）。"""
+    if p == "ollama":
+        return str((body.get("message") or {}).get("thinking") or "")
+    if p in {"lmstudio", "openai_compat"}:
+        choices = body.get("choices") or []
+        message = (choices[0] if choices else {}).get("message") or {}
+        return str(message.get("reasoning_content") or message.get("reasoning") or "")
+    return ""
+
+
 def call_llm_raw(provider: str, url: str, model: str, user_content: str, system_prompt: str,
                  timeout: int = 300, retries: int = 5,
                  controller: Optional[TranslationController] = None,
-                 temperature: float = 0.2, api_key: str = "") -> str:
+                 temperature: float = 0.2, api_key: str = "", max_tokens: Optional[int] = None) -> str:
     """Call local or cloud LLM APIs and emit per-request performance metrics."""
     p = normalize_provider(provider)
     base = _base_url_for_provider(provider, url)
@@ -1132,6 +1159,8 @@ def call_llm_raw(provider: str, url: str, model: str, user_content: str, system_
                     "options": {"temperature": temperature,
                                 "num_ctx": ollama_num_ctx(system_prompt, user_content)},
                 }
+                if max_tokens:
+                    payload["options"]["num_predict"] = int(max_tokens)
             elif p in {"lmstudio", "openai_compat"}:
                 if p == "lmstudio" and not base.endswith('/v1'):
                     base += '/v1'
@@ -1142,6 +1171,11 @@ def call_llm_raw(provider: str, url: str, model: str, user_content: str, system_
                                  {"role": "user", "content": user_content}],
                     "stream": False, "temperature": temperature,
                 }
+                # LM Studio は reasoning_effort="none" で考える過程を止められる（qwen3.8 などで確認）。
+                if p == "lmstudio" and (base, model) not in _LMSTUDIO_NO_REASONING_EFFORT:
+                    payload["reasoning_effort"] = "none"
+                if max_tokens:
+                    payload["max_tokens"] = int(max_tokens)
             elif p == "openai":
                 if not base.endswith('/v1'):
                     base += '/v1'
@@ -1163,8 +1197,18 @@ def call_llm_raw(provider: str, url: str, model: str, user_content: str, system_
             else:
                 raise RuntimeError(f"未対応のプロバイダです: {provider}")
             req = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers)
-            with _urlopen(req, timeout=timeout) as resp:
-                body = json.loads(resp.read().decode("utf-8"))
+            try:
+                with _urlopen(req, timeout=timeout) as resp:
+                    body = json.loads(resp.read().decode("utf-8"))
+            except urllib.error.HTTPError as http_error:
+                if http_error.code != 400 or "reasoning_effort" not in payload:
+                    raise
+                # reasoning_effort を受け付けないサーバー・モデル。外して同じ依頼を送り直す。
+                _LMSTUDIO_NO_REASONING_EFFORT.add((base, model))
+                payload.pop("reasoning_effort", None)
+                req = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers)
+                with _urlopen(req, timeout=timeout) as resp:
+                    body = json.loads(resp.read().decode("utf-8"))
             elapsed = max(time.perf_counter() - started, 1e-6)
             completion_tokens = 0
             provider_tps = 0.0
@@ -1203,6 +1247,8 @@ def call_llm_raw(provider: str, url: str, model: str, user_content: str, system_
                 # 思考中の「1|||…」のような行を訳として取り込まないよう空として扱う。
                 content = ""
             content = strip_reasoning(content).strip().strip('`').strip()
+            if not content and _response_reasoning(p, body).strip():
+                raise ReasoningModelError(reasoning_model_warning_text(model))
             if not content:
                 raise RuntimeError("LLMから空の応答が返されました")
             if controller:
@@ -1213,6 +1259,12 @@ def call_llm_raw(provider: str, url: str, model: str, user_content: str, system_
                 controller.notify(kind="llm_activity", state="end", activity_id=activity_id, provider=provider_display_name(provider), model=model, success=True)
             return content
         except StopRequested:
+            raise
+        except ReasoningModelError as e:
+            # 考える過程だけが返るモデルは、何度送っても同じ。時間切れを繰り返さずにすぐ知らせる。
+            if controller:
+                controller.notify(kind="llm_activity", state="end", activity_id=activity_id, provider=provider_display_name(provider), model=model, success=False, error=str(e), attempt=attempt + 1, retries=retries)
+                controller.notify(kind="llm_metric", metric=_metric(provider, model, max(time.perf_counter() - overall_start, 1e-6), False, error=str(e)))
             raise
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError,
                 json.JSONDecodeError, ConnectionError, OSError, RuntimeError, KeyError, IndexError) as e:
@@ -1231,6 +1283,24 @@ def call_llm_raw(provider: str, url: str, model: str, user_content: str, system_
     if controller:
         controller.notify(kind="llm_metric", metric=_metric(provider, model, elapsed, False, error=str(last_err)))
     raise RuntimeError(f"LLM呼び出しに{retries}回失敗しました: {last_err}")
+
+def reasoning_model_probe_warning(provider: str, url: str, model: str, api_key: str = "",
+                                  timeout: float = 60) -> str:
+    """翻訳を始める前に短い依頼を1回送り、考える過程だけが返るモデルなら説明を返す。問題なし・確かめられないなら空文字。
+
+    ローカルの LLM（Ollama・LM Studio・OpenAI 互換）だけを確かめる。クラウドの API には送らない（料金がかかるため）。
+    """
+    if normalize_provider(provider) not in {"ollama", "lmstudio", "openai_compat"} or not model:
+        return ""
+    try:
+        call_llm_raw(provider, url, model, "0|||Hello", "Translate each line. Reply only with N|||translation.",
+                     timeout=timeout, retries=1, temperature=0.0, max_tokens=64)
+    except ReasoningModelError as exc:
+        return str(exc)
+    except Exception:
+        return ""
+    return ""
+
 
 def benchmark_model(provider: str, url: str, model: str,
                     controller: Optional[TranslationController] = None, api_key: str = "") -> dict:
