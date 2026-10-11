@@ -117,10 +117,48 @@ def test_queue_items_get_a_per_language_output_and_old_items_are_corrected(tmp_p
     main.App._append_queue(state, mod, target_lang="japanese")
     fr, ja = state.queue_items
     assert fr["output"].endswith("_french") and ja["output"].endswith("_japanese") and fr["output"] != ja["output"]
-    # v0.12.0 で保存したフランス語の項目（出力先が _japanese）は、次に始めるときに正しい出力先に直る
+    # v0.12.0 で保存したフランス語の項目（出力先が _japanese）は、訳した出力を見失わないよう、そのまま使う（移さない）
     old = {"input": str(mod), "mod_name": "Example", "target_lang": "french", "output_isolated_v2": True,
            "output": ja["output"]}
     main.App._ensure_isolated_item_output(state, old)
-    assert old["output"] == fr["output"]
+    assert old["output"] == ja["output"]
+    # 新しく足したフランス語の項目は、フランス語の出力先のまま
+    main.App._ensure_isolated_item_output(state, fr)
+    assert fr["output"].endswith("_french")
     main.App._ensure_isolated_item_output(state, ja)
     assert ja["output"].endswith("_japanese")
+
+
+def test_japanese_output_folder_name_is_the_same_as_v0_12_0(tmp_path):
+    import hashlib, re
+    state = SimpleNamespace(_output_identity_source=lambda p: p)
+    mod = tmp_path / "mods" / "Example Mod"; mod.mkdir(parents=True)
+    got = main.App._isolated_output_path(state, mod, tmp_path / "out", "Example Mod")
+    # v0.12.0 の式：f"{safe}_{sha256(source)[:10]}_japanese"
+    safe = re.sub(r'[^0-9A-Za-zぁ-んァ-ヶ一-龯_\-]+', '_', "Example Mod").strip('_')[:64]
+    digest = hashlib.sha256(str(mod.resolve()).encode()).hexdigest()[:10]
+    assert got == tmp_path / "out" / f"{safe}_{digest}_japanese"
+
+
+def test_same_mod_in_japanese_and_french_keeps_outputs_and_reports_apart(tmp_path, monkeypatch):
+    import json
+    src = tmp_path / "mod" / "localization" / "english"; src.mkdir(parents=True)
+    (src / "ev_l_english.yml").write_text('l_english:\n a:0 "The council approved the law"\n', encoding="utf-8")
+    texts = {"japanese": "評議会は法を承認した", "french": "Le conseil a approuvé la loi"}
+    monkeypatch.setattr(main.core, "translate_batch",
+                        lambda _u, _m, jobs, _s, *a, **k: [texts[k.get("target_lang", "japanese")] for _ in jobs])
+    state = SimpleNamespace(_output_identity_source=lambda p: p)
+    outputs = {}
+    for lang in ("japanese", "french"):
+        out = main.App._isolated_output_path(state, tmp_path / "mod" / "localization", tmp_path / "out", "Mod",
+                                             target_lang=lang)
+        main.core.run_translation(tmp_path / "mod" / "localization", out, target_lang=lang, verbose=False,
+                                  cache_path=tmp_path / f"cache_{lang}" / "translate_cache.json",
+                                  qa_backup_root=tmp_path / "bk")
+        outputs[lang] = out
+    assert outputs["japanese"] != outputs["french"]
+    for lang, out in outputs.items():
+        assert [p.name for p in out.iterdir() if p.is_dir()] == [lang]
+        assert len(json.loads((out / "translation_error_report.json").read_text(encoding="utf-8"))["attempts"]) == 1
+        assert (out / "translation_qa_repair_report.json").exists()
+    assert main.core.parse_localization_file(outputs["japanese"] / "japanese" / "ev_l_japanese.yml")[1]["a"] == texts["japanese"]

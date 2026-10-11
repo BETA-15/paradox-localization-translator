@@ -8206,8 +8206,14 @@ Mod更新後だけ追加翻訳:
         else:
             raw = self.normal_output_var.get().strip() if hasattr(self, "normal_output_var") else ""
             root = Path(raw) if raw else OUTPUT_ROOT
-        expected = self._isolated_output_path(inp, root, item.get("mod_name", ""),
-                                              target_lang=core.DEFAULT_TARGET_LANG if mode == "chinese" else _item_target_lang(item))
+        target_lang = core.DEFAULT_TARGET_LANG if mode == "chinese" else _item_target_lang(item)
+        expected = self._isolated_output_path(inp, root, item.get("mod_name", ""), target_lang=target_lang)
+        if target_lang != core.DEFAULT_TARGET_LANG and item.get("output_isolated_v2"):
+            # v0.12.0 で日本語以外を訳した項目は、出力先が「…_japanese」（日本語と共有）になっている。
+            # 訳した出力を見失わないよう、記録している出力先をそのまま使い、移さない。
+            shared = self._isolated_output_path(inp, root, item.get("mod_name", ""), target_lang=core.DEFAULT_TARGET_LANG)
+            if item.get("output") == str(shared):
+                return
         if item.get("output") != str(expected) or not item.get("output_isolated_v2"):
             item["output"] = str(expected)
             item["output_isolated_v2"] = True
