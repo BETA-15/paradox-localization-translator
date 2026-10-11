@@ -355,6 +355,62 @@ def looks_untranslatable(value: str) -> bool:
     return not bool(re.search(r'[A-Za-z0-9\u3040-\u30ff\u4e00-\u9fff]', stripped))
 
 
+def looks_like_chinese_in_japanese(text: str) -> bool:
+    """日本語の訳のはずが、中国語（簡体字・繁体字）の文になっていないか（v0.11.81）。
+
+    簡体字は「cp932 で表せない漢字」（常用漢字の剝・頰・塡は除く）、繁体字は日本語と字形が違う旧字の一覧で数え、
+    かなが少ないとき、または中国語の機能語があるときに中国語とみなす。漢字だけの日本語の短いラベルは通す。
+    """
+    plain = PLACEHOLDER_RE.sub('', PROTECT_RE.sub('', text or '')).strip()
+    han = re.findall(r'[\u4e00-\u9fff]', plain)
+    kana_count = len(re.findall(r'[\u3040-\u30ff]', plain))
+    traditional = "國會們說來對發經濟戰爭歷與將讓關廣實舉黨權區縣學體舊歐擴劃灣絕繼續嚴鬥簽團盡隨據傳樂藝參號鐵錢驗賣證處應麼產這雖雙靜亞獨辭兒歲萬譯圍雜壓價戲劍聲擊氣豐營稅觀讀變釋醫圖黑兩單壞寫屬帶廢彈擔數歡殘滿狀稱總臺觸輕辦遲鄰錄險隱靈顯驅"
+    japanese_exceptions = "剝頰塡"
+    chinese_count = 0
+    for character in han:
+        if character in japanese_exceptions:
+            continue
+        if character in traditional:
+            chinese_count += 1
+            continue
+        try:
+            character.encode("cp932")
+        except UnicodeEncodeError:
+            chinese_count += 1
+    # 区切りの記号が無い漢字8字以下の短いラベルは、公式の日本語訳にも中国の地名・人名（鄯善、小磯國昭 など）がある。
+    # 中国語にしかない字が多いときだけ中国語とみなす。
+    short_label = len(han) <= 8 and not re.search(r'[\u3002\uff0c\uff01\uff1f\uff1b\uff1a\u3001]', plain)
+    if short_label:
+        if chinese_count >= 3 or (chinese_count >= 2 and kana_count == 0 and chinese_count * 2 >= len(han)):
+            return True
+    elif chinese_count >= 2 or (chinese_count >= 1 and kana_count < len(han) * 0.15):
+        return True
+    # 日本語は読点に「、」を使う。かなが無く漢字の文に全角のカンマ「，」があれば中国語の文とみなす。
+    if kana_count == 0 and len(han) >= 4 and "\uff0c" in plain:
+        return True
+    # 中国語は外国の人名を「·」（U+00B7）で区切る。日本語は「・」（カタカナの中黒）を使う。
+    # （短い名前は公式の日本語訳にも「昌林·林格」のような例があるので、漢字8字より長いときだけ）
+    if kana_count == 0 and len(han) > 8 and re.search(r'[\u4e00-\u9fff]\u00b7[\u4e00-\u9fff]', plain):
+        return True
+    return kana_count == 0 and len(han) >= 6 and bool(re.search(
+        r'们|這|这|吗|呢|吧|卻|从|從|于|於|让|讓|给|很|已经|已經|正在|能够|能夠|因为|因為|虽然|雖然|但是|之后|之後|这些|這些|那些|可以|如果',
+        plain,
+    ))
+
+
+def unusable_japanese_translation(original: str, translated: str, source_lang: str) -> bool:
+    """翻訳・キャッシュ・QA・自動修復で「日本語の訳として使えない」か。未翻訳に加え、中国語の訳も弾く。
+
+    Mod 調査（日本語化Modの欠損の判定）は looks_untranslated のままにし、調査の結果は変えない。
+    """
+    return looks_untranslated(original, translated, source_lang) or looks_like_chinese_in_japanese(translated)
+
+
+def foreign_in_japanese_output(value: str) -> bool:
+    """原文の無い日本語の訳（修復モード・QA）に、英語や中国語が残っていないか。"""
+    return looks_foreign_in_target(value, "japanese") or looks_like_chinese_in_japanese(value)
+
+
 def looks_foreign_in_target(value: str, target_lang: str) -> bool:
     if target_lang != "japanese":
         return False
@@ -418,7 +474,7 @@ def looks_untranslated(original: str, translated: str, source_lang: str) -> bool
 
 
 def cache_entry_is_valid(original: str, cached: str, source_lang: str) -> bool:
-    return not looks_untranslated(original, cached, source_lang)
+    return not unusable_japanese_translation(original, cached, source_lang)
 
 
 def glossary_for_prompt(glossary: dict, values: Iterable[str], max_items: int = 80) -> List[Tuple[str, str]]:
@@ -1462,7 +1518,7 @@ def _apply_batch_result(batch, translated_list, results, cache, source_lang, fai
         return
     for j, protected_translation in zip(batch, translated_list):
         restored = restore_text(protected_translation, j["tokens"])
-        if looks_untranslated(j["value"], restored, source_lang):
+        if unusable_japanese_translation(j["value"], restored, source_lang):
             results[j["line_idx"]] = j["value"]
             failed.add(j["line_idx"])
             cache.pop(j["hash"], None)
@@ -1501,7 +1557,8 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
         idx = len(parsed_lines) - 1
         if not value or looks_untranslatable(value):
             continue
-        if repair_target_file and not looks_foreign_in_target(value, target_lang):
+        if repair_target_file and not (foreign_in_japanese_output(value) if target_lang == "japanese"
+                                           else looks_foreign_in_target(value, target_lang)):
             continue
         h = translation_cache_key(provider, model, preset, translation_source_lang, value,
                                   glossary=glossary, dual_source=dual_source,
@@ -1648,7 +1705,7 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
                                      cfg["glossary"], cfg["preset"], cfg["dual_source"],
                                      controller, cfg["provider"], cfg["api_key"], chinese_basis)
                 restored = restore_text(tr[0], j["tokens"])
-                if looks_untranslated(j["value"], restored, translation_source_lang):
+                if unusable_japanese_translation(j["value"], restored, translation_source_lang):
                     cache.pop(j["hash"], None)
                     failure_reasons[j["line_idx"]] = "単発再試行後も原文のまま、または翻訳として利用できませんでした"
                 else:
@@ -1987,8 +2044,9 @@ def qa_entries(target_entries: Dict[str,str], source_entries: Optional[Dict[str,
         # English residues can be detected without a source file.  When a source
         # entry is present, looks_untranslated() below performs the source-aware
         # check so the same issue is not reported twice.
-        if (not source_entries or key not in source_entries) and looks_foreign_in_target(value, "japanese"):
-            issues.append(_qa_issue(key, "error", "untranslated", "英語の未翻訳候補", value,
+        if (not source_entries or key not in source_entries) and foreign_in_japanese_output(value):
+            label = "中国語の未翻訳候補" if looks_like_chinese_in_japanese(value) else "英語の未翻訳候補"
+            issues.append(_qa_issue(key, "error", "untranslated", label, value,
                                     rule_id="QA-UNTRANSLATED-EN-001", repairable=False,
                                     recommended_action="原文を指定して再翻訳"))
         for item in typo_checks(value):
@@ -2000,7 +2058,7 @@ def qa_entries(target_entries: Dict[str,str], source_entries: Optional[Dict[str,
                                     recommended_action="原文から再翻訳"))
         if source_entries and key in source_entries:
             src = source_entries[key]
-            if looks_untranslated(src, value, source_lang):
+            if unusable_japanese_translation(src, value, source_lang):
                 proper, reason = looks_like_proper_noun_candidate(key, src, value, source_lang, source_path)
                 if proper:
                     issues.append(_qa_issue(key, "notice", "proper_noun_untranslated",
@@ -2291,7 +2349,7 @@ def qa_file_with_auto_repair(target_path: Path, source_path: Path, *,
         updates = {}
         for job, translated_value in zip(jobs, translated):
             restored = restore_text(translated_value, job["tokens"])
-            valid = (not looks_untranslated(job["value"], restored, detected_lang)
+            valid = (not unusable_japanese_translation(job["value"], restored, detected_lang)
                      and extract_protected_tokens(restored) == extract_protected_tokens(job["value"])
                      and "@@" not in restored)
             if valid:
@@ -2791,7 +2849,7 @@ def compare_localization_entries(source_entries: Dict[str, str], target_entries:
         elif key not in source_entries:
             status = "extra"
             message = "日本語側だけに存在するキーです"
-        elif looks_untranslated(src, dst, source_lang):
+        elif unusable_japanese_translation(src, dst, source_lang):
             status = "untranslated"
             message = "原文のまま残っている可能性があります"
         else:
