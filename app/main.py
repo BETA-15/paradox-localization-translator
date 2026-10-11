@@ -37,7 +37,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.80"
+APP_VERSION = "0.12.0"
 MOD_STATUS_CACHE_VERSION = 16
 TRANSLATION_STATUS_SNAPSHOT_SCHEMA = 2
 MOD_STATUS_EMPTY_IID = "__mod_status_empty__"
@@ -3357,6 +3357,7 @@ Mod更新後だけ追加翻訳:
         t = self.tab_status
         top = ttk.Frame(t); top.pack(fill="x", pady=(0,6))
         ttk.Label(top, text="Modごとの日本語翻訳状況", font=("", 13, "bold")).pack(side="left")
+        ttk.Label(top, text="（Mod調査・日本語化Modの判定と紐付けは日本語のみ）", foreground="#8a5a00").pack(side="left", padx=(8,0))
         ttk.Label(top, textvariable=self.mod_status_summary_var).pack(side="right")
 
         # フルHDでも縦方向が苦しくなりにくいよう、左に設定系、右に結果系を置く。
