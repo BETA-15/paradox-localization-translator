@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paradox Localization Translator — translate Paradox game mods with AI</title>
+<meta name="description" content="Free, unofficial tool to translate Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris and Europa Universalis mods into 11 languages using a local LLM or a cloud AI.">
+<link rel="canonical" href="https://beta-15.github.io/paradox-localization-translator/">
+<link rel="alternate" hreflang="en" href="https://beta-15.github.io/paradox-localization-translator/">
+<link rel="alternate" hreflang="ja" href="https://beta-15.github.io/paradox-localization-translator/ja/">
+<link rel="alternate" hreflang="x-default" href="https://beta-15.github.io/paradox-localization-translator/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Paradox Localization Translator — translate Paradox game mods with AI">
+<meta property="og:description" content="Free, unofficial tool to translate Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris and Europa Universalis mods into 11 languages using a local LLM or a cloud AI.">
+<meta property="og:url" content="https://beta-15.github.io/paradox-localization-translator/">
+<meta property="og:image" content="https://beta-15.github.io/paradox-localization-translator/assets/icon.png">
+<meta name="theme-color" content="#0e1620">
+<link rel="icon" href="assets/icon.png">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<a class="skip" href="#main">↓</a>
+
+<div class="suggest" id="suggest" hidden>
+  <a id="suggest-link" href="#"></a>
+  <button type="button" id="suggest-close" aria-label="Close">×</button>
+</div>
+
+<header class="top">
+  <a class="brand" href="">
+    <img src="assets/icon.png" alt="" width="28" height="28">
+    <span>Paradox Localization Translator</span>
+  </a>
+  <nav class="menu" aria-label="Sections">
+    <a href="#features">Features</a>
+    <a href="#shots">Screenshots</a>
+    <a href="#games">Games &amp; languages</a>
+    <a href="#howto">How to use</a>
+    <a href="#faq">FAQ</a>
+  </nav>
+  <div class="tools">
+    <details class="langs">
+      <summary aria-label="Language"><span class="globe" aria-hidden="true">◍</span> English</summary>
+      <ul><li><a href="" hreflang="en" lang="en" aria-current=page>English</a></li><li><a href="ja/" hreflang="ja" lang="ja">日本語</a></li></ul>
+    </details>
+    <a class="gh" href="https://github.com/BETA-15/paradox-localization-translator" aria-label="GitHub">GitHub ↗</a>
+  </div>
+</header>
+
+<main id="main">
+
+<section class="hero">
+  <div class="hero-text">
+    <p class="eyebrow">For Paradox grand strategy mods</p>
+    <h1>Translate mods into <em>your language</em> — with a local LLM or a cloud AI.</h1>
+    <p class="lead">A free desktop tool for modders and players. It translates mod localisation files for Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris and Europa Universalis IV and V into any of the 11 languages the games support, keeps the game&#x27;s formatting codes intact, and helps you find and fix what is still untranslated.</p>
+    <div class="cta">
+      <a class="btn" href="https://github.com/BETA-15/paradox-localization-translator/releases/latest">Download for free <span aria-hidden="true">→</span></a>
+      <div class="os">
+        <a href="https://github.com/BETA-15/paradox-localization-translator/releases/latest/download/ParadoxLocalizationTranslator.exe">Windows</a>
+        <a href="https://github.com/BETA-15/paradox-localization-translator/releases/latest/download/ParadoxLocalizationTranslator-macOS.zip">macOS</a>
+        <a href="https://github.com/BETA-15/paradox-localization-translator/releases/latest/download/ParadoxLocalizationTranslator">Linux</a>
+      </div>
+    </div>
+    <p class="platforms">Windows · macOS · Linux — no Python needed</p>
+    <ul class="badges"><li>Unofficial</li><li>Free, all features</li><li>MIT License</li></ul>
+  </div>
+
+  <figure class="ledger" aria-label="Formatting codes stay exactly as they were.">
+    <div class="ledger-head"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="fname">localization/…_l_english.yml</span></div>
+<pre class="yml"><code><span class="lk">l_english:</span>
+ <span class="key">trait_brave_desc:0</span> <span class="str">"<span class="tok">[ROOT.Char.GetFirstName]</span> fears nothing. <span class="tok">§Y</span>+2 Prowess<span class="tok">§!</span>"</span></code></pre>
+    <div class="arrow" aria-hidden="true">↓</div>
+<pre class="yml out"><code><span class="lk" id="demo-lang">l_japanese:</span>
+ <span class="key">trait_brave_desc:0</span> <span class="str" id="demo-line">"<span class="tok">[ROOT.Char.GetFirstName]</span>は何も恐れない。<span class="tok">§Y</span>武勇 +2<span class="tok">§!</span>"</span></code></pre>
+    <figcaption>Formatting codes stay exactly as they were.</figcaption>
+  </figure>
+</section>
+
+<section id="features" class="band">
+  <h2>What it does</h2>
+  <div class="cards"><article class="card"><span class="num">01</span><h3>Translate whole mods at once</h3><p>Add a single file, a localisation folder or an entire mod — or drag and drop it. Queue several mods; pause, resume, or stop and continue next time.</p></article><article class="card"><span class="num">02</span><h3>Keeps game code safe</h3><p>Formatting codes such as <code>[ROOT.Char.GetName]</code>, <code>$VALUE$</code>, <code>£gold£</code> and <code>§Y…§!</code> are protected during translation and restored afterwards, so the game text does not break.</p></article><article class="card"><span class="num">03</span><h3>Repair and update, not just translate</h3><p>Finds lines that were left untranslated and translates only those. When a mod updates, it translates only the new or changed lines. Each job keeps its own cache.</p></article><article class="card"><span class="num">04</span><h3>Finds existing translation mods</h3><p>Detects whether another mod already translates a mod into your language, and whether that translation is complete. Missing lines can be added to the translation mod instead of the original — with a backup and a confirmation first.</p></article><article class="card"><span class="num">05</span><h3>Check and polish</h3><p>Compare source and translation side by side, run quality checks, search and fix any line directly, and build a glossary so names and terms stay consistent.</p></article><article class="card"><span class="num">06</span><h3>Your choice of AI</h3><p>Run a local model with Ollama or LM Studio — free and private — or use OpenAI, Anthropic, Google Gemini or any OpenAI-compatible API. API keys are never saved to settings, profiles or logs.</p></article></div>
+</section>
+
+<section id="shots" class="band">
+  <h2>Screenshots</h2>
+  <div class="shots"><figure class="shot empty"><div class="ph">Screenshot coming soon</div><figcaption>Translation queue and progress</figcaption></figure><figure class="shot empty"><div class="ph">Screenshot coming soon</div><figcaption>Side-by-side QA and editing</figcaption></figure><figure class="shot empty"><div class="ph">Screenshot coming soon</div><figcaption>Mod translation status survey</figcaption></figure><figure class="shot empty"><div class="ph">Screenshot coming soon</div><figcaption>Model and connection settings</figcaption></figure></div>
+</section>
+
+<section id="games" class="band">
+  <h2>Games and languages</h2>
+  <p class="intro">The tool can translate into all 11 official languages. Each game only reads some of them; if you choose a language the game cannot display, the tool warns you.</p>
+  <div class="matrix-wrap"><table class="matrix"><thead><tr><th scope="col">Game</th><th scope="col" title="English" class=here>EN</th><th scope="col" title="日本語">JA</th><th scope="col" title="Français">FR</th><th scope="col" title="Deutsch">DE</th><th scope="col" title="Español">ES</th><th scope="col" title="한국어">KO</th><th scope="col" title="Polski">PL</th><th scope="col" title="Português (Brasil)">PT</th><th scope="col" title="Русский">RU</th><th scope="col" title="简体中文">ZH</th><th scope="col" title="Türkçe">TR</th></tr></thead><tbody><tr><th scope="row">Victoria 3<span class="count">all 11</span></th><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr><tr><th scope="row">Europa Universalis V<span class="count">all 11</span></th><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr><tr><th scope="row">Hearts of Iron IV<span class="count">10 languages</span></th><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Stellaris<span class="count">10 languages</span></th><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Crusader Kings III<span class="count">9 languages · to be confirmed</span></th><td class="pending here">·</td><td class="pending">·</td><td class="pending">·</td><td class="pending">·</td><td class="pending">·</td><td class="pending">·</td><td class="pending">·</td><td class="pending">·</td><td class="pending">·</td><td class="pending">·</td><td class="pending">·</td></tr><tr><th scope="row">Europa Universalis IV<span class="count">4 languages</span></th><td class="yes here">✓</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="no">–</td></tr></tbody></table></div>
+  <p class="legend">✓ = the game can display this language</p>
+</section>
+
+<section id="howto" class="band">
+  <h2>How to use</h2>
+  <ol class="steps"><li><h3>Prepare an AI</h3><p>Start Ollama or LM Studio and load a model — or have an API key ready for a cloud service.</p></li><li><h3>Download and open the app</h3><p>Pick the file for your system from the latest release.</p></li><li><h3>Choose the model</h3><p>In “Model / Connection”, select the provider and the model.</p></li><li><h3>Add a mod and translate</h3><p>Add a file, folder or mod (drag and drop works), choose the target language, and press “Start translation”.</p></li><li><h3>Check, then apply</h3><p>Review the result in QA / Compare, then write the finished translation into the mod. A backup is made first.</p></li></ol>
+  <div class="needs">
+    <h3>What you need</h3>
+    <div class="needs-grid">
+      <div><h4>Local</h4><p>Ollama or LM Studio, and a model that writes your target language well (for example Qwen or Gemma models).</p></div>
+      <div><h4>Cloud</h4><p>An API key for OpenAI, Anthropic, Google Gemini, or an OpenAI-compatible service. Usage is billed by that service, not by this tool.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="publish" class="band notice-band">
+  <h2>Publishing a translated mod</h2>
+  <p class="intro">If you share a translation made with this tool on Steam Workshop or elsewhere, please:</p>
+  <ul class="rules"><li><strong>Ask the original mod&#x27;s author for permission.</strong> This is the custom in the modding community, and Steam&#x27;s terms require that you hold the rights to what you upload.</li><li><strong>Publish it for free.</strong> Paradox Interactive&#x27;s User Agreement (Section 5) requires mods and other user-generated content to be free for everyone; they cannot be put behind a paywall. Accepting donations for your time is allowed.</li><li><strong>Say that it is machine-translated,</strong> if it is. It helps players decide.</li></ul>
+</section>
+
+
+
+<section id="faq" class="band">
+  <h2>FAQ</h2>
+  <div class="faq"><details><summary>Is it really free?</summary><p>Yes. Every feature is free for everyone, under the MIT License. There is no paid version.</p></details><details><summary>macOS says the app cannot be opened.</summary><p>The app is not signed by Apple. Open System Settings → Privacy &amp; Security and allow it to open.</p></details><details><summary>Windows shows a SmartScreen warning.</summary><p>The app is not code-signed. Download it only from the official GitHub Releases page, then choose “More info” → “Run anyway”.</p></details><details><summary>Can I translate Steam Workshop mods directly?</summary><p>Yes, but a Workshop update can overwrite your changes. The tool keeps backups; for important work, keep a copy of the translation.</p></details><details><summary>How do I report a bug?</summary><p>Open an issue on GitHub. If you can, attach the diagnostic ZIP from Settings → Collect diagnostic log, and describe the steps. The ZIP does not include your translations or API keys.</p></details></div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <p class="unofficial">Paradox Localization Translator is an unofficial tool made by an individual developer. It is not affiliated with or endorsed by Paradox Interactive. Paradox Interactive, Crusader Kings, Victoria, Hearts of Iron, Stellaris and Europa Universalis are trademarks of their respective owners.</p>
+  <p class="links">
+    <a href="https://github.com/BETA-15/paradox-localization-translator/blob/main/LICENSE">MIT License</a>
+    <a href="https://github.com/BETA-15/paradox-localization-translator">Source on GitHub</a>
+    <span>Made by <a href="https://beta-15.github.io/beta-lab/">BETA-15</a></span>
+  </p>
+</footer>
+
+<div class="lightbox" id="lightbox" hidden><img alt=""></div>
+
+<script>window.PLT = {"here": "en", "langs": [{"tag": "en", "href": "", "text": "This page is also available in English."}, {"tag": "ja", "href": "ja/", "text": "このページは日本語でも読めます。"}], "demo": [["l_japanese", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span>は何も恐れない。<span class=\"tok\">§Y<\/span>武勇 +2<span class=\"tok\">§!<\/span>"], ["l_french", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span> ne craint rien. <span class=\"tok\">§Y<\/span>+2 en Prouesse<span class=\"tok\">§!<\/span>"], ["l_german", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span> fürchtet nichts. <span class=\"tok\">§Y<\/span>+2 Kampfkraft<span class=\"tok\">§!<\/span>"], ["l_spanish", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span> no teme a nada. <span class=\"tok\">§Y<\/span>+2 de Proeza<span class=\"tok\">§!<\/span>"], ["l_korean", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span>은(는) 아무것도 두려워하지 않습니다. <span class=\"tok\">§Y<\/span>무용 +2<span class=\"tok\">§!<\/span>"], ["l_polish", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span> niczego się nie boi. <span class=\"tok\">§Y<\/span>+2 do Sprawności<span class=\"tok\">§!<\/span>"], ["l_braz_por", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span> não teme nada. <span class=\"tok\">§Y<\/span>+2 de Destreza<span class=\"tok\">§!<\/span>"], ["l_russian", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span> ничего не боится. <span class=\"tok\">§Y<\/span>+2 к доблести<span class=\"tok\">§!<\/span>"], ["l_simp_chinese", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span>无所畏惧。<span class=\"tok\">§Y<\/span>勇武 +2<span class=\"tok\">§!<\/span>"], ["l_turkish", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span> hiçbir şeyden korkmaz. <span class=\"tok\">§Y<\/span>+2 Yiğitlik<span class=\"tok\">§!<\/span>"]]};</script>
+<script src="assets/site.js" defer></script>
+</body>
+</html>

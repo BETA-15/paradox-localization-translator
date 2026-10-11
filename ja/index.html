@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paradox Localization Translator — Paradox のゲームの Mod を AI で翻訳</title>
+<meta name="description" content="Crusader Kings III、Victoria 3、Hearts of Iron IV、Stellaris、Europa Universalis の Mod を、ローカル LLM やクラウドの AI で11言語へ翻訳する、無料の非公式ツール。">
+<link rel="canonical" href="https://beta-15.github.io/paradox-localization-translator/ja/">
+<link rel="alternate" hreflang="en" href="https://beta-15.github.io/paradox-localization-translator/">
+<link rel="alternate" hreflang="ja" href="https://beta-15.github.io/paradox-localization-translator/ja/">
+<link rel="alternate" hreflang="x-default" href="https://beta-15.github.io/paradox-localization-translator/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Paradox Localization Translator — Paradox のゲームの Mod を AI で翻訳">
+<meta property="og:description" content="Crusader Kings III、Victoria 3、Hearts of Iron IV、Stellaris、Europa Universalis の Mod を、ローカル LLM やクラウドの AI で11言語へ翻訳する、無料の非公式ツール。">
+<meta property="og:url" content="https://beta-15.github.io/paradox-localization-translator/ja/">
+<meta property="og:image" content="https://beta-15.github.io/paradox-localization-translator/assets/icon.png">
+<meta name="theme-color" content="#0e1620">
+<link rel="icon" href="../assets/icon.png">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<a class="skip" href="#main">↓</a>
+
+<div class="suggest" id="suggest" hidden>
+  <a id="suggest-link" href="#"></a>
+  <button type="button" id="suggest-close" aria-label="閉じる">×</button>
+</div>
+
+<header class="top">
+  <a class="brand" href="../ja/">
+    <img src="../assets/icon.png" alt="" width="28" height="28">
+    <span>Paradox Localization Translator</span>
+  </a>
+  <nav class="menu" aria-label="Sections">
+    <a href="#features">できること</a>
+    <a href="#shots">画面</a>
+    <a href="#games">対応ゲームと言語</a>
+    <a href="#howto">使い方</a>
+    <a href="#faq">よくある質問</a>
+  </nav>
+  <div class="tools">
+    <details class="langs">
+      <summary aria-label="言語"><span class="globe" aria-hidden="true">◍</span> 日本語</summary>
+      <ul><li><a href="../" hreflang="en" lang="en">English</a></li><li><a href="../ja/" hreflang="ja" lang="ja" aria-current=page>日本語</a></li></ul>
+    </details>
+    <a class="gh" href="https://github.com/BETA-15/paradox-localization-translator" aria-label="GitHub">GitHub ↗</a>
+  </div>
+</header>
+
+<main id="main">
+
+<section class="hero">
+  <div class="hero-text">
+    <p class="eyebrow">Paradox の歴史ストラテジーの Mod に</p>
+    <h1>Mod を、<em>あなたの言語へ。</em>ローカル LLM でも、クラウドの AI でも。</h1>
+    <p class="lead">Mod を作る人・遊ぶ人のための無料のデスクトップ用ツールです。Crusader Kings III、Victoria 3、Hearts of Iron IV、Stellaris、Europa Universalis IV・V の Mod のローカライズを、ゲームが対応する11言語のどれへでも翻訳します。ゲームの書式の記号は壊さず、訳し残しも見つけて直せます。</p>
+    <div class="cta">
+      <a class="btn" href="https://github.com/BETA-15/paradox-localization-translator/releases/latest">無料でダウンロード <span aria-hidden="true">→</span></a>
+      <div class="os">
+        <a href="https://github.com/BETA-15/paradox-localization-translator/releases/latest/download/ParadoxLocalizationTranslator.exe">Windows</a>
+        <a href="https://github.com/BETA-15/paradox-localization-translator/releases/latest/download/ParadoxLocalizationTranslator-macOS.zip">macOS</a>
+        <a href="https://github.com/BETA-15/paradox-localization-translator/releases/latest/download/ParadoxLocalizationTranslator">Linux</a>
+      </div>
+    </div>
+    <p class="platforms">Windows・macOS・Linux　Python のインストールは不要</p>
+    <ul class="badges"><li>非公式</li><li>全機能無料</li><li>MIT ライセンス</li></ul>
+  </div>
+
+  <figure class="ledger" aria-label="書式の記号は、そのまま残ります。">
+    <div class="ledger-head"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="fname">localization/…_l_english.yml</span></div>
+<pre class="yml"><code><span class="lk">l_english:</span>
+ <span class="key">trait_brave_desc:0</span> <span class="str">"<span class="tok">[ROOT.Char.GetFirstName]</span> fears nothing. <span class="tok">§Y</span>+2 Prowess<span class="tok">§!</span>"</span></code></pre>
+    <div class="arrow" aria-hidden="true">↓</div>
+<pre class="yml out"><code><span class="lk" id="demo-lang">l_japanese:</span>
+ <span class="key">trait_brave_desc:0</span> <span class="str" id="demo-line">"<span class="tok">[ROOT.Char.GetFirstName]</span>は何も恐れない。<span class="tok">§Y</span>武勇 +2<span class="tok">§!</span>"</span></code></pre>
+    <figcaption>書式の記号は、そのまま残ります。</figcaption>
+  </figure>
+</section>
+
+<section id="features" class="band">
+  <h2>できること</h2>
+  <div class="cards"><article class="card"><span class="num">01</span><h3>Mod をまとめて翻訳</h3><p>ファイル1つ、localisation フォルダ、Mod まるごと、どれでも追加できます（ドラッグ＆ドロップも可）。複数の Mod を順番に処理でき、一時停止・再開や、中断して次回に続きから始めることもできます。</p></article><article class="card"><span class="num">02</span><h3>ゲームの記号を壊さない</h3><p><code>[ROOT.Char.GetName]</code>、<code>$VALUE$</code>、<code>£gold£</code>、<code>§Y…§!</code> などの書式の記号を、翻訳の間は保護して最後に元へ戻します。ゲームの表示が崩れません。</p></article><article class="card"><span class="num">03</span><h3>訳すだけでなく、直す・更新する</h3><p>訳し残しの行を見つけて、その行だけ訳し直します。Mod が更新されたら、増えた行・変わった行だけを訳します。キャッシュは翻訳ごとに別に持ちます。</p></article><article class="card"><span class="num">04</span><h3>既存の翻訳 Mod を見つける</h3><p>ある Mod を、別の Mod がすでにあなたの言語へ翻訳しているか、その翻訳に欠けがないかを調べます。欠けている行は、元の Mod ではなく翻訳 Mod のほうへ足せます（先にバックアップを取り、確認してから）。</p></article><article class="card"><span class="num">05</span><h3>確かめて、仕上げる</h3><p>原文と訳文を並べて比べ、品質チェックをかけ、どの行でも検索して直接直せます。用語集を作れば、人名や用語の訳がそろいます。</p></article><article class="card"><span class="num">06</span><h3>AI は選べる</h3><p>Ollama や LM Studio のローカルのモデル（無料・手元で完結）でも、OpenAI・Anthropic・Google Gemini・OpenAI 互換の API でも使えます。API キーは設定・プロファイル・ログに保存しません。</p></article></div>
+</section>
+
+<section id="shots" class="band">
+  <h2>画面</h2>
+  <div class="shots"><figure class="shot empty"><div class="ph">画面の写真は準備中です</div><figcaption>翻訳の順番待ちと進み具合</figcaption></figure><figure class="shot empty"><div class="ph">画面の写真は準備中です</div><figcaption>原文と訳文を並べた QA・編集</figcaption></figure><figure class="shot empty"><div class="ph">画面の写真は準備中です</div><figcaption>Mod の翻訳状況の調査</figcaption></figure><figure class="shot empty"><div class="ph">画面の写真は準備中です</div><figcaption>モデルと接続の設定</figcaption></figure></div>
+</section>
+
+<section id="games" class="band">
+  <h2>対応ゲームと言語</h2>
+  <p class="intro">翻訳先には公式の11言語すべてを選べます。ただし、ゲームごとに読める言語は限られます。ゲームが表示できない言語を選ぶと、ツールが警告します。</p>
+  <div class="matrix-wrap"><table class="matrix"><thead><tr><th scope="col">ゲーム</th><th scope="col" title="English">EN</th><th scope="col" title="日本語" class=here>JA</th><th scope="col" title="Français">FR</th><th scope="col" title="Deutsch">DE</th><th scope="col" title="Español">ES</th><th scope="col" title="한국어">KO</th><th scope="col" title="Polski">PL</th><th scope="col" title="Português (Brasil)">PT</th><th scope="col" title="Русский">RU</th><th scope="col" title="简体中文">ZH</th><th scope="col" title="Türkçe">TR</th></tr></thead><tbody><tr><th scope="row">Victoria 3<span class="count">11言語すべて</span></th><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr><tr><th scope="row">Europa Universalis V<span class="count">11言語すべて</span></th><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr><tr><th scope="row">Hearts of Iron IV<span class="count">10言語</span></th><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Stellaris<span class="count">10言語</span></th><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Crusader Kings III<span class="count">9言語 · 確認中</span></th><td class="pending">·</td><td class="pending here">·</td><td class="pending">·</td><td class="pending">·</td><td class="pending">·</td><td class="pending">·</td><td class="pending">·</td><td class="pending">·</td><td class="pending">·</td><td class="pending">·</td><td class="pending">·</td></tr><tr><th scope="row">Europa Universalis IV<span class="count">4言語</span></th><td class="yes">✓</td><td class="no here">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="no">–</td></tr></tbody></table></div>
+  <p class="legend">✓＝ゲームがその言語を表示できる</p>
+</section>
+
+<section id="howto" class="band">
+  <h2>使い方</h2>
+  <ol class="steps"><li><h3>AI を用意する</h3><p>Ollama か LM Studio を起動してモデルを読み込みます。クラウドを使うなら API キーを用意します。</p></li><li><h3>ダウンロードして起動する</h3><p>最新版から、お使いの OS 用のファイルを選びます。</p></li><li><h3>モデルを選ぶ</h3><p>「モデル / 接続」で、使うサービスとモデルを選びます。</p></li><li><h3>Mod を追加して翻訳する</h3><p>ファイル・フォルダ・Mod を追加し（ドラッグ＆ドロップ可）、翻訳先の言語を選んで「翻訳開始」を押します。</p></li><li><h3>確かめてから反映する</h3><p>「QA / 比較編集」で確かめてから、完成した訳を Mod へ書き込みます。書き込む前にバックアップを取ります。</p></li></ol>
+  <div class="needs">
+    <h3>必要なもの</h3>
+    <div class="needs-grid">
+      <div><h4>ローカルで使う</h4><p>Ollama か LM Studio と、翻訳先の言語を上手に書けるモデル（例：Qwen 系、Gemma 系）。</p></div>
+      <div><h4>クラウドで使う</h4><p>OpenAI・Anthropic・Google Gemini・OpenAI 互換サービスの API キー。料金はそのサービスから請求されます（このツールの料金ではありません）。</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="publish" class="band notice-band">
+  <h2>翻訳した Mod を公開するときのお願い</h2>
+  <p class="intro">このツールで作った翻訳を Steam Workshop などで公開するときは、次をお願いします。</p>
+  <ul class="rules"><li><strong>元の Mod の作者の許可を取ってください。</strong> Mod の世界の慣習で、Steam の利用規約でも、投稿者は投稿する内容の権利を持っている必要があります。</li><li><strong>無料で公開してください。</strong> Paradox Interactive の利用規約（User Agreement 第5条）では、Mod などのユーザー作成コンテンツは誰でも無料で使えるようにする必要があり、有料の壁の向こうには置けません。かけた時間への寄付を受けることは認められています。</li><li><strong>機械翻訳なら、その旨を書いてください。</strong> 遊ぶ人が判断しやすくなります。</li></ul>
+</section>
+
+
+
+<section id="faq" class="band">
+  <h2>よくある質問</h2>
+  <div class="faq"><details><summary>本当に無料ですか？</summary><p>はい。すべての機能を誰でも無料で使えます（MIT ライセンス）。有料版はありません。</p></details><details><summary>macOS で「開けません」と出る。</summary><p>Apple の署名がないためです。システム設定の「プライバシーとセキュリティ」から起動を許可してください。</p></details><details><summary>Windows で SmartScreen の警告が出る。</summary><p>コード署名をしていないためです。公式の GitHub Releases からだけダウンロードし、「詳細情報」→「実行」を選んでください。</p></details><details><summary>Steam Workshop の Mod を直接翻訳できますか？</summary><p>できます。ただし Workshop の更新で変更が消えることがあります。ツールはバックアップを取りますが、大事な翻訳は控えも残してください。</p></details><details><summary>不具合はどこに報告すればいいですか？</summary><p>GitHub の Issues へお願いします。できれば、設定 →「診断ログを収集」で作った診断 ZIP と、起きたときの操作の手順を添えてください。診断 ZIP に訳文や API キーは入りません。</p></details></div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <p class="unofficial">Paradox Localization Translator は、個人が開発している非公式のツールです。Paradox Interactive 社とは関係がなく、同社の承認も受けていません。Paradox Interactive、Crusader Kings、Victoria、Hearts of Iron、Stellaris、Europa Universalis の各名称は、それぞれの権利者の商標です。</p>
+  <p class="links">
+    <a href="https://github.com/BETA-15/paradox-localization-translator/blob/main/LICENSE">MIT ライセンス</a>
+    <a href="https://github.com/BETA-15/paradox-localization-translator">GitHub のソース</a>
+    <span>作者 <a href="https://beta-15.github.io/beta-lab/">BETA-15</a></span>
+  </p>
+</footer>
+
+<div class="lightbox" id="lightbox" hidden><img alt=""></div>
+
+<script>window.PLT = {"here": "ja", "langs": [{"tag": "en", "href": "../", "text": "This page is also available in English."}, {"tag": "ja", "href": "../ja/", "text": "このページは日本語でも読めます。"}], "demo": [["l_japanese", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span>は何も恐れない。<span class=\"tok\">§Y<\/span>武勇 +2<span class=\"tok\">§!<\/span>"], ["l_french", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span> ne craint rien. <span class=\"tok\">§Y<\/span>+2 en Prouesse<span class=\"tok\">§!<\/span>"], ["l_german", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span> fürchtet nichts. <span class=\"tok\">§Y<\/span>+2 Kampfkraft<span class=\"tok\">§!<\/span>"], ["l_spanish", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span> no teme a nada. <span class=\"tok\">§Y<\/span>+2 de Proeza<span class=\"tok\">§!<\/span>"], ["l_korean", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span>은(는) 아무것도 두려워하지 않습니다. <span class=\"tok\">§Y<\/span>무용 +2<span class=\"tok\">§!<\/span>"], ["l_polish", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span> niczego się nie boi. <span class=\"tok\">§Y<\/span>+2 do Sprawności<span class=\"tok\">§!<\/span>"], ["l_braz_por", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span> não teme nada. <span class=\"tok\">§Y<\/span>+2 de Destreza<span class=\"tok\">§!<\/span>"], ["l_russian", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span> ничего не боится. <span class=\"tok\">§Y<\/span>+2 к доблести<span class=\"tok\">§!<\/span>"], ["l_simp_chinese", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span>无所畏惧。<span class=\"tok\">§Y<\/span>勇武 +2<span class=\"tok\">§!<\/span>"], ["l_turkish", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span> hiçbir şeyden korkmaz. <span class=\"tok\">§Y<\/span>+2 Yiğitlik<span class=\"tok\">§!<\/span>"]]};</script>
+<script src="../assets/site.js" defer></script>
+</body>
+</html>

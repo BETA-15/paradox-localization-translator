@@ -1,0 +1,61 @@
+{
+  "base_url": "https://beta-15.github.io/paradox-localization-translator/",
+  "repo_url": "https://github.com/BETA-15/paradox-localization-translator",
+  "release_url": "https://github.com/BETA-15/paradox-localization-translator/releases/latest",
+  "issues_url": "https://github.com/BETA-15/paradox-localization-translator/issues",
+  "author_url": "https://beta-15.github.io/beta-lab/",
+  "downloads": {
+    "windows": "https://github.com/BETA-15/paradox-localization-translator/releases/latest/download/ParadoxLocalizationTranslator.exe",
+    "macos": "https://github.com/BETA-15/paradox-localization-translator/releases/latest/download/ParadoxLocalizationTranslator-macOS.zip",
+    "linux": "https://github.com/BETA-15/paradox-localization-translator/releases/latest/download/ParadoxLocalizationTranslator"
+  },
+  "donate": false,
+  "sponsor_url": "",
+
+  "languages": [
+    {"code": "en", "slug": "", "hreflang": "en", "game": "l_english", "name": "English"},
+    {"code": "ja", "slug": "ja", "hreflang": "ja", "game": "l_japanese", "name": "日本語"},
+    {"code": "fr", "slug": "fr", "hreflang": "fr", "game": "l_french", "name": "Français"},
+    {"code": "de", "slug": "de", "hreflang": "de", "game": "l_german", "name": "Deutsch"},
+    {"code": "es", "slug": "es", "hreflang": "es", "game": "l_spanish", "name": "Español"},
+    {"code": "ko", "slug": "ko", "hreflang": "ko", "game": "l_korean", "name": "한국어"},
+    {"code": "pl", "slug": "pl", "hreflang": "pl", "game": "l_polish", "name": "Polski"},
+    {"code": "pt-BR", "slug": "pt-br", "hreflang": "pt-BR", "game": "l_braz_por", "name": "Português (Brasil)"},
+    {"code": "ru", "slug": "ru", "hreflang": "ru", "game": "l_russian", "name": "Русский"},
+    {"code": "zh-Hans", "slug": "zh-hans", "hreflang": "zh-Hans", "game": "l_simp_chinese", "name": "简体中文"},
+    {"code": "tr", "slug": "tr", "hreflang": "tr", "game": "l_turkish", "name": "Türkçe"}
+  ],
+
+  "games": [
+    {"name": "Victoria 3", "langs": "all"},
+    {"name": "Europa Universalis V", "langs": "all"},
+    {"name": "Hearts of Iron IV", "langs": ["l_english", "l_french", "l_german", "l_spanish", "l_japanese", "l_korean", "l_polish", "l_braz_por", "l_russian", "l_simp_chinese"]},
+    {"name": "Stellaris", "langs": ["l_english", "l_french", "l_german", "l_spanish", "l_japanese", "l_korean", "l_polish", "l_braz_por", "l_russian", "l_simp_chinese"]},
+    {"name": "Crusader Kings III", "langs": "pending", "count": 9},
+    {"name": "Europa Universalis IV", "langs": ["l_english", "l_french", "l_german", "l_spanish"]}
+  ],
+
+  "demo": {
+    "key": "trait_brave_desc:0",
+    "source": "[ROOT.Char.GetFirstName] fears nothing. §Y+2 Prowess§!",
+    "lines": {
+      "l_japanese": "[ROOT.Char.GetFirstName]は何も恐れない。§Y武勇 +2§!",
+      "l_french": "[ROOT.Char.GetFirstName] ne craint rien. §Y+2 en Prouesse§!",
+      "l_german": "[ROOT.Char.GetFirstName] fürchtet nichts. §Y+2 Kampfkraft§!",
+      "l_spanish": "[ROOT.Char.GetFirstName] no teme a nada. §Y+2 de Proeza§!",
+      "l_korean": "[ROOT.Char.GetFirstName]은(는) 아무것도 두려워하지 않습니다. §Y무용 +2§!",
+      "l_polish": "[ROOT.Char.GetFirstName] niczego się nie boi. §Y+2 do Sprawności§!",
+      "l_braz_por": "[ROOT.Char.GetFirstName] não teme nada. §Y+2 de Destreza§!",
+      "l_russian": "[ROOT.Char.GetFirstName] ничего не боится. §Y+2 к доблести§!",
+      "l_simp_chinese": "[ROOT.Char.GetFirstName]无所畏惧。§Y勇武 +2§!",
+      "l_turkish": "[ROOT.Char.GetFirstName] hiçbir şeyden korkmaz. §Y+2 Yiğitlik§!"
+    }
+  },
+
+  "shots": [
+    {"file": "translate", "w": 1600, "h": 1000},
+    {"file": "qa", "w": 1600, "h": 1000},
+    {"file": "survey", "w": 1600, "h": 1000},
+    {"file": "model", "w": 1600, "h": 1000}
+  ]
+}

@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="{{lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{meta.title}}</title>
+<meta name="description" content="{{meta.description}}">
+<link rel="canonical" href="{{canonical}}">
+{{hreflang}}
+<meta property="og:type" content="website">
+<meta property="og:title" content="{{meta.title}}">
+<meta property="og:description" content="{{meta.description}}">
+<meta property="og:url" content="{{canonical}}">
+<meta property="og:image" content="{{base_url}}assets/icon.png">
+<meta name="theme-color" content="#0e1620">
+<link rel="icon" href="{{root}}assets/icon.png">
+<link rel="stylesheet" href="{{root}}assets/style.css">
+</head>
+<body>
+<a class="skip" href="#main">↓</a>
+
+<div class="suggest" id="suggest" hidden>
+  <a id="suggest-link" href="#"></a>
+  <button type="button" id="suggest-close" aria-label="{{suggest_close}}">×</button>
+</div>
+
+<header class="top">
+  <a class="brand" href="{{root}}{{slug_path}}">
+    <img src="{{root}}assets/icon.png" alt="" width="28" height="28">
+    <span>Paradox Localization Translator</span>
+  </a>
+  <nav class="menu" aria-label="Sections">
+    <a href="#features">{{nav.features}}</a>
+    <a href="#shots">{{nav.shots}}</a>
+    <a href="#games">{{nav.games}}</a>
+    <a href="#howto">{{nav.howto}}</a>
+    <a href="#faq">{{nav.faq}}</a>
+  </nav>
+  <div class="tools">
+    <details class="langs">
+      <summary aria-label="{{nav.language}}"><span class="globe" aria-hidden="true">◍</span> {{lang_name}}</summary>
+      <ul>{{langmenu}}</ul>
+    </details>
+    <a class="gh" href="{{repo_url}}" aria-label="GitHub">GitHub ↗</a>
+  </div>
+</header>
+
+<main id="main">
+
+<section class="hero">
+  <div class="hero-text">
+    <p class="eyebrow">{{hero.eyebrow}}</p>
+    <h1>{{hero.title}}</h1>
+    <p class="lead">{{hero.lead}}</p>
+    <div class="cta">
+      <a class="btn" href="{{release_url}}">{{hero.download}} <span aria-hidden="true">→</span></a>
+      <div class="os">
+        <a href="{{downloads.windows}}">Windows</a>
+        <a href="{{downloads.macos}}">macOS</a>
+        <a href="{{downloads.linux}}">Linux</a>
+      </div>
+    </div>
+    <p class="platforms">{{hero.platforms}}</p>
+    <ul class="badges">{{badges}}</ul>
+  </div>
+
+  <figure class="ledger" aria-label="{{hero.demo_caption}}">
+    <div class="ledger-head"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="fname">localization/…_l_english.yml</span></div>
+<pre class="yml"><code><span class="lk">l_english:</span>
+ <span class="key">{{demo.key}}</span> <span class="str">"{{demo.source}}"</span></code></pre>
+    <div class="arrow" aria-hidden="true">↓</div>
+<pre class="yml out"><code><span class="lk" id="demo-lang">{{demo.first_lang}}:</span>
+ <span class="key">{{demo.key}}</span> <span class="str" id="demo-line">"{{demo.first_line}}"</span></code></pre>
+    <figcaption>{{hero.demo_caption}}</figcaption>
+  </figure>
+</section>
+
+<section id="features" class="band">
+  <h2>{{features.title}}</h2>
+  <div class="cards">{{features_html}}</div>
+</section>
+
+<section id="shots" class="band">
+  <h2>{{shots.title}}</h2>
+  <div class="shots">{{shots_html}}</div>
+</section>
+
+<section id="games" class="band">
+  <h2>{{games.title}}</h2>
+  <p class="intro">{{games.intro}}</p>
+  <div class="matrix-wrap">{{matrix}}</div>
+  <p class="legend">{{games.legend}}</p>
+</section>
+
+<section id="howto" class="band">
+  <h2>{{howto.title}}</h2>
+  <ol class="steps">{{steps}}</ol>
+  <div class="needs">
+    <h3>{{needs.title}}</h3>
+    <div class="needs-grid">
+      <div><h4>{{needs.local_title}}</h4><p>{{needs.local}}</p></div>
+      <div><h4>{{needs.cloud_title}}</h4><p>{{needs.cloud}}</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="publish" class="band notice-band">
+  <h2>{{publish.title}}</h2>
+  <p class="intro">{{publish.intro}}</p>
+  <ul class="rules">{{publish_items}}</ul>
+</section>
+
+{{donate_html}}
+
+<section id="faq" class="band">
+  <h2>{{faq.title}}</h2>
+  <div class="faq">{{faq_html}}</div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <p class="unofficial">{{footer.notice}}</p>
+  <p class="links">
+    <a href="{{repo_url}}/blob/main/LICENSE">{{footer.license}}</a>
+    <a href="{{repo_url}}">{{footer.source}}</a>
+    <span>{{footer.made_by}} <a href="{{author_url}}">BETA-15</a></span>
+  </p>
+</footer>
+
+<div class="lightbox" id="lightbox" hidden><img alt=""></div>
+
+<script>window.PLT = {{js_data}};</script>
+<script src="{{root}}assets/site.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,102 @@
+{
+  "meta": {
+    "title": "Paradox Localization Translator — translate Paradox game mods with AI",
+    "description": "Free, unofficial tool to translate Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris and Europa Universalis mods into 11 languages using a local LLM or a cloud AI."
+  },
+  "nav": {
+    "features": "Features",
+    "shots": "Screenshots",
+    "games": "Games & languages",
+    "howto": "How to use",
+    "faq": "FAQ",
+    "language": "Language"
+  },
+  "suggest": "This page is also available in English.",
+  "suggest_close": "Close",
+  "hero": {
+    "eyebrow": "For Paradox grand strategy mods",
+    "title": "Translate mods into **your language** — with a local LLM or a cloud AI.",
+    "lead": "A free desktop tool for modders and players. It translates mod localisation files for Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris and Europa Universalis IV and V into any of the 11 languages the games support, keeps the game's formatting codes intact, and helps you find and fix what is still untranslated.",
+    "download": "Download for free",
+    "platforms": "Windows · macOS · Linux — no Python needed",
+    "badges": ["Unofficial", "Free, all features", "MIT License"],
+    "demo_caption": "Formatting codes stay exactly as they were."
+  },
+  "features": {
+    "title": "What it does",
+    "items": [
+      {"title": "Translate whole mods at once", "text": "Add a single file, a localisation folder or an entire mod — or drag and drop it. Queue several mods; pause, resume, or stop and continue next time."},
+      {"title": "Keeps game code safe", "text": "Formatting codes such as `[ROOT.Char.GetName]`, `$VALUE$`, `£gold£` and `§Y…§!` are protected during translation and restored afterwards, so the game text does not break."},
+      {"title": "Repair and update, not just translate", "text": "Finds lines that were left untranslated and translates only those. When a mod updates, it translates only the new or changed lines. Each job keeps its own cache."},
+      {"title": "Finds existing translation mods", "text": "Detects whether another mod already translates a mod into your language, and whether that translation is complete. Missing lines can be added to the translation mod instead of the original — with a backup and a confirmation first."},
+      {"title": "Check and polish", "text": "Compare source and translation side by side, run quality checks, search and fix any line directly, and build a glossary so names and terms stay consistent."},
+      {"title": "Your choice of AI", "text": "Run a local model with Ollama or LM Studio — free and private — or use OpenAI, Anthropic, Google Gemini or any OpenAI-compatible API. API keys are never saved to settings, profiles or logs."}
+    ]
+  },
+  "shots": {
+    "title": "Screenshots",
+    "pending": "Screenshot coming soon",
+    "items": {
+      "translate": "Translation queue and progress",
+      "qa": "Side-by-side QA and editing",
+      "survey": "Mod translation status survey",
+      "model": "Model and connection settings"
+    }
+  },
+  "games": {
+    "title": "Games and languages",
+    "intro": "The tool can translate into all 11 official languages. Each game only reads some of them; if you choose a language the game cannot display, the tool warns you.",
+    "game": "Game",
+    "count": "{n} languages",
+    "all": "all 11",
+    "pending": "to be confirmed",
+    "legend": "✓ = the game can display this language"
+  },
+  "howto": {
+    "title": "How to use",
+    "steps": [
+      {"title": "Prepare an AI", "text": "Start Ollama or LM Studio and load a model — or have an API key ready for a cloud service."},
+      {"title": "Download and open the app", "text": "Pick the file for your system from the latest release."},
+      {"title": "Choose the model", "text": "In “Model / Connection”, select the provider and the model."},
+      {"title": "Add a mod and translate", "text": "Add a file, folder or mod (drag and drop works), choose the target language, and press “Start translation”."},
+      {"title": "Check, then apply", "text": "Review the result in QA / Compare, then write the finished translation into the mod. A backup is made first."}
+    ]
+  },
+  "needs": {
+    "title": "What you need",
+    "local_title": "Local",
+    "local": "Ollama or LM Studio, and a model that writes your target language well (for example Qwen or Gemma models).",
+    "cloud_title": "Cloud",
+    "cloud": "An API key for OpenAI, Anthropic, Google Gemini, or an OpenAI-compatible service. Usage is billed by that service, not by this tool."
+  },
+  "publish": {
+    "title": "Publishing a translated mod",
+    "intro": "If you share a translation made with this tool on Steam Workshop or elsewhere, please:",
+    "items": [
+      {"title": "Ask the original mod's author for permission.", "text": "This is the custom in the modding community, and Steam's terms require that you hold the rights to what you upload."},
+      {"title": "Publish it for free.", "text": "Paradox Interactive's User Agreement (Section 5) requires mods and other user-generated content to be free for everyone; they cannot be put behind a paywall. Accepting donations for your time is allowed."},
+      {"title": "Say that it is machine-translated,", "text": "if it is. It helps players decide."}
+    ]
+  },
+  "donate": {
+    "title": "Support development",
+    "text": "The tool is and will stay free, with every feature available to everyone. If it saved you time, you can support the time spent building it through GitHub Sponsors. Donations do not unlock anything.",
+    "button": "Sponsor on GitHub"
+  },
+  "faq": {
+    "title": "FAQ",
+    "items": [
+      {"q": "Is it really free?", "a": "Yes. Every feature is free for everyone, under the MIT License. There is no paid version."},
+      {"q": "macOS says the app cannot be opened.", "a": "The app is not signed by Apple. Open System Settings → Privacy & Security and allow it to open."},
+      {"q": "Windows shows a SmartScreen warning.", "a": "The app is not code-signed. Download it only from the official GitHub Releases page, then choose “More info” → “Run anyway”."},
+      {"q": "Can I translate Steam Workshop mods directly?", "a": "Yes, but a Workshop update can overwrite your changes. The tool keeps backups; for important work, keep a copy of the translation."},
+      {"q": "How do I report a bug?", "a": "Open an issue on GitHub. If you can, attach the diagnostic ZIP from Settings → Collect diagnostic log, and describe the steps. The ZIP does not include your translations or API keys."}
+    ]
+  },
+  "footer": {
+    "notice": "Paradox Localization Translator is an unofficial tool made by an individual developer. It is not affiliated with or endorsed by Paradox Interactive. Paradox Interactive, Crusader Kings, Victoria, Hearts of Iron, Stellaris and Europa Universalis are trademarks of their respective owners.",
+    "license": "MIT License",
+    "source": "Source on GitHub",
+    "made_by": "Made by"
+  }
+}
