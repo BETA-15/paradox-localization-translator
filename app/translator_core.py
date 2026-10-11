@@ -260,6 +260,30 @@ def save_cache(path: Path, cache: dict):
     save_json(path, cache)
 
 
+def glossary_file_problem(path: Path) -> str:
+    try:
+        text, _encoding = decode_text_bytes(Path(path).read_bytes())
+        data = json.loads(text)
+    except FileNotFoundError:
+        return ""
+    except json.JSONDecodeError as exc:
+        return f"用語集のJSONを読めません（{exc.lineno}行目: {exc.msg}）"
+    except (OSError, UnicodeError) as exc:
+        return f"用語集のJSONを読めません（{exc}）"
+    if isinstance(data, dict):
+        return ""
+    format_name = "リスト形式" if isinstance(data, list) else "辞書ではない形式"
+    problem = (
+        f"対応していない形式です（{format_name}）。"
+        'このアプリの用語集は {"原語": "訳語"} 形式のJSONです。'
+        "ParaTranz などから書き出した用語集はまだ読み込めません。"
+    )
+    if isinstance(data, list) and data and isinstance(data[0], dict):
+        if "term" in data[0] and "translation" in data[0]:
+            problem += "ParaTranz の用語集のようです。"
+    return problem
+
+
 def load_glossary(path: Optional[Path]) -> dict:
     if not path:
         return {}

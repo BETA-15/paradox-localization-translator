@@ -11177,7 +11177,17 @@ Mod更新後だけ追加翻訳:
 
     def load_glossary_ui(self,silent=False):
         p=Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY)
+        problem=core.glossary_file_problem(p)
+        if problem:
+            self._glossary_unsafe_path=p.resolve()
+            if silent:
+                self.progress_text.set(problem)
+                record_error("用語集読込",detail=f"{p}: {problem}")
+            else:
+                messagebox.showerror("用語集読込エラー",problem)
+            return
         gl=core.load_glossary(p)
+        self._glossary_unsafe_path=None
         variants=self._glossary_variant_metadata()
         if hasattr(self,"glossary_tree"):
             for x in self.glossary_tree.get_children(): self.glossary_tree.delete(x)
@@ -11193,6 +11203,9 @@ Mod更新後だけ追加翻訳:
 
     def save_glossary_ui(self):
         p=Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY)
+        if p.resolve()==getattr(self,"_glossary_unsafe_path",None) or core.glossary_file_problem(p):
+            messagebox.showerror("用語集保存エラー","対応していない形式のファイルなので上書きしません。別の名前で保存してください。")
+            return
         gl={}
         if hasattr(self,"glossary_tree"):
             for iid in self.glossary_tree.get_children():
