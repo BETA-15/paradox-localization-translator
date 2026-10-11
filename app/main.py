@@ -26,7 +26,6 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 import translator_core as core
 import i18n
-from i18n import t
 import ui_status
 from ui_status import status_value, display_status
 import app_state
@@ -50,8 +49,8 @@ MOD_STATUS_EMPTY_IID = "__mod_status_empty__"
 def _mod_status_empty_row(query: str, total: int) -> tuple:
     query = (query or "").strip()
     if query:
-        return ("検索結果なし", f"検索条件「{query}」に一致するModはありません", "", "", "", "")
-    return ("調査結果なし", "翻訳状況の調査結果がありません", "", "", "", "")
+        return (i18n.t('p0.no_search_results'), i18n.t('p0.no_mods_match', query=query), "", "", "", "")
+    return (i18n.t('p0.no_scan_results'), i18n.t('p0.no_translation_status_scan_results'), "", "", "", "")
 
 
 def _translation_status_snapshot_is_current(snapshot) -> bool:
@@ -81,7 +80,7 @@ def _dedupe_diff_translation_tasks(contexts, tasks):
 def _qa_failure_display(failure):
     if not isinstance(failure, dict):
         return str(failure)
-    name=Path(str(failure.get("source_file") or failure.get("target_file") or "不明ファイル")).name
+    name=Path(str(failure.get("source_file") or failure.get("target_file") or i18n.t('p0.unknown_file'))).name
     stage=str(failure.get("stage") or "qa")
     error_type=str(failure.get("error_type") or "Error")
     message=str(failure.get("message") or "")
@@ -104,8 +103,8 @@ def _qa_severity_group(issues):
     return "ok"
 
 
-TARGET_LANG_NOTE=("QA／比較編集タブも、ここで選んだ翻訳先の基準で確認します。日本語以外の翻訳先では、Mod調査・日本語化Modの判定と紐付け・差分だけ翻訳・中国語基準翻訳は使えません"
-                  "（日本語のみ）。日本語以外の品質チェックは日本語より簡易です（ラテン文字の言語どうしは「原文と同じ」だけを確認します）。")
+def target_lang_note():
+    return i18n.t('p0.the_qa_comparison_editor_also')
 
 
 def _target_lang_choice(lang):
@@ -156,7 +155,7 @@ def _existing_language_glossary(base_path, target_lang):
 def _japanese_glossary_only(app):
     if _glossary_language(app) == core.DEFAULT_TARGET_LANG:
         return True
-    messagebox.showinfo(APP_NAME,"この機能は日本語の用語集だけで使えます")
+    messagebox.showinfo(APP_NAME,i18n.t('p0.this_feature_is_available_only'))
     return False
 
 
@@ -178,7 +177,7 @@ def _target_language_problems(items, diff_requested=False, preset=""):
     """翻訳開始前の確認：(止める理由, ゲームが読めない言語の警告の一覧) を返す。"""
     other=[it for it in items if _item_target_lang(it) != core.DEFAULT_TARGET_LANG]
     if diff_requested and other:
-        return "「差分だけ翻訳」は翻訳先が日本語の項目だけで使えます。日本語以外の項目は「一からすべて翻訳」を使ってください。", []
+        return i18n.t('p0.missing_only_translation_is_available'), []
     warnings=[]
     for it in items:
         warning=core.game_language_warning(_item_target_lang(it), it.get("input",""), preset)
@@ -214,15 +213,15 @@ def _diff_translation_problem(source_text, translated, source_lang, target_lang=
     """
     text=str(translated or "")
     if not text.strip():
-        return "LLMの応答が空でした"
+        return i18n.t('p0.the_llm_response_was_empty')
     if "@@" in text:
-        return "内部の記号（@@N@@）が残りました"
+        return i18n.t('p0.internal_markers_n_remain')
     if core.extract_protected_tokens(text) != core.extract_protected_tokens(source_text):
-        return "ゲーム変数・タグが原文と一致しません"
+        return i18n.t('p0.game_variables_or_tags_do')
     if target_lang == core.DEFAULT_TARGET_LANG and core.looks_like_chinese_in_japanese(text):
-        return "日本語ではなく中国語の応答でした"
+        return i18n.t('p0.the_response_was_chinese_not')
     if text.strip() == str(source_text or "").strip() or core.unusable_translation(source_text, text, source_lang, target_lang):
-        return "原文のまま、または翻訳として使えない応答でした"
+        return i18n.t('p0.the_response_is_unchanged_or')
     return ""
 
 
@@ -246,43 +245,41 @@ def _llm_connection_alert_content(provider, url, model="", error=""):
                       "remote end closed","connection reset","urlopen error")
     transport_failure=any(token in low for token in transport_tokens)
     if core.THINKING_ONLY_MARKER in detail:
-        lines=[detail,"",f"プロバイダ: {display}",f"接続先: {endpoint}"]
-        if model: lines.append(f"モデル: {model}")
-        return {"title":"このモデルは使用できません","heading":"推論（Thinking）モデルは使用できません",
+        lines=[detail,"",i18n.t('p0.provider', display=display),i18n.t('p0.endpoint', endpoint=endpoint)]
+        if model: lines.append(i18n.t('p0.model', model=model))
+        return {"title":i18n.t('p0.this_model_is_not_supported'),"heading":i18n.t('p0.thinking_models_are_not_supported'),
                 "message":"\n".join(lines),"category":"thinking_model","provider":display,"endpoint":endpoint}
     if core.REASONING_MODEL_MARKER in detail:
-        lines=[detail,"",f"プロバイダ: {display}",f"接続先: {endpoint}"]
-        if model: lines.append(f"モデル: {model}")
-        return {"title":"このモデルは使用できません","heading":"考える過程を出すモデルは翻訳に向きません",
+        lines=[detail,"",i18n.t('p0.provider', display=display),i18n.t('p0.endpoint', endpoint=endpoint)]
+        if model: lines.append(i18n.t('p0.model', model=model))
+        return {"title":i18n.t('p0.this_model_is_not_supported'),"heading":i18n.t('p0.models_that_output_reasoning_are'),
                 "message":"\n".join(lines),"category":"reasoning_model","provider":display,"endpoint":endpoint}
     if core.EMBEDDING_ONLY_MARKER in detail:
-        lines=[detail,"",f"プロバイダ: {display}",f"接続先: {endpoint}"]
-        if model: lines.append(f"モデル: {model}")
-        return {"title":"このモデルは使用できません","heading":"埋め込み専用モデルは翻訳に使用できません",
+        lines=[detail,"",i18n.t('p0.provider', display=display),i18n.t('p0.endpoint', endpoint=endpoint)]
+        if model: lines.append(i18n.t('p0.model', model=model))
+        return {"title":i18n.t('p0.this_model_is_not_supported'),"heading":i18n.t('p0.embedding_only_models_cannot_translate'),
                 "message":"\n".join(lines),"category":"embedding_model","provider":display,"endpoint":endpoint}
     if normalized in {"ollama","lmstudio"} and transport_failure:
         service="LM Studio" if normalized=="lmstudio" else "Ollama"
-        server_note=("Local Serverが開始されていない" if normalized=="lmstudio"
-                     else "LLMサーバーが開始されていない")
-        guidance=(f"{service}が起動していない、または{server_note}可能性があります。\n\n"
-                  f"{service}を起動し、モデルを読み込んでサーバーを開始してから、再接続を確認してください。")
+        guidance=i18n.t("p0.local_server_guidance" if normalized=="lmstudio" else "p0.llm_server_guidance",
+                   service=service)
         category="local_unavailable"
     elif normalized in {"ollama","lmstudio"} and not model:
-        guidance=f"{display}に接続するモデルが選択されていません。モデルを読み込んで選択してください。"
+        guidance=i18n.t('p0.no_model_is_selected_for', display=display)
         category="model_missing"
     elif any(token in low for token in ("401","403","unauthorized","forbidden","api key","authentication")):
-        guidance=f"{display}のAPI認証に失敗しました。APIキー、利用権限、接続先を確認してください。"
+        guidance=i18n.t('p0.api_authentication_failed_check_the', display=display)
         category="authentication"
     elif any(token in low for token in ("404","model","not found","モデル","読み込み済み")):
-        guidance=f"{display}のモデルまたはAPI URLを確認できません。モデル名と接続先を確認してください。"
+        guidance=i18n.t('p0.cannot_verify_the_model_or', display=display)
         category="configuration"
     else:
-        guidance=f"{display}と通信できません。API URL、モデル、認証情報、サーバー状態を確認してください。"
+        guidance=i18n.t('p0.cannot_communicate_with_check_the', display=display)
         category="unavailable"
-    lines=[guidance,"",f"プロバイダ: {display}",f"接続先: {endpoint}"]
-    if model: lines.append(f"モデル: {model}")
-    if detail: lines.extend(["",f"詳細: {detail}"])
-    return {"title":"LLMに接続できません","heading":"LLMと接続できません",
+    lines=[guidance,"",i18n.t('p0.provider', display=display),i18n.t('p0.endpoint', endpoint=endpoint)]
+    if model: lines.append(i18n.t('p0.model', model=model))
+    if detail: lines.extend(["",i18n.t('p0.details', detail=detail)])
+    return {"title":i18n.t('p0.cannot_connect_to_the_llm'),"heading":i18n.t('p0.llm_connection_failed'),
             "message":"\n".join(lines),"category":category,"provider":display,"endpoint":endpoint}
 
 
@@ -339,7 +336,7 @@ def _build_qa_log_payload(contexts, failures, generated_at=None, app_version=Non
             safe_failures.append(row)
             if row["source_language"] and row["source_language"] not in languages: languages.append(row["source_language"])
         else:
-            safe_failures.append({"source_file":"","target_file":"","source_language":"","stage":"qa","error_type":"Error","message":str(failure),"action":"スキップして継続"})
+            safe_failures.append({"source_file":"","target_file":"","source_language":"","stage":"qa","error_type":"Error","message":str(failure),"action":i18n.t('p0.skip_and_continue')})
     mode="single" if len(files)+len(safe_failures)<=1 else ("english_bulk" if languages==["english"] else ("simp_chinese_bulk" if languages==["simp_chinese"] else "batch"))
     payload={
         "schema":2,
@@ -866,8 +863,8 @@ def load_persistent_json(path: Path, default, label: str):
             path.replace(quarantined)
             detail=f"{path} -> {quarantined}"
         except Exception as move_exc:
-            detail=f"{path}; 退避失敗: {move_exc}"
-        record_error(f"{label} JSON破損",exc,detail)
+            detail=i18n.t('p0.backup_failed', path=path, move_exc=move_exc)
+        record_error(i18n.t('p0.json_corrupted', label=label),exc,detail)
         return default
 
 
@@ -934,7 +931,7 @@ def _collect_native_crash_reports():
                     "macOS native crash imported",
                     detail=(
                         f"DiagnosticReport: {path}\nCopied: {copied}\n"
-                        + ("\n".join(summary) if summary else "クラッシュ概要を抽出できませんでした。")
+                        + ("\n".join(summary) if summary else i18n.t('p0.could_not_extract_a_crash'))
                     ),
                 )
                 seen.add(key)
@@ -972,8 +969,7 @@ def _mark_runtime_started():
             record_error(
                 "previous run ended unexpectedly",
                 detail=(
-                    f"Previous start: {previous.get('started_at','unknown')} / pid={previous.get('pid','?')}. "
-                    "正常終了マーカーが残らなかったため、強制終了またはネイティブクラッシュの可能性があります。"
+                    i18n.t('p0.previous_start_pid_no_clean', started_at=previous.get('started_at','unknown'), pid=previous.get('pid','?'))
                 ),
             )
         core.save_json(_runtime_marker_path(), {
@@ -1067,8 +1063,20 @@ class App(BaseTk):
         self._chinese_queue_controls = []
         self._cross_queue_controls = []
         self._data_root_controls = []
-        self.model_stats = load_persistent_json(STATS_PATH, {}, "モデル統計")
-        self.model_profiles = load_persistent_json(PROFILES_PATH, {}, "モデルプロファイル")
+        # 前回使用したLLM設定は通常セッションとは別に常時保存する。
+        # APIキーだけは保存しない。
+        # 以前から使っている人（設定ファイルがある人）は日本語の画面のまま。初めての人は OS の言語に合わせる。
+        has_existing_settings = any((APP_HOME / name).exists() for name in
+                                    ("app_preferences.json", "session.json", "workspace_state.json", "model_profiles.json"))
+        self.app_preferences = load_persistent_json(APP_PREFS_PATH, {}, i18n.t('p0.app_settings'))
+        if not isinstance(self.app_preferences, dict):
+            self.app_preferences = {}
+        self.ui_language = i18n.set_ui_language(
+            i18n.initial_ui_language(self.app_preferences.get("ui_language"), has_existing_settings))
+        self.ui_language_var = tk.StringVar(value=i18n.NATIVE_NAMES[self.ui_language])
+
+        self.model_stats = load_persistent_json(STATS_PATH, {}, i18n.t('p0.model_statistics'))
+        self.model_profiles = load_persistent_json(PROFILES_PATH, {}, i18n.t('p0.model_profiles'))
         self.benchmark_controller: core.TranslationController | None = None
         self.proofread_controller: core.TranslationController | None = None
         self.proofread_thread = None
@@ -1076,30 +1084,19 @@ class App(BaseTk):
         self.llm_active_ids = set()
         self.llm_busy_since = None
         self.llm_operation = ""
-        self.llm_status_var = tk.StringVar(value="LLM 待機中")
-        self.llm_detail_var = tk.StringVar(value="LLM処理が始まるとここに常時表示されます")
-        self.monitor_llm_status_var = tk.StringVar(value="探索用LLM 待機中")
-        self.monitor_llm_detail_var = tk.StringVar(value="未翻訳Modの探索・精査状況をここに表示します")
+        self.llm_status_var = tk.StringVar(value=i18n.t('p0.llm_idle'))
+        self.llm_detail_var = tk.StringVar(value=i18n.t('p0.llm_activity_appears_here_when'))
+        self.monitor_llm_status_var = tk.StringVar(value=i18n.t('p0.discovery_llm_idle'))
+        self.monitor_llm_detail_var = tk.StringVar(value=i18n.t('p0.discovery_and_review_of_untranslated'))
         self.monitor_llm_busy_since = None
         self.monitor_llm_active_ids = set()
         self.monitor_current_mod = ""
-        self.dnd_status_var = tk.StringVar(value="ドラッグ＆ドロップ: 初期化確認中")
+        self.dnd_status_var = tk.StringVar(value=i18n.t('p0.drag_and_drop_checking_initialization'))
         self.translation_llm_last_response = ""
         self.monitor_llm_last_response = ""
-        self.translation_llm_response_meta = "応答待機中"
-        self.monitor_llm_response_meta = "応答待機中"
+        self.translation_llm_response_meta = i18n.t('p0.waiting_for_a_response')
+        self.monitor_llm_response_meta = i18n.t('p0.waiting_for_a_response')
 
-        # 前回使用したLLM設定は通常セッションとは別に常時保存する。
-        # APIキーだけは保存しない。
-        # 以前から使っている人（設定ファイルがある人）は日本語の画面のまま。初めての人は OS の言語に合わせる。
-        has_existing_settings = any((APP_HOME / name).exists() for name in
-                                    ("app_preferences.json", "session.json", "workspace_state.json", "model_profiles.json"))
-        self.app_preferences = load_persistent_json(APP_PREFS_PATH, {}, "アプリ設定")
-        if not isinstance(self.app_preferences, dict):
-            self.app_preferences = {}
-        self.ui_language = i18n.set_ui_language(
-            i18n.initial_ui_language(self.app_preferences.get("ui_language"), has_existing_settings))
-        self.ui_language_var = tk.StringVar(value=i18n.NATIVE_NAMES[self.ui_language])
         last_translation = self.app_preferences.get("translation_llm", {})
         last_monitor = self.app_preferences.get("monitor_llm", {})
         close_prefs = self.app_preferences.get("window_close", {}) if isinstance(self.app_preferences.get("window_close", {}), dict) else {}
@@ -1127,36 +1124,36 @@ class App(BaseTk):
         self.glossary_path_var = tk.StringVar(value=str(DEFAULT_GLOSSARY))
         self.glossary_lang_var = tk.StringVar(value=_target_lang_choice(core.DEFAULT_TARGET_LANG))
         self.glossary_actual_path_var = tk.StringVar()
-        self.auto_glossary_status_var = tk.StringVar(value="自動用語作成: 待機中")
+        self.auto_glossary_status_var = tk.StringVar(value=i18n.t('p0.auto_glossary_idle'))
         self.auto_glossary_controller = None
         self.auto_glossary_thread = None
         self.glossary_import_thread = None
         self.glossary_import_busy = False
-        self.connection_var = tk.StringVar(value="LLM接続確認中…")
+        self.connection_var = tk.StringVar(value=i18n.t('p0.checking_llm_connection'))
         self.llm_preflight_thread = None
         self._llm_preflight_request = None
         self._llm_connection_alert_window = None
         self._llm_connection_alert_key = ""
         self.profile_var = tk.StringVar(value="")
         self.data_root_var = tk.StringVar(value=str(DATA_ROOT))
-        self.progress_text = tk.StringVar(value="待機中")
+        self.progress_text = tk.StringVar(value=i18n.t('p0.idle'))
         self.review_src_var = tk.StringVar()
         self.review_dst_var = tk.StringVar()
         self.review_src_display_var = tk.StringVar()
         self.review_dst_display_var = tk.StringVar()
-        self.qa_summary_var = tk.StringVar(value="QA未実行")
+        self.qa_summary_var = tk.StringVar(value=i18n.t('p0.qa_not_run'))
         self.review_source_lang = "english"
 
         # Normal translation input/output display
         self.normal_input_var = tk.StringVar(value="")
         self.normal_output_var = tk.StringVar(value=str(OUTPUT_ROOT))
-        self.normal_status_var = tk.StringVar(value="YAML / localizationフォルダを追加してください")
+        self.normal_status_var = tk.StringVar(value=i18n.t('p0.add_yaml_files_or_a'))
 
         # Simplified Chinese basis translation
         self.chinese_input_var = tk.StringVar(value="")
         self.chinese_output_var = tk.StringVar(value=str(OUTPUT_ROOT / "中国語基準翻訳"))
-        self.chinese_status_var = tk.StringVar(value="簡体字中国語YAMLを選択してください")
-        self.chinese_progress_var = tk.StringVar(value="待機中")
+        self.chinese_status_var = tk.StringVar(value=i18n.t('p0.select_simplified_chinese_yaml_files'))
+        self.chinese_progress_var = tk.StringVar(value=i18n.t('p0.idle'))
         self.chinese_controller: core.TranslationController | None = None
         self.chinese_worker = None
         self.chinese_queue_items = []
@@ -1167,7 +1164,7 @@ class App(BaseTk):
         self.diff_dst_var = tk.StringVar(value="")
         self.diff_src_display_var = tk.StringVar(value="")
         self.diff_dst_display_var = tk.StringVar(value="")
-        self.diff_summary_var = tk.StringVar(value="差分未調査")
+        self.diff_summary_var = tk.StringVar(value=i18n.t('p0.differences_not_scanned'))
         self.diff_source_entries = {}
         self.diff_target_entries = {}
         self.diff_rows = []
@@ -1180,19 +1177,19 @@ class App(BaseTk):
         self.search_path_var = tk.StringVar(value="")  # legacy/internal compatibility; search is now game-scoped
         self.search_game_var = tk.StringVar(value="Crusader Kings III")
         self.search_query_var = tk.StringVar(value="")
-        self.search_summary_var = tk.StringVar(value="検索待機中")
+        self.search_summary_var = tk.StringVar(value=i18n.t('p0.search_idle'))
         self.search_result_map = {}
         self.search_mod_map = {}
         self.search_selected_mod_paths = []
         self.search_thread = None
         self.search_generation = 0
         self.search_mod_refresh_generation = 0
-        self.search_mod_status_var = tk.StringVar(value="対象Mod: 未取得")
+        self.search_mod_status_var = tk.StringVar(value=i18n.t('p0.target_mods_not_loaded'))
 
         # Live untranslated-localization monitor
         self.monitor_path_var = tk.StringVar(value="")  # legacy / first monitor target
         self.monitor_target_paths = []
-        self.monitor_target_summary_var = tk.StringVar(value="監視対象: 翻訳状況タブでゲーム / Mod場所を選択してください")
+        self.monitor_target_summary_var = tk.StringVar(value=i18n.t('p0.monitor_targets_select_a_game'))
         self.monitor_interval_var = tk.IntVar(value=15)
         self.monitor_use_llm_var = tk.BooleanVar(value=True)
         self.monitor_check_translation_mods_var = tk.BooleanVar(value=True)
@@ -1201,17 +1198,17 @@ class App(BaseTk):
         self.monitor_api_key_var = tk.StringVar(value="")
         self._monitor_api_key_provider = self.monitor_provider_var.get(); self._monitor_api_keys_by_provider = {}
         self.monitor_model_var = tk.StringVar(value=last_monitor.get("model", ""))
-        self.monitor_connection_var = tk.StringVar(value="監視用LLM: 未確認")
-        self.monitor_status_var = tk.StringVar(value="監視停止中")
-        self.monitor_summary_var = tk.StringVar(value="未翻訳候補: --")
-        self.mod_status_summary_var = tk.StringVar(value="調査結果: --")
+        self.monitor_connection_var = tk.StringVar(value=i18n.t('p0.monitor_llm_unchecked'))
+        self.monitor_status_var = tk.StringVar(value=i18n.t('p0.monitor_stopped'))
+        self.monitor_summary_var = tk.StringVar(value=i18n.t('p0.untranslated_candidates'))
+        self.mod_status_summary_var = tk.StringVar(value=i18n.t('p0.scan_results'))
         self.mod_status_search_var = tk.StringVar(value="")
         self.mod_status_search_result_var = tk.StringVar(value="")
-        self.mod_status_game_filter_var = tk.StringVar(value="表示ゲーム: すべて")
+        self.mod_status_game_filter_var = tk.StringVar(value=i18n.t('p0.games_shown_all'))
 
         # Comprehensive localization diagnostics / repair
-        self.diagnostic_summary_var = tk.StringVar(value="診断待機中")
-        self.diagnostic_target_var = tk.StringVar(value="対象Mod: 翻訳状況から取得")
+        self.diagnostic_summary_var = tk.StringVar(value=i18n.t('p0.diagnostics_idle'))
+        self.diagnostic_target_var = tk.StringVar(value=i18n.t('p0.target_mods_from_translation_status'))
         self.diagnostic_results = []
         self.diagnostic_result_map = {}
         self.diagnostic_thread = None
@@ -1223,10 +1220,10 @@ class App(BaseTk):
         # Backup restore / rollback
         self.backup_restore_entries = []
         self.backup_restore_entry_map = {}
-        self.backup_restore_summary_var = tk.StringVar(value="バックアップ未読込")
-        self.backup_restore_detail_var = tk.StringVar(value="一覧からバックアップを選択してください。")
-        self.backup_restore_game_var = tk.StringVar(value=t("p0.filter.all_games"))
-        self.backup_restore_mod_var = tk.StringVar(value=t("p0.filter.all_mods"))
+        self.backup_restore_summary_var = tk.StringVar(value=i18n.t('p0.backups_not_loaded'))
+        self.backup_restore_detail_var = tk.StringVar(value=i18n.t('p0.select_a_backup_from_the'))
+        self.backup_restore_game_var = tk.StringVar(value=i18n.t("p0.filter.all_games"))
+        self.backup_restore_mod_var = tk.StringVar(value=i18n.t("p0.filter.all_mods"))
         self.backup_restore_search_var = tk.StringVar(value="")
         # v0.11.56: restore-target resolution may need a large persisted Translation Status
         # snapshot. Keep one in-memory copy per refresh instead of reparsing the same JSON
@@ -1254,7 +1251,7 @@ class App(BaseTk):
         self.monitor_candidates = []
         self.monitor_snapshot = {}
         self.detected_mod_locations = []
-        self.mod_discovery_status_var = tk.StringVar(value="ゲーム/Mod場所: 未検出")
+        self.mod_discovery_status_var = tk.StringVar(value=i18n.t('p0.game_mod_locations_not_detected'))
         self.discovery_multi_select_var = tk.BooleanVar(value=False)
         self.mod_status_cache_lock = threading.Lock()
         # v0.11.58: do not decode the potentially large status cache while Tk is
@@ -1266,7 +1263,7 @@ class App(BaseTk):
         # had no Japanese YAML must stay a source Mod after we generate Japanese).
         # False *relationships* live in the Translation Status/workspace caches and
         # are reset separately below.
-        _classification = load_persistent_json(MOD_CLASSIFICATION_CACHE_PATH, {}, "Mod分類キャッシュ")
+        _classification = load_persistent_json(MOD_CLASSIFICATION_CACHE_PATH, {}, i18n.t('p0.mod_classification_cache'))
         if not isinstance(_classification, dict):
             _classification = {}
         self.mod_classification_cache = {
@@ -1279,9 +1276,9 @@ class App(BaseTk):
         try:
             core.save_json(MOD_CLASSIFICATION_CACHE_PATH, self.mod_classification_cache)
         except Exception as exc:
-            record_error("Mod初回分類キャッシュ移行", exc)
+            record_error(i18n.t('p0.initial_mod_classification_cache_migration'), exc)
         self.mod_classification_lock = threading.Lock()
-        _relation_overrides = load_persistent_json(MOD_RELATION_OVERRIDES_PATH, {"schema": 1, "mods": {}}, "Mod関連付け設定")
+        _relation_overrides = load_persistent_json(MOD_RELATION_OVERRIDES_PATH, {"schema": 1, "mods": {}}, i18n.t('p0.mod_linking_settings'))
         if not isinstance(_relation_overrides, dict):
             _relation_overrides = {"schema": 1, "mods": {}}
         self.mod_relation_overrides = {
@@ -1348,17 +1345,17 @@ class App(BaseTk):
 
     def _active_file_operation_names(self):
         checks = (
-            ("通常翻訳", self.worker),
+            (i18n.t('p0.standard_translation'), self.worker),
             ("中国語基準翻訳", self.chinese_worker),
-            ("差分翻訳準備", self.differential_prepare_thread),
-            ("単体上書き", self.single_overwrite_thread),
-            ("一括上書き", self.bulk_overwrite_thread),
-            ("バックアップ復元", self.backup_restore_operation_thread),
+            (i18n.t('p0.preparing_missing_only_translation'), self.differential_prepare_thread),
+            (i18n.t('p0.single_overwrite'), self.single_overwrite_thread),
+            (i18n.t('p0.bulk_overwrite'), self.bulk_overwrite_thread),
+            (i18n.t('p0.restore_backup'), self.backup_restore_operation_thread),
             ("保存場所コピー", self.data_root_move_thread),
-            ("総合診断・修復", self.diagnostic_thread),
-            ("QA・自動修正", getattr(self,"qa_repair_thread",None)),
-            ("LLM接続確認", getattr(self,"llm_preflight_thread",None)),
-            ("用語取り込み", self.glossary_import_thread),
+            (i18n.t('p0.full_diagnostics_and_repair'), self.diagnostic_thread),
+            (i18n.t('p0.qa_and_auto_fix'), getattr(self,"qa_repair_thread",None)),
+            (i18n.t('p0.llm_connection_check'), getattr(self,"llm_preflight_thread",None)),
+            (i18n.t('p0.import_glossary'), self.glossary_import_thread),
         )
         return [name for name, thread in checks if self._operation_pending(thread)]
 
@@ -1450,7 +1447,7 @@ class App(BaseTk):
         self.llm_status_label.pack(side="left")
         self.llm_detail_label = tk.Label(self.llm_banner, textvariable=self.llm_detail_var, bg="#e5e7eb", fg="#444444")
         self.llm_detail_label.pack(side="left", padx=(8,0))
-        self.llm_stop_btn = ttk.Button(self.llm_banner, text="翻訳LLM停止", command=self.stop_current_llm, state="disabled")
+        self.llm_stop_btn = ttk.Button(self.llm_banner, text=i18n.t('p0.stop_translation_llm'), command=self.stop_current_llm, state="disabled")
         self.llm_stop_btn.pack(side="right")
 
         self.monitor_llm_banner = tk.Frame(llm_row, bg="#dbeafe", padx=9, pady=5)
@@ -1459,30 +1456,30 @@ class App(BaseTk):
         self.monitor_llm_status_label.pack(side="left")
         self.monitor_llm_detail_label = tk.Label(self.monitor_llm_banner, textvariable=self.monitor_llm_detail_var, bg="#dbeafe", fg="#1e3a8a")
         self.monitor_llm_detail_label.pack(side="left", padx=(8,0))
-        self.monitor_llm_stop_btn = ttk.Button(self.monitor_llm_banner, text="探索LLM停止", command=self.stop_monitor_llm, state="disabled")
+        self.monitor_llm_stop_btn = ttk.Button(self.monitor_llm_banner, text=i18n.t('p0.stop_discovery_llm'), command=self.stop_monitor_llm, state="disabled")
         self.monitor_llm_stop_btn.pack(side="right")
 
         # 実際にLLMから返ってきた最新応答を、そのまま確認するための読み取り専用欄。
         # 翻訳用と探索用を分離し、処理が本当に進んでいるか目視できるようにする。
         response_row = ttk.Frame(self, padding=(10, 0, 10, 2))
         response_row.pack(fill="x")
-        tr_frame = ttk.LabelFrame(response_row, text="翻訳用LLM 最新応答（読み取り専用）", padding=5)
+        tr_frame = ttk.LabelFrame(response_row, text=i18n.t('p0.latest_translation_llm_response_read'), padding=5)
         tr_frame.pack(side="left", fill="both", expand=True, padx=(0, 5))
         tr_head = ttk.Frame(tr_frame); tr_head.pack(fill="x")
-        self.translation_response_meta_var = tk.StringVar(value="応答待機中")
+        self.translation_response_meta_var = tk.StringVar(value=i18n.t('p0.waiting_for_a_response'))
         ttk.Label(tr_head, textvariable=self.translation_response_meta_var, foreground="#555").pack(side="left")
-        ttk.Button(tr_head, text="全文を開く", command=lambda:self._open_llm_response_window(False)).pack(side="right")
-        ttk.Button(tr_head, text="クリア", command=lambda:self._clear_llm_response(False)).pack(side="right", padx=(0,5))
+        ttk.Button(tr_head, text=i18n.t('p0.open_full_response'), command=lambda:self._open_llm_response_window(False)).pack(side="right")
+        ttk.Button(tr_head, text=i18n.t('p0.clear'), command=lambda:self._clear_llm_response(False)).pack(side="right", padx=(0,5))
         self.translation_response_text = tk.Text(tr_frame, height=2, wrap="word", state="disabled", font=("TkFixedFont", 9))
         self.translation_response_text.pack(fill="x", pady=(4,0))
 
-        mon_frame = ttk.LabelFrame(response_row, text="探索用LLM 最新応答（読み取り専用）", padding=5)
+        mon_frame = ttk.LabelFrame(response_row, text=i18n.t('p0.latest_discovery_llm_response_read'), padding=5)
         mon_frame.pack(side="left", fill="both", expand=True, padx=(5, 0))
         mon_head = ttk.Frame(mon_frame); mon_head.pack(fill="x")
-        self.monitor_response_meta_var = tk.StringVar(value="応答待機中")
+        self.monitor_response_meta_var = tk.StringVar(value=i18n.t('p0.waiting_for_a_response'))
         ttk.Label(mon_head, textvariable=self.monitor_response_meta_var, foreground="#555").pack(side="left")
-        ttk.Button(mon_head, text="全文を開く", command=lambda:self._open_llm_response_window(True)).pack(side="right")
-        ttk.Button(mon_head, text="クリア", command=lambda:self._clear_llm_response(True)).pack(side="right", padx=(0,5))
+        ttk.Button(mon_head, text=i18n.t('p0.open_full_response'), command=lambda:self._open_llm_response_window(True)).pack(side="right")
+        ttk.Button(mon_head, text=i18n.t('p0.clear'), command=lambda:self._clear_llm_response(True)).pack(side="right", padx=(0,5))
         self.monitor_response_text = tk.Text(mon_frame, height=2, wrap="word", state="disabled", font=("TkFixedFont", 9))
         self.monitor_response_text.pack(fill="x", pady=(4,0))
 
@@ -1501,19 +1498,19 @@ class App(BaseTk):
         self.tab_backup_restore = ttk.Frame(nb, padding=10)
         self.tab_settings = ttk.Frame(nb, padding=10)
         self.tab_help = ttk.Frame(nb, padding=10)
-        nb.add(self.tab_translate, text="翻訳 / キュー")
+        nb.add(self.tab_translate, text=i18n.t('p0.translation_queue'))
         nb.add(self.tab_chinese, text="中国語基準翻訳")
-        nb.add(self.tab_review, text="QA / 比較編集")
-        nb.add(self.tab_diff, text="差分調査")
-        nb.add(self.tab_search, text="翻訳検索")
-        nb.add(self.tab_glossary, text="用語集")
-        nb.add(self.tab_models, text="モデル / 接続")
-        nb.add(self.tab_monitor, text="未翻訳監視")
-        nb.add(self.tab_status, text="翻訳状況")
+        nb.add(self.tab_review, text=i18n.t('p0.qa_comparison_editor'))
+        nb.add(self.tab_diff, text=i18n.t('p0.difference_scan'))
+        nb.add(self.tab_search, text=i18n.t('p0.translation_search'))
+        nb.add(self.tab_glossary, text=i18n.t('p0.glossary'))
+        nb.add(self.tab_models, text=i18n.t('p0.model_connection'))
+        nb.add(self.tab_monitor, text=i18n.t('p0.untranslated_monitor'))
+        nb.add(self.tab_status, text=i18n.t('p0.translation_status'))
         nb.add(self.tab_diagnostic, text="総合診断")
-        nb.add(self.tab_backup_restore, text="バックアップ復元")
+        nb.add(self.tab_backup_restore, text=i18n.t('p0.restore_backup'))
         nb.add(self.tab_settings, text="設定")
-        nb.add(self.tab_help, text="使い方")
+        nb.add(self.tab_help, text=i18n.t('p0.help'))
         self._build_translate_tab()
         self._build_chinese_tab()
         self._build_review_tab()
@@ -1626,7 +1623,7 @@ class App(BaseTk):
                     widget.event_generate("<<ListboxSelect>>")
                     return "break"
             except Exception as exc:
-                record_error("Ctrl複数選択", exc)
+                record_error(i18n.t('p0.ctrl_multi_select'), exc)
             return None
 
         widget.bind("<Control-Button-1>", on_ctrl_click, add="+")
@@ -1651,7 +1648,7 @@ class App(BaseTk):
         self.target_lang_combo.grid(row=0,column=1,sticky="w",padx=(6,0))
         self.target_lang_combo.bind("<<ComboboxSelected>>",lambda _e:self._set_target_lang(_target_lang_from_choice(self.target_lang_choice_var.get())))
         ttk.Label(langbox,text="キューへ追加するときの翻訳先です。追加済みの項目の翻訳先は変わりません。",foreground="#555",wraplength=430,justify="left").grid(row=1,column=0,columnspan=2,sticky="w",pady=(4,0))
-        ttk.Label(langbox,text=TARGET_LANG_NOTE,foreground="#8a5a00",wraplength=430,justify="left").grid(row=2,column=0,columnspan=2,sticky="w",pady=(4,0))
+        ttk.Label(langbox,text=target_lang_note(),foreground="#8a5a00",wraplength=430,justify="left").grid(row=2,column=0,columnspan=2,sticky="w",pady=(4,0))
 
         src=ttk.LabelFrame(left,text="入力 / 出力",padding=9); src.pack(fill="x",pady=(5,0)); src.columnconfigure(0,weight=1)
         ttk.Label(src,text="YAML / Mod / localizationフォルダ").grid(row=0,column=0,sticky="w")
@@ -2811,15 +2808,14 @@ class App(BaseTk):
         if not silent:
             messagebox.showinfo(
                 APP_NAME,
-                "×ボタンの動作設定を保存しました。\n\n"
-                f"動作: {self.close_action_var.get()}"
+                i18n.t('p0.close_button_behavior_saved_action', value=self.close_action_var.get())
             )
         return True
 
     def _show_close_choice_dialog(self):
         """Return 'minimize', 'quit' or 'cancel'."""
         dlg = tk.Toplevel(self)
-        dlg.title("アプリを閉じますか？")
+        dlg.title(i18n.t('p0.close_the_app'))
         dlg.transient(self)
         dlg.grab_set()
         dlg.resizable(False, False)
@@ -2829,29 +2825,27 @@ class App(BaseTk):
 
         frame = ttk.Frame(dlg, padding=18)
         frame.pack(fill="both", expand=True)
-        ttk.Label(frame, text="×ボタンが押されました", font=("", 14, "bold")).pack(anchor="w")
+        ttk.Label(frame, text=i18n.t('p0.the_close_button_was_pressed'), font=("", 14, "bold")).pack(anchor="w")
         ttk.Label(
             frame,
             text=(
-                "最小化しますか？ それともアプリを終了しますか？\n\n"
-                "・最小化: ウィンドウだけを最小化します。翻訳・探索・LLM処理は続行します。\n"
-                "・終了: 翻訳中ならセッションとキャッシュを保存し、安全停止を要求してから終了します。"
+                i18n.t('p0.minimize_the_window_or_quit')
             ),
             justify="left", wraplength=560
         ).pack(anchor="w", pady=(10, 10))
         if active_translation or active_monitor:
             running = []
-            if active_translation: running.append("翻訳")
-            if active_monitor: running.append("Mod探索/監視")
-            ttk.Label(frame, text="現在動作中: " + " / ".join(running), foreground="#a35a00").pack(anchor="w", pady=(0,8))
+            if active_translation: running.append(i18n.t('p0.translation'))
+            if active_monitor: running.append(i18n.t('p0.mod_discovery_monitoring'))
+            ttk.Label(frame, text=i18n.t('p0.currently_running', value=" / ".join(running)), foreground="#a35a00").pack(anchor="w", pady=(0,8))
         buttons = ttk.Frame(frame)
         buttons.pack(fill="x")
         def choose(action):
             result["action"] = action
             dlg.destroy()
-        ttk.Button(buttons, text="最小化", command=lambda: choose("minimize")).pack(side="left")
-        ttk.Button(buttons, text="終了", command=lambda: choose("quit")).pack(side="left", padx=(8,0))
-        ttk.Button(buttons, text="キャンセル", command=lambda: choose("cancel")).pack(side="right")
+        ttk.Button(buttons, text=i18n.t('p0.minimize'), command=lambda: choose("minimize")).pack(side="left")
+        ttk.Button(buttons, text=i18n.t('p0.quit'), command=lambda: choose("quit")).pack(side="left", padx=(8,0))
+        ttk.Button(buttons, text=i18n.t('p0.cancel'), command=lambda: choose("cancel")).pack(side="right")
         dlg.protocol("WM_DELETE_WINDOW", lambda: choose("cancel"))
         dlg.update_idletasks()
         try:
@@ -2897,30 +2891,30 @@ class App(BaseTk):
                 try:
                     controller.request_stop(save=save)
                 except Exception as exc:
-                    record_error("終了時停止要求",exc)
+                    record_error(i18n.t('p0.shutdown_stop_request'),exc)
 
     def _active_shutdown_threads(self):
         checks = (
-            ("通常翻訳", self.worker),
+            (i18n.t('p0.standard_translation'), self.worker),
             ("中国語基準翻訳", self.chinese_worker),
-            ("常時監視", self.monitor_thread),
-            ("Mod調査", self.mod_research_thread),
-            ("差分翻訳準備", self.differential_prepare_thread),
-            ("単体上書き", self.single_overwrite_thread),
-            ("一括上書き", self.bulk_overwrite_thread),
-            ("バックアップ復元", self.backup_restore_operation_thread),
+            (i18n.t('p0.continuous_monitoring'), self.monitor_thread),
+            (i18n.t('p0.mod_scan'), self.mod_research_thread),
+            (i18n.t('p0.preparing_missing_only_translation'), self.differential_prepare_thread),
+            (i18n.t('p0.single_overwrite'), self.single_overwrite_thread),
+            (i18n.t('p0.bulk_overwrite'), self.bulk_overwrite_thread),
+            (i18n.t('p0.restore_backup'), self.backup_restore_operation_thread),
             ("保存場所コピー", self.data_root_move_thread),
-            ("総合診断・修復", self.diagnostic_thread),
-            ("用語取り込み", self.glossary_import_thread),
-            ("モデル速度テスト", getattr(self,"benchmark_worker",None)),
-            ("翻訳検索", self.search_thread),
-            ("QA解析", self.review_worker),
-            ("QA・自動修正", getattr(self,"qa_repair_thread",None)),
-            ("LLM接続確認", getattr(self,"llm_preflight_thread",None)),
-            ("差分解析", self.diff_load_worker),
+            (i18n.t('p0.full_diagnostics_and_repair'), self.diagnostic_thread),
+            (i18n.t('p0.import_glossary'), self.glossary_import_thread),
+            (i18n.t('p0.model_speed_test'), getattr(self,"benchmark_worker",None)),
+            (i18n.t('p0.translation_search'), self.search_thread),
+            (i18n.t('p0.qa_analysis'), self.review_worker),
+            (i18n.t('p0.qa_and_auto_fix'), getattr(self,"qa_repair_thread",None)),
+            (i18n.t('p0.llm_connection_check'), getattr(self,"llm_preflight_thread",None)),
+            (i18n.t('p0.difference_analysis'), self.diff_load_worker),
             ("差分翻訳", self.diff_translate_thread),
-            ("AI校正", self.proofread_thread),
-            ("自動用語作成", self.auto_glossary_thread),
+            (i18n.t('p0.ai_proofreading'), self.proofread_thread),
+            (i18n.t('p0.auto_glossary'), self.auto_glossary_thread),
         )
         return [(name,thread) for name,thread in checks if self._operation_pending(thread)]
 
@@ -2939,9 +2933,9 @@ class App(BaseTk):
             self._finalize_app_exit(force=False)
             return
         names=" / ".join(name for name,_thread in active)
-        self.progress_text.set("終了準備中 — 保存と処理停止を待っています")
-        self.chinese_progress_var.set("終了準備中 — 保存と処理停止を待っています")
-        self.title(f"{APP_NAME} {APP_VERSION} — 終了準備中")
+        self.progress_text.set(i18n.t('p0.preparing_to_exit_waiting_for'))
+        self.chinese_progress_var.set(i18n.t('p0.preparing_to_exit_waiting_for'))
+        self.title(i18n.t('p0.preparing_to_exit', APP_NAME=APP_NAME, APP_VERSION=APP_VERSION))
         self.after(100,self._poll_shutdown_completion)
 
     def _poll_shutdown_completion(self):
@@ -2953,15 +2947,12 @@ class App(BaseTk):
             return
         now=time.monotonic()
         names=" / ".join(name for name,_thread in active)
-        self.progress_text.set("終了準備中: "+names)
+        self.progress_text.set(i18n.t('p0.preparing_to_exit_2', names=names))
         if now-self._shutdown_wait_started >= 10 and now-self._shutdown_prompted_at >= 10:
             self._shutdown_prompted_at=now
             force=messagebox.askyesno(
                 APP_NAME,
-                "保存または処理の停止を待っています。\n\n"
-                f"動作中: {names}\n\n"
-                "［はい］: 強制終了する（処理中の最新バッチは失われる可能性があります）\n"
-                "［いいえ］: 安全な停止を待ち続ける",
+                i18n.t('p0.waiting_for_saves_or_workers', names=names),
                 icon="warning",
             )
             if force:
@@ -2975,7 +2966,7 @@ class App(BaseTk):
             self._save_exit_state()
             _mark_runtime_clean_exit()
         else:
-            record_error("強制終了",detail="worker完了前にユーザーが強制終了を選択しました")
+            record_error(i18n.t('p0.force_quit'),detail=i18n.t('p0.the_user_chose_to_force'))
 
         try:
             if self._fatal_log_handle:
@@ -4431,7 +4422,7 @@ Mod更新後だけ追加翻訳:
         self.backup_restore_reload_btn.pack(fill='x')
 
         action=ttk.Frame(right); action.pack(fill='x')
-        self.backup_restore_selected_mod_label=ttk.Label(action,text=t("p0.filter.selected_mod",mod=t("p0.filter.all_mods")),font=('',11,'bold'))
+        self.backup_restore_selected_mod_label=ttk.Label(action,text=i18n.t("p0.filter.selected_mod",mod=i18n.t("p0.filter.all_mods")),font=('',11,'bold'))
         self.backup_restore_selected_mod_label.pack(side='left',fill='x',expand=True)
         self.backup_restore_btn=ttk.Button(action,text='選択バックアップを復元',command=self._restore_selected_backup,state='disabled')
         self.backup_restore_btn.pack(side='right',padx=(8,0))
@@ -4607,7 +4598,7 @@ Mod更新後だけ追加翻訳:
         self.backup_restore_refresh_thread=None
         self.backup_restore_entries=list(entries or [])
         games=sorted({str(e.get('game') or 'ゲーム未特定') for e in self.backup_restore_entries},key=str.casefold)
-        game_values=[t("p0.filter.all_games")]+games
+        game_values=[i18n.t("p0.filter.all_games")]+games
         self.backup_restore_game_combo['values']=game_values
         if self.backup_restore_game_var.get() not in game_values:
             self.backup_restore_game_var.set(game_values[0])
@@ -4639,12 +4630,12 @@ Mod更新後だけ追加翻訳:
         return normalized_query in normalized_haystack
 
     def _refresh_backup_restore_mod_filter(self):
-        game=self.backup_restore_game_var.get() or t("p0.filter.all_games")
+        game=self.backup_restore_game_var.get() or i18n.t("p0.filter.all_games")
         query=self.backup_restore_search_var.get().strip() if hasattr(self,'backup_restore_search_var') else ''
         mods=sorted({str(e.get('mod') or 'Mod') for e in self.backup_restore_entries
-                     if (game == t("p0.filter.all_games") or str(e.get('game')) == game)
+                     if (game == i18n.t("p0.filter.all_games") or str(e.get('game')) == game)
                      and self._backup_restore_entry_matches_search(e,query)},key=str.casefold)
-        values=[t("p0.filter.all_mods")]+mods
+        values=[i18n.t("p0.filter.all_mods")]+mods
         if hasattr(self,'backup_restore_mod_list'):
             current=self.backup_restore_mod_var.get()
             self.backup_restore_mod_list.delete(0,'end')
@@ -4673,7 +4664,7 @@ Mod更新後だけ追加翻訳:
             self.backup_restore_search_entry.focus_set()
 
     def _on_backup_restore_game_changed(self, _event=None):
-        self.backup_restore_mod_var.set(t("p0.filter.all_mods"))
+        self.backup_restore_mod_var.set(i18n.t("p0.filter.all_mods"))
         self._refresh_backup_restore_mod_filter()
         self._render_backup_restore_entries()
 
@@ -4681,13 +4672,13 @@ Mod更新後だけ追加翻訳:
         if not hasattr(self,'backup_restore_tree'): return
         for iid in self.backup_restore_tree.get_children(): self.backup_restore_tree.delete(iid)
         self.backup_restore_entry_map={}
-        game=self.backup_restore_game_var.get() or t("p0.filter.all_games")
-        mod=self.backup_restore_mod_var.get() or t("p0.filter.all_mods")
+        game=self.backup_restore_game_var.get() or i18n.t("p0.filter.all_games")
+        mod=self.backup_restore_mod_var.get() or i18n.t("p0.filter.all_mods")
         query=self.backup_restore_search_var.get().strip() if hasattr(self,'backup_restore_search_var') else ''
         visible=[]
         for e in self.backup_restore_entries:
-            if game != t("p0.filter.all_games") and str(e.get('game')) != game: continue
-            if mod != t("p0.filter.all_mods") and str(e.get('mod')) != mod: continue
+            if game != i18n.t("p0.filter.all_games") and str(e.get('game')) != game: continue
+            if mod != i18n.t("p0.filter.all_mods") and str(e.get('mod')) != mod: continue
             if not self._backup_restore_entry_matches_search(e,query): continue
             visible.append(e)
         for idx,e in enumerate(visible):
@@ -4698,8 +4689,8 @@ Mod更新後だけ追加翻訳:
             target=str(e.get('target_root') or '復元先未特定')
             self.backup_restore_tree.insert('', 'end', iid=iid, values=(gen,created,e['kind'],e['state'],target,e['format']))
         scope=[]
-        if game != t("p0.filter.all_games"): scope.append(game)
-        if mod != t("p0.filter.all_mods"): scope.append(mod)
+        if game != i18n.t("p0.filter.all_games"): scope.append(game)
+        if mod != i18n.t("p0.filter.all_mods"): scope.append(mod)
         suffix=(' / ' + ' → '.join(scope)) if scope else ''
         search_suffix=(f" / 検索: {query}" if query else '')
         self.backup_restore_summary_var.set(f'バックアップ: {len(visible)}件（全{len(self.backup_restore_entries)}件）{suffix}{search_suffix}')
@@ -5728,7 +5719,7 @@ Mod更新後だけ追加翻訳:
         """
         if not hasattr(self, "discovered_mod_tree"):
             return
-        self.mod_discovery_status_var.set("自動検出中…（別ドライブ・外付けSSDも確認）")
+        self.mod_discovery_status_var.set(i18n.t('p0.detecting_checking_other_drives_and'))
         def work():
             try:
                 saved=core.load_json(SAVED_STEAM_ROOTS_PATH, [])
@@ -5849,7 +5840,7 @@ Mod更新後だけ追加翻訳:
             try:
                 roots=core.find_mod_roots(path)
             except Exception as exc:
-                record_error("Mod場所調査", exc, str(path)); roots=[]
+                record_error(i18n.t('p0.mod_location_scan'), exc, str(path)); roots=[]
             for root in roots:
                 rp=Path(root)
                 if rp not in all_roots:
@@ -6172,7 +6163,7 @@ Mod更新後だけ追加翻訳:
         except Exception:
             pass
         record_error("Tkinter callback", exc_value)
-        messagebox.showerror(APP_NAME, f"予期しないエラーが発生しました。\n\n{exc_value}\n\nエラーログに記録しました。")
+        messagebox.showerror(APP_NAME, i18n.t('p0.an_unexpected_error_occurred_recorded', exc_value=exc_value))
 
     def _sys_excepthook(self, exc_type, exc_value, exc_tb):
         try:
@@ -6518,7 +6509,7 @@ Mod更新後だけ追加翻訳:
                     if lang in {"english", "simp_chinese"}:
                         source_data[lang].update(entries or {})
             except Exception as exc:
-                record_error("ゲーム本体原文取得", exc, f"{game}: {loc_root}")
+                record_error(i18n.t('p0.load_base_game_source'), exc, f"{game}: {loc_root}")
         cache[game] = source_data
         return source_data, game
 
@@ -7245,7 +7236,7 @@ Mod更新後だけ追加翻訳:
         patch_file = target_loc / "japanese" / "paradox_localization_translator_missing_l_japanese.yml"
         if confirm:
             if not messagebox.askyesno("不足翻訳の上書き", f"不足していた翻訳 {len(patch_values)}件だけを既存日本語本文へ追加します。\n\n対象: {target_root}\n\n既存の他キーは置き換えません。続行しますか？", icon="warning"):
-                return False,t("p0.reason.cancelled")
+                return False,i18n.t("p0.reason.cancelled")
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         backup_root, backup_meta = self._create_full_localization_snapshot(
             target_root, "不足分上書き", category="上書き", source_mod_name=item.get("mod_name", ""),
@@ -7427,7 +7418,7 @@ Mod更新後だけ追加翻訳:
                 "後順位Modの既存localization全体をバックアップしてから、完成済み翻訳で同名ファイルを更新します。\n"
                 "続行しますか？")
             if not messagebox.askyesno("警告 — 後順位日本語化Modへ上書き",warning,icon="warning"):
-                return False,t("p0.reason.cancelled")
+                return False,i18n.t("p0.reason.cancelled")
         stamp=datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         backup_root,_meta=self._create_full_localization_snapshot(
             ext_root,"同名ファイル競合・旧版日本語化Mod更新",category="上書き",source_mod_name=src_name,
@@ -7518,7 +7509,7 @@ Mod更新後だけ追加翻訳:
         if not ext_root.is_dir() or not ext_loc.is_dir():
             return False,"日本語化Modの場所を特定できません"
         if not gap_keys:
-            return False,t("p0.reason.no_gap_info")
+            return False,i18n.t("p0.reason.no_gap_info")
         generated = self._generated_japanese_files(out_root)
         translations = {}
         for fp in generated:
@@ -7530,7 +7521,7 @@ Mod更新後だけ追加翻訳:
                 continue
         patch_values = {k: translations[k] for k in gap_keys if k in translations}
         if not patch_values:
-            return False,t("p0.reason.no_gap_translation")
+            return False,i18n.t("p0.reason.no_gap_translation")
 
         ext_name = item.get("external_translation_mod") or ext_root.name
         src_name = item.get("mod_name") or Path(item.get("mod_root", "")).name
@@ -7543,9 +7534,9 @@ Mod更新後だけ追加翻訳:
                 "既存の日本語訳は維持し、欠損・未翻訳と判定されたキーだけ更新/追加します。\n"
                 "変更対象ファイルは実行前にバックアップします。\n続行しますか？")
             if not messagebox.askyesno("警告 — 日本語化Modへ差分上書き", warning, icon="warning"):
-                return False,t("p0.reason.cancelled")
+                return False,i18n.t("p0.reason.cancelled")
             if not messagebox.askyesno("最終確認", "日本語化Modへ不足分だけを書き込みます。本当に続行しますか？", icon="warning"):
-                return False,t("p0.reason.cancelled")
+                return False,i18n.t("p0.reason.cancelled")
 
         existing_key_file = {}
         for fp in self._generated_japanese_files(ext_loc):
@@ -7638,9 +7629,9 @@ Mod更新後だけ追加翻訳:
                 "既存ファイルは実行前にバックアップされます。\n"
                 "Mod更新・Steam Workshop更新時には上書き内容が失われる可能性があります。\n\n続行しますか？")
             if not messagebox.askyesno("警告 — Modへ直接上書き", warning, icon="warning"):
-                return False,t("p0.reason.cancelled")
+                return False,i18n.t("p0.reason.cancelled")
             if not messagebox.askyesno("最終確認", "本当に元のModへ書き込みますか？\nこの操作は対象ファイルを置き換えます。", icon="warning"):
-                return False,t("p0.reason.cancelled")
+                return False,i18n.t("p0.reason.cancelled")
 
         stamp=datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         backup_root, backup_meta = self._create_full_localization_snapshot(
@@ -7748,7 +7739,7 @@ Mod更新後だけ追加翻訳:
             if not self._closing: messagebox.showinfo(APP_NAME,f'上書きが完了しました。\n\n対象: {target_label}\n{reason}')
         else:
             self.progress_text.set('上書きできませんでした')
-            if reason != t("p0.reason.cancelled") and not self._closing: messagebox.showinfo(APP_NAME,f'上書きできませんでした。\n{reason}')
+            if reason != i18n.t("p0.reason.cancelled") and not self._closing: messagebox.showinfo(APP_NAME,f'上書きできませんでした。\n{reason}')
 
     def _bulk_overwrite_queue_entries(self, entries, queue_kind="normal"):
         if self.bulk_overwrite_thread is not None:
@@ -7801,7 +7792,7 @@ Mod更新後だけ追加翻訳:
                         ok,reason=self._perform_full_translation_mod_overwrite(item,conflict_target,confirm=False,notify=False)
                     elif policy=='external' and item.get('external_translation_path') and _item_target_lang(item) == core.DEFAULT_TARGET_LANG:
                         ok,reason=self._perform_external_gap_overwrite(item,confirm=False,notify=False)
-                        if not ok and reason in {t("p0.reason.no_gap_info"),t("p0.reason.no_gap_translation")}:
+                        if not ok and reason in {i18n.t("p0.reason.no_gap_info"),i18n.t("p0.reason.no_gap_translation")}:
                             skipped+=1; details.append(f'{name}: スキップ ({reason})'); continue
                     else:
                         ok,reason=self._perform_source_mod_overwrite(item,confirm=False,notify=False)
@@ -8971,8 +8962,8 @@ Mod更新後だけ追加翻訳:
 
     def _language_complete_notice_text(self, source_language: str, count: int) -> str:
         if source_language == "simp_chinese":
-            return f"中国語基準の翻訳は完了しています。残り{count}件は英語原文にのみ存在します。"
-        return f"通常翻訳は完了しています。残り{count}件は簡体字中国語原文にのみ存在します。"
+            return i18n.t('p0.chinese_based_translation_is_complete', count=count)
+        return i18n.t('p0.standard_translation_is_complete_the', count=count)
 
     def _reset_item_for_full_translation(self, item: dict):
         was_diff = bool(item.get("diff_mode") or item.get("previous_cache") or item.get("diff"))
@@ -9339,7 +9330,7 @@ Mod更新後だけ追加翻訳:
     def save_and_stop(self):
         if self.controller:
             self.save_session(active=True); self.controller.request_stop(save=True)
-            self.progress_text.set("保存して中断中… 現在のリクエスト完了を待っています")
+            self.progress_text.set(i18n.t('p0.saving_and_stopping_waiting_for'))
             self.stop_btn.config(state="disabled")
 
     # ---------------- persistent Translation Status / Total Diagnosis state ----------------
@@ -9869,7 +9860,7 @@ Mod更新後だけ追加翻訳:
             restore_on_launch=bool(active)
         self._write_session_file(active=active,restore_on_launch=restore_on_launch)
         if not active:
-            self.progress_text.set(f"セッション保存: {RESUME_STATE_PATH}")
+            self.progress_text.set(i18n.t('p0.session_saved', RESUME_STATE_PATH=RESUME_STATE_PATH))
 
     def _checkpoint(self,payload):
         self._write_session_file(active=True,restore_on_launch=True,checkpoint=payload)
@@ -11063,7 +11054,7 @@ Mod更新後だけ追加翻訳:
                 result=core.save_auto_glossary_candidates(glossary_path,candidates,preserve_existing=True,include_phrases=include_phrases)
                 self.events.put(("auto_glossary_done",result))
             except core.StopRequested:
-                self.events.put(("auto_glossary_error",t("p0.event.stopped")))
+                self.events.put(("auto_glossary_error",i18n.t("p0.event.stopped")))
             except Exception as exc:
                 self.events.put(("auto_glossary_error",str(exc)))
         self.auto_glossary_thread=threading.Thread(target=work,daemon=True,name="auto-glossary")
@@ -11152,7 +11143,7 @@ Mod更新後だけ追加翻訳:
                 if p.is_dir(): candidates.append(p)
         if candidates:
             return candidates[0]
-        chosen=filedialog.askdirectory(title=f"{game} のゲーム本体 localization / localisation フォルダを選択")
+        chosen=filedialog.askdirectory(title=i18n.t('p0.select_the_base_game_localization', game=game))
         return Path(chosen) if chosen else None
 
     def _choose_glossary_import_mode(self):
@@ -11380,7 +11371,7 @@ Mod更新後だけ追加翻訳:
         if not targets:
             return
         if self.glossary_import_busy:
-            messagebox.showinfo(APP_NAME,"用語取り込みはすでにバックグラウンドで実行中です。")
+            messagebox.showinfo(APP_NAME,i18n.t('p0.glossary_import_is_already_running'))
             return
         mode=self._choose_glossary_import_mode()
         if not mode:
@@ -11886,7 +11877,7 @@ Mod更新後だけ追加翻訳:
                         for i,model in enumerate(payload):
                             if model in previous:
                                 self.benchmark_model_list.selection_set(i)
-                    self.connection_var.set(f"{self.provider_var.get()} 接続済み / {len(payload)}モデル")
+                    self.connection_var.set(i18n.t('p0.connected_models', value=self.provider_var.get(), count=len(payload)))
                     if self._llm_preflight_request is None:
                         self._llm_connection_alert_key=""
                         self._close_llm_connection_alert(reset_key=True)
@@ -11896,12 +11887,12 @@ Mod更新後だけ追加翻訳:
                     failure_url=failure.get("url") or self.url_var.get().strip()
                     failure_model=failure.get("model") or self.model_var.get().strip()
                     failure_error=str(failure.get("error") or "")
-                    if p=="Ollama": self.connection_var.set("Ollamaが起動していません（接続できません）")
-                    elif p=="LM Studio": self.connection_var.set("LM Studio Local Serverに接続できません")
-                    elif p in {"OpenAI","Anthropic","Gemini"}: self.connection_var.set(f"{p} APIに接続できません。APIキー・モデル・利用権限を確認してください")
-                    else: self.connection_var.set("OpenAI互換APIに接続できません。URL/APIキーを確認してください")
+                    if p=="Ollama": self.connection_var.set(i18n.t('p0.ollama_is_not_running_cannot'))
+                    elif p=="LM Studio": self.connection_var.set(i18n.t('p0.cannot_connect_to_lm_studio'))
+                    elif p in {"OpenAI","Anthropic","Gemini"}: self.connection_var.set(i18n.t('p0.cannot_connect_to_the_api', p=p))
+                    else: self.connection_var.set(i18n.t('p0.cannot_connect_to_the_openai'))
                     if self._llm_preflight_request is None:
-                        self._show_llm_connection_alert(p,failure_url,failure_model,failure_error,context="LLM接続確認")
+                        self._show_llm_connection_alert(p,failure_url,failure_model,failure_error,context=i18n.t('p0.llm_connection_check'))
                 elif kind=="llm_preflight_done":
                     self._apply_llm_preflight_done(payload)
                 elif kind=="llm_preflight_error":
@@ -11913,14 +11904,14 @@ Mod更新後だけ追加翻訳:
                             combo["values"]=payload
                     if payload and self.monitor_model_var.get() not in payload:
                         self.monitor_model_var.set(payload[0])
-                    self.monitor_connection_var.set(f"監視用LLM: {self.monitor_provider_var.get()} 接続済み / {len(payload)}モデル")
+                    self.monitor_connection_var.set(i18n.t('p0.monitor_llm_connected_models', value=self.monitor_provider_var.get(), count=len(payload)))
                     self._save_llm_preferences()
                 elif kind=="monitor_model_error":
                     p=self.monitor_provider_var.get()
-                    if p=="Ollama": msg="Ollamaが起動していません"
-                    elif p=="LM Studio": msg="LM Studio Local Serverに接続できません"
-                    else: msg=f"{p}に接続できません"
-                    self.monitor_connection_var.set("監視用LLM: "+msg)
+                    if p=="Ollama": msg=i18n.t('p0.ollama_is_not_running')
+                    elif p=="LM Studio": msg=i18n.t('p0.cannot_connect_to_lm_studio')
+                    else: msg=i18n.t('p0.cannot_connect_to', p=p)
+                    self.monitor_connection_var.set(i18n.t('p0.monitor_llm', msg=msg))
                 elif kind=="backup_restore_loaded":
                     generation,entries=payload
                     self._apply_backup_restore_loaded(generation,entries)
@@ -11928,22 +11919,22 @@ Mod更新後だけ追加翻訳:
                     generation,msg=payload
                     if generation==self.backup_restore_refresh_generation:
                         self.backup_restore_refresh_thread=None
-                        self.backup_restore_summary_var.set("バックアップ読込エラー")
+                        self.backup_restore_summary_var.set(i18n.t('p0.backup_loading_error'))
                         if hasattr(self,'backup_restore_reload_btn'): self.backup_restore_reload_btn.config(state='normal')
-                        record_error("バックアップ復元一覧バックグラウンド読込",detail=str(msg))
+                        record_error(i18n.t('p0.background_loading_of_the_backup'),detail=str(msg))
                 elif kind=="status_cache_restored":
                     data,rows,selected_paths=payload
                     self._apply_restored_mod_status(data,rows,selected_paths)
                 elif kind=="status_cache_restore_error":
                     self.status_restore_thread=None
-                    self.mod_status_summary_var.set("前回翻訳状況の復元に失敗")
-                    record_error("翻訳状況キャッシュバックグラウンド復元",detail=str(payload))
+                    self.mod_status_summary_var.set(i18n.t('p0.could_not_restore_previous_translation'))
+                    record_error(i18n.t('p0.background_restore_of_the_translation'),detail=str(payload))
                 elif kind=="diagnostic_state_restored":
                     self._apply_restored_diagnostic_state(payload)
                 elif kind=="diagnostic_state_restore_error":
                     self.diagnostic_restore_thread=None
-                    self.diagnostic_summary_var.set("診断待機中")
-                    record_error("総合診断キャッシュバックグラウンド復元",detail=str(payload))
+                    self.diagnostic_summary_var.set(i18n.t('p0.diagnostics_idle'))
+                    record_error(i18n.t('p0.background_restore_of_the_full'),detail=str(payload))
                 elif kind=="judgement_log_ready":
                     token,text=payload
                     self._apply_judgement_log_ready(token,text)
@@ -11952,26 +11943,26 @@ Mod更新後だけ追加翻訳:
                     self.judgement_log_thread=None
                     state=self._judgement_log_window
                     if state and state[0]==token and state[1].winfo_exists():
-                        state[3].set("判定ログ生成エラー")
+                        state[3].set(i18n.t('p0.detection_log_generation_error'))
                         state[2].delete('1.0','end'); state[2].insert('1.0',str(msg))
-                    record_error("日本語化Mod判定ログ生成",detail=str(msg))
+                    record_error(i18n.t('p0.generate_translation_mod_detection_log'),detail=str(msg))
                 elif kind=="judgement_log_exported":
                     self.judgement_log_thread=None
-                    self.mod_status_summary_var.set("判定ログ書き出し完了")
-                    messagebox.showinfo(APP_NAME,f"日本語化Mod判定ログを書き出しました。\n\n{payload}")
+                    self.mod_status_summary_var.set(i18n.t('p0.detection_log_exported'))
+                    messagebox.showinfo(APP_NAME,i18n.t('p0.translation_mod_detection_log_exported', payload=payload))
                 elif kind=="judgement_log_export_error":
                     self.judgement_log_thread=None
-                    self.mod_status_summary_var.set("判定ログ書き出しエラー")
-                    record_error("日本語化Mod判定ログ書き出し",detail=str(payload))
-                    messagebox.showerror(APP_NAME,f"判定ログの書き出しに失敗しました。\n{payload}")
+                    self.mod_status_summary_var.set(i18n.t('p0.detection_log_export_error'))
+                    record_error(i18n.t('p0.export_translation_mod_detection_log'),detail=str(payload))
+                    messagebox.showerror(APP_NAME,i18n.t('p0.could_not_export_the_detection', payload=payload))
                 elif kind=="diff_inspector_loaded":
                     self._apply_diff_inspector_loaded(*payload)
                 elif kind=="diff_inspector_batch_loaded":
                     self._apply_diff_inspector_batch_loaded(*payload)
                 elif kind=="diff_inspector_load_error":
                     self.diff_load_worker=None
-                    self.diff_summary_var.set("差分解析エラー")
-                    record_error("差分調査バックグラウンド解析",detail=str(payload))
+                    self.diff_summary_var.set(i18n.t('p0.difference_analysis_error'))
+                    record_error(i18n.t('p0.background_difference_scan'),detail=str(payload))
                     messagebox.showerror(APP_NAME,str(payload))
                 elif kind=="review_qa_loaded":
                     self._apply_review_qa_loaded(*payload)
@@ -11979,12 +11970,12 @@ Mod更新後だけ追加翻訳:
                     self._apply_review_qa_batch_loaded(*payload)
                 elif kind=="review_qa_error":
                     self.review_worker=None
-                    self.qa_summary_var.set("QA解析エラー")
+                    self.qa_summary_var.set(i18n.t('p0.qa_analysis_error'))
                     self.review_last_qa_contexts=[]; self.review_last_qa_errors=[payload]
                     self._set_review_qa_log_enabled(True)
                     self._set_review_auto_repair_enabled(False)
                     detail=_qa_failure_display(payload)
-                    record_error("QAバックグラウンド解析",detail=detail)
+                    record_error(i18n.t('p0.background_qa_analysis'),detail=detail)
                     messagebox.showerror(APP_NAME,detail)
                 elif kind=="qa_auto_repair_done":
                     self._apply_qa_auto_repair_done(*payload)
@@ -11992,7 +11983,7 @@ Mod更新後だけ追加翻訳:
                     self._apply_qa_auto_repair_error(*payload)
                 elif kind=="qa_repair_event":
                     event_kind=payload.get("kind")
-                    if event_kind=="llm_activity": self._handle_llm_activity(payload,"QA自動修正")
+                    if event_kind=="llm_activity": self._handle_llm_activity(payload,i18n.t('p0.qa_auto_fix'))
                     elif event_kind=="llm_response": self._show_llm_response(payload,monitor=False)
                     elif event_kind=="llm_metric": self._record_metric(payload.get("metric"))
                     elif event_kind=="qa_repair_progress": self._apply_qa_repair_progress(payload)
@@ -12000,7 +11991,7 @@ Mod更新後だけ追加翻訳:
                     self._apply_single_overwrite_done(*payload)
                 elif kind=="bulk_overwrite_progress":
                     pos,total,name=payload
-                    self.progress_text.set(f"一括上書き中… {pos}/{total} — {name}")
+                    self.progress_text.set(i18n.t('p0.bulk_overwrite_2', pos=pos, total=total, name=name))
                 elif kind=="bulk_overwrite_done":
                     self._apply_bulk_overwrite_done(*payload)
                 elif kind=="backup_restore_done":
@@ -12008,50 +11999,50 @@ Mod更新後だけ追加翻訳:
                     target,safety_root=payload
                     self._refresh_diagnostic_targets()
                     self._refresh_backup_restore_entries()
-                    if not self._closing: messagebox.showinfo(APP_NAME,f"復元しました。\n\n対象: {target}\n復元前退避: {safety_root}\n\n翻訳状況は次回の再調査で再判定されます。")
+                    if not self._closing: messagebox.showinfo(APP_NAME,i18n.t('p0.restored_target_pre_restore_backup', target=target, safety_root=safety_root))
                 elif kind=="backup_restore_error":
                     self.backup_restore_operation_thread=None
-                    self.backup_restore_summary_var.set("バックアップ復元エラー")
-                    if not self._closing: messagebox.showerror(APP_NAME,f"バックアップ復元に失敗しました。\n{payload}")
+                    self.backup_restore_summary_var.set(i18n.t('p0.backup_restore_error'))
+                    if not self._closing: messagebox.showerror(APP_NAME,i18n.t('p0.could_not_restore_the_backup', payload=payload))
                 elif kind=="differential_prepare_progress":
                     mode,pos,total,name=payload
-                    if mode=='chinese': self.chinese_progress_var.set(f"差分解析中… {pos}/{total} — {name}")
-                    else: self.progress_text.set(f"差分解析中… {pos}/{total} — {name}")
+                    if mode=='chinese': self.chinese_progress_var.set(i18n.t('p0.analyzing_differences', pos=pos, total=total, name=name))
+                    else: self.progress_text.set(i18n.t('p0.analyzing_differences', pos=pos, total=total, name=name))
                 elif kind=="differential_prepare_done":
                     self._apply_differential_prepare_done(*payload)
                 elif kind=="differential_prepare_error":
                     mode,msg=payload
                     self.differential_prepare_thread=None
                     self._differential_prepare_mode=None
-                    if mode=='chinese': self.chinese_progress_var.set("差分解析エラー")
-                    else: self.progress_text.set("差分解析エラー")
-                    record_error("差分翻訳準備",detail=str(msg))
-                    messagebox.showerror(APP_NAME,"差分解析に失敗しました。\n"+str(msg))
+                    if mode=='chinese': self.chinese_progress_var.set(i18n.t('p0.difference_analysis_error'))
+                    else: self.progress_text.set(i18n.t('p0.difference_analysis_error'))
+                    record_error(i18n.t('p0.preparing_missing_only_translation'),detail=str(msg))
+                    messagebox.showerror(APP_NAME,i18n.t('p0.could_not_analyze_differences', value=str(msg)))
                 elif kind=="data_root_copy_done":
                     self._apply_data_root_change(*payload)
                 elif kind=="data_root_copy_error":
                     self.data_root_move_thread=None
-                    self.progress_text.set("保存場所変更エラー")
-                    record_error("保存場所バックグラウンドコピー",detail=str(payload))
-                    if not self._closing: messagebox.showerror(APP_NAME,f"保存場所の変更に失敗しました。\n{payload}")
+                    self.progress_text.set(i18n.t('p0.storage_location_change_error'))
+                    record_error(i18n.t('p0.background_storage_location_copy'),detail=str(payload))
+                    if not self._closing: messagebox.showerror(APP_NAME,i18n.t('p0.could_not_change_the_storage', payload=payload))
                 elif kind=="progress":
                     if payload.get("kind")=="llm_activity":
-                        self._handle_llm_activity(payload,"翻訳")
+                        self._handle_llm_activity(payload,i18n.t('p0.translation'))
                     elif payload.get("kind")=="llm_response":
                         self._show_llm_response(payload, monitor=False)
                     elif payload.get("kind")=="llm_metric":
                         self._record_metric(payload.get("metric"))
                     elif payload.get("kind")=="batch":
                         done,total=payload.get("done",0),max(1,payload.get("total",1)); self.progress["value"]=done/total*100
-                        self.progress_text.set(f"キュー {self.current_queue_index+1}/{len(self.queue_items)} / ファイル {payload.get('file_no',0)}/{payload.get('file_total',0)} / {done}/{total}行")
-                        self._append_log(f"翻訳中: {Path(payload.get('file','')).name} — {done}/{total}行")
+                        self.progress_text.set(i18n.t('p0.queue_file_lines', value=self.current_queue_index+1, count=len(self.queue_items), file_no=payload.get('file_no',0), file_total=payload.get('file_total',0), done=done, total=total))
+                        self._append_log(i18n.t('p0.translating_lines', name=Path(payload.get('file','')).name, done=done, total=total))
                     elif payload.get("kind")=="file_done":
                         self.progress["value"]=100
-                        self._append_log(f"完了: {Path(payload.get('file','')).name}")
+                        self._append_log(i18n.t('p0.completed', name=Path(payload.get('file','')).name))
                     elif payload.get("kind")=="encoding_recovered":
-                        self._append_log(f"[自動修復] {Path(payload.get('file','')).name}: {payload.get('detected_encoding','')} → UTF-8 BOM出力")
+                        self._append_log(i18n.t('p0.auto_repair_utf_8_bom', name=Path(payload.get('file','')).name, detected_encoding=payload.get('detected_encoding','')))
                     elif payload.get("kind")=="file_error":
-                        self._append_log(f"[ファイルエラー] {Path(payload.get('file','')).name} / {payload.get('stage','')}: {payload.get('error_type','')} — {payload.get('action','')}")
+                        self._append_log(i18n.t('p0.file_error', name=Path(payload.get('file','')).name, stage=payload.get('stage',''), error_type=payload.get('error_type',''), action=payload.get('action','')))
                 elif kind=="chinese_queue_status":
                     item_id,status=payload
                     item=app_state.queue_item_by_id(self.chinese_queue_items,item_id)
@@ -12062,62 +12053,62 @@ Mod更新後だけ追加翻訳:
                 elif kind=="chinese_queue_current":
                     i,total,name=payload
                     self.chinese_queue_index=i-1
-                    self.chinese_progress_var.set(f"キュー {i}/{total} — {name}")
-                    self._append_chinese_log(f"開始: {name} ({i}/{total})")
+                    self.chinese_progress_var.set(i18n.t('p0.queue', i=i, total=total, name=name))
+                    self._append_chinese_log(i18n.t('p0.started', name=name, i=i, total=total))
                 elif kind=="chinese_progress":
                     if payload.get("kind")=="llm_activity": self._handle_llm_activity(payload,"中国語基準翻訳")
                     elif payload.get("kind")=="llm_response": self._show_llm_response(payload, monitor=False)
                     elif payload.get("kind")=="llm_metric": self._record_metric(payload.get("metric"))
                     elif payload.get("kind")=="batch":
                         done,total=payload.get("done",0),max(1,payload.get("total",1)); self.chinese_progress["value"]=done/total*100
-                        self.chinese_progress_var.set(f"キュー {self.chinese_queue_index+1}/{len(self.chinese_queue_items)} / ファイル {payload.get('file_no',0)}/{payload.get('file_total',0)} / {done}/{total}行")
-                        self._append_chinese_log(f"翻訳中: {Path(payload.get('file','')).name} — {done}/{total}行")
+                        self.chinese_progress_var.set(i18n.t('p0.queue_file_lines', value=self.chinese_queue_index+1, count=len(self.chinese_queue_items), file_no=payload.get('file_no',0), file_total=payload.get('file_total',0), done=done, total=total))
+                        self._append_chinese_log(i18n.t('p0.translating_lines', name=Path(payload.get('file','')).name, done=done, total=total))
                     elif payload.get("kind")=="file_done":
-                        self._append_chinese_log(f"完了: {Path(payload.get('file','')).name}")
+                        self._append_chinese_log(i18n.t('p0.completed', name=Path(payload.get('file','')).name))
                 elif kind=="chinese_done":
                     self.chinese_worker=None; self.chinese_controller=None
-                    self.chinese_start_btn.config(state="normal"); self.chinese_pause_btn.config(state="disabled", text="一時停止"); self.chinese_stop_btn.config(state="disabled")
+                    self.chinese_start_btn.config(state="normal"); self.chinese_pause_btn.config(state="disabled", text=i18n.t('p0.pause')); self.chinese_stop_btn.config(state="disabled")
                     if payload.get("interrupted"):
-                        self.chinese_progress_var.set("中断しました（キャッシュ保存済み）")
-                        self._set_llm_idle("LLM 待機中","中国語基準翻訳を中断しました")
+                        self.chinese_progress_var.set(i18n.t('p0.stopped_cache_saved'))
+                        self._set_llm_idle(i18n.t('p0.llm_idle'),i18n.t('p0.chinese_based_translation_stopped'))
                     else:
                         self.chinese_progress["value"]=100
                         qa_e=payload.get('qa_errors',0); qa_w=payload.get('qa_warnings',0); qa_n=payload.get('qa_notices',0); qa_r=payload.get('qa_repaired',0)
-                        self.chinese_progress_var.set(f"完了 — {payload.get('processed_files',0)}/{payload.get('queue_total',len(self.chinese_queue_items))}項目 / QA error {qa_e}・warning {qa_w}・notice {qa_n}・修正 {qa_r}")
-                        self._append_chinese_log(f"翻訳語 自動QA・修正: error {qa_e} / warning {qa_w} / notice {qa_n} / 修正 {qa_r}")
-                        for report in payload.get('qa_reports') or []: self._append_chinese_log(f"QA修正ログ: {report}")
-                        for backup in payload.get('qa_backups') or []: self._append_chinese_log(f"QA修復前バックアップ: {backup}")
-                        self._append_chinese_log(f"出力先: {payload.get('output',self.chinese_output_var.get())}")
-                        self._set_llm_idle("LLM 待機中","中国語基準翻訳が完了しました")
+                        self.chinese_progress_var.set(i18n.t('p0.completed_items_qa_errors_warnings', processed_files=payload.get('processed_files',0), queue_total=payload.get('queue_total',len(self.chinese_queue_items)), qa_e=qa_e, qa_w=qa_w, qa_n=qa_n, qa_r=qa_r))
+                        self._append_chinese_log(i18n.t('p0.auto_qa_and_fixes_for', qa_e=qa_e, qa_w=qa_w, qa_n=qa_n, qa_r=qa_r))
+                        for report in payload.get('qa_reports') or []: self._append_chinese_log(i18n.t('p0.qa_repair_log', report=report))
+                        for backup in payload.get('qa_backups') or []: self._append_chinese_log(i18n.t('p0.pre_qa_repair_backup', backup=backup))
+                        self._append_chinese_log(i18n.t('p0.output', output=payload.get('output',self.chinese_output_var.get())))
+                        self._set_llm_idle(i18n.t('p0.llm_idle'),i18n.t('p0.chinese_based_translation_completed'))
                         source_notice=self._source_gap_notice_for_items(self.chinese_queue_items)
-                        msg=f"中国語基準翻訳が完了しました。\n翻訳語 自動QA・修正: error {qa_e} / warning {qa_w} / notice {qa_n} / 修正 {qa_r}"
+                        msg=i18n.t('p0.chinese_based_translation_completed_auto', qa_e=qa_e, qa_w=qa_w, qa_n=qa_n, qa_r=qa_r)
                         if source_notice:
                             msg += "\n\n" + source_notice
                         if not self._closing: messagebox.showinfo(APP_NAME,msg)
                 elif kind=="chinese_error":
                     record_error("中国語基準翻訳", detail=str(payload)); self.chinese_worker=None; self.chinese_controller=None
-                    self.chinese_start_btn.config(state="normal"); self.chinese_pause_btn.config(state="disabled", text="一時停止"); self.chinese_stop_btn.config(state="disabled")
+                    self.chinese_start_btn.config(state="normal"); self.chinese_pause_btn.config(state="disabled", text=i18n.t('p0.pause')); self.chinese_stop_btn.config(state="disabled")
                     self.chinese_progress_var.set("エラー")
-                    self._append_chinese_log("エラー: "+str(payload)); self._set_llm_idle("LLM 待機中","中国語基準翻訳でエラーが発生しました")
-                    if not self._closing: messagebox.showerror(APP_NAME,"中国語基準翻訳エラー: "+str(payload))
+                    self._append_chinese_log(i18n.t('p0.error', value=str(payload))); self._set_llm_idle(i18n.t('p0.llm_idle'),i18n.t('p0.an_error_occurred_in_chinese'))
+                    if not self._closing: messagebox.showerror(APP_NAME,i18n.t('p0.chinese_based_translation_error', value=str(payload)))
                 elif kind=="benchmark_progress":
-                    if payload.get("kind")=="llm_activity": self._handle_llm_activity(payload,"モデル速度テスト")
+                    if payload.get("kind")=="llm_activity": self._handle_llm_activity(payload,i18n.t('p0.model_speed_test'))
                     elif payload.get("kind")=="llm_response": self._show_llm_response(payload, monitor=False)
                     elif payload.get("kind")=="llm_metric": self._record_metric(payload.get("metric"))
                 elif kind=="benchmark_model_start":
                     i,total,model=payload
-                    self.benchmark_status_var.set(f"速度テスト中 {i}/{total} — {model}")
-                    self.llm_operation=f"モデル速度テスト {i}/{total}"
+                    self.benchmark_status_var.set(i18n.t('p0.speed_test', i=i, total=total, model=model))
+                    self.llm_operation=i18n.t('p0.model_speed_test_2', i=i, total=total)
                 elif kind=="benchmark_metric":
                     i,total,metric=payload
-                    self.benchmark_status_var.set(f"速度テスト中 {i}/{total} 完了 — 次のモデルを準備")
+                    self.benchmark_status_var.set(i18n.t('p0.speed_test_completed_preparing_the', i=i, total=total))
                 elif kind=="benchmark_error":
-                    i,total,model,err=payload; self.benchmark_status_var.set(f"{model} 失敗 ({i}/{total})")
-                    self._append_log(f"[速度テスト失敗] {model}: {err}")
+                    i,total,model,err=payload; self.benchmark_status_var.set(i18n.t('p0.failed', model=model, i=i, total=total))
+                    self._append_log(i18n.t('p0.speed_test_failed', model=model, err=err))
                 elif kind=="benchmark_done":
-                    self.benchmark_status_var.set("速度テスト完了"); self.benchmark_stop_btn.config(state="disabled"); self.benchmark_controller=None; self.benchmark_worker=None; self._set_llm_idle("LLM 待機中","速度テストが完了しました")
+                    self.benchmark_status_var.set(i18n.t('p0.speed_test_complete')); self.benchmark_stop_btn.config(state="disabled"); self.benchmark_controller=None; self.benchmark_worker=None; self._set_llm_idle(i18n.t('p0.llm_idle'),i18n.t('p0.speed_test_completed'))
                 elif kind=="benchmark_stopped":
-                    self.benchmark_status_var.set("速度テストを停止しました"); self.benchmark_stop_btn.config(state="disabled"); self.benchmark_controller=None; self.benchmark_worker=None; self._set_llm_idle("LLM 待機中","速度テストを停止しました")
+                    self.benchmark_status_var.set(i18n.t('p0.speed_test_stopped')); self.benchmark_stop_btn.config(state="disabled"); self.benchmark_controller=None; self.benchmark_worker=None; self._set_llm_idle(i18n.t('p0.llm_idle'),i18n.t('p0.speed_test_stopped'))
                 elif kind=="mod_locations_discovered":
                     self.detected_mod_locations=list(payload or [])
                     # Remember Steam library roots so a custom/secondary drive does not
@@ -12146,7 +12137,7 @@ Mod更新後だけ追加翻訳:
                     if self.detected_mod_locations:
                         try: self.refresh_translation_search_mods()
                         except Exception: pass
-                        self.mod_discovery_status_var.set(f"{len(self.detected_mod_locations)}か所検出")
+                        self.mod_discovery_status_var.set(i18n.t('p0.locations_detected', count=len(self.detected_mod_locations)))
                         restored=[]
                         wanted=set(getattr(self,"_workspace_selected_location_paths",[]) or [])
                         for i,row in enumerate(self.detected_mod_locations):
@@ -12162,18 +12153,18 @@ Mod更新後だけ追加翻訳:
                                 self.discovered_mod_tree.selection_set(first); self.discovered_mod_tree.focus(first); self.discovered_mod_tree.see(first)
                         self._sync_monitor_targets_from_discovery_selection()
                     else:
-                        self.mod_discovery_status_var.set("自動検出できませんでした — 手動選択を使用してください")
+                        self.mod_discovery_status_var.set(i18n.t('p0.auto_detection_failed_select_a'))
                 elif kind=="mod_locations_error":
-                    self.mod_discovery_status_var.set("自動検出エラー")
-                    self._append_log("[Mod場所自動検出] "+str(payload))
+                    self.mod_discovery_status_var.set(i18n.t('p0.auto_detection_error'))
+                    self._append_log(i18n.t('p0.mod_location_auto_detection', value=str(payload)))
                 elif kind=="monitor_progress":
-                    if payload.get("kind")=="llm_activity": self._handle_monitor_llm_activity(payload,"未翻訳監視")
+                    if payload.get("kind")=="llm_activity": self._handle_monitor_llm_activity(payload,i18n.t('p0.untranslated_monitor'))
                     elif payload.get("kind")=="llm_response": self._show_llm_response(payload, monitor=True)
                     elif payload.get("kind")=="llm_metric": self._record_metric(payload.get("metric"))
                 elif kind=="monitor_status":
                     self.monitor_status_var.set(payload)
                 elif kind=="monitor_log":
-                    self._append_log("[未翻訳監視] "+str(payload))
+                    self._append_log(i18n.t('p0.untranslated_monitor_2', value=str(payload)))
                 elif kind=="monitor_results":
                     for x in self.monitor_tree.get_children(): self.monitor_tree.delete(x)
                     counts={}
@@ -12183,25 +12174,25 @@ Mod更新後だけ追加翻訳:
                         fp=c.get("target_file") or c.get("source_file") or c.get("logical_file","")
                         self.monitor_tree.insert("","end",iid=str(i),values=(c.get("kind",""),c.get("confidence",""),Path(fp).name if fp else "",c.get("key",""),text[:500]))
                     summary=" / ".join(f"{k}: {v}" for k,v in counts.items())
-                    self.monitor_summary_var.set(f"未翻訳候補: {len(payload)}"+(f"　({summary})" if summary else ""))
-                    self.monitor_status_var.set(f"● 常時監視中 — 最終確認 {datetime.now().strftime('%H:%M:%S')}")
+                    self.monitor_summary_var.set(i18n.t('p0.untranslated_candidates_2', count=len(payload), value=f"　({summary})" if summary else ""))
+                    self.monitor_status_var.set(i18n.t('p0.continuous_monitoring_last_checked', value=datetime.now().strftime('%H:%M:%S')))
                 elif kind=="monitor_stopped":
-                    self.monitor_status_var.set("○ 監視停止中")
+                    self.monitor_status_var.set(i18n.t('p0.monitor_stopped_2'))
                     if hasattr(self,"monitor_toggle_btn"):
-                        self.monitor_toggle_btn.config(text="常時監視を開始", state="normal")
+                        self.monitor_toggle_btn.config(text=i18n.t('p0.continuous_monitoring_started'), state="normal")
                     self.monitor_thread=None
-                    self._set_monitor_llm_idle("探索用LLM 待機中","未翻訳監視を終了しました")
+                    self._set_monitor_llm_idle(i18n.t('p0.discovery_llm_idle'),i18n.t('p0.untranslated_monitor_stopped'))
                 elif kind=="monitor_error":
-                    record_error("未翻訳監視", detail=str(payload))
-                    self.monitor_status_var.set("監視エラー")
+                    record_error(i18n.t('p0.untranslated_monitor'), detail=str(payload))
+                    self.monitor_status_var.set(i18n.t('p0.monitoring_error'))
                     if hasattr(self,"monitor_toggle_btn"):
-                        self.monitor_toggle_btn.config(text="常時監視を開始", state="normal")
+                        self.monitor_toggle_btn.config(text=i18n.t('p0.continuous_monitoring_started'), state="normal")
                     self.monitor_thread=None
-                    messagebox.showerror(APP_NAME,"未翻訳監視エラー: "+payload)
+                    messagebox.showerror(APP_NAME,i18n.t('p0.untranslated_monitor_error', payload=payload))
                 elif kind=="mod_status_results":
                     self.mod_research_results=list(payload or [])
                     self._populate_mod_status_tree()
-                    self.mod_status_summary_var.set(f"調査結果: {len(self.mod_research_results)}件")
+                    self.mod_status_summary_var.set(i18n.t('p0.scan_results_entries', count=len(self.mod_research_results)))
                 elif kind=="mod_status_append":
                     self.mod_research_results.append(payload)
                     self._populate_mod_status_tree()
@@ -12209,24 +12200,24 @@ Mod更新後だけ追加翻訳:
                     counts={}
                     for r in self.mod_research_results: counts[r.get("status","")]=counts.get(r.get("status",""),0)+1
                     summary=" / ".join(f"{k}: {v}" for k,v in counts.items())
-                    self.mod_status_summary_var.set(f"調査結果: {len(self.mod_research_results)}件"+(f"　{summary}" if summary else ""))
+                    self.mod_status_summary_var.set(i18n.t('p0.scan_results_entries_2', count=len(self.mod_research_results), value=f"　{summary}" if summary else ""))
                 elif kind=="mod_research_progress":
                     i,total,name=payload
                     self.monitor_current_mod=name
-                    self.mod_status_summary_var.set(f"バックグラウンド調査中: {i}/{total} — {name}")
-                    self._set_monitor_scan_status(f"● 未翻訳Mod探索中 — {i}/{total}", f"現在調査中: {name}")
+                    self.mod_status_summary_var.set(i18n.t('p0.scanning_in_background', i=i, total=total, name=name))
+                    self._set_monitor_scan_status(i18n.t('p0.discovering_untranslated_mods', i=i, total=total), i18n.t('p0.currently_scanning', name=name))
                 elif kind=="mod_research_done":
                     self.mod_research_stop_btn.config(state="disabled"); self.mod_research_thread=None
                     try: self.refresh_translation_search_mods()
                     except Exception: pass
                     if self.mod_research_stop_event.is_set():
-                        self.mod_status_summary_var.set(f"調査を停止しました — {len(self.mod_research_results)}件確認")
+                        self.mod_status_summary_var.set(i18n.t('p0.scan_stopped_entries_checked', count=len(self.mod_research_results)))
                     else:
                         counts={}
                         for r in self.mod_research_results: counts[r.get("status","")]=counts.get(r.get("status",""),0)+1
                         summary=" / ".join(f"{k}: {v}" for k,v in counts.items())
-                        self.mod_status_summary_var.set(f"調査完了: {len(self.mod_research_results)}件"+(f"　{summary}" if summary else ""))
-                    self._set_monitor_llm_idle("探索用LLM 待機中","Mod翻訳状況の調査が完了しました")
+                        self.mod_status_summary_var.set(i18n.t('p0.scan_complete_entries', count=len(self.mod_research_results), value=f"　{summary}" if summary else ""))
+                    self._set_monitor_llm_idle(i18n.t('p0.discovery_llm_idle'),i18n.t('p0.mod_translation_status_scan_completed'))
                     self._save_translation_status_state("status_research_done")
                     # A newly completed Translation Status scan can resolve restore targets
                     # that were previously shown as unknown. Refresh the rollback inventory.
@@ -12234,16 +12225,16 @@ Mod更新後だけ追加翻訳:
                         if hasattr(self, 'backup_restore_tree'):
                             self._refresh_backup_restore_entries()
                     except Exception as refresh_exc:
-                        record_error("バックアップ復元先の再解決", refresh_exc)
+                        record_error(i18n.t('p0.resolve_backup_restore_destinations_again'), refresh_exc)
                 elif kind=="mod_research_error":
-                    record_error("Mod翻訳状況調査", detail=str(payload))
+                    record_error(i18n.t('p0.mod_translation_status_scan'), detail=str(payload))
                     self.mod_research_stop_btn.config(state="disabled"); self.mod_research_thread=None
-                    self.mod_status_summary_var.set("調査エラー")
-                    self._set_monitor_llm_idle("探索用LLM 待機中","Mod調査でエラーが発生しました")
-                    messagebox.showerror(APP_NAME,"Mod翻訳状況の調査エラー: "+payload)
+                    self.mod_status_summary_var.set(i18n.t('p0.scan_error'))
+                    self._set_monitor_llm_idle(i18n.t('p0.discovery_llm_idle'),i18n.t('p0.an_error_occurred_during_the'))
+                    messagebox.showerror(APP_NAME,i18n.t('p0.mod_translation_status_scan_error', payload=payload))
                 elif kind=="diagnostic_progress":
                     if int(payload.get("generation",-1))==self.diagnostic_generation:
-                        self.diagnostic_summary_var.set(f"{payload.get('phase','診断')}中: {payload.get('done',0)}/{payload.get('total',0)} — {payload.get('mod','')}")
+                        self.diagnostic_summary_var.set(i18n.t('p0.diagnostic_progress', phase=payload.get('phase','診断'), done=payload.get('done',0), total=payload.get('total',0), mod=payload.get('mod','')))
                 elif kind=="diagnostic_choices_required":
                     if int(payload.get("generation",-1))==self.diagnostic_generation:
                         self.diagnostic_thread=None
@@ -12252,13 +12243,10 @@ Mod更新後だけ追加翻訳:
                         shown=payload.get("before") or []
                         self.diagnostic_results=list(shown)
                         self._populate_diagnostic_results(shown)
-                        self.diagnostic_summary_var.set("競合の優先先を指定してください")
+                        self.diagnostic_summary_var.set(i18n.t('p0.choose_which_conflicting_version_to'))
                         self._save_diagnostic_state("choices_required")
                         if not self._closing: messagebox.showwarning(APP_NAME,
-                            "修復前に本体 / 日本語化Modの重複キーについて優先先の指定が必要です。\n\n"
-                            +str(payload.get("message", ""))+
-                            "\n\n総合診断の『本体/日本語化Mod重複』行を選択し、\n『本体を残す』または『日本語化Modを残す』を設定してください。\n"
-                            "設定後、左側の『設定した内容で修復を実行』を押してください。複数行や一括指定も使用できます。")
+                            i18n.t('p0.before_repair_choose_which_version', value=str(payload.get("message", ""))))
                 elif kind=="diagnostic_done":
                     if int(payload.get("generation",-1))==self.diagnostic_generation:
                         self.diagnostic_thread=None
@@ -12272,10 +12260,10 @@ Mod更新後だけ追加翻訳:
                         self._refresh_diagnostic_action_state(shown or [], payload.get("integration_summary") if not payload.get("repair") else None)
                         issues=sum(1 for a in (shown or []) for x in (a.get("issues") or []) if x.get("severity") in {"ERROR","WARN"})
                         self.diagnostic_results=list(shown or [])
-                        self.diagnostic_summary_var.set(("修復・再診断完了" if payload.get("repair") else "診断完了")+f": {len(shown or [])} Mod / 要確認 {issues}件")
+                        self.diagnostic_summary_var.set(i18n.t('p0.repair_complete_summary' if payload.get("repair") else 'p0.diagnostics_complete_summary', count=len(shown or []), issues=issues))
                         logs=payload.get("logs") or []
-                        if logs: self._set_diagnostic_detail("\n".join(logs)+"\n\n修復後の診断結果を一覧へ表示しています。")
-                        elif count: self._set_diagnostic_detail("診断が完了しました。一覧から項目を選択すると詳細を確認できます。")
+                        if logs: self._set_diagnostic_detail(i18n.t('p0.post_repair_diagnostics_are_shown', value="\n".join(logs)))
+                        elif count: self._set_diagnostic_detail(i18n.t('p0.diagnostics_completed_select_an_item'))
                         self._save_diagnostic_state("repair_done" if payload.get("repair") else "diagnostic_done")
                         try:
                             if payload.get("repair"):
@@ -12284,7 +12272,7 @@ Mod更新後だけ追加翻訳:
                                     self.mod_status_cache={"version":MOD_STATUS_CACHE_VERSION,"items":{},"reset_for_version":APP_VERSION,"reset_at":datetime.now().isoformat(timespec="seconds")}
                                     core.save_json(MOD_STATUS_CACHE_PATH,self.mod_status_cache)
                         except Exception as exc:
-                            record_error("総合診断 修復後キャッシュ更新",exc)
+                            record_error(i18n.t('p0.refresh_full_diagnostics_cache_after'),exc)
                 elif kind=="diagnostic_error":
                     if int(payload.get("generation",-1))==self.diagnostic_generation:
                         self.diagnostic_thread=None
@@ -12293,9 +12281,9 @@ Mod更新後だけ追加翻訳:
                         else:
                             self.diagnostic_scan_btn.config(state="normal"); self.diagnostic_repair_btn.config(state="normal")
                         self.diagnostic_running_repair=False
-                        self.diagnostic_summary_var.set("診断エラー")
+                        self.diagnostic_summary_var.set(i18n.t('p0.diagnostics_error'))
                         record_error("総合診断",detail=str(payload.get("error","")))
-                        if not self._closing: messagebox.showerror(APP_NAME,"総合診断エラー: "+str(payload.get("error","")))
+                        if not self._closing: messagebox.showerror(APP_NAME,i18n.t('p0.full_diagnostics_error', value=str(payload.get("error",""))))
                 elif kind=="translation_search_mods_done":
                     if int(payload.get("generation",-1)) == self.search_mod_refresh_generation:
                         rows=list(payload.get("rows") or [])
@@ -12305,14 +12293,14 @@ Mod更新後だけ追加翻訳:
                             self.search_mod_list.insert("end",name); self.search_mod_map[i]=path
                             if path in wanted: self.search_mod_list.selection_set(i)
                         self._remember_translation_search_mod_selection()
-                        self.search_mod_status_var.set(f"対象Mod: {len(rows)}件")
+                        self.search_mod_status_var.set(i18n.t('p0.target_mods', count=len(rows)))
                 elif kind=="translation_search_mods_error":
                     if int(payload.get("generation",-1)) == self.search_mod_refresh_generation:
-                        self.search_mod_status_var.set("対象Mod取得エラー")
-                        record_error("翻訳検索 対象Mod取得", detail=str(payload.get("error","")))
+                        self.search_mod_status_var.set(i18n.t('p0.could_not_load_target_mods'))
+                        record_error(i18n.t('p0.load_target_mods_for_translation'), detail=str(payload.get("error","")))
                 elif kind=="translation_search_progress":
                     if int(payload.get("generation",-1)) == self.search_generation:
-                        self.search_summary_var.set(f"{payload.get('game','')}: バックグラウンド検索中 {payload.get('done',0)}/{payload.get('total',0)} — {payload.get('mod','')}")
+                        self.search_summary_var.set(i18n.t('p0.searching_in_background', game=payload.get('game',''), done=payload.get('done',0), total=payload.get('total',0), mod=payload.get('mod','')))
                 elif kind=="translation_search_done":
                     if int(payload.get("generation",-1)) == self.search_generation:
                         for iid in self.search_tree.get_children(): self.search_tree.delete(iid)
@@ -12324,17 +12312,17 @@ Mod更新後だけ追加翻訳:
                                 if converted.get(k): converted[k]=Path(converted[k])
                             self.search_result_map[iid]=converted
                             shown_file=converted.get("shown_file")
-                            shown_value="【未訳】" if converted.get("missing") else converted.get("value","")
+                            shown_value=i18n.t('p0.untranslated') if converted.get("missing") else converted.get("value","")
                             self.search_tree.insert("","end",iid=iid,values=(converted.get("mod_name",""),self._localization_display_path(shown_file) if shown_file else "",converted.get("key",""),shown_value[:180]))
-                        self.search_summary_var.set(f"{payload.get('game','')}: {payload.get('scanned_mods',0)} Modを検索 / {len(payload.get('rows') or [])}件一致（未訳 {payload.get('missing',0)}件）")
+                        self.search_summary_var.set(i18n.t('p0.searched_mods_matches_untranslated', game=payload.get('game',''), scanned_mods=payload.get('scanned_mods',0), count=len(payload.get('rows') or []), missing=payload.get('missing',0)))
                         self.search_thread=None
                         self._save_workspace_state("translation_search_done")
                 elif kind=="translation_search_error":
                     if int(payload.get("generation",-1)) == self.search_generation:
                         self.search_thread=None
-                        self.search_summary_var.set("検索エラー")
-                        record_error("翻訳検索", detail=str(payload.get("error","")))
-                        messagebox.showerror(APP_NAME,"翻訳検索エラー: "+str(payload.get("error","")))
+                        self.search_summary_var.set(i18n.t('p0.search_error'))
+                        record_error(i18n.t('p0.translation_search'), detail=str(payload.get("error","")))
+                        messagebox.showerror(APP_NAME,i18n.t('p0.translation_search_error', value=str(payload.get("error",""))))
                 elif kind=="normal_log":
                     self._append_log(str(payload))
                 elif kind=="chinese_log":
@@ -12351,127 +12339,125 @@ Mod更新後だけ追加翻訳:
                     self._finish_controls()
                     self._refresh_queue_tree()
                     if interrupted:
-                        self._append_log("翻訳を中断しました。キャッシュを保存しました。")
-                        self._set_llm_idle("LLM 待機中","翻訳を中断しました")
-                        self.progress_text.set("中断しました（キャッシュ保存済み）")
+                        self._append_log(i18n.t('p0.translation_stopped_cache_saved'))
+                        self._set_llm_idle(i18n.t('p0.llm_idle'),i18n.t('p0.translation_stopped'))
+                        self.progress_text.set(i18n.t('p0.stopped_cache_saved'))
                     else:
-                        self._append_log(f"翻訳完了: {info.get('processed_items',0)}/{info.get('selected_total',0)}項目 / 再試行で復旧 {recovered} / 未解決 {unresolved}")
-                        idle_detail = f"翻訳完了・未解決 {unresolved}項目" if unresolved else "翻訳が完了しました"
-                        self._set_llm_idle("LLM 待機中",idle_detail)
+                        self._append_log(i18n.t('p0.translation_complete_items_recovered_by', processed_items=info.get('processed_items',0), selected_total=info.get('selected_total',0), recovered=recovered, unresolved=unresolved))
+                        idle_detail = i18n.t('p0.translation_complete_unresolved_items', unresolved=unresolved) if unresolved else i18n.t('p0.translation_completed')
+                        self._set_llm_idle(i18n.t('p0.llm_idle'),idle_detail)
                         self.progress["value"]=100
-                        self.progress_text.set(f"翻訳完了（未解決 {unresolved}項目）" if unresolved else "選択した翻訳が完了しました")
+                        self.progress_text.set(i18n.t('p0.translation_complete_unresolved_items_2', unresolved=unresolved) if unresolved else i18n.t('p0.selected_translations_completed'))
                         source_notice=self._source_gap_notice_for_items(self.queue_items)
-                        msg=f"選択した翻訳が完了しました。\n完了: {info.get('processed_items', 0)}/{info.get('selected_total', 0)}項目\n再試行で復旧: {recovered}項目\n未解決: {unresolved}項目"
+                        msg=i18n.t('p0.selected_translations_completed_completed_items', processed_items=info.get('processed_items', 0), selected_total=info.get('selected_total', 0), recovered=recovered, unresolved=unresolved)
                         if info.get("queue_report"):
-                            msg += f"\n\n夜間処理レポート:\n{info.get('queue_report')}"
+                            msg += i18n.t('p0.unattended_run_report', queue_report=info.get('queue_report'))
                         if unresolved:
-                            msg += "\n\n未解決項目はキューに保持されています。各翻訳結果フォルダの translation_error_report.json で詳細を確認できます。"
+                            msg += i18n.t('p0.unresolved_items_remain_in_the')
                         if source_notice:
                             msg += "\n\n" + source_notice
                         if not self._closing: messagebox.showinfo(APP_NAME,msg)
                 elif kind=="fatal":
                     self.worker=None
-                    self._append_log("エラー: "+str(payload))
-                    record_error("翻訳処理 fatal", detail=str(payload)); self._finish_controls(); self._set_llm_idle("LLM 待機中","翻訳処理でエラーが発生しました")
+                    self._append_log(i18n.t('p0.error', value=str(payload)))
+                    record_error(i18n.t('p0.fatal_translation_error'), detail=str(payload)); self._finish_controls(); self._set_llm_idle(i18n.t('p0.llm_idle'),i18n.t('p0.an_error_occurred_during_translation'))
                     if not self._closing: messagebox.showerror(APP_NAME,payload)
                 elif kind=="diff_translate_progress":
                     if payload.get("kind")=="llm_activity": self._handle_llm_activity(payload,"差分翻訳")
                     elif payload.get("kind")=="llm_response": self._show_llm_response(payload, monitor=False)
                     elif payload.get("kind")=="llm_metric": self._record_metric(payload.get("metric"))
                 elif kind=="diff_translate_status":
-                    i,total,key=payload; self.diff_message_var.set(f"差分翻訳中 {i}/{total} — {key}")
+                    i,total,key=payload; self.diff_message_var.set(i18n.t('p0.translating_missing_entries', i=i, total=total, entry_key=key))
                 elif kind=="diff_translate_done":
                     result=payload if isinstance(payload,dict) else {"written":payload,"untranslated":[],"backups":[],"total":payload}
                     left=list(result.get("untranslated") or [])
-                    self.diff_controller=None; self.diff_translate_thread=None; self._set_llm_idle("LLM 待機中",f"差分翻訳 {result.get('written',0)}件が完了しました")
+                    self.diff_controller=None; self.diff_translate_thread=None; self._set_llm_idle(i18n.t('p0.llm_idle'),i18n.t('p0.missing_only_translation_completed_entries', written=result.get('written',0)))
                     if not self._closing:
                         if len(self.diff_batch_contexts)>1:
                             pairs=[{"source":c["source_path"],"target":c["target_path"],"lang":c["lang"]} for c in self.diff_batch_contexts]
                             self.load_diff_pairs(pairs)
                         else:
                             self.load_diff_inspector()
-                    message=f"差分翻訳完了: 書き込み {result.get('written',0)}件"
-                    message+=f" / 半角スペース除去 {result.get('spaces_removed',0)}個"
-                    if left: message+=f" / 未翻訳のまま {len(left)}件（原文のまま・使えない訳は書き込みませんでした）"
+                    message=i18n.t("p0.diff_complete_untranslated" if left else "p0.diff_complete",
+                              written=result.get('written',0), spaces_removed=result.get('spaces_removed',0), count=len(left))
                     self.diff_message_var.set(message)
                     if left and not self._closing:
-                        lines="\n".join(f"・{row['file']} / {row['key']}: {row['reason']}" for row in left[:15])
-                        more=f"\nほか {len(left)-15}件" if len(left)>15 else ""
-                        messagebox.showwarning(APP_NAME,f"次のキーは翻訳できなかったため、書き込まずに未翻訳のまま残しました。\n\n{lines}{more}\n\nモデルや設定を変えて、もう一度試してください。")
+                        lines="\n".join(i18n.t('p0.untranslated_entry', file=row['file'], entry_key=row['key'], reason=row['reason']) for row in left[:15])
+                        more=i18n.t('p0.more_entries', value=len(left)-15) if len(left)>15 else ""
+                        messagebox.showwarning(APP_NAME,i18n.t('p0.these_keys_could_not_be', lines=lines, more=more))
                 elif kind=="diff_translate_stopped":
-                    self.diff_controller=None; self.diff_translate_thread=None; self._set_llm_idle("LLM 待機中","差分翻訳を停止しました"); self.diff_message_var.set("差分翻訳を停止しました")
+                    self.diff_controller=None; self.diff_translate_thread=None; self._set_llm_idle(i18n.t('p0.llm_idle'),i18n.t('p0.missing_only_translation_stopped')); self.diff_message_var.set(i18n.t('p0.missing_only_translation_stopped'))
                 elif kind=="diff_translate_error":
-                    record_error("差分翻訳", detail=str(payload)); self.diff_controller=None; self.diff_translate_thread=None; self._set_llm_idle("LLM 待機中","差分翻訳でエラーが発生しました"); self.diff_message_var.set("差分翻訳エラー: "+str(payload))
-                    if not self._closing: messagebox.showerror(APP_NAME,"差分翻訳エラー: "+str(payload))
+                    record_error("差分翻訳", detail=str(payload)); self.diff_controller=None; self.diff_translate_thread=None; self._set_llm_idle(i18n.t('p0.llm_idle'),i18n.t('p0.an_error_occurred_in_missing')); self.diff_message_var.set(i18n.t('p0.missing_only_translation_error', value=str(payload)))
+                    if not self._closing: messagebox.showerror(APP_NAME,i18n.t('p0.missing_only_translation_error', value=str(payload)))
                 elif kind=="auto_glossary_progress":
-                    if payload.get("kind")=="llm_activity": self._handle_llm_activity(payload,"自動用語作成")
+                    if payload.get("kind")=="llm_activity": self._handle_llm_activity(payload,i18n.t('p0.auto_glossary'))
                     elif payload.get("kind")=="llm_response": self._show_llm_response(payload, monitor=False)
                     elif payload.get("kind")=="llm_metric": self._record_metric(payload.get("metric"))
                 elif kind=="auto_glossary_done":
                     self.auto_glossary_controller=None; self.auto_glossary_thread=None
-                    self._set_llm_idle("LLM 待機中","自動用語作成が完了しました")
+                    self._set_llm_idle(i18n.t('p0.llm_idle'),i18n.t('p0.auto_glossary_completed'))
                     self.load_glossary_ui(silent=True)
                     if hasattr(self,"_refresh_auto_glossary_tree"): self._refresh_auto_glossary_tree()
                     kind_summary=App._auto_glossary_kind_summary(payload)
-                    self.auto_glossary_status_var.set(f"追加 {payload.get('added',0)} / 候補 {payload.get('total',0)} / 表記揺れ {payload.get('conflicts',0)} / {kind_summary}")
-                    if not self._closing: messagebox.showinfo(APP_NAME, f"自動用語作成が完了しました。\n候補: {payload.get('total',0)}件\n新規追加: {payload.get('added',0)}件\n複数訳を統一: {payload.get('conflicts',0)}件\n{kind_summary}")
+                    self.auto_glossary_status_var.set(i18n.t('p0.added_candidates_variants', added=payload.get('added',0), total=payload.get('total',0), conflicts=payload.get('conflicts',0), kind_summary=kind_summary))
+                    if not self._closing: messagebox.showinfo(APP_NAME, i18n.t('p0.auto_glossary_completed_candidates_new', total=payload.get('total',0), added=payload.get('added',0), conflicts=payload.get('conflicts',0), kind_summary=kind_summary))
                 elif kind=="auto_glossary_error":
                     self.auto_glossary_controller=None; self.auto_glossary_thread=None
-                    self._set_llm_idle("LLM 待機中","自動用語作成を終了しました")
-                    self.auto_glossary_status_var.set("自動用語作成: "+str(payload))
-                    if str(payload)!=t("p0.event.stopped") and not self._closing: messagebox.showerror(APP_NAME,"自動用語作成エラー: "+str(payload))
+                    self._set_llm_idle(i18n.t('p0.llm_idle'),i18n.t('p0.auto_glossary_stopped'))
+                    self.auto_glossary_status_var.set(i18n.t('p0.auto_glossary_2', value=str(payload)))
+                    if str(payload)!=i18n.t("p0.event.stopped") and not self._closing: messagebox.showerror(APP_NAME,i18n.t('p0.auto_glossary_error', value=str(payload)))
                 elif kind=="glossary_import_status":
                     self.auto_glossary_status_var.set(str(payload))
                 elif kind=="glossary_import_needs_fallback":
                     self.glossary_import_thread=None
-                    self._set_glossary_import_busy(False,"対応原文をゲーム本体から探せます")
+                    self._set_glossary_import_busy(False,i18n.t('p0.find_matching_source_text_in'))
                     if self._closing:
                         continue
                     messagebox.showinfo(APP_NAME,
-                        "選択した日本語localizationの近くに、対応する英語 / 簡体字中国語原文が見つかりませんでした。\n\n"
-                        "対象ゲーム本体のlocalizationを同じキーで自動照合できます。ゲーム本体に存在しないMod独自キーはスキップされます。")
+                        i18n.t('p0.no_matching_english_simplified_chinese'))
                     game=self._choose_game_for_glossary_import()
                     if game:
                         root=self._find_base_game_localization_root(game)
                         if root and Path(root).exists():
                             self._start_japanese_base_fallback(
                                 [Path(x) for x in payload.get("targets",[])],root,game,
-                                payload.get("source_kind","import:mod"),payload.get("label","日本語localizationからの用語取り込み"),payload.get("mode","common"))
+                                payload.get("source_kind","import:mod"),payload.get("label",i18n.t('p0.import_glossary_from_japanese_localization')),payload.get("mode","common"))
                 elif kind=="glossary_import_done":
                     self.glossary_import_thread=None
-                    self._set_glossary_import_busy(False,"用語取り込み完了")
+                    self._set_glossary_import_busy(False,i18n.t('p0.glossary_import_complete'))
                     if payload.get("invalid"):
-                        if not self._closing: messagebox.showinfo(APP_NAME,"取り込み可能な日本語localizationを確認できませんでした。")
+                        if not self._closing: messagebox.showinfo(APP_NAME,i18n.t('p0.no_importable_japanese_localization_was'))
                     else:
-                        label=payload.get("label","用語取り込み")
+                        label=payload.get("label",i18n.t('p0.import_glossary'))
                         result=payload.get("result") or {}
                         stats=payload.get("stats") or {}
                         if not result:
-                            lines=[f"{label}が完了しました。","取り込み可能な用語候補はありませんでした。"]
+                            lines=[i18n.t('p0.completed_2', label=label),i18n.t('p0.no_glossary_candidates_were_available')]
                         else:
                             self.load_glossary_ui(silent=True)
                             if hasattr(self,"_refresh_auto_glossary_tree"): self._refresh_auto_glossary_tree()
-                            self.auto_glossary_status_var.set(f"{label}: {result.get('added',0)}件追加 / 候補 {result.get('total',0)}件")
-                            lines=[f"{label}が完了しました。",f"候補: {result.get('total',0)}件",f"新規追加: {result.get('added',0)}件"]
+                            self.auto_glossary_status_var.set(i18n.t('p0.added_candidates', label=label, added=result.get('added',0), total=result.get('total',0)))
+                            lines=[i18n.t('p0.completed_2', label=label),i18n.t('p0.candidates', total=result.get('total',0)),i18n.t('p0.new_entries', added=result.get('added',0))]
                         if stats:
-                            lines += ["",f"日本語キー: {stats.get('japanese_keys',0)}件",f"英語対応: {stats.get('english',0)}件",f"中国語対応: {stats.get('chinese',0)}件",f"対応なし: {stats.get('unmatched',0)}件"]
-                            if stats.get("unmatched",0): lines.append(f"ゲーム本体に対応原文がないため {stats.get('unmatched',0)}件をスキップしました。")
+                            lines += ["",i18n.t('p0.japanese_keys', japanese_keys=stats.get('japanese_keys',0)),i18n.t('p0.english_matches', english=stats.get('english',0)),i18n.t('p0.chinese_matches', chinese=stats.get('chinese',0)),i18n.t('p0.unmatched', unmatched=stats.get('unmatched',0))]
+                            if stats.get("unmatched",0): lines.append(i18n.t('p0.skipped_entries_with_no_matching', unmatched=stats.get('unmatched',0)))
                         if not self._closing: messagebox.showinfo(APP_NAME,"\n".join(lines))
                 elif kind=="glossary_import_error":
                     self.glossary_import_thread=None
-                    self._set_glossary_import_busy(False,"用語取り込みエラー")
-                    if not self._closing: messagebox.showerror(APP_NAME,"用語取り込みエラー: "+str(payload))
+                    self._set_glossary_import_busy(False,i18n.t('p0.glossary_import_error'))
+                    if not self._closing: messagebox.showerror(APP_NAME,i18n.t('p0.glossary_import_error_2', value=str(payload)))
                 elif kind=="proofread_progress":
-                    if payload.get("kind")=="llm_activity": self._handle_llm_activity(payload,"AI誤字脱字校正")
+                    if payload.get("kind")=="llm_activity": self._handle_llm_activity(payload,i18n.t('p0.ai_spelling_and_typo_check'))
                     elif payload.get("kind")=="llm_response": self._show_llm_response(payload, monitor=False)
                     elif payload.get("kind")=="llm_metric": self._record_metric(payload.get("metric"))
                 elif kind=="proofread":
-                    self.dst_text.delete("1.0","end"); self.dst_text.insert("1.0",payload); self.issue_text.set("AI校正結果を表示しました。内容を確認して保存してください。"); self.proofread_controller=None; self.proofread_thread=None; self._set_llm_idle("LLM 待機中","AI校正が完了しました")
+                    self.dst_text.delete("1.0","end"); self.dst_text.insert("1.0",payload); self.issue_text.set(i18n.t('p0.ai_proofreading_results_are_shown')); self.proofread_controller=None; self.proofread_thread=None; self._set_llm_idle(i18n.t('p0.llm_idle'),i18n.t('p0.ai_proofreading_completed'))
                 elif kind=="proofread_stopped":
-                    self.issue_text.set("AI校正を停止しました。"); self.proofread_controller=None; self.proofread_thread=None; self._set_llm_idle("LLM 待機中","AI校正を停止しました")
+                    self.issue_text.set(i18n.t('p0.ai_proofreading_stopped')); self.proofread_controller=None; self.proofread_thread=None; self._set_llm_idle(i18n.t('p0.llm_idle'),i18n.t('p0.ai_proofreading_stopped_2'))
                 elif kind=="proofread_error":
-                    record_error("AI校正", detail=str(payload))
-                    self.issue_text.set("AI校正エラー: "+payload); self.proofread_controller=None; self.proofread_thread=None; self._set_llm_idle("LLM 待機中","AI校正でエラーが発生しました")
+                    record_error(i18n.t('p0.ai_proofreading'), detail=str(payload))
+                    self.issue_text.set(i18n.t('p0.ai_proofreading_error', payload=payload)); self.proofread_controller=None; self.proofread_thread=None; self._set_llm_idle(i18n.t('p0.llm_idle'),i18n.t('p0.an_error_occurred_during_ai'))
         except queue.Empty:
             pass
         self._refresh_operation_states()
@@ -12479,7 +12465,7 @@ Mod更新後だけ追加翻訳:
         self.after(delay,self._poll_events)
 
     def _finish_controls(self):
-        self.start_btn.config(state="normal"); self.pause_btn.config(state="disabled",text="一時停止"); self.stop_btn.config(state="disabled"); self.controller=None
+        self.start_btn.config(state="normal"); self.pause_btn.config(state="disabled",text=i18n.t('p0.pause')); self.stop_btn.config(state="disabled"); self.controller=None
 
     def on_close(self):
         """Handle the window × button according to the user's preference."""

@@ -83,3 +83,13 @@ def test_other_languages_use_the_same_fields():
         for key, text in i18n.strings(lang).items():
             if key in ja:
                 assert _fields(text) == _fields(ja[key]), (lang, key)
+
+
+def test_main_calls_the_dictionary_as_i18n_t():
+    """main.py の画面を作る関数は「t = self.tab_…」のように t を変数に使う。素の t(...) は隠れてしまうので、
+    辞書は必ず i18n.t(...) で引く（段階0で実際に起きた：バックアップ復元タブで TypeError）。"""
+    import ast
+    tree = ast.parse((ROOT / "app" / "main.py").read_text(encoding="utf-8"))
+    bare = [node.lineno for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "t"]
+    assert not bare, f"素の t(...) を i18n.t(...) に直す: 行 {bare[:20]}"
