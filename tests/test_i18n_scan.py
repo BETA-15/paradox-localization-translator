@@ -143,7 +143,7 @@ def test_widget_labels_are_never_japanese_literals():
 
 
 # 段階2で辞書がそろった言語（開発部門がマージのときに足す）。ここにある言語は、日本語と同じ key がすべてある。
-COMPLETE_LANGUAGES = ("japanese", "english", "braz_por", "russian", "korean", "french", "turkish")
+COMPLETE_LANGUAGES = ("japanese", "english", "braz_por", "russian", "korean", "french", "turkish", "german")
 
 
 def test_complete_languages_have_every_key():

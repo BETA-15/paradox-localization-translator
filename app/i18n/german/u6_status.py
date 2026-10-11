@@ -42,7 +42,7 @@ STRINGS = {
     'u6.how_it_works': 'Funktionsweise',
     'u6.while_idle_only_yaml_modification_times': 'Im Leerlauf werden nur Änderungszeit und Größe der überwachten YAML-Dateien geprüft. Nur geänderte Ziele werden analysiert, und nur unklare Kandidaten werden an das Überwachungs-LLM gesendet. Es wird weder automatisch übersetzt noch werden Dateien geändert.',
     'u6.japanese_translation_status_by_mod': 'Übersetzungsstatus für {target_name} je Mod',
-    'u6.mod_research_translation_mod_assessment_and': '（Mod-Prüfung, Bewertung und Zuordnung von Übersetzungsmods für {target_name} unterstützen nur Japanisch）',
+    'u6.mod_research_translation_mod_assessment_and': '（Mod-Prüfung, Bewertung und Zuordnung von Übersetzungsmods für {target_name}）',
     'u6.target_relation_scope': '（Mod-Prüfung, Bewertung und Zuordnung von Übersetzungsmods für {target_name}）',
     'u6.game_mod_location': 'Spiel / Mod-Speicherort',
     'u6.detect_game_mod_locations': 'Spiel-/Mod-Speicherorte erkennen',

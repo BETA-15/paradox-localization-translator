@@ -56,7 +56,7 @@ STRINGS = {
     'p0.no_scan_results': 'Keine Untersuchungsergebnisse',
     'p0.no_translation_status_scan_results': 'Keine Untersuchungsergebnisse zum Übersetzungsstatus',
     'p0.unknown_file': 'Unbekannte Datei',
-    'p0.the_qa_comparison_editor_also': 'QA / Vergleich bearbeiten prüft ebenfalls anhand der ausgewählten Zielsprache. Mod-Untersuchung, Erkennung und Zuordnung von Übersetzungsmods, reine Differenzübersetzung und Übersetzung auf chinesischer Basis sind nur für Japanisch verfügbar. Qualitätsprüfungen anderer Zielsprachen sind einfacher als für Japanisch (zwischen Sprachen mit lateinischer Schrift wird nur auf unveränderten Originaltext geprüft).',
+    'p0.the_qa_comparison_editor_also': 'Auch der Tab „QA / Vergleichseditor“ prüft anhand der hier gewählten Zielsprache. Für andere Zielsprachen als Japanisch ist die Qualitätsprüfung einfacher (eingemischte Schriftsysteme, mit dem Ursprungstext identischer Text und verbliebenes Englisch). Ist die Zielsprache Englisch, gleicht die Mod-Untersuchung keine externen Übersetzungsmods ab.',
     'p0.this_feature_is_available_only': 'Diese Funktion ist nur für japanische Glossare verfügbar',
     'p0.missing_only_translation_is_available': '„Nur Änderungen übersetzen“ ist nur bei Zielsprache Japanisch verfügbar. Für andere Sprachen „Alles von Grund auf übersetzen“ verwenden.',
     'p0.the_llm_response_was_empty': 'Die LLM-Antwort war leer',
