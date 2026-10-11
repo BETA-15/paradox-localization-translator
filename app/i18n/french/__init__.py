@@ -12,7 +12,8 @@ from . import u6_status
 from . import u7_diagnostics
 from . import u9_core
 from . import help_doc
+from . import languages
 
 STRINGS = {}
-for _part in (p0_common.STRINGS, u1_translate.STRINGS, u2_chinese.STRINGS, u3_review.STRINGS, u4_glossary.STRINGS, u5_models.STRINGS, u6_status.STRINGS, u7_diagnostics.STRINGS, u9_core.STRINGS):
+for _part in (languages.STRINGS, p0_common.STRINGS, u1_translate.STRINGS, u2_chinese.STRINGS, u3_review.STRINGS, u4_glossary.STRINGS, u5_models.STRINGS, u6_status.STRINGS, u7_diagnostics.STRINGS, u9_core.STRINGS):
     STRINGS.update(_part)
