@@ -53,9 +53,9 @@
   },
 
   "shots": [
-    {"file": "translate", "w": 1600, "h": 1000},
-    {"file": "qa", "w": 1600, "h": 1000},
-    {"file": "survey", "w": 1600, "h": 1000},
-    {"file": "model", "w": 1600, "h": 1000}
+    {"file": "translate", "w": 1480, "h": 1008},
+    {"file": "qa", "w": 1480, "h": 1008},
+    {"file": "survey", "w": 1480, "h": 1008},
+    {"file": "model", "w": 1480, "h": 1008}
   ]
 }
