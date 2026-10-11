@@ -2573,6 +2573,10 @@ class App(BaseTk):
         ttk.Button(top,text="保存",command=lambda:self._run_glossary_action(self.save_glossary_ui)).pack(side="left",padx=(6,0))
         ttk.Label(top,textvariable=self.auto_glossary_status_var,foreground="#555").pack(side="right",padx=(8,0))
 
+        import_bar=ttk.Frame(t); import_bar.pack(fill="x",pady=(0,6))
+        ttk.Button(import_bar,text="ParaTranz の用語集（JSON）を取り込む",
+                   command=lambda:self._run_glossary_action(self.import_paratranz_glossary)).pack(side="left")
+        ttk.Button(import_bar,text="表記ルールを見る",command=self.show_glossary_notation_rules).pack(side="left",padx=6)
         panes=ttk.Panedwindow(t,orient="horizontal"); panes.pack(fill="both",expand=True)
         manual=ttk.LabelFrame(panes,text="自分で作った用語",padding=8)
         generated=ttk.LabelFrame(panes,text="自動生成 / 取り込み用語",padding=8)
@@ -2620,6 +2624,10 @@ class App(BaseTk):
         self.auto_glossary_tree.configure(yscrollcommand=gy.set,xscrollcommand=gx.set)
         self.auto_glossary_tree.pack(fill="both",expand=True); gx.pack(fill="x")
         self.auto_glossary_tree.bind("<Map>",lambda event:self.after_idle(self._refresh_auto_glossary_tree))
+        self.glossary_note_var=tk.StringVar(value="note: 用語を選択すると表示します")
+        ttk.Label(t,textvariable=self.glossary_note_var,wraplength=1000,justify="left").pack(fill="x",pady=6)
+        for tree in (self.glossary_tree,self.auto_glossary_tree):
+            tree.bind("<<TreeviewSelect>>",lambda event:self.show_selected_glossary_note(event.widget))
         if DND_AVAILABLE:
             try:
                 self._register_dnd_widgets([generated,self.auto_glossary_drop_hint,self.auto_glossary_tree],self.on_glossary_import_drop_paths)
@@ -11055,6 +11063,8 @@ Mod更新後だけ追加翻訳:
 
     def _glossary_kind_label(self, meta):
         kind=str((meta or {}).get("source_kind", "auto"))
+        if kind == "import:paratranz":
+            return "ParaTranz"
         if kind.startswith("base:"):
             return "ゲーム本体: "+kind.split(":",1)[1]
         if kind.startswith("import:file"):
@@ -11406,6 +11416,108 @@ Mod更新後だけ追加翻訳:
         p=filedialog.askopenfilename(filetypes=[("JSON","*.json"),("All","*")])
         if p: self.glossary_path_var.set(p); self.load_glossary_ui(silent=True)
 
+    def show_selected_glossary_note(self, tree):
+        selected=tree.selection()
+        if not selected:
+            self.glossary_note_var.set("note: 用語を選択すると表示します")
+            return
+        source=tree.item(selected[0],"values")[0]
+        metadata=self._glossary_variant_metadata().get(source,{})
+        note=metadata.get("note","") if isinstance(metadata,dict) else ""
+        self.glossary_note_var.set(f"{source} — note: {note or 'なし'}")
+
+    def _show_glossary_import_text(self, parent, text):
+        frame=ttk.Frame(parent); frame.pack(fill="both",expand=True,padx=8,pady=8)
+        view=tk.Text(frame,wrap="word",height=20)
+        scroll=ttk.Scrollbar(frame,orient="vertical",command=view.yview)
+        view.configure(yscrollcommand=scroll.set)
+        scroll.pack(side="right",fill="y"); view.pack(side="left",fill="both",expand=True)
+        view.insert("1.0",text); view.configure(state="disabled")
+        def copy_selection(event=None):
+            try:
+                selected=view.get("sel.first","sel.last")
+            except tk.TclError:
+                return "break"
+            view.clipboard_clear(); view.clipboard_append(selected)
+            return "break"
+        view.bind("<Control-c>",copy_selection); view.bind("<Command-c>",copy_selection)
+        ttk.Button(parent,text="選択部分をコピー",command=copy_selection).pack(anchor="w",padx=8)
+        return view
+
+    def import_paratranz_glossary(self):
+        filename=filedialog.askopenfilename(title="ParaTranz の用語集（JSON）を取り込む",filetypes=[("JSON","*.json")])
+        if not filename: return
+        try:
+            text,_encoding=core.decode_text_bytes(Path(filename).read_bytes())
+            data=json.loads(text)
+            if not core.is_paratranz_glossary(data):
+                raise ValueError("ParaTranz の用語集（term / translation を持つリスト）ではありません。")
+            classified=core.classify_paratranz_glossary(data)
+        except (OSError,UnicodeError,ValueError) as exc:
+            messagebox.showerror("ParaTranz 取り込みエラー",str(exc)); return
+        self.confirm_paratranz_import(classified)
+
+    def confirm_paratranz_import(self, classified):
+        dialog=tk.Toplevel(self); dialog.title("ParaTranz 用語集の取り込み確認"); dialog.geometry("850x700")
+        dialog.transient(self); dialog.grab_set()
+        labels={"items":"元の項目", "terms":"取り込む用語（variants込み）", "from_variants":"variantsから追加",
+                "rules":"※で始まるルール", "affixes":"接辞", "symbols":"記号のみ", "short_terms":"短い英字の語",
+                "spaces_fixed":"空白を直した数", "duplicates":"重なり（先の語を使用）", "note_rules":"noteにルールがある語"}
+        summary="\n".join(f"{label}: {classified['counts'][key]}" for key,label in labels.items())
+        for title,key in (("短い語は、ほかの単語の一部に誤って当たるおそれがあります","short_terms"),
+                          ("表記ルールに回る項目（用語集には入れません）","rules"),
+                          ("note にルールがある語（用語は取り込み、noteはプロンプトに入れません）","note_rules")):
+            summary+="\n\n"+title+"\n"
+            summary+="\n".join(f"{entry['term']} → {entry['translation']}\n  note: {entry['note']}  {entry.get('reason','')}" for entry in classified[key]) or "なし"
+        self._show_glossary_import_text(dialog,summary)
+        options=ttk.Frame(dialog); options.pack(fill="x",padx=8,pady=8)
+        language=tk.StringVar(value=_target_lang_choice(_glossary_language(self)))
+        mode=tk.StringVar(value="merge")
+        ttk.Label(options,text="取り込み先の言語").pack(side="left")
+        ttk.Combobox(options,textvariable=language,values=[_target_lang_choice(lang) for lang in core.TARGET_LANGUAGES],state="readonly").pack(side="left",padx=6)
+        ttk.Radiobutton(options,text="今の用語集に足す",variable=mode,value="merge").pack(side="left")
+        ttk.Radiobutton(options,text="置き換える",variable=mode,value="replace").pack(side="left")
+        destination=tk.StringVar()
+        def update_destination(*args):
+            path=core.glossary_path_for_language(self.glossary_path_var.get() or DEFAULT_GLOSSARY,_target_lang_from_choice(language.get()))
+            destination.set(f"保存先: {path}")
+        language.trace_add("write",update_destination); update_destination()
+        ttk.Label(dialog,textvariable=destination,wraplength=820).pack(fill="x",padx=8)
+        ttk.Label(dialog,text="置き換える場合は既存の用語と表記ルールを置き換えます。表記ルールはA2へ手でコピーできます。",wraplength=820).pack(fill="x",padx=8)
+        def import_selected():
+            path=core.glossary_path_for_language(self.glossary_path_var.get() or DEFAULT_GLOSSARY,_target_lang_from_choice(language.get()))
+            try:
+                result=core.save_paratranz_import(path,classified,mode.get())
+            except (OSError,ValueError) as exc:
+                messagebox.showerror("ParaTranz 取り込みエラー",str(exc),parent=dialog); return
+            self.glossary_lang_var.set(language.get())
+            self.load_glossary_ui(silent=True)
+            self.progress_text.set(f"ParaTranz: 追加 {result['counts']['added']} / 更新 {result['counts']['updated']} / 訳が違う語 {result['counts']['conflicts']}")
+            dialog.destroy()
+            if result["conflicts"]:
+                conflicts=tk.Toplevel(self); conflicts.title("訳が違う語（今の訳を残しました）"); conflicts.geometry("750x500")
+                self._show_glossary_import_text(conflicts,"\n\n".join(f"{entry['term']}\n今の訳: {entry['existing']}\n取り込み側の訳: {entry['incoming']}" for entry in result["conflicts"]))
+                ttk.Button(conflicts,text="閉じる",command=conflicts.destroy).pack(pady=8)
+        buttons=ttk.Frame(dialog); buttons.pack(fill="x",padx=8,pady=8)
+        ttk.Button(buttons,text="取り込む",command=import_selected).pack(side="right")
+        ttk.Button(buttons,text="やめる",command=dialog.destroy).pack(side="right",padx=6)
+
+    def show_glossary_notation_rules(self):
+        path=core.glossary_notation_rules_path(_selected_glossary_path(self))
+        try:
+            data=json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"rules":[],"note_rules":[]}
+            if not isinstance(data,dict) or any(not isinstance(data.get(key,[]),list) or any(not isinstance(entry,dict) for entry in data.get(key,[])) for key in ("rules","note_rules")):
+                raise ValueError("表記ルールのファイルの形式が不正です。")
+        except (OSError,ValueError) as exc:
+            messagebox.showerror("表記ルール",str(exc)); return
+        dialog=tk.Toplevel(self); dialog.title("表記ルール（読み取り専用）"); dialog.geometry("850x600")
+        text=f"{path}\n自動でプロンプトには入りません。必要な内容を選択し、コピーしてA2へ手で写してください。"
+        for title,key in (("表記ルール","rules"),("note にルールがある語","note_rules")):
+            text+="\n\n"+title+"\n"
+            text+="\n\n".join(f"原語: {entry.get('term','')}\n訳: {entry.get('translation','')}\nnote: {entry.get('note','')}\n理由: {entry.get('reason','')}" for entry in data.get(key,[])) or "なし"
+        self._show_glossary_import_text(dialog,text)
+        ttk.Button(dialog,text="閉じる",command=dialog.destroy).pack(pady=8)
+
     def load_glossary_ui(self,silent=False):
         p=_selected_glossary_path(self)
         label=core.target_language_label(_glossary_language(self))
@@ -11425,6 +11537,8 @@ Mod更新後だけ追加翻訳:
             return
         gl=core.load_glossary(p)
         self._glossary_unsafe_path=None
+        if hasattr(self,"glossary_note_var"):
+            self.glossary_note_var.set("note: 用語を選択すると表示します")
         variants=self._glossary_variant_metadata()
         if hasattr(self,"glossary_tree"):
             for x in self.glossary_tree.get_children(): self.glossary_tree.delete(x)

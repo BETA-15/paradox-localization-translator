@@ -1,0 +1,248 @@
+[
+ {
+  "id": 900001,
+  "createdAt": "2000-01-01T00:00:00.000Z",
+  "updatedAt": "2000-01-02T00:00:00.000Z",
+  "pos": "noun",
+  "term": "&",
+  "translation": "※架空の表記ルール",
+  "note": "記号の書き方の例（架空）",
+  "variants": null,
+  "caseSensitive": false,
+  "project": 1
+ },
+ {
+  "id": 900002,
+  "createdAt": "2000-01-01T00:00:00.000Z",
+  "updatedAt": "2000-01-02T00:00:00.000Z",
+  "pos": "noun",
+  "term": "-",
+  "translation": "──",
+  "note": "【架空のルール】説明文では空白を入れないように",
+  "variants": null,
+  "caseSensitive": false,
+  "project": 1
+ },
+ {
+  "id": 900003,
+  "createdAt": "2000-01-01T00:00:00.000Z",
+  "updatedAt": "2000-01-02T00:00:00.000Z",
+  "pos": "noun",
+  "term": "-ish",
+  "translation": "風",
+  "note": "",
+  "variants": null,
+  "caseSensitive": false,
+  "project": 1
+ },
+ {
+  "id": 900004,
+  "createdAt": "2000-01-01T00:00:00.000Z",
+  "updatedAt": "2000-01-02T00:00:00.000Z",
+  "pos": "noun",
+  "term": "-ovski",
+  "translation": "オフスキー",
+  "note": "",
+  "variants": null,
+  "caseSensitive": false,
+  "project": 1
+ },
+ {
+  "id": 900005,
+  "createdAt": "2000-01-01T00:00:00.000Z",
+  "updatedAt": "2000-01-02T00:00:00.000Z",
+  "pos": "noun",
+  "term": "-evski",
+  "translation": "エフスキー",
+  "note": "",
+  "variants": null,
+  "caseSensitive": false,
+  "project": 1
+ },
+ {
+  "id": 900006,
+  "createdAt": "2000-01-01T00:00:00.000Z",
+  "updatedAt": "2000-01-02T00:00:00.000Z",
+  "pos": "noun",
+  "term": "...",
+  "translation": "……",
+  "note": "",
+  "variants": null,
+  "caseSensitive": false,
+  "project": 1
+ },
+ {
+  "id": 900007,
+  "createdAt": "2000-01-01T00:00:00.000Z",
+  "updatedAt": "2000-01-02T00:00:00.000Z",
+  "pos": "noun",
+  "term": "?!",
+  "translation": "!?",
+  "note": "架空の例外：ここだけ半角",
+  "variants": null,
+  "caseSensitive": false,
+  "project": 1
+ },
+ {
+  "id": 900008,
+  "createdAt": "2000-01-01T00:00:00.000Z",
+  "updatedAt": "2000-01-02T00:00:00.000Z",
+  "pos": "noun",
+  "term": "—",
+  "translation": "──",
+  "note": "",
+  "variants": null,
+  "caseSensitive": false,
+  "project": 1
+ },
+ {
+  "id": 900009,
+  "createdAt": "2000-01-01T00:00:00.000Z",
+  "updatedAt": "2000-01-02T00:00:00.000Z",
+  "pos": "noun",
+  "term": "QX",
+  "translation": "架空商会",
+  "note": "",
+  "variants": null,
+  "caseSensitive": false,
+  "project": 1
+ },
+ {
+  "id": 900010,
+  "createdAt": "2000-01-01T00:00:00.000Z",
+  "updatedAt": "2000-01-02T00:00:00.000Z",
+  "pos": "noun",
+  "term": " Grand Example Fleet",
+  "translation": "架空大艦隊",
+  "note": "",
+  "variants": null,
+  "caseSensitive": false,
+  "project": 1
+ },
+ {
+  "id": 900011,
+  "createdAt": "2000-01-01T00:00:00.000Z",
+  "updatedAt": "2000-01-02T00:00:00.000Z",
+  "pos": "noun",
+  "term": " the League of Imaginary States",
+  "translation": "架空諸国連盟",
+  "note": "",
+  "variants": [],
+  "caseSensitive": false,
+  "project": 1
+ },
+ {
+  "id": 900012,
+  "createdAt": "2000-01-01T00:00:00.000Z",
+  "updatedAt": "2000-01-02T00:00:00.000Z",
+  "pos": "noun",
+  "term": "Zentral Testwerk ",
+  "translation": "中央試験工廠",
+  "note": "",
+  "variants": null,
+  "caseSensitive": false,
+  "project": 1
+ },
+ {
+  "id": 900013,
+  "createdAt": "2000-01-01T00:00:00.000Z",
+  "updatedAt": "2000-01-02T00:00:00.000Z",
+  "pos": "noun",
+  "term": "Grand Example Fleet",
+  "translation": "架空大艦隊（重複）",
+  "note": "",
+  "variants": null,
+  "caseSensitive": false,
+  "project": 1
+ },
+ {
+  "id": 900014,
+  "createdAt": "2000-01-01T00:00:00.000Z",
+  "updatedAt": "2000-01-02T00:00:00.000Z",
+  "pos": "noun",
+  "term": "Northern Dummy Province",
+  "translation": "北部架空州",
+  "note": "",
+  "variants": null,
+  "caseSensitive": false,
+  "project": 1
+ },
+ {
+  "id": 900015,
+  "createdAt": "2000-01-01T00:00:00.000Z",
+  "updatedAt": "2000-01-02T00:00:00.000Z",
+  "pos": "noun",
+  "term": "A.B.C.",
+  "translation": "架空連合",
+  "note": "",
+  "variants": [
+   "ABC"
+  ],
+  "caseSensitive": true,
+  "project": 1
+ },
+ {
+  "id": 900016,
+  "createdAt": "2000-01-01T00:00:00.000Z",
+  "updatedAt": "2000-01-02T00:00:00.000Z",
+  "pos": "noun",
+  "term": "Imaginary Dominion",
+  "translation": "架空自治領",
+  "note": "",
+  "variants": [
+   "The Imaginary Dominion"
+  ],
+  "caseSensitive": false,
+  "project": 1
+ },
+ {
+  "id": 900017,
+  "createdAt": "2000-01-01T00:00:00.000Z",
+  "updatedAt": "2000-01-02T00:00:00.000Z",
+  "pos": "noun",
+  "term": "Test Republic Army",
+  "translation": "試験共和国軍",
+  "note": "",
+  "variants": [
+   "Test Republican Army"
+  ],
+  "caseSensitive": false,
+  "project": 1
+ },
+ {
+  "id": 900018,
+  "createdAt": "2000-01-01T00:00:00.000Z",
+  "updatedAt": "2000-01-02T00:00:00.000Z",
+  "pos": "verb",
+  "term": "Annex",
+  "translation": "併合する",
+  "note": "",
+  "variants": null,
+  "caseSensitive": false,
+  "project": 1
+ },
+ {
+  "id": 900019,
+  "createdAt": "2000-01-01T00:00:00.000Z",
+  "updatedAt": "2000-01-02T00:00:00.000Z",
+  "pos": "verb",
+  "term": "Mobilise",
+  "translation": "動員する",
+  "note": "",
+  "variants": null,
+  "caseSensitive": false,
+  "project": 1
+ },
+ {
+  "id": 900020,
+  "createdAt": "2000-01-01T00:00:00.000Z",
+  "updatedAt": "2000-01-02T00:00:00.000Z",
+  "pos": "noun",
+  "term": "Placeholder Treaty",
+  "translation": "架空条約",
+  "note": "架空の注記：この語は入れないように見えるが用語",
+  "variants": null,
+  "caseSensitive": false,
+  "project": 1
+ }
+]
