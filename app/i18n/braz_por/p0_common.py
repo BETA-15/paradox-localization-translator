@@ -56,7 +56,7 @@ STRINGS = {
     'p0.no_scan_results': 'Nenhum resultado de análise',
     'p0.no_translation_status_scan_results': 'Não há resultados da análise de Situação da tradução',
     'p0.unknown_file': 'Arquivo desconhecido',
-    'p0.the_qa_comparison_editor_also': 'A aba QA / Editor comparativo também verifica os textos segundo os critérios do idioma de destino selecionado aqui. A análise de mods・a identificação e vinculação de mods de tradução para japonês・a tradução apenas das diferenças・a tradução baseada no chinês não estão disponíveis para outros idiomas de destino (somente japonês). As verificações de qualidade para outros idiomas são mais simples do que para japonês (entre idiomas com alfabeto latino, verifica-se apenas se o texto é 「idêntico ao original」).',
+    'p0.the_qa_comparison_editor_also': 'A aba QA / Editor de comparação também verifica com base no idioma de destino selecionado aqui. As verificações de qualidade para idiomas de destino que não sejam o japonês são mais simples (mistura de sistemas de escrita, texto idêntico ao original e inglês remanescente). Quando o destino é o inglês, a análise de mods não compara mods de tradução externos.',
     'p0.this_feature_is_available_only': 'Este recurso está disponível apenas para o Glossário em japonês',
     'p0.missing_only_translation_is_available': '「Traduzir apenas as diferenças」 está disponível apenas para itens cujo idioma de destino é japonês. Para outros idiomas, use 「Traduzir tudo do zero」.',
     'p0.the_llm_response_was_empty': 'A resposta do LLM estava vazia',

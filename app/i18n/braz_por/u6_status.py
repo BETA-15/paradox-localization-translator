@@ -42,7 +42,7 @@ STRINGS = {
     'u6.how_it_works': 'Como funciona',
     'u6.while_idle_only_yaml_modification_times': 'Em espera, são verificados apenas os horários de modificação e os tamanhos dos arquivos YAML monitorados. Somente os alvos alterados são analisados, e apenas os candidatos ambíguos são enviados ao LLM exclusivo para monitoramento. Não há tradução automática・alteração de arquivos.',
     'u6.japanese_translation_status_by_mod': 'Situação da tradução em {target_name} por mod',
-    'u6.mod_research_translation_mod_assessment_and': '（Análise de mods・avaliação e vinculação de mods de tradução em {target_name} disponíveis apenas para japonês）',
+    'u6.mod_research_translation_mod_assessment_and': '（Análise de mods・avaliação e vinculação de mods de tradução em {target_name}）',
     'u6.target_relation_scope': '（Análise de mods・avaliação e vinculação de mods de tradução em {target_name}）',
     'u6.game_mod_location': 'Jogo / Local dos mods',
     'u6.detect_game_mod_locations': 'Detectar automaticamente locais de jogos/mods',
