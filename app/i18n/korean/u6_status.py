@@ -42,7 +42,7 @@ STRINGS = {
     'u6.how_it_works': '작동 방식',
     'u6.while_idle_only_yaml_modification_times': '대기 중에는 감시 대상 YAML의 수정 시각과 크기만 확인합니다. 변경된 대상만 분석하고 모호한 후보만 감시 전용 LLM에 보냅니다. 자동 번역이나 파일 수정은 하지 않습니다.',
     'u6.japanese_translation_status_by_mod': '모드별 {target_name} 번역 현황',
-    'u6.mod_research_translation_mod_assessment_and': '（모드 조사·{target_name} 번역 모드 판정 및 연결은 일본어만 지원）',
+    'u6.mod_research_translation_mod_assessment_and': '（모드 조사·{target_name} 번역 모드 판정 및 연결）',
     'u6.target_relation_scope': '（모드 조사·{target_name} 번역 모드 판정 및 연결）',
     'u6.game_mod_location': '게임 / 모드 위치',
     'u6.detect_game_mod_locations': '게임/모드 위치 자동 감지',
