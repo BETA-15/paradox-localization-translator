@@ -106,7 +106,11 @@ U5_VALUES = set()
 U5_COMPARISONS = set()
 
 # ---- U6_status_mods
-U6_OWNERS = set()
+U6_OWNERS = {
+    # 表示文は移行済み。残るのは固定ファイル名と build_relation_report の列キーだけ。
+    # 「要確認」を全体の VALUES に入れると U9 の未移行数まで変わるため、この関数だけを除外。
+    ("app/main.py", "export_relation_report"),
+}
 # ---- U6_status_mods（値）
 U6_VALUES = set()
 # ---- U6_status_mods（比較）
