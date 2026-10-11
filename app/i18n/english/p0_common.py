@@ -334,4 +334,7 @@ STRINGS = {
     'p0.llm_server_guidance': '{service} or its LLM server may not be running.\n\nOpen {service}, load a model, and start the server, then check the connection again.',
     'p0.diff_complete': 'Missing-only translation complete: {written} entries written / {spaces_removed} ASCII spaces removed',
     'p0.diff_complete_untranslated': 'Missing-only translation complete: {written} entries written / {spaces_removed} ASCII spaces removed / {count} entries left untranslated (unchanged or unusable responses were not written)',
+    'p0.tab.chinese': 'Chinese-based translation',
+    'p0.tab.diagnostic': 'Full diagnostics',
+    'p0.tab.settings': 'Settings',
 }

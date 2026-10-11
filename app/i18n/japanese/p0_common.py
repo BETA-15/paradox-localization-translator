@@ -334,4 +334,8 @@ STRINGS = {
     'p0.llm_server_guidance': '{service}が起動していない、またはLLMサーバーが開始されていない可能性があります。\n\n{service}を起動し、モデルを読み込んでサーバーを開始してから、再接続を確認してください。',
     'p0.diff_complete': '差分翻訳完了: 書き込み {written}件 / 半角スペース除去 {spaces_removed}個',
     'p0.diff_complete_untranslated': '差分翻訳完了: 書き込み {written}件 / 半角スペース除去 {spaces_removed}個 / 未翻訳のまま {count}件（原文のまま・使えない訳は書き込みませんでした）',
+    # タブの名前（同じ語のフォルダ名は訳さないが、タブの名前は訳す）
+    'p0.tab.chinese': '中国語基準翻訳',
+    'p0.tab.diagnostic': '総合診断',
+    'p0.tab.settings': '設定',
 }
