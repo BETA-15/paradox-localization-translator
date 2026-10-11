@@ -764,6 +764,51 @@ TEMPLATES = {'u4.language': ('言語', 'Language'),
  'u4.selected_note': ('{source} — note: {note}', '{source} — note: {note}')}
 
 
+
+TARGET_KEYS = {
+    "u4.import_japanese_yaml": "u4.target_import_yaml",
+    "u4.import_japanese_mod": "u4.target_import_mod",
+    "u4.import_japanese_files": "u4.target_import_files",
+    "u4.japanese_yaml": "u4.target_yaml", "u4.japanese_mod": "u4.target_mod",
+    "u4.checking_japanese": "u4.target_checking",
+    "u4.choose_japanese_yaml": "u4.target_choose_yaml",
+    "u4.choose_japanese_mod": "u4.target_choose_mod",
+    "u4.japanese_yaml_import": "u4.target_yaml_import",
+    "u4.japanese_mod_import": "u4.target_mod_import",
+    "u4.japanese_keys": "u4.target_keys",
+    **{"u4." + name: "u4.target_" + name for name in (
+        "base_help", "generated_help", "drop_help", "import_help", "no_pairs",
+        "drop_no_targets", "no_candidates_stats")},
+}
+NEW_TARGET_KEYS = set(TARGET_KEYS.values()) | {
+    "u4.target_key_alignment", "u4.target_invalid", "u4.target_fallback_help", "u4.target_localization_import"}
+
+
+@pytest.mark.parametrize("new_key,old_key", [
+    ("u4.target_invalid", "p0.no_importable_japanese_localization_was"),
+    ("u4.target_fallback_help", "p0.no_matching_english_simplified_chinese"),
+    ("u4.target_localization_import", "p0.import_glossary_from_japanese_localization")])
+def test_fallback_templates_preserve_japanese(new_key, old_key):
+    from i18n.japanese.p0_common import STRINGS as original
+    assert JAPANESE[new_key].replace("{target_name}", "日本語") == original[old_key]
+
+
+@pytest.mark.parametrize("old_key,new_key", TARGET_KEYS.items())
+def test_target_templates_preserve_japanese(old_key, new_key):
+    assert JAPANESE[new_key].replace("{target_name}", "日本語") == JAPANESE[old_key]
+    assert ENGLISH[new_key].replace("{target_name}", "Japanese") == ENGLISH[old_key]
+
+
+@pytest.mark.parametrize("key", sorted(NEW_TARGET_KEYS))
+@pytest.mark.parametrize("language", i18n.UI_LANGUAGES)
+def test_target_keys_render_for_every_language(key, language):
+    for ui_language in ("japanese", "english"):
+        i18n.set_ui_language(ui_language)
+        target_name = i18n.t("lang." + language)
+        assert target_name in i18n.t(key, target_name=target_name, count=3,
+                                   japanese=3, english=2, chinese=1, unmatched=0, game="Test")
+
+
 @pytest.fixture(autouse=True)
 def restore_language():
     previous = i18n.get_ui_language()
@@ -792,7 +837,7 @@ def test_english_keys_are_complete_and_render(key):
 
 
 def test_snapshots_cover_every_u4_dictionary_key():
-    assert set(TEMPLATES) == set(JAPANESE) == set(ENGLISH)
+    assert set(TEMPLATES) | NEW_TARGET_KEYS == set(JAPANESE) == set(ENGLISH)
 
 
 def load_method(name):
@@ -800,7 +845,8 @@ def load_method(name):
     application = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "App")
     method = next(node for node in application.body if isinstance(node, ast.FunctionDef) and node.name == name)
     method.decorator_list = []
-    namespace = {"i18n": i18n}
+    namespace = {"i18n": i18n, "_current_target_lang": lambda app: "japanese",
+                 "_glossary_language": lambda app: "japanese"}
     exec(compile(ast.fix_missing_locations(ast.Module(body=[method], type_ignores=[])), "<U4 method>", "exec"), namespace)
     return namespace[name]
 
@@ -842,6 +888,14 @@ def test_production_calls_preserve_interpolation_expressions():
     for owner, original, key, bindings, fields, expected in CASES:
         if key in {"u4.kind_summary", "u4.kind_summary_no_phrases"}:
             continue
+        if key in TARGET_KEYS:
+            bindings = dict(bindings, target_name='i18n.t("lang." + _current_target_lang(self))')
+            if key in {"u4.japanese_yaml", "u4.japanese_mod"}:
+                bindings["target_name"] = 'i18n.t("lang." + _glossary_language(self))'
+            if key in {"u4.checking_japanese", "u4.choose_japanese_yaml", "u4.choose_japanese_mod",
+                       "u4.japanese_yaml_import", "u4.japanese_mod_import"}:
+                bindings["target_name"] = 'i18n.t("lang." + target_lang)'
+            key = TARGET_KEYS[key]
         expected_bindings = {name: ast.dump(ast.parse(expression, mode="eval").body)
                              for name, expression in bindings.items()}
         assert any({keyword.arg: ast.dump(keyword.value) for keyword in call.keywords} == expected_bindings

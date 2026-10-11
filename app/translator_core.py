@@ -3162,33 +3162,57 @@ def _is_auto_glossary_source_candidate(text: str, source_lang: str) -> bool:
     return len(plain) <= 60
 
 
-def build_auto_glossary_candidates(pairs: Iterable[dict]) -> List[dict]:
-    """Build terminology candidates from aligned source/Japanese localization files.
+def glossary_source_languages(target_lang: str = "japanese") -> tuple:
+    if target_lang == "japanese":
+        return ("english", "simp_chinese")
+    return tuple(sorted((lang for lang in KNOWN_SOURCE_LANGS if lang != target_lang),
+                        key=lambda lang: source_language_priority(lang, target_lang)))
+
+
+def _glossary_pair_priority(pair: dict, target_lang: str) -> int:
+    try:
+        language = parse_localization_file(Path(pair.get("source", "")))[0]
+    except Exception:
+        return 3
+    return source_language_priority(language, target_lang)
+
+
+def build_auto_glossary_candidates(pairs: Iterable[dict], target_lang: str = "japanese") -> List[dict]:
+    """Build terminology candidates from aligned source/target localization files.
 
     Repeated short source labels/terms are grouped by their exact source wording.
-    If existing Japanese localization uses more than one wording, all variants and
+    If existing target localization uses more than one wording, all variants and
     occurrence counts are retained so the UI can unify them later.
     """
     from collections import Counter, defaultdict
     grouped = defaultdict(Counter)
     langs = {}
     keys_by_source = defaultdict(list)
-    for pair in pairs:
+    seen = set()
+    pair_list = list(pairs)
+    if target_lang != "japanese":
+        pair_list.sort(key=lambda pair: _glossary_pair_priority(pair, target_lang))
+    for pair in pair_list:
         source = Path(pair.get("source", ""))
         target = Path(pair.get("target", ""))
         if not source.exists() or not target.exists():
             continue
         try:
             source_lang, source_entries, _ = parse_localization_file(source)
-            _, target_entries, _ = parse_localization_file(target)
+            target_language, target_entries, _ = parse_localization_file(target)
         except Exception:
             continue
-        if source_lang not in {"english", "simp_chinese"}:
+        if source_lang not in glossary_source_languages(target_lang) or target_language != target_lang:
             continue
         for key, src in source_entries.items():
+            identity = (str(target), key)
+            if target_lang != "japanese" and identity in seen:
+                continue
             dst = target_entries.get(key, "").strip()
             src = (src or "").strip()
-            if not dst or not src or looks_untranslated(src, dst, source_lang):
+            if src and dst:
+                seen.add(identity)
+            if not dst or not src or looks_untranslated(src, dst, source_lang, target_lang):
                 continue
             if not _is_auto_glossary_source_candidate(src, source_lang):
                 continue
@@ -3209,13 +3233,14 @@ def build_auto_glossary_candidates(pairs: Iterable[dict]) -> List[dict]:
             "conflict": len(variants) > 1,
             "keys": keys_by_source[src][:30],
             "source_kind": "auto",
-            "term_kind": _classify_glossary_term_kind(src, langs.get(src, "english"), keys_by_source[src][0], preferred),
+            "term_kind": _classify_glossary_term_kind(src, langs.get(src, "english"), keys_by_source[src][0], preferred, target_lang),
         })
     out.sort(key=lambda x: (not x["conflict"], -x["occurrences"], x["source"]))
     return out
 
 
-def _is_probable_specific_glossary_term(key: str, source: str, target: str, source_lang: str) -> bool:
+def _is_probable_specific_glossary_term(key: str, source: str, target: str, source_lang: str,
+                                       target_lang: str = "japanese") -> bool:
     """Conservative heuristic for names/titles that should not enter common-term mode.
 
     The filter intentionally errs on the side of keeping reusable terminology.  It
@@ -3244,7 +3269,7 @@ def _is_probable_specific_glossary_term(key: str, source: str, target: str, sour
         '子爵', '男爵', '女男爵', '国王', '女王', '皇帝', '女帝', '族長',
         '大公', '公', '王子', '王女',
     )
-    for suffix in jp_titles:
+    for suffix in jp_titles if target_lang == "japanese" else ():
         if dst != suffix and dst.endswith(suffix):
             prefix = dst[:-len(suffix)].strip(' ・·-—–')
             if prefix:
@@ -3296,7 +3321,8 @@ def _is_title_case_name(words: List[str]) -> bool:
     return capitalized >= (1 if words[0] == "the" else 2)
 
 
-def _classify_glossary_term_kind(source: str, source_lang: str, key: str = "", target: str = "") -> str:
+def _classify_glossary_term_kind(source: str, source_lang: str, key: str = "", target: str = "",
+                                target_lang: str = "japanese") -> str:
     """自動生成の用語候補の種類（要望C）。proper＝固有名詞、term＝単語、phrase＝定型句。原文の側だけで決める。
 
     定型句の第一の目印は文の終わりの記号（出来事の選択肢の短い返事 "Great!"、"So be it." など）と変数。
@@ -3324,17 +3350,17 @@ def _classify_glossary_term_kind(source: str, source_lang: str, key: str = "", t
     elif source_lang == "simp_chinese":
         if plain.startswith(("增加", "减少", "获得", "失去", "提高", "降低", "解锁", "允许", "禁止", "可以", "需要")):
             return "phrase"
-    if _is_probable_specific_glossary_term(key, source, target, source_lang):
+    if _is_probable_specific_glossary_term(key, source, target, source_lang, target_lang):
         return "proper"
     return "term"
 
 
 def build_import_glossary_candidates_from_records(records: Iterable[dict], source_kind: str = "import",
-                                                   mode: str = "common") -> List[dict]:
+                                                   mode: str = "common", target_lang: str = "japanese") -> List[dict]:
     """Build imported glossary candidates from already key-aligned records.
 
     mode="common": keep short reusable terms and filter obvious proper-name labels.
-    mode="all": retain every usable aligned source->Japanese pair.
+    mode="all": retain every usable aligned source->target pair.
     """
     from collections import Counter, defaultdict
     grouped = defaultdict(Counter)
@@ -3347,14 +3373,14 @@ def build_import_glossary_candidates_from_records(records: Iterable[dict], sourc
         src = str(rec.get('source_text', '') or '').strip()
         dst = str(rec.get('target_text', '') or '').strip()
         source_lang = str(rec.get('source_lang', 'english') or 'english')
-        if source_lang not in {'english', 'simp_chinese'}:
+        if source_lang not in glossary_source_languages(target_lang):
             continue
-        if not src or not dst or looks_untranslated(src, dst, source_lang):
+        if not src or not dst or looks_untranslated(src, dst, source_lang, target_lang):
             continue
         if mode == 'common':
             if not _is_auto_glossary_source_candidate(src, source_lang):
                 continue
-            if _is_probable_specific_glossary_term(key, src, dst, source_lang):
+            if _is_probable_specific_glossary_term(key, src, dst, source_lang, target_lang):
                 continue
         grouped[src][dst] += 1
         langs[src] = source_lang
@@ -3380,31 +3406,40 @@ def build_import_glossary_candidates_from_records(records: Iterable[dict], sourc
 
 
 def build_import_glossary_candidates(pairs: Iterable[dict], source_kind: str = "import",
-                                     mode: str = "common") -> List[dict]:
+                                     mode: str = "common", target_lang: str = "japanese") -> List[dict]:
     """Build glossary candidates from aligned localization file pairs."""
     records = []
-    for pair in pairs:
+    seen = set()
+    pair_list = list(pairs)
+    if target_lang != "japanese":
+        pair_list.sort(key=lambda pair: _glossary_pair_priority(pair, target_lang))
+    for pair in pair_list:
         source = Path(pair.get("source", ""))
         target = Path(pair.get("target", ""))
         if not source.exists() or not target.exists():
             continue
         try:
             source_lang, source_entries, _ = parse_localization_file(source)
-            _, target_entries, _ = parse_localization_file(target)
+            target_language, target_entries, _ = parse_localization_file(target)
         except Exception:
             continue
-        if source_lang not in {"english", "simp_chinese"}:
+        if source_lang not in glossary_source_languages(target_lang) or target_language != target_lang:
             continue
         for key, src in source_entries.items():
             if key not in target_entries:
                 continue
+            identity = (str(target), key)
+            if target_lang != "japanese" and identity in seen:
+                continue
+            seen.add(identity)
             records.append({
                 'key': key,
                 'source_text': src,
                 'target_text': target_entries.get(key, ''),
                 'source_lang': source_lang,
             })
-    return build_import_glossary_candidates_from_records(records, source_kind=source_kind, mode=mode)
+    return build_import_glossary_candidates_from_records(records, source_kind=source_kind, mode=mode,
+                                                         target_lang=target_lang)
 
 def resolve_auto_glossary_conflicts(provider: str, url: str, model: str, candidates: List[dict],
                                       preset: str = "General", api_key: str = "",

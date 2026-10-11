@@ -144,9 +144,9 @@ def test_build_uses_first_key_and_preferred_target(tmp_path, monkeypatch, source
     calls = []
     classify = core._classify_glossary_term_kind
 
-    def record_classification(source, source_lang, key="", target=""):
+    def record_classification(source, source_lang, key="", target="", target_lang="japanese"):
         calls.append((source, source_lang, key, target))
-        return classify(source, source_lang, key, target)
+        return classify(source, source_lang, key, target, target_lang)
 
     monkeypatch.setattr(core, "_classify_glossary_term_kind", record_classification)
     candidates = core.build_auto_glossary_candidates([{"source": source, "target": target}])
@@ -205,7 +205,7 @@ def test_phrase_only_conflicts_do_not_call_llm(monkeypatch):
 def test_ui_generation_captures_checkbox_before_worker(tmp_path, monkeypatch, include_phrases):
     main = importlib.import_module("main")
     monkeypatch.setattr(main.messagebox, "showinfo", lambda *args: None)
-    monkeypatch.setattr(core, "build_auto_glossary_candidates", lambda pairs: candidates_for_save())
+    monkeypatch.setattr(core, "build_auto_glossary_candidates", lambda pairs, target_lang="japanese": candidates_for_save())
     pending = []
 
     class FakeThread:

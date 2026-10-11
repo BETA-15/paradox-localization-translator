@@ -376,9 +376,15 @@ def test_all_added_keys_have_independent_original_cases():
                  and isinstance(node.func.value, ast.Name) and node.func.value.id == "i18n"))
         for argument in ast.walk(node.args[0])
         if isinstance(argument, ast.Constant) and isinstance(argument.value, str)
-        and argument.value.startswith("p0.")
+        and argument.value.startswith(("p0.", "u4."))
     }
-    assert cases <= referenced
+    migrated = {
+        "p0.no_matching_english_simplified_chinese": "u4.target_fallback_help",
+        "p0.no_importable_japanese_localization_was": "u4.target_invalid",
+        "p0.japanese_keys": "u4.target_keys",
+        "p0.import_glossary_from_japanese_localization": "u4.target_localization_import",
+    }
+    assert {migrated.get(key, key) for key in cases} <= referenced
     assert len(cases) == len(FIXED_ORIGINALS) + len(DYNAMIC_ORIGINALS)
 
 

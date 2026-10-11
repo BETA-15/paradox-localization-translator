@@ -1,7 +1,7 @@
 """U2 中国語基準翻訳（english）。key の頭は単位の名前にする。"""
 
 STRINGS = {
-    'u2.korean_auto_glossary_unavailable': 'This automatic glossary generator is Japanese-only and does not process Korean items. Configure the Korean glossary in the Glossary tab.',
+    'u2.mixed_targets_auto_glossary': 'The selection mixes items with different target languages. Select items with the same target language to generate a glossary.',
     'u2.korean_intro_description': 'Read Simplified Chinese localization directly and translate into {target_name}, using the source institutional, official and historical terminology as the primary basis. No English files are needed. Restore simplified characters before determining Korean readings, then write natural Hangul.',
     'u2.target_language': 'Target language (new queue items)',
     'u2.supported_targets_reason': 'Chinese-basis translation supports only Japanese and Korean. The other nine languages cannot be selected because terminology rules for this mode are not defined. Existing queue items keep their target language.',

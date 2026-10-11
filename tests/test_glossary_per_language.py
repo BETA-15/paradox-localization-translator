@@ -165,12 +165,7 @@ def test_translation_glossary_lookup_uses_explicit_language(tmp_path, language):
 
 
 @pytest.mark.parametrize("method,args", [
-    ("start_auto_glossary_generation", ("review",)),
-    ("_save_imported_glossary_candidates", ([{"source": "King", "target": "王"}], "example")),
-    ("import_glossary_from_base_game", ()),
-    ("import_glossary_from_japanese_source", ("file",)),
     ("bulk_unify_review_terms", ()),
-    ("on_glossary_import_drop_paths", (None,)),
 ])
 def test_japanese_generation_is_blocked_for_other_languages(tmp_path, monkeypatch, method, args):
     state = glossary_state(tmp_path / "glossary.json", "french")
