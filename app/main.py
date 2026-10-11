@@ -132,6 +132,33 @@ def _current_target_lang(app):
     return _target_lang_from_choice(var.get()) if var is not None else core.DEFAULT_TARGET_LANG
 
 
+def _relation_language_items(payload, field, target_lang, *, create=False):
+    container = payload
+    if target_lang != core.DEFAULT_TARGET_LANG:
+        if create:
+            container = payload.setdefault("languages", {}).setdefault(target_lang, {})
+        else:
+            container = (payload.get("languages") or {}).get(target_lang, {})
+    return container.setdefault(field, {}) if create else (container.get(field) or {})
+
+
+def _translation_status_path(target_lang):
+    path = TRANSLATION_STATUS_STATE_PATH
+    return path if target_lang == core.DEFAULT_TARGET_LANG else path.with_name(f"{path.stem}_{target_lang}{path.suffix}")
+
+
+def _status_matches_language(result, target_lang):
+    return isinstance(result, dict) and result.get("target_lang", core.DEFAULT_TARGET_LANG) == target_lang
+
+
+def _relation_scope_text(target_lang):
+    key = 'u6.mod_research_translation_mod_assessment_and' if target_lang == "japanese" else 'u6.target_relation_scope'
+    text = i18n.t(key, target_name=i18n.t("lang." + target_lang))
+    if target_lang == "english":
+        text += " " + i18n.t('u6.english_external_check_skipped')
+    return text
+
+
 def _normalize_spacing_enabled(app):
     var = getattr(app, "normalize_spacing_var", None)
     return bool(var.get()) if var is not None else True
@@ -1289,6 +1316,7 @@ class App(BaseTk):
         self.mod_relation_overrides = {
             "schema": 1,
             "mods": dict(_relation_overrides.get("mods") or {}),
+            "languages": dict(_relation_overrides.get("languages") or {}),
             "updated_at": _relation_overrides.get("updated_at", ""),
         }
         self.mod_relation_override_lock = threading.Lock()
@@ -2819,7 +2847,7 @@ class App(BaseTk):
             _cls=load_persistent_json(MOD_CLASSIFICATION_CACHE_PATH,{'schema':2,'mods':{}},i18n.t('u5.classification_cache')); _cls=_cls if isinstance(_cls,dict) else {'schema':2,'mods':{}}
             self.mod_classification_cache={'schema':2,'mods':dict(_cls.get('mods') or {}),'updated_at':_cls.get('updated_at','')}
             _ov=load_persistent_json(MOD_RELATION_OVERRIDES_PATH,{'schema':1,'mods':{}},i18n.t('u5.relation_settings')); _ov=_ov if isinstance(_ov,dict) else {'schema':1,'mods':{}}
-            self.mod_relation_overrides={'schema':1,'mods':dict(_ov.get('mods') or {}),'updated_at':_ov.get('updated_at','')}
+            self.mod_relation_overrides={'schema':1,'mods':dict(_ov.get('mods') or {}),'languages':dict(_ov.get('languages') or {}),'updated_at':_ov.get('updated_at','')}
             self._restore_shared_mod_state_cache(); self.refresh_profiles_ui(); self._restore_cached_mod_status(); self._restore_diagnostic_state(); self._refresh_backup_restore_entries()
             self.progress_text.set(i18n.t('u5.storage_changed'))
             if not self._closing:
@@ -3144,8 +3172,8 @@ class App(BaseTk):
     def _build_status_tab(self):
         t = self.tab_status
         top = ttk.Frame(t); top.pack(fill="x", pady=(0,6))
-        ttk.Label(top, text=i18n.t('u6.japanese_translation_status_by_mod'), font=("", 13, "bold")).pack(side="left")
-        ttk.Label(top, text=i18n.t('u6.mod_research_translation_mod_assessment_and', target_name=i18n.t("lang.japanese")), foreground="#8a5a00").pack(side="left", padx=(8,0))
+        ttk.Label(top, text=i18n.t('u6.japanese_translation_status_by_mod', target_name=i18n.t("lang." + _current_target_lang(self))), font=("", 13, "bold")).pack(side="left")
+        ttk.Label(top, text=_relation_scope_text(_current_target_lang(self)), foreground="#8a5a00").pack(side="left", padx=(8,0))
         ttk.Label(top, textvariable=self.mod_status_summary_var).pack(side="right")
 
         # フルHDでも縦方向が苦しくなりにくいよう、左に設定系、右に結果系を置く。
@@ -3196,7 +3224,7 @@ class App(BaseTk):
         search.columnconfigure(1, weight=1)
 
         relation = ttk.LabelFrame(left, text=i18n.t('u6.mod_classification_and_linking'), padding=6); relation.pack(fill="x", pady=(0,6))
-        ttk.Label(relation, text=i18n.t('u6.set_translation_mod_source_mod_exceptions', target_name=i18n.t("lang.japanese")), foreground="#555", wraplength=320, justify="left").pack(anchor="w")
+        ttk.Label(relation, text=i18n.t('u6.set_translation_mod_source_mod_exceptions', target_name=i18n.t("lang." + _current_target_lang(self))), foreground="#555", wraplength=320, justify="left").pack(anchor="w")
         ttk.Button(relation, text=i18n.t('u6.open_mod_classification_and_linking'), command=lambda:self._open_mod_relation_dialog("status")).pack(anchor="w", pady=(6,0))
 
         # 翻訳状況タブから探索専用LLMをそのまま変更・適用できる。
@@ -3216,7 +3244,7 @@ class App(BaseTk):
         ttk.Label(moncfg,text=i18n.t('u6.reloading_only_retrieves_the_model_list'),foreground="#a35a00",wraplength=320,justify="left").grid(row=4,column=0,columnspan=3,sticky="w",pady=(6,0))
 
         info = ttk.LabelFrame(left, text=i18n.t('u6.assessment_details'), padding=6); info.pack(fill="x", pady=(0,6))
-        ttk.Label(info,text=i18n.t('u6.check_source_mods_and_separate_translation', target_name=i18n.t("lang.japanese")),justify="left",wraplength=320).pack(anchor="w")
+        ttk.Label(info,text=i18n.t('u6.check_source_mods_and_separate_translation', target_name=i18n.t("lang." + _current_target_lang(self))),justify="left",wraplength=320).pack(anchor="w")
 
         guide = ttk.LabelFrame(left, text=i18n.t('u6.selection_and_actions'), padding=6); guide.pack(fill="both", expand=True)
         ttk.Label(guide, text=i18n.t('u6.tip_hold_ctrl_to_select_multiple'), foreground="#666", justify="left", wraplength=320).pack(anchor="w")
@@ -3230,7 +3258,7 @@ class App(BaseTk):
         self._enable_ctrl_multiselect(self.mod_status_tree)
         # v0.11.2: 翻訳状況一覧は列幅を固定し、表示領域に合わせて潰さない。
         # 長いMod名・日本語化Mod名は下部の横スクロールバーで確認する。
-        for c,txt,w in (("status",i18n.t('u6.status'),165),("mod","Mod",430),("gaps",i18n.t('u6.gaps'),80),("chinese",i18n.t('u6.chinese'),90),("jpmod",i18n.t('u6.translation_mod', target_name=i18n.t("lang.japanese")),430),("jpmod_gaps",i18n.t('u6.translation_mod_gaps', target_name=i18n.t("lang.japanese")),150)):
+        for c,txt,w in (("status",i18n.t('u6.status'),165),("mod","Mod",430),("gaps",i18n.t('u6.gaps'),80),("chinese",i18n.t('u6.chinese'),90),("jpmod",i18n.t('u6.translation_mod', target_name=i18n.t("lang." + _current_target_lang(self))),430),("jpmod_gaps",i18n.t('u6.translation_mod_gaps', target_name=i18n.t("lang." + _current_target_lang(self))),150)):
             self.mod_status_tree.heading(c,text=txt)
             self.mod_status_tree.column(c,width=w,minwidth=w,stretch=False,anchor="w")
         sy=ttk.Scrollbar(tree_frame,orient="vertical",command=self.mod_status_tree.yview)
@@ -3249,7 +3277,7 @@ class App(BaseTk):
         detail = ttk.LabelFrame(detail_frame, text=i18n.t('u6.selected_mod_details'), padding=6); detail.pack(fill="both",expand=True,pady=(4,0))
         self.mod_status_detail = tk.Text(detail, height=7, wrap="word", relief="flat", background=self.cget("background"))
         self.mod_status_detail.pack(fill="both", expand=True)
-        self.mod_status_detail.insert("1.0", i18n.t('u6.select_a_mod_to_see_research', target_name=i18n.t("lang.japanese")))
+        self.mod_status_detail.insert("1.0", i18n.t('u6.select_a_mod_to_see_research', target_name=i18n.t("lang." + _current_target_lang(self))))
         self.mod_status_detail.configure(state="disabled")
 
         bottom=ttk.Frame(right); bottom.pack(fill="x", pady=(4,0))
@@ -3282,8 +3310,11 @@ class App(BaseTk):
         ttk.Button(bottom2,text=i18n.t('u6.reload_cache'),command=self._restore_cached_mod_status).pack(side="left",padx=(6,0))
         ttk.Button(bottom2,text=i18n.t('u6.save_csv'),command=self.export_mod_status_csv).pack(side="left",padx=(6,0))
 
-    def _translation_judgement_log_text(self):
+    def _translation_judgement_log_text(self, *, target_lang=None):
         """Build a human-readable audit snapshot of Japanese-Mod judgement state."""
+        target_lang = target_lang or _current_target_lang(self)
+        if target_lang != "japanese":
+            return self._target_translation_judgement_log_text(target_lang)
         rows = [dict(r) for r in (self.mod_research_results or []) if r.get("path")]
         if not rows:
             return i18n.t('u6.no_translation_status_results_research_mods')
@@ -3304,18 +3335,18 @@ class App(BaseTk):
         japanese_roots=[]
         for root in roots:
             try:
-                ov=self._mod_relation_override(root)
-                if self._current_mod_has_japanese(root) or ov.get("role") in ("translation","source"):
+                ov=self._mod_relation_override(root, target_lang=target_lang)
+                if self._current_mod_has_japanese(root, target_lang=target_lang) or ov.get("role") in ("translation","source"):
                     japanese_roots.append(root)
             except Exception:
                 continue
-        audit_index=core.build_translation_mod_index(japanese_roots)
+        audit_index=core.build_translation_mod_index(japanese_roots, target_lang=target_lang)
         self._annotate_translation_index_with_base_game_keys(audit_index)
         for row in audit_index:
-            ov=self._mod_relation_override(Path(row.get("path","")))
+            ov=self._mod_relation_override(Path(row.get("path","")), target_lang=target_lang)
             row["manual_role"]=ov.get("role","auto")
             row["manual_source_paths"]=list(ov.get("source_paths") or [])
-        audit_index=core.assign_translation_candidate_owners(roots,audit_index)
+        audit_index=core.assign_translation_candidate_owners(roots,audit_index, target_lang=target_lang)
         audit_by_path={}
         for row in audit_index:
             try: key=self._mod_classification_key(Path(row.get("path","")))
@@ -3324,34 +3355,34 @@ class App(BaseTk):
 
         generated=datetime.now().isoformat(timespec="seconds")
         out=[
-            i18n.t('u6.v_translation_mod_assessment_log', app_name=APP_NAME, app_version=APP_VERSION, target_name=i18n.t("lang." + 'japanese')),
+            i18n.t('u6.v_translation_mod_assessment_log', app_name=APP_NAME, app_version=APP_VERSION, target_name=i18n.t("lang." + target_lang)),
             i18n.t('u6.generated', generated=generated),
-            i18n.t('u6.mods_researched_currently_accessible_audit_candidates', rows_count=len(rows), roots_count=len(roots), audit_index_count=len(audit_index)),
+            i18n.t('u6.mods_researched_currently_accessible_audit_candidates', target_name=i18n.t("lang." + target_lang), rows_count=len(rows), roots_count=len(roots), audit_index_count=len(audit_index)),
             "",
             i18n.t('u6.assessment_criteria'),
             i18n.t('u6.vanilla_carryover_keys_identical_to_the'),
             i18n.t('u6.100_effective_keys_at_least_200'),
             i18n.t('u6.fewer_than_100_effective_keys_at'),
             i18n.t('u6.candidate_keys_with_source_text_in'),
-            i18n.t('u6.80_bundled_source_text_indicates_a', target_name=i18n.t("lang." + 'japanese')),
-            i18n.t('u6.50_candidate_keys_and_80_base', target_name=i18n.t("lang." + 'japanese')),
+            i18n.t('u6.80_bundled_source_text_indicates_a', target_name=i18n.t("lang." + target_lang)),
+            i18n.t('u6.50_candidate_keys_and_80_base', target_name=i18n.t("lang." + target_lang)),
             i18n.t('u6.multi_mod_translations_use_a_separate'),
             i18n.t('u6.structure_scores_names_and_dependencies_are'),
-            i18n.t('u6.manual_translation_mod_source_mod_source', target_name=i18n.t("lang." + 'japanese')),
-            i18n.t('u6.legacy_japanese_translations_in_l_english', target_name=i18n.t("lang." + 'japanese')),
+            i18n.t('u6.manual_translation_mod_source_mod_source', target_name=i18n.t("lang." + target_lang)),
+            i18n.t('u6.legacy_japanese_translations_in_l_english', target_name=i18n.t("lang." + target_lang)),
             i18n.t('u6.identical_relative_localization_paths_in_effective'),
-            i18n.t('u6.the_same_path_translation_related_names', target_name=i18n.t("lang." + 'japanese')),
-            i18n.t('u6.the_audit_also_compares_current_japanese'),
+            i18n.t('u6.the_same_path_translation_related_names', target_name=i18n.t("lang." + target_lang)),
+            i18n.t('u6.the_audit_also_compares_current_japanese', target_name=i18n.t("lang." + target_lang)),
             "",
         ]
-        class_label={"auto":i18n.t('u6.translation_mod', target_name=i18n.t("lang." + 'japanese')),"candidate":i18n.t('u6.candidate'),"rejected":i18n.t('u6.excluded')}
+        class_label={"auto":i18n.t('u6.translation_mod', target_name=i18n.t("lang." + target_lang)),"candidate":i18n.t('u6.candidate'),"rejected":i18n.t('u6.excluded')}
         for num,r in enumerate(rows,1):
             root=Path(r.get("path","")); name=r.get("mod") or root.name
             try: source_id=self._mod_classification_key(root)
             except Exception: source_id=str(root)
             out += ["="*78, i18n.t('u6.source_mod', num=num, name=name), i18n.t('u6.location', root=root), i18n.t('u6.current_translation_status', status=display_status(r))]
             if r.get("external_translation_mod"):
-                out.append(i18n.t('u6.current_link_translation_mod', external_translation_mod=r.get('external_translation_mod'), target_name=i18n.t("lang." + 'japanese')))
+                out.append(i18n.t('u6.current_link_translation_mod', external_translation_mod=r.get('external_translation_mod'), target_name=i18n.t("lang." + target_lang)))
             elif r.get("translation_candidate_mod"):
                 out.append(i18n.t('u6.current_link_candidate_not_linked_automatically', translation_candidate_mod=r.get('translation_candidate_mod')))
             else:
@@ -3384,7 +3415,7 @@ class App(BaseTk):
                     out += [
                         (i18n.t('u6.load_order', mod=conflict.get('mod'), value=int(conflict.get('source_position', 0)) + 1, value_2=int(conflict.get('position', 0)) + 1, value_3=i18n.t('u6.effective') if conflict.get('effective') else i18n.t('u6.later'))),
                         (i18n.t('u6.same_paths_shared_keys_source_only', value=int(conflict.get('path_match_count', 0)), value_2=int(conflict.get('shared_keys', 0)), value_3=int(conflict.get('source_only_keys', 0)), value_4=int(conflict.get('candidate_only_keys', 0)))),
-                        (i18n.t('u6.translation_related_names_tags_legacy_translation', value=i18n.t('u6.yes') if conflict.get('translation_hint') else i18n.t('u6.no'), value_2='PASS' if conflict.get('stale_translation_candidate') else 'FAIL', target_name=i18n.t("lang." + 'japanese'))),
+                        (i18n.t('u6.translation_related_names_tags_legacy_translation', value=i18n.t('u6.yes') if conflict.get('translation_hint') else i18n.t('u6.no'), value_2='PASS' if conflict.get('stale_translation_candidate') else 'FAIL', target_name=i18n.t("lang." + target_lang))),
                     ]
                     out.extend(i18n.t('u6.path', path=path) for path in conflict.get("relative_paths",[]))
             else:
@@ -3397,12 +3428,12 @@ class App(BaseTk):
                 out.append(
                     i18n.t('u6.warning_evidence_japanese_text_in_l', value=int(profile.get('english_japanese_text_keys', 0) or 0), value_2=int(profile.get('english_key_count', 0) or 0), value_3=format(float(profile.get('english_japanese_text_rate', 0) or 0) * 100, '.1f'), value_4=i18n.t('u6.yes') if profile.get('translation_hint') else i18n.t('u6.no'))
                 )
-            source_override=self._mod_relation_override(root)
+            source_override=self._mod_relation_override(root, target_lang=target_lang)
             if source_override.get("role","auto") != "auto":
                 out.append(i18n.t('u6.manual_classification_of_this_mod', role=source_override.get('role')))
             try:
-                initial_candidate=self._first_seen_japanese_candidate(root)
-                out.append(i18n.t('u6.initial_classification_of_this_mod', value=i18n.t('u6.japanese_candidate') if initial_candidate else i18n.t('u6.source_mod_2')))
+                initial_candidate=self._first_seen_japanese_candidate(root, target_lang=target_lang)
+                out.append(i18n.t('u6.initial_classification_of_this_mod', value=i18n.t('u6.japanese_candidate', target_name=i18n.t("lang." + target_lang)) if initial_candidate else i18n.t('u6.source_mod_2')))
             except Exception:
                 pass
             try:
@@ -3450,13 +3481,13 @@ class App(BaseTk):
                 if int(auto.get("raw_overlap_keys",auto.get("overlap_keys",0)) or 0)<=0 and not manual_relation:
                     continue
                 try:
-                    stable_candidate=self._first_seen_japanese_candidate(Path(cand.get("path","")))
+                    stable_candidate=self._first_seen_japanese_candidate(Path(cand.get("path","")), target_lang=target_lang)
                 except Exception:
                     stable_candidate=False
                 candidates.append((auto,cand,role,manual_sources,manual_relation,stable_candidate))
             candidates.sort(key=lambda item:(float(item[0].get("score",0) or 0),float(item[0].get("coverage",0) or 0)),reverse=True)
             if not candidates:
-                out += [i18n.t('u6.translation_mod_candidates_with_matching_keys', target_name=i18n.t("lang." + 'japanese')), ""]
+                out += [i18n.t('u6.translation_mod_candidates_with_matching_keys', target_name=i18n.t("lang." + target_lang)), ""]
                 continue
 
             for ci,(auto,cand,role,manual_sources,manual_relation,stable_candidate) in enumerate(candidates,1):
@@ -3467,26 +3498,26 @@ class App(BaseTk):
                 elif role=="translation" and manual_sources and source_id not in manual_sources:
                     final_text=i18n.t('u6.excluded_not_a_manually_selected_source')
                 elif manual_relation:
-                    final_text=i18n.t('u6.translation_mod_manual_source_link_takes', target_name=i18n.t("lang." + 'japanese'))
+                    final_text=i18n.t('u6.translation_mod_manual_source_link_takes', target_name=i18n.t("lang." + target_lang))
                 elif role=="translation":
-                    final_text=i18n.t('u6.manually_fixed_as_translation_mod_source', value=class_label.get(auto_class, auto_class), target_name=i18n.t("lang." + 'japanese'))
+                    final_text=i18n.t('u6.manually_fixed_as_translation_mod_source', value=class_label.get(auto_class, auto_class), target_name=i18n.t("lang." + target_lang))
                 elif not stable_candidate:
-                    final_text=i18n.t('u6.not_a_current_automatic_candidate_not', target_name=i18n.t("lang." + 'japanese'))
+                    final_text=i18n.t('u6.not_a_current_automatic_candidate_not', target_name=i18n.t("lang." + target_lang))
                 else:
                     final_text=class_label.get(auto_class,auto_class)
                 if auto.get("candidate_base_translation"):
-                    candidate_role_text=i18n.t('u6.base_game_translation_mod', target_name=i18n.t("lang." + 'japanese'))
+                    candidate_role_text=i18n.t('u6.base_game_translation_mod', target_name=i18n.t("lang." + target_lang))
                 elif auto.get("candidate_base_dominant"):
                     candidate_role_text=i18n.t('u6.large_mod_overwrite_candidate')
                 elif auto.get("candidate_localization_shape")=="self_localized":
-                    candidate_role_text=i18n.t('u6.standalone_mod_with_bundled_japanese')
+                    candidate_role_text=i18n.t('u6.standalone_mod_with_bundled_japanese', target_name=i18n.t("lang." + target_lang))
                 elif auto.get("multi_translation_gate"):
-                    candidate_role_text=i18n.t('u6.multi_mod_translation_mod', target_name=i18n.t("lang." + 'japanese'))
+                    candidate_role_text=i18n.t('u6.multi_mod_translation_mod', target_name=i18n.t("lang." + target_lang))
                 else:
-                    candidate_role_text=i18n.t('u6.standard_translation_mod_candidate', target_name=i18n.t("lang." + 'japanese'))
+                    candidate_role_text=i18n.t('u6.standard_translation_mod_candidate', target_name=i18n.t("lang." + target_lang))
                 pair_classification = (
-                    i18n.t('u6.multi_mod_translation_candidate', target_name=i18n.t("lang." + 'japanese')) if auto.get("multi_translation_gate") else
-                    i18n.t('u6.specific_mod_translation_candidate', target_name=i18n.t("lang." + 'japanese')) if auto_class in {"auto","candidate"} else
+                    i18n.t('u6.multi_mod_translation_candidate', target_name=i18n.t("lang." + target_lang)) if auto.get("multi_translation_gate") else
+                    i18n.t('u6.specific_mod_translation_candidate', target_name=i18n.t("lang." + target_lang)) if auto_class in {"auto","candidate"} else
                     i18n.t('u6.unrelated')
                 )
                 raw_overlap=int(auto.get("raw_overlap_keys",auto.get("overlap_keys",0)) or 0)
@@ -3520,7 +3551,7 @@ class App(BaseTk):
                     i18n.t('u6.other_language_penalty_points', value=format(float(auto.get('other_language_penalty', 0) or 0), '.1f')),
                     i18n.t('u6.automatic_score_100', value=format(float(auto.get('score', 0) or 0), '.1f')),
                     i18n.t('u6.pure_automatic_assessment', value=class_label.get(auto_class, auto_class)),
-                    i18n.t('u6.initial_japanese_candidate', value=i18n.t('u6.yes_2') if stable_candidate else i18n.t('u6.no_2')),
+                    i18n.t('u6.initial_japanese_candidate', target_name=i18n.t("lang." + target_lang), value=i18n.t('u6.yes_2') if stable_candidate else i18n.t('u6.no_2')),
                 ]
                 if role != "auto":
                     out.append(i18n.t('u6.manual_classification', value=i18n.t('u6.translation_mod', target_name=i18n.t('lang.' + 'japanese')) if role == 'translation' else i18n.t('u6.source_mod_3') if role == 'source' else role))
@@ -3538,11 +3569,32 @@ class App(BaseTk):
             out.append("")
         return "\n".join(out).rstrip()+"\n"
 
+    def _target_translation_judgement_log_text(self, target_lang):
+        target_name = i18n.t("lang." + target_lang)
+        results = [row for row in (self.mod_research_results or []) if _status_matches_language(row, target_lang)]
+        out = [i18n.t('u6.v_translation_mod_assessment_log', app_name=APP_NAME, app_version=APP_VERSION, target_name=target_name)]
+        if target_lang == "english":
+            out.append(i18n.t('u6.english_external_check_skipped'))
+            return "\n".join(out)
+        roots = [Path(row["path"]) for row in results if row.get("path")]
+        index = self._build_stable_translation_mod_index(roots, target_lang=target_lang)
+        for row in results:
+            out.append(i18n.t('u6.target_research_result', mod=row.get("mod", ""), target_name=target_name,
+                              status=display_status(row), count=row.get("gap_count", 0)))
+            root = Path(row["path"])
+            out.append(i18n.t('u6.initial_japanese_candidate', target_name=target_name,
+                              value=self._first_seen_japanese_candidate(root, target_lang=target_lang)))
+            for candidate in core.rank_external_japanese_translations(root, index, target_lang=target_lang):
+                out.append(i18n.t('u6.target_candidate_evidence', mod=candidate.get("mod", ""),
+                                  score=candidate.get("score", 0), precision=candidate.get("precision", 0),
+                                  classification=candidate.get("classification", ""), target_name=target_name))
+        return "\n".join(out)
+
     def show_translation_judgement_log(self):
         if self.judgement_log_thread and self.judgement_log_thread.is_alive():
-            messagebox.showinfo(APP_NAME,i18n.t('u6.generating_the_translation_mod_assessment_log', target_name=i18n.t("lang." + 'japanese')))
+            messagebox.showinfo(APP_NAME,i18n.t('u6.generating_the_translation_mod_assessment_log', target_name=i18n.t("lang." + _current_target_lang(self))))
             return
-        win=tk.Toplevel(self); win.title(i18n.t('u6.translation_mod_assessment_log', target_name=i18n.t("lang." + 'japanese'))); win.geometry('1100x760'); win.transient(self)
+        win=tk.Toplevel(self); win.title(i18n.t('u6.translation_mod_assessment_log', target_name=i18n.t("lang." + _current_target_lang(self)))); win.geometry('1100x760'); win.transient(self)
         outer=ttk.Frame(win,padding=8); outer.pack(fill='both',expand=True)
         status=tk.StringVar(value=i18n.t('u6.recalculating_the_assessment_log_in_the'))
         ttk.Label(outer,textvariable=status,foreground='#555').pack(fill='x',pady=(0,6))
@@ -3557,8 +3609,9 @@ class App(BaseTk):
         export_btn=ttk.Button(bar,text=i18n.t('u6.export_log'),state='disabled'); export_btn.pack(side='left')
         ttk.Button(bar,text=i18n.t('u6.close'),command=win.destroy).pack(side='right')
         token=id(win); self._judgement_log_window=(token,win,box,status,export_btn)
+        target_lang = _current_target_lang(self)
         def work():
-            try: self.events.put(('judgement_log_ready',(token,self._translation_judgement_log_text())))
+            try: self.events.put(('judgement_log_ready',(token,self._translation_judgement_log_text(target_lang=target_lang))))
             except Exception as exc: self.events.put(('judgement_log_error',(token,str(exc))))
         self.judgement_log_thread=threading.Thread(target=work,daemon=True,name='judgement-log-build'); self.judgement_log_thread.start()
 
@@ -3577,10 +3630,10 @@ class App(BaseTk):
             JUDGEMENT_LOG_ROOT.mkdir(parents=True,exist_ok=True)
             target=JUDGEMENT_LOG_ROOT / f"translation_mod_judgement_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
             target.write_text(text,encoding='utf-8')
-            messagebox.showinfo(APP_NAME,i18n.t('u6.exported_translation_mod_assessment_log', target=target, target_name=i18n.t("lang." + 'japanese')))
+            messagebox.showinfo(APP_NAME,i18n.t('u6.exported_translation_mod_assessment_log', target=target, target_name=i18n.t("lang." + _current_target_lang(self))))
             return target
         except Exception as exc:
-            record_error(i18n.t('u6.translation_mod_assessment_log_export', target_name=i18n.t("lang." + 'japanese')),exc); messagebox.showerror(APP_NAME,i18n.t('u6.could_not_export_assessment_log', exc=exc))
+            record_error(i18n.t('u6.translation_mod_assessment_log_export', target_name=i18n.t("lang." + _current_target_lang(self))),exc); messagebox.showerror(APP_NAME,i18n.t('u6.could_not_export_assessment_log', exc=exc))
             return None
 
     def export_relation_report(self):
@@ -3593,7 +3646,7 @@ class App(BaseTk):
             if not r.get("game"):
                 r["game"]=self._backup_game_name_for_root(Path(r.get("path","")))
         try:
-            report=core.build_relation_report(results)
+            report=core.build_relation_report(results, target_lang=_current_target_lang(self))
             stamp=datetime.now().strftime('%Y%m%d_%H%M%S')
             JUDGEMENT_LOG_ROOT.mkdir(parents=True,exist_ok=True)
             csv_path=JUDGEMENT_LOG_ROOT / f"紐付けレポート_{stamp}.csv"
@@ -3601,7 +3654,7 @@ class App(BaseTk):
             # Excel で文字化けしないよう BOM 付き UTF-8 で書く。
             csv_path.write_text(core.relation_report_csv(report),encoding="utf-8-sig")
             md_path.write_text(core.relation_report_markdown(
-                report,title=i18n.t('u6.v_link_report', app_name=APP_NAME, app_version=APP_VERSION, value=datetime.now().strftime('%Y-%m-%d %H:%M'))),encoding="utf-8")
+                report,target_lang=_current_target_lang(self),title=i18n.t('u6.v_link_report', app_name=APP_NAME, app_version=APP_VERSION, value=datetime.now().strftime('%Y-%m-%d %H:%M'))),encoding="utf-8")
         except Exception as exc:
             record_error(i18n.t('u6.link_report'), exc)
             messagebox.showerror(APP_NAME,i18n.t('u6.could_not_export_link_report', exc=exc))
@@ -3751,15 +3804,13 @@ class App(BaseTk):
         if use_persisted:
             try:
                 if persisted_snapshot is None:
-                    if self._restore_status_snapshot_cache is None:
-                        self._restore_status_snapshot_cache=self._load_translation_status_snapshot()
-                    persisted_snapshot=self._restore_status_snapshot_cache
+                    persisted_snapshot=self._load_translation_status_snapshot()
                 sources.append(list((persisted_snapshot or {}).get('results') or []))
             except Exception:
                 pass
         for source in sources:
             for row in source:
-                if not isinstance(row, dict):
+                if not _status_matches_language(row, _current_target_lang(self)):
                     continue
 
                 # The Translation Status row itself is always a restore candidate.
@@ -3984,7 +4035,7 @@ class App(BaseTk):
             pass
         return max(highest, legacy) + 1
 
-    def _create_full_localization_snapshot(self, target_root, backup_kind, *, category='上書き', source_mod_name='', state_label='', stamp=None):
+    def _create_full_localization_snapshot(self, target_root, backup_kind, *, category='上書き', source_mod_name='', state_label='', stamp=None, target_lang=None):
         target_root=Path(target_root)
         if core.is_localization_dir_name(target_root.name):
             loc=target_root
@@ -4031,6 +4082,8 @@ class App(BaseTk):
             'localization_existed': bool(existed),
             'state_label': state_label or (i18n.t('u7.source_immediately_before_overwrite_entire_existing') if category == '上書き' else i18n.t('u7.entire_localization_folder_immediately_before_the')),
         }
+        if target_lang and target_lang != "japanese":
+            manifest["target_lang"] = target_lang
         (root / 'backup_manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8')
         return root, manifest
 
@@ -5276,7 +5329,7 @@ class App(BaseTk):
         self.mod_status_search_var.set("")
         self.mod_status_search_result_var.set("")
         self._populate_mod_status_tree()
-        self._set_mod_status_detail_text(i18n.t('u6.select_a_mod_to_see_research', target_name=i18n.t("lang.japanese")))
+        self._set_mod_status_detail_text(i18n.t('u6.select_a_mod_to_see_research', target_name=i18n.t("lang." + _current_target_lang(self))))
 
     def _set_mod_status_detail_text(self, text):
         if not hasattr(self, "mod_status_detail"):
@@ -5288,6 +5341,7 @@ class App(BaseTk):
 
     def _on_mod_status_selection_changed(self, _event=None):
         selected = self._selected_mod_status_results() if hasattr(self, "mod_status_tree") else []
+        target_lang = (selected[0].get("target_lang") or core.DEFAULT_TARGET_LANG) if selected else _current_target_lang(self)
         if not selected:
             query=self.mod_status_search_var.get().strip() if hasattr(self,"mod_status_search_var") else ""
             children=self.mod_status_tree.get_children() if hasattr(self,"mod_status_tree") else []
@@ -5300,10 +5354,10 @@ class App(BaseTk):
                 else:
                     self._set_mod_status_detail_text(i18n.t('u6.no_research_results_select_a_game'))
             else:
-                self._set_mod_status_detail_text(i18n.t('u6.select_a_mod_to_see_research', target_name=i18n.t("lang.japanese")))
+                self._set_mod_status_detail_text(i18n.t('u6.select_a_mod_to_see_research', target_name=i18n.t("lang." + target_lang)))
             self._set_mod_status_selection_actions_enabled(False)
             if hasattr(self, "status_overwrite_btn"):
-                self.status_overwrite_btn.config(text=i18n.t('u6.overwrite_mod_with_completed_translation', target_name=i18n.t("lang." + _current_target_lang(self))))
+                self.status_overwrite_btn.config(text=i18n.t('u6.overwrite_mod_with_completed_translation', target_name=i18n.t("lang." + target_lang)))
             if hasattr(self, "status_chinese_queue_btn"):
                 self.status_chinese_queue_btn.config(state="disabled")
             return
@@ -5313,7 +5367,7 @@ class App(BaseTk):
         jpmod = r.get("external_translation_mod", "")
         jp_path = r.get("external_translation_path", "")
         zh_count = r.get("simp_chinese_files", 0)
-        lines = [f"Mod: {mod_name}", i18n.t('u6.status_gaps', status=display_status(r), gap_count=r.get('gap_count', 0)), i18n.t('u6.english_keys_simplified_chinese_keys_japanese', english_keys=r.get('english_keys', 0), simp_chinese_keys=r.get('simp_chinese_keys', 0), japanese_keys=r.get('japanese_keys', 0)), i18n.t('u6.language_specific_keys_english_only_chinese', english_only_keys=r.get('english_only_keys', 0), chinese_only_keys=r.get('chinese_only_keys', 0)), i18n.t('u6.simplified_chinese', value=i18n.t('u6.yes_files', value=str(zh_count)) if zh_count else i18n.t('u6.no')), "", ui_status.display_message(r)]
+        lines = [f"Mod: {mod_name}", i18n.t('u6.status_gaps', status=display_status(r), gap_count=r.get('gap_count', 0)), i18n.t('u6.english_keys_simplified_chinese_keys_japanese', target_name=i18n.t("lang." + (r.get("target_lang") or core.DEFAULT_TARGET_LANG)), english_keys=r.get('english_keys', 0), simp_chinese_keys=r.get('simp_chinese_keys', 0), japanese_keys=r.get('japanese_keys', 0)), i18n.t('u6.language_specific_keys_english_only_chinese', english_only_keys=r.get('english_only_keys', 0), chinese_only_keys=r.get('chinese_only_keys', 0)), i18n.t('u6.simplified_chinese', value=i18n.t('u6.yes_files', value=str(zh_count)) if zh_count else i18n.t('u6.no')), "", ui_status.display_message(r)]
         warnings=list(r.get("translation_warnings") or [])
         if warnings:
             profile=dict(r.get("translation_format_profile") or {})
@@ -5328,26 +5382,26 @@ class App(BaseTk):
         if jpmod:
             score=float(r.get("external_translation_score",0.0) or 0.0)
             precision=float(r.get("external_translation_coverage",0.0) or 0.0)
-            lines += ["", i18n.t('u6.translation_mod_2', jpmod=jpmod, target_name=i18n.t("lang.japanese")), i18n.t('u6.relationship_score_100_source_mod_exact', score=format(score, '.1f'), value=format(precision * 100, '.1f')), i18n.t('u6.translation_mod_gaps_2', external_translation_gap_count=r.get('external_translation_gap_count', 0), target_name=i18n.t("lang.japanese")), i18n.t('u6.overwrite_destination_translation_mod', jpmod=jpmod, target_name=i18n.t("lang.japanese")), i18n.t('u6.translation_mod_location', jp_path=jp_path, target_name=i18n.t("lang.japanese"))]
+            lines += ["", i18n.t('u6.translation_mod_2', jpmod=jpmod, target_name=i18n.t("lang." + (r.get("target_lang") or core.DEFAULT_TARGET_LANG))), i18n.t('u6.relationship_score_100_source_mod_exact', score=format(score, '.1f'), value=format(precision * 100, '.1f')), i18n.t('u6.translation_mod_gaps_2', external_translation_gap_count=r.get('external_translation_gap_count', 0), target_name=i18n.t("lang." + (r.get("target_lang") or core.DEFAULT_TARGET_LANG))), i18n.t('u6.overwrite_destination_translation_mod', jpmod=jpmod, target_name=i18n.t("lang." + (r.get("target_lang") or core.DEFAULT_TARGET_LANG))), i18n.t('u6.translation_mod_location', jp_path=jp_path, target_name=i18n.t("lang." + (r.get("target_lang") or core.DEFAULT_TARGET_LANG)))]
             reasons=list(r.get("external_translation_reasons") or [])
             if reasons:
                 lines += [i18n.t('u6.assessment_reasons')] + [i18n.t('u6.detail_4', value=x) for x in reasons]
             if hasattr(self, "status_overwrite_btn"):
-                label = i18n.t('u6.overwrite_differences_to_translation_mod', jpmod=jpmod, target_name=i18n.t("lang.japanese"))
+                label = i18n.t('u6.overwrite_differences_to_translation_mod', jpmod=jpmod, target_name=i18n.t("lang." + (r.get("target_lang") or core.DEFAULT_TARGET_LANG)))
                 if len(label) > 34:
-                    label = i18n.t('u6.overwrite_differences_to_translation_mod_2', target_name=i18n.t("lang.japanese"))
+                    label = i18n.t('u6.overwrite_differences_to_translation_mod_2', target_name=i18n.t("lang." + (r.get("target_lang") or core.DEFAULT_TARGET_LANG)))
                 self.status_overwrite_btn.config(text=label)
         else:
             cand=r.get("translation_candidate_mod", "")
             if cand:
                 cscore=float(r.get("translation_candidate_score",0.0) or 0.0)
                 cprec=float(r.get("translation_candidate_coverage",0.0) or 0.0)
-                lines += ["", i18n.t('u6.translation_mod_candidate_not_linked_automatically', cand=cand, target_name=i18n.t("lang.japanese")), i18n.t('u6.relationship_score_100_source_mod_exact_2', cscore=format(cscore, '.1f'), value=format(cprec * 100, '.1f')), i18n.t('u6.candidate_location', translation_candidate_path=r.get('translation_candidate_path', ''))]
+                lines += ["", i18n.t('u6.translation_mod_candidate_not_linked_automatically', cand=cand, target_name=i18n.t("lang." + (r.get("target_lang") or core.DEFAULT_TARGET_LANG))), i18n.t('u6.relationship_score_100_source_mod_exact_2', cscore=format(cscore, '.1f'), value=format(cprec * 100, '.1f')), i18n.t('u6.candidate_location', translation_candidate_path=r.get('translation_candidate_path', ''))]
                 creasons=list(r.get("translation_candidate_reasons") or [])
                 if creasons: lines += [i18n.t('u6.assessment_reasons')] + [i18n.t('u6.detail_4', value=x) for x in creasons]
-            lines += ["", i18n.t('u6.overwrite_destination_japanese_localization_in_source')]
+            lines += ["", i18n.t('u6.overwrite_destination_japanese_localization_in_source', target_name=i18n.t("lang." + (r.get("target_lang") or core.DEFAULT_TARGET_LANG)))]
             if hasattr(self, "status_overwrite_btn"):
-                self.status_overwrite_btn.config(text=i18n.t('u6.overwrite_source_mod_with_completed_translation', target_name=i18n.t("lang." + _current_target_lang(self))))
+                self.status_overwrite_btn.config(text=i18n.t('u6.overwrite_source_mod_with_completed_translation', target_name=i18n.t("lang." + (r.get("target_lang") or core.DEFAULT_TARGET_LANG))))
         lines += ["", i18n.t('u6.source_mod_location', path=r.get('path', ''))]
         self._set_mod_status_detail_text("\n".join(lines))
 
@@ -5678,6 +5732,7 @@ class App(BaseTk):
     def _snapshot_monitor_worker_settings(self):
         """Capture Tk-backed monitor settings on the main thread before workers start."""
         return {
+            "target_lang": _current_target_lang(self),
             "interval": max(3, int(self.monitor_interval_var.get() or 15)),
             "use_llm": bool(self.monitor_use_llm_var.get()),
             "check_translation_mods": bool(self.monitor_check_translation_mods_var.get()),
@@ -5779,7 +5834,7 @@ class App(BaseTk):
                     candidates=[]
                     for root in roots:
                         try:
-                            candidates.extend(core.scan_translation_gaps(root))
+                            candidates.extend(core.scan_translation_gaps(root, target_lang=settings.get("target_lang", core.DEFAULT_TARGET_LANG)))
                         except Exception as exc:
                             self.events.put(("monitor_log",i18n.t('u6.skipped_analysis', root=root, exc=exc)))
                     try:
@@ -5863,13 +5918,16 @@ class App(BaseTk):
             record_error(i18n.t('u7.diagnostic_log_collection'), e)
             messagebox.showerror(APP_NAME, i18n.t('u7.failed_to_collect_diagnostic_logs', e=e))
 
-    def _mod_source_signature(self, mod_root: Path) -> str:
+    def _mod_source_signature(self, mod_root: Path, *, target_lang=None) -> str:
         """Cheap signature used to decide whether a cached status result is still current."""
+        target_lang = target_lang or _current_target_lang(self)
         try:
             loc = core.mod_localization_root(Path(mod_root))
             if not loc:
-                return "missing"
+                return "missing" if target_lang == "japanese" else f"{target_lang}:missing"
             h = hashlib.sha256()
+            if target_lang != "japanese":
+                h.update(f"target-lang:{target_lang}:".encode())
             count = 0
             for fp in sorted(Path(loc).rglob("*.yml")):
                 try:
@@ -5885,27 +5943,31 @@ class App(BaseTk):
             return h.hexdigest()
         except Exception as e:
             record_error("Mod status signature", e, str(mod_root))
-            return "error"
+            return "error" if target_lang == "japanese" else f"{target_lang}:error"
 
-    def _cached_status_for_mod(self, mod_root: Path, signature: str):
+    def _cached_status_for_mod(self, mod_root: Path, signature: str, *, target_lang=None):
+        target_lang = target_lang or _current_target_lang(self)
         key = str(Path(mod_root).expanduser().resolve())
         with self.mod_status_cache_lock:
             if self.mod_status_cache.get("version") != MOD_STATUS_CACHE_VERSION:
                 return None
-            row = (self.mod_status_cache.get("items") or {}).get(key)
-        if row and row.get("signature") == signature and isinstance(row.get("result"), dict):
+            row = _relation_language_items(self.mod_status_cache, "items", target_lang).get(key)
+        if row and row.get("signature") == signature and _status_matches_language(row.get("result"), target_lang):
             result = dict(row["result"])
             result["cached"] = True
             return result
         return None
 
-    def _cache_mod_status_result(self, mod_root: Path, signature: str, result: dict):
+    def _cache_mod_status_result(self, mod_root: Path, signature: str, result: dict, *, target_lang=None):
+        target_lang = target_lang or _current_target_lang(self)
         key = str(Path(mod_root).expanduser().resolve())
         summary = _compact_translation_status_result(result)
         summary["path"] = str(result.get("path") or mod_root)
+        if target_lang != "japanese":
+            summary["target_lang"] = target_lang
         row = {"signature": signature, "checked_at": datetime.now().isoformat(timespec="seconds"), "result": summary}
         with self.mod_status_cache_lock:
-            self.mod_status_cache.setdefault("items", {})[key] = row
+            _relation_language_items(self.mod_status_cache, "items", target_lang, create=True)[key] = row
             self.mod_status_cache["version"] = MOD_STATUS_CACHE_VERSION
             self.mod_status_cache["updated_at"] = datetime.now().isoformat(timespec="seconds")
             core.save_json(MOD_STATUS_CACHE_PATH, self.mod_status_cache)
@@ -5920,6 +5982,7 @@ class App(BaseTk):
         if self.status_restore_thread and self.status_restore_thread.is_alive():
             return
         self.mod_status_summary_var.set(i18n.t('u7.restoring_previous_translation_status_in_the'))
+        target_lang = _current_target_lang(self)
         def work():
             try:
                 data = load_persistent_json(MOD_STATUS_CACHE_PATH, {"version": MOD_STATUS_CACHE_VERSION, "items": {}}, i18n.t('u7.translation_status_cache'))
@@ -5928,19 +5991,19 @@ class App(BaseTk):
                     data = {"version": MOD_STATUS_CACHE_VERSION, "items": {}}
                 by_path={}
                 cache_compacted = False
-                for row in (data.get("items", {}) or {}).values():
+                for row in _relation_language_items(data, "items", target_lang).values():
                     result = row.get("result") if isinstance(row, dict) else None
-                    if isinstance(result, dict) and result.get("path"):
+                    if _status_matches_language(result, target_lang) and result.get("path"):
                         compact_result = _compact_translation_status_result(result)
                         if compact_result != result:
                             row["result"] = compact_result
                             cache_compacted = True
                         r=dict(compact_result); r["cached"]=True; by_path[str(r.get("path"))]=r
-                snap=self._load_translation_status_snapshot()
+                snap=self._load_translation_status_snapshot(target_lang=target_lang)
                 snapshot_is_current = _translation_status_snapshot_is_current(snap)
                 if cache_is_current and snapshot_is_current:
                     for r in (snap.get("results") or []):
-                        if not isinstance(r,dict) or not r.get("path"): continue
+                        if not _status_matches_language(r, target_lang) or not r.get("path"): continue
                         path=str(r.get("path"))
                         if path not in by_path:
                             rr=_compact_translation_status_result(r); rr["cached"]=True; rr["stale_cached"]=True; by_path[path]=rr
@@ -5949,6 +6012,7 @@ class App(BaseTk):
                     core.save_json(MOD_STATUS_CACHE_PATH, data)
                 rows=list(by_path.values()); rows.sort(key=lambda r:str(r.get("mod","")).lower())
                 selected_paths = list(snap.get('selected_paths') or []) if snapshot_is_current else []
+                data = dict(data, _restore_target_lang=target_lang)
                 self.events.put(('status_cache_restored',(data,rows,selected_paths)))
             except Exception as exc:
                 self.events.put(('status_cache_restore_error',str(exc)))
@@ -5957,6 +6021,10 @@ class App(BaseTk):
 
     def _apply_restored_mod_status(self, data, rows, selected_paths):
         self.status_restore_thread=None
+        data = dict(data) if isinstance(data, dict) else {}
+        if data.pop("_restore_target_lang", "japanese") != _current_target_lang(self):
+            self._restore_cached_mod_status()
+            return
         self.mod_status_cache=data if isinstance(data,dict) else {"version":MOD_STATUS_CACHE_VERSION,"items":{}}
         self.mod_research_results=list(rows or [])
         self.mod_status_search_var.set("")
@@ -5994,19 +6062,46 @@ class App(BaseTk):
         except Exception:
             return str(Path(mod_root).expanduser())
 
-    def _current_mod_has_japanese(self, mod_root: Path) -> bool:
+    def _current_mod_has_japanese(self, mod_root: Path, *, target_lang=None) -> bool:
+        target_lang = target_lang or _current_target_lang(self)
         loc = core.mod_localization_root(Path(mod_root))
         if not loc:
             return False
         for fp in core.gather_yml_files(loc):
             try:
-                if core.parse_localization_file(fp)[0] == "japanese":
+                if core.parse_localization_file(fp)[0] == target_lang:
                     return True
             except Exception:
                 continue
         return False
 
-    def _first_seen_japanese_candidate(self, mod_root: Path) -> bool:
+    def _original_target_presence_before_overwrite(self, mod_root, target_lang):
+        """Use the earliest exact source-overwrite snapshot as pre-write evidence."""
+        key = self._mod_classification_key(Path(mod_root))
+        kinds = {i18n.t_lang(lang, 'u6.source_mod_overwrite') for lang in ("japanese", "english")}
+        snapshots = []
+        for manifest_path in BACKUP_ROOT.glob("*/*/*/*/backup_manifest.json"):
+            manifest = core.load_json(manifest_path, {})
+            if not isinstance(manifest, dict) or manifest.get("backup_kind") not in kinds:
+                continue
+            if not manifest.get("target_root") or self._mod_classification_key(Path(manifest["target_root"])) != key:
+                continue
+            if manifest.get("snapshot_type") != "full_localization":
+                continue
+            if manifest.get("written_target_lang") == target_lang:
+                return False
+            loc = manifest_path.parent / "localization"
+            if loc.is_dir():
+                snapshots.append((str(manifest.get("created_at") or manifest_path), loc))
+        if not snapshots:
+            return None
+        loc = min(snapshots, key=lambda entry: entry[0])[1]
+        for file in core.gather_yml_files(loc):
+            if core.parse_localization_file(file)[0] == target_lang:
+                return True
+        return False
+
+    def _first_seen_japanese_candidate(self, mod_root: Path, *, target_lang=None) -> bool:
         """Return whether this Mod was Japanese-capable when first classified.
 
         The value is sticky.  Japanese YAML generated later by this application
@@ -6016,11 +6111,16 @@ class App(BaseTk):
         version keeps the pre-generation classification.
         """
         root = Path(mod_root)
+        target_lang = target_lang or _current_target_lang(self)
         key = self._mod_classification_key(root)
         with self.mod_classification_lock:
             mods = self.mod_classification_cache.setdefault("mods", {})
             row = mods.get(key)
-            if isinstance(row, dict) and "had_japanese_at_first_seen" in row:
+            if target_lang != "japanese" and isinstance(row, dict):
+                targets = row.get("had_target_at_first_seen") or {}
+                if target_lang in targets:
+                    return bool(targets[target_lang])
+            if target_lang == "japanese" and isinstance(row, dict) and "had_japanese_at_first_seen" in row:
                 # Refresh display-only metadata without changing the sticky
                 # first-seen role.  This repairs Vic3 caches that previously
                 # stored the numeric Workshop directory as the Mod name.
@@ -6035,13 +6135,27 @@ class App(BaseTk):
         historical = None
         try:
             with self.mod_status_cache_lock:
-                old = (self.mod_status_cache.get("items") or {}).get(key)
+                old = _relation_language_items(self.mod_status_cache, "items", target_lang).get(key)
             old_result = old.get("result") if isinstance(old, dict) else None
-            if isinstance(old_result, dict) and "japanese_files" in old_result:
-                historical = bool(int(old_result.get("japanese_files", 0) or 0))
+            files_field = "japanese_files"
+            if _status_matches_language(old_result, target_lang) and files_field in old_result:
+                historical = bool(int(old_result.get(files_field, 0) or 0))
         except Exception:
             historical = None
-        initial_has_japanese = self._current_mod_has_japanese(root) if historical is None else historical
+        if target_lang != "japanese":
+            before_overwrite = self._original_target_presence_before_overwrite(root, target_lang)
+            if before_overwrite is not None:
+                historical = before_overwrite
+        initial_has_japanese = self._current_mod_has_japanese(root, target_lang=target_lang) if historical is None else historical
+        if target_lang != "japanese":
+            with self.mod_classification_lock:
+                row = self.mod_classification_cache.setdefault("mods", {}).setdefault(key, {
+                    "path": key, "mod": core.detect_mod_name(root),
+                })
+                row.setdefault("had_target_at_first_seen", {})[target_lang] = bool(initial_has_japanese)
+                self.mod_classification_cache["updated_at"] = datetime.now().isoformat(timespec="seconds")
+                core.save_json(MOD_CLASSIFICATION_CACHE_PATH, self.mod_classification_cache)
+            return bool(initial_has_japanese)
         row = {
             "path": key,
             "mod": core.detect_mod_name(root),
@@ -6050,6 +6164,9 @@ class App(BaseTk):
             "initial_role": "japanese_candidate" if initial_has_japanese else "source_mod",
         }
         with self.mod_classification_lock:
+            previous = self.mod_classification_cache.setdefault("mods", {}).get(key, {})
+            if "had_target_at_first_seen" in previous:
+                row["had_target_at_first_seen"] = previous["had_target_at_first_seen"]
             self.mod_classification_cache.setdefault("mods", {})[key] = row
             self.mod_classification_cache["updated_at"] = datetime.now().isoformat(timespec="seconds")
             core.save_json(MOD_CLASSIFICATION_CACHE_PATH, self.mod_classification_cache)
@@ -6058,20 +6175,22 @@ class App(BaseTk):
     def _invalidate_mod_status_cache_paths(self, paths):
         changed=False
         with self.mod_status_cache_lock:
-            items=self.mod_status_cache.setdefault("items", {})
             for raw in paths or []:
                 try: key=self._mod_classification_key(Path(raw))
                 except Exception: key=str(raw)
-                if key in items:
-                    items.pop(key, None); changed=True
+                for target_lang in ["japanese", *self.mod_status_cache.get("languages", {})]:
+                    items=_relation_language_items(self.mod_status_cache, "items", target_lang)
+                    if key in items:
+                        items.pop(key, None); changed=True
             if changed:
                 self.mod_status_cache["updated_at"] = datetime.now().isoformat(timespec="seconds")
                 core.save_json(MOD_STATUS_CACHE_PATH, self.mod_status_cache)
 
-    def _mod_relation_override(self, mod_root: Path) -> dict:
+    def _mod_relation_override(self, mod_root: Path, *, target_lang=None) -> dict:
+        target_lang = target_lang or _current_target_lang(self)
         key = self._mod_classification_key(Path(mod_root))
         with self.mod_relation_override_lock:
-            row = (self.mod_relation_overrides.get("mods") or {}).get(key, {})
+            row = _relation_language_items(self.mod_relation_overrides, "mods", target_lang).get(key, {})
             return dict(row) if isinstance(row, dict) else {}
 
     def _save_mod_relation_overrides(self):
@@ -6085,7 +6204,8 @@ class App(BaseTk):
         except Exception:
             pass
 
-    def _set_mod_relation_override(self, mod_root: Path, role: str, source_paths=None):
+    def _set_mod_relation_override(self, mod_root: Path, role: str, source_paths=None, *, target_lang=None):
+        target_lang = target_lang or _current_target_lang(self)
         key = self._mod_classification_key(Path(mod_root))
         role = role if role in {"auto", "translation", "source"} else "auto"
         sources=[]
@@ -6095,7 +6215,7 @@ class App(BaseTk):
             if src != key and src not in sources:
                 sources.append(src)
         with self.mod_relation_override_lock:
-            mods=self.mod_relation_overrides.setdefault("mods", {})
+            mods=_relation_language_items(self.mod_relation_overrides, "mods", target_lang, create=True)
             if role == "auto" and not sources:
                 mods.pop(key, None)
             else:
@@ -6181,22 +6301,25 @@ class App(BaseTk):
                 record_error(i18n.t('u1.base_game_error'), exc, str(row.get("path", "")))
         return rows
 
-    def _build_stable_translation_mod_index(self, pool_roots):
+    def _build_stable_translation_mod_index(self, pool_roots, *, target_lang=None):
+        target_lang = target_lang or _current_target_lang(self)
+        if target_lang == "english":
+            return []
         eligible = []
         overrides = {}
         for root in pool_roots:
             root=Path(root)
             try:
-                ov=self._mod_relation_override(root)
+                ov=self._mod_relation_override(root, target_lang=target_lang)
                 role=ov.get("role","auto")
                 if role == "source":
                     continue
-                if role == "translation" or self._first_seen_japanese_candidate(root):
+                if role == "translation" or self._first_seen_japanese_candidate(root, target_lang=target_lang):
                     eligible.append(root)
                     overrides[self._mod_classification_key(root)] = ov
             except Exception as exc:
                 record_error(i18n.t('u6.initial_mod_classification'), exc, str(root))
-        rows=core.build_translation_mod_index(eligible)
+        rows=core.build_translation_mod_index(eligible, target_lang=target_lang)
         self._annotate_translation_index_with_base_game_keys(rows)
         for row in rows:
             try: key=self._mod_classification_key(Path(row.get("path","")))
@@ -6204,7 +6327,7 @@ class App(BaseTk):
             ov=overrides.get(key) or {}
             row["manual_role"] = ov.get("role", "auto")
             row["manual_source_paths"] = list(ov.get("source_paths") or [])
-        return core.assign_translation_candidate_owners(pool_roots, rows)
+        return core.assign_translation_candidate_owners(pool_roots, rows, target_lang=target_lang)
 
     def _known_mod_rows_for_relation_dialog(self):
         rows=[]; seen=set()
@@ -6402,34 +6525,36 @@ class App(BaseTk):
             total=len(roots)
             results=[]
             settings = dict(getattr(self, "_mod_research_worker_settings", {}) or {})
+            target_lang = settings.get("target_lang", core.DEFAULT_TARGET_LANG)
             check_external = bool(settings.get("check_translation_mods", True))
+            check_external = check_external and target_lang != "english"
             pool_roots = list(translation_pool or roots)
-            translation_index = self._build_stable_translation_mod_index(pool_roots) if check_external else None
+            translation_index = self._build_stable_translation_mod_index(pool_roots, target_lang=target_lang) if check_external else None
             pool_signature = ""
             if check_external:
                 h = hashlib.sha256()
                 h.update(f"relation-algorithm:{core.TRANSLATION_RELATION_ALGORITHM_VERSION}".encode())
                 for root in sorted((Path(r) for r in pool_roots), key=lambda x: str(x)):
                     h.update(str(root).encode("utf-8", "ignore"))
-                    h.update(self._mod_source_signature(root).encode())
+                    h.update(self._mod_source_signature(root, target_lang=target_lang).encode())
                 pool_signature = h.hexdigest()
             for i,mod_root in enumerate(roots,1):
                 if self.mod_research_stop_event.is_set(): break
                 mod_name = core.detect_mod_name(Path(mod_root))
                 self.events.put(("mod_research_progress",(i,total,mod_name)))
-                signature = self._mod_source_signature(Path(mod_root))
+                signature = self._mod_source_signature(Path(mod_root), target_lang=target_lang)
                 if pool_signature:
                     signature = hashlib.sha256((signature + ":" + pool_signature).encode()).hexdigest()
-                result = self._cached_status_for_mod(Path(mod_root), signature)
+                result = self._cached_status_for_mod(Path(mod_root), signature, target_lang=target_lang)
                 if result is None:
-                    result=core.analyze_mod_translation_status(mod_root, translation_index=translation_index)
+                    result=core.analyze_mod_translation_status(mod_root, translation_index=translation_index, target_lang=target_lang)
                     candidates=result.get("candidates",[])
                     try:
                         refined=self._refine_candidates_with_monitor_llm(candidates, settings)
                         result["candidates"]=refined
                         result["gap_count"]=len(refined)
                         result["gap_origin_counts"]=core.gap_origin_counts(refined)
-                        result["gap_reason"]=core.gap_reason_text(refined)
+                        result["gap_reason"]=core.gap_reason_text(refined, target_lang=target_lang)
                         # For a separate Japanese translation mod, refined candidates are that mod's missing/foreign entries.
                         if result.get("external_translation_mod") and not result.get("external_translation_complete"):
                             result["external_translation_gaps"] = refined
@@ -6437,7 +6562,7 @@ class App(BaseTk):
                             result["gap_count"] = len(refined)
                             if refined:
                                 result["status"]=status_value("mod_external_gaps")
-                                result["message"]=i18n.t('u3.external_gaps', mod=result['mod'], external_translation_mod=result['external_translation_mod'], count=len(refined), value=core.gap_reason_text(refined))
+                                result["message"]=i18n.t('u3.external_gaps', mod=result['mod'], external_translation_mod=result['external_translation_mod'], count=len(refined), value=core.gap_reason_text(refined, target_lang=target_lang))
                             else:
                                 result["status"]=status_value("mod_external_complete")
                                 result["external_translation_complete"] = True
@@ -6453,7 +6578,7 @@ class App(BaseTk):
                         elif refined:
                             result["status"]=status_value("mod_gaps")
                             result["gap_count"] = len(refined)
-                            result["message"]=i18n.t('u3.mod_gaps', mod=result['mod'], count=len(refined), value=core.gap_reason_text(refined))
+                            result["message"]=i18n.t('u3.mod_gaps', mod=result['mod'], count=len(refined), value=core.gap_reason_text(refined, target_lang=target_lang))
                         elif not result.get("external_translation_mod"):
                             result["status"]=status_value("mod_translated")
                             result["gap_count"] = 0
@@ -6465,10 +6590,19 @@ class App(BaseTk):
                         self.events.put(("monitor_log",i18n.t('u3.research_llm_skip', mod=result.get('mod','Mod'), e=e)))
                     result["game"] = str(result.get("game") or self._backup_game_name_for_root(Path(mod_root)))
                     core.apply_translation_warning_status(result)
-                    self._cache_mod_status_result(Path(mod_root), signature, result)
                 else:
                     self.events.put(("monitor_log", i18n.t('u3.research_cache', mod=result.get('mod', Path(mod_root).name))))
                 result["game"] = str(result.get("game") or self._backup_game_name_for_root(Path(mod_root)))
+                if target_lang != "japanese":
+                    notices = [part for part in result.get("message_parts", []) if part.get("id") == "u9.unsupported_game_language"]
+                    result["message_parts"] = [ui_status.message_part(
+                        'u6.target_research_result', mod=result.get("mod", ""),
+                        target_name=i18n.t("lang." + target_lang),
+                        status=display_status(result), count=result.get("gap_count", 0)), *notices]
+                if result.get("external_check_skipped") == "english_target":
+                    result.setdefault("message_parts", []).append(ui_status.message_part('u6.english_external_check_skipped'))
+                if not result.get("cached"):
+                    self._cache_mod_status_result(Path(mod_root), signature, result, target_lang=target_lang)
                 results.append(result)
                 self.events.put(("mod_status_append",result))
             self.events.put(("mod_research_done",results))
@@ -6524,7 +6658,7 @@ class App(BaseTk):
                 kept.append(r)
         self.mod_research_results=kept
         with self.mod_status_cache_lock:
-            items=self.mod_status_cache.setdefault("items",{})
+            items=_relation_language_items(self.mod_status_cache, "items", _current_target_lang(self), create=True)
             for key in selected_paths:
                 items.pop(key,None)
             core.save_json(MOD_STATUS_CACHE_PATH,self.mod_status_cache)
@@ -6655,9 +6789,9 @@ class App(BaseTk):
         mod_root = Path(result.get("path", ""))
         if not loc.is_dir():
             return None
-        isolated_out = self._isolated_output_path(loc, Path(self.normal_output_var.get().strip() or str(OUTPUT_ROOT)), result.get("mod", mod_root.name))
-        # 翻訳状況（日本語化Modの調査）から入れた項目は、日本語化Modへの上書きなどを使うので日本語に固定する。
-        self._append_queue(loc, out=isolated_out, target_lang=core.DEFAULT_TARGET_LANG)
+        target_lang = result.get("target_lang", core.DEFAULT_TARGET_LANG)
+        isolated_out = self._isolated_output_path(loc, Path(self.normal_output_var.get().strip() or str(OUTPUT_ROOT)), result.get("mod", mod_root.name), target_lang=target_lang)
+        self._append_queue(loc, out=isolated_out, target_lang=target_lang)
         item = self.queue_items[-1]
         item["mod_root"] = str(mod_root)
         item["mod_localization"] = str(loc)
@@ -6815,7 +6949,7 @@ class App(BaseTk):
             missing_keys = []
             if missing_only:
                 preferred = "simp_chinese" if queue_kind == "chinese" else "english"
-                gaps = core.scan_translation_gaps(Path(loc), preferred_source=preferred)
+                gaps = core.scan_translation_gaps(Path(loc), preferred_source=preferred, target_lang=_item_target_lang(item))
                 origin = "english_only" if source_lang == "english" else "chinese_only"
                 missing_keys = [g.get("key") for g in gaps if g.get("source_origin") == origin and g.get("key")]
                 if not missing_keys:
@@ -7130,8 +7264,9 @@ class App(BaseTk):
         if not roots:
             return
         with self.mod_status_cache_lock:
-            items=self.mod_status_cache.setdefault("items",{})
-            for key in roots: items.pop(key,None)
+            for target_lang in ["japanese", *self.mod_status_cache.get("languages", {})]:
+                items=_relation_language_items(self.mod_status_cache, "items", target_lang, create=True)
+                for key in roots: items.pop(key,None)
             self.mod_status_cache["version"]=MOD_STATUS_CACHE_VERSION
             self.mod_status_cache["updated_at"]=datetime.now().isoformat(timespec="seconds")
             self.mod_status_cache["updated_at_ns"]=time.time_ns()
@@ -7264,7 +7399,7 @@ class App(BaseTk):
         stamp=datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         backup_root, backup_meta = self._create_full_localization_snapshot(
             mod_root, i18n.t('u6.source_mod_overwrite'), category="上書き", source_mod_name=mod_name,
-            state_label=i18n.t('u6.source_text_before_direct_source_mod'), stamp=stamp
+            state_label=i18n.t('u6.source_text_before_direct_source_mod'), stamp=stamp, target_lang=_item_target_lang(item)
         )
         copied=0; backed=0
         try:
@@ -7276,6 +7411,8 @@ class App(BaseTk):
                 dst.parent.mkdir(parents=True,exist_ok=True)
                 shutil.copy2(src,dst); copied += 1
             if _item_target_lang(item) != core.DEFAULT_TARGET_LANG:
+                backup_meta["written_target_lang"] = _item_target_lang(item)
+                core.save_json(backup_root / "backup_manifest.json", backup_meta)
                 # 上書き後の欠落確認（翻訳状況の判定）は日本語だけ
                 validation_text = i18n.t('u6.post_overwrite_check_skipped_for_non')
             elif (post := core.analyze_mod_translation_status(mod_root)).get("gap_count", 0):
@@ -7476,7 +7613,8 @@ class App(BaseTk):
         self.mod_status_search_result_var.set("")
         self._populate_mod_status_tree()
         with self.mod_status_cache_lock:
-            self.mod_status_cache={"version":MOD_STATUS_CACHE_VERSION,"items":{},"updated_at":datetime.now().isoformat(timespec="seconds")}
+            _relation_language_items(self.mod_status_cache, "items", _current_target_lang(self), create=True).clear()
+            self.mod_status_cache["updated_at"] = datetime.now().isoformat(timespec="seconds")
             core.save_json(MOD_STATUS_CACHE_PATH,self.mod_status_cache)
         self.mod_status_summary_var.set(i18n.t('u6.research_results_0'))
 
@@ -7507,7 +7645,7 @@ class App(BaseTk):
         if not p: return
         import csv
         with open(p,"w",encoding="utf-8-sig",newline="") as f:
-            w=csv.writer(f); w.writerow([i18n.t('u6.type'),i18n.t('u6.assessment'),i18n.t('u6.file'),i18n.t('u6.key'),i18n.t('u6.source_text'),i18n.t('u6.current_japanese')])
+            w=csv.writer(f); w.writerow([i18n.t('u6.type'),i18n.t('u6.assessment'),i18n.t('u6.file'),i18n.t('u6.key'),i18n.t('u6.source_text'),i18n.t('u6.current_japanese', target_name=i18n.t("lang." + _current_target_lang(self)))])
             for c in self.monitor_candidates:
                 w.writerow([c.get("kind",""),c.get("confidence",""),c.get("target_file") or c.get("source_file",""),c.get("key",""),c.get("source",""),c.get("target","")])
         messagebox.showinfo(APP_NAME,i18n.t('u6.csv_saved'))
@@ -7829,11 +7967,45 @@ class App(BaseTk):
 
     def _set_target_lang(self, lang, save=True):
         lang=_target_lang_from_choice(lang)
+        previous = _current_target_lang(self)
+        if previous != lang and getattr(self, "mod_research_results", None):
+            self._save_translation_status_state("target_language_changed")
         self.target_lang_var.set(lang)
         self.target_lang_choice_var.set(_target_lang_choice(lang))
         self._refresh_glossary_import_language_labels()
+        if previous != lang and hasattr(self, "mod_status_tree"):
+            self.mod_research_stop_event.set()
+            self.mod_research_results = []
+            self._restore_status_snapshot_cache = None
+            self._restore_status_rows_cache = None
+            self._populate_mod_status_tree()
+            self._refresh_relation_target_labels(previous, lang)
+            self._restore_cached_mod_status()
         if save:
             self._save_llm_preferences()
+
+    def _refresh_relation_target_labels(self, previous, target_lang):
+        keys = (
+            'u6.japanese_translation_status_by_mod', 'u6.mod_research_translation_mod_assessment_and',
+            'u6.set_translation_mod_source_mod_exceptions', 'u6.check_source_mods_and_separate_translation',
+            'u6.also_search_other_mods_for_japanese',
+        )
+        replacements = {i18n.t(key, target_name=i18n.t("lang." + previous)):
+                        i18n.t(key, target_name=i18n.t("lang." + target_lang)) for key in keys}
+        replacements[_relation_scope_text(previous)] = _relation_scope_text(target_lang)
+        pending = [self.tab_status, self.tab_monitor] if hasattr(self, "tab_monitor") else [self.tab_status]
+        while pending:
+            widget = pending.pop()
+            pending.extend(widget.winfo_children())
+            try:
+                text = widget.cget("text")
+                if text in replacements:
+                    widget.configure(text=replacements[text])
+            except tk.TclError:
+                pass
+        for column, key in (("jpmod", 'u6.translation_mod'), ("jpmod_gaps", 'u6.translation_mod_gaps')):
+            self.mod_status_tree.heading(column, text=i18n.t(key, target_name=i18n.t("lang." + target_lang)))
+        self._set_mod_status_detail_text(i18n.t('u6.select_a_mod_to_see_research', target_name=i18n.t("lang." + target_lang)))
 
     def _refresh_glossary_import_language_labels(self):
         target_name=i18n.t("lang." + _current_target_lang(self))
@@ -8007,11 +8179,11 @@ class App(BaseTk):
         try:
             ext_root = Path(item.get("external_translation_path", "")) if item.get("external_translation_path") else None
             if ext_root and ext_root.is_dir() and Path(mod_root).exists():
-                result = core.analyze_external_translation_coverage(Path(mod_root), ext_root)
+                result = core.analyze_external_translation_coverage(Path(mod_root), ext_root, target_lang=_item_target_lang(item))
                 candidates = list(result.get("gaps", []))
                 status_label = "別Mod翻訳・欠損" if candidates else "別Modで完全翻訳"
             elif Path(mod_root).exists():
-                result = core.analyze_mod_translation_status(Path(mod_root), preferred_source=source_language)
+                result = core.analyze_mod_translation_status(Path(mod_root), preferred_source=source_language, target_lang=_item_target_lang(item))
                 candidates = list(result.get("candidates", []))
                 status_label = result.get("status", "")
         except Exception as exc:
@@ -9025,6 +9197,12 @@ class App(BaseTk):
                     if key not in cur_mods:
                         cur_mods[key] = row
                         changed = True
+                    elif isinstance(row, dict) and isinstance(cur_mods[key], dict):
+                        for target_lang, value in (row.get("had_target_at_first_seen") or {}).items():
+                            targets = cur_mods[key].setdefault("had_target_at_first_seen", {})
+                            if target_lang not in targets:
+                                targets[target_lang] = value
+                                changed = True
                 if changed:
                     self.mod_classification_cache["mods"] = cur_mods
                     self.mod_classification_cache["updated_at"] = datetime.now().isoformat(timespec="seconds")
@@ -9037,6 +9215,14 @@ class App(BaseTk):
                     if key not in cur_mods:
                         cur_mods[key] = row
                         rel_changed = True
+                for target_lang, language_data in (cached_rel.get("languages") or {}).items():
+                    if target_lang not in core.TARGET_LANGUAGES or target_lang == "japanese":
+                        continue
+                    target_mods = _relation_language_items(self.mod_relation_overrides, "mods", target_lang, create=True)
+                    for key, row in (language_data.get("mods") or {}).items():
+                        if key not in target_mods:
+                            target_mods[key] = row
+                            rel_changed = True
                 if rel_changed:
                     self.mod_relation_overrides["mods"] = cur_mods
                     self.mod_relation_overrides["updated_at"] = datetime.now().isoformat(timespec="seconds")
@@ -9069,8 +9255,10 @@ class App(BaseTk):
                     raw = row.get("path")
                     if raw and raw not in selected_paths:
                         selected_paths.append(str(raw))
+            target_lang = _current_target_lang(self)
             payload = {
                 "schema": TRANSLATION_STATUS_SNAPSHOT_SCHEMA,
+                "target_lang": target_lang,
                 "mod_status_cache_version": MOD_STATUS_CACHE_VERSION,
                 "relation_algorithm_version": core.TRANSLATION_RELATION_ALGORITHM_VERSION,
                 "saved_at": datetime.now().isoformat(timespec="seconds"),
@@ -9079,7 +9267,7 @@ class App(BaseTk):
                 "results": self._json_safe_state([
                     _compact_translation_status_result(row)
                     for row in list(getattr(self, "mod_research_results", []) or [])
-                    if isinstance(row, dict)
+                    if _status_matches_language(row, target_lang)
                 ]),
                 "selected_paths": selected_paths,
                 "summary": self._workspace_scalar(getattr(self, "mod_status_summary_var", None), ""),
@@ -9087,7 +9275,7 @@ class App(BaseTk):
                 # restored result set appear empty on the next launch.
                 "search": "",
             }
-            core.save_json(TRANSLATION_STATUS_STATE_PATH, payload)
+            core.save_json(_translation_status_path(target_lang), payload)
             self._restore_status_snapshot_cache = payload
             self._restore_status_rows_cache = None
             self._save_shared_mod_state_cache("translation_status:" + str(reason))
@@ -9110,17 +9298,19 @@ class App(BaseTk):
             self._save_translation_status_state(pending_reason)
         self._translation_status_save_after_id = self.after(max(0, int(delay_ms)), flush)
 
-    def _load_translation_status_snapshot(self, force_disk=False):
+    def _load_translation_status_snapshot(self, force_disk=False, *, target_lang=None):
         """Load the persisted Translation Status snapshot with a process-local cache.
 
         v0.11.56: this file can become large. Re-reading/re-decoding it repeatedly during
         application startup caused multi-second hangs and extreme transient memory use.
         """
+        target_lang = target_lang or _current_target_lang(self)
         if not force_disk and self._restore_status_snapshot_cache is not None:
-            return self._restore_status_snapshot_cache
+            if _status_matches_language(self._restore_status_snapshot_cache, target_lang):
+                return self._restore_status_snapshot_cache
         try:
-            data = load_persistent_json(TRANSLATION_STATUS_STATE_PATH, {}, i18n.t('u7.translation_status_state'))
-            data = data if isinstance(data, dict) else {}
+            data = load_persistent_json(_translation_status_path(target_lang), {}, i18n.t('u7.translation_status_state'))
+            data = data if _status_matches_language(data, target_lang) else {}
             self._restore_status_snapshot_cache = data
             return data
         except Exception as exc:
@@ -11826,10 +12016,12 @@ class App(BaseTk):
                     self.monitor_thread=None
                     messagebox.showerror(APP_NAME,i18n.t('p0.untranslated_monitor_error', payload=payload))
                 elif kind=="mod_status_results":
-                    self.mod_research_results=list(payload or [])
+                    self.mod_research_results=[row for row in (payload or []) if _status_matches_language(row, _current_target_lang(self))]
                     self._populate_mod_status_tree()
                     self.mod_status_summary_var.set(i18n.t('p0.scan_results_entries', count=len(self.mod_research_results)))
                 elif kind=="mod_status_append":
+                    if not _status_matches_language(payload, _current_target_lang(self)):
+                        continue
                     self.mod_research_results.append(payload)
                     self._populate_mod_status_tree()
                     self._schedule_translation_status_state_save("status_append")
