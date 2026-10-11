@@ -37,7 +37,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.80"
+APP_VERSION = "0.11.81"
 MOD_STATUS_CACHE_VERSION = 16
 TRANSLATION_STATUS_SNAPSHOT_SCHEMA = 2
 MOD_STATUS_EMPTY_IID = "__mod_status_empty__"
@@ -116,7 +116,9 @@ def _diff_translation_problem(source_text, translated, source_lang):
         return "内部の記号（@@N@@）が残りました"
     if core.extract_protected_tokens(text) != core.extract_protected_tokens(source_text):
         return "ゲーム変数・タグが原文と一致しません"
-    if text.strip() == str(source_text or "").strip() or core.looks_untranslated(source_text, text, source_lang):
+    if core.looks_like_chinese_in_japanese(text):
+        return "日本語ではなく中国語の応答でした"
+    if text.strip() == str(source_text or "").strip() or core.unusable_japanese_translation(source_text, text, source_lang):
         return "原文のまま、または翻訳として使えない応答でした"
     return ""
 

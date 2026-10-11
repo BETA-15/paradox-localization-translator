@@ -136,3 +136,4 @@ def test_diff_translation_problem_checks():
     assert main._diff_translation_problem("Hello $NAME$", "こんにちは", "english")
     assert main._diff_translation_problem("Hello", "こんにちは @@0@@", "english")
     assert main._diff_translation_problem("Hello", "  ", "english")
+    assert "中国語" in main._diff_translation_problem("The railway was built", "在铁路建设中发现了少量矿藏，促使公司雇佣工程师。", "english")
