@@ -25,6 +25,8 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 import translator_core as core
+import i18n
+from i18n import t
 import app_state
 
 try:
@@ -1087,9 +1089,15 @@ class App(BaseTk):
 
         # 前回使用したLLM設定は通常セッションとは別に常時保存する。
         # APIキーだけは保存しない。
+        # 以前から使っている人（設定ファイルがある人）は日本語の画面のまま。初めての人は OS の言語に合わせる。
+        has_existing_settings = any((APP_HOME / name).exists() for name in
+                                    ("app_preferences.json", "session.json", "workspace_state.json", "model_profiles.json"))
         self.app_preferences = load_persistent_json(APP_PREFS_PATH, {}, "アプリ設定")
         if not isinstance(self.app_preferences, dict):
             self.app_preferences = {}
+        self.ui_language = i18n.set_ui_language(
+            i18n.initial_ui_language(self.app_preferences.get("ui_language"), has_existing_settings))
+        self.ui_language_var = tk.StringVar(value=i18n.NATIVE_NAMES[self.ui_language])
         last_translation = self.app_preferences.get("translation_llm", {})
         last_monitor = self.app_preferences.get("monitor_llm", {})
         close_prefs = self.app_preferences.get("window_close", {}) if isinstance(self.app_preferences.get("window_close", {}), dict) else {}
@@ -2649,8 +2657,26 @@ class App(BaseTk):
         self.load_glossary_ui(silent=True)
         self._refresh_auto_glossary_tree()
 
+    def _choose_ui_language(self):
+        """画面の言語を保存する。切り替わるのは次に起動したとき（Tk は画面を作るときに文字を入れるため）。"""
+        chosen = next((lang for lang, name in i18n.NATIVE_NAMES.items() if name == self.ui_language_var.get()), None)
+        if not chosen:
+            return
+        self.app_preferences["ui_language"] = chosen
+        self._save_llm_preferences()
+        if chosen != self.ui_language:
+            messagebox.showinfo(APP_NAME, i18n.t_lang(chosen, "p0.settings.ui_language_restart"))
+
     def _build_settings_tab(self):
         t = self.tab_settings
+        lang_box = ttk.LabelFrame(t, text=i18n.t("p0.settings.ui_language_frame"), padding=12)
+        lang_box.pack(fill="x", pady=(0,12))
+        ttk.Label(lang_box, text=i18n.t("p0.settings.ui_language_label")).grid(row=0, column=0, sticky="w")
+        ui_combo = ttk.Combobox(lang_box, textvariable=self.ui_language_var, state="readonly", width=22,
+                                values=[i18n.NATIVE_NAMES[x] for x in i18n.UI_LANGUAGES])
+        ui_combo.grid(row=0, column=1, sticky="w", padx=(8,12))
+        ui_combo.bind("<<ComboboxSelected>>", lambda _e: self._choose_ui_language())
+        ttk.Label(lang_box, text=i18n.t("p0.settings.ui_language_note"), foreground="#555").grid(row=0, column=2, sticky="w")
         box = ttk.LabelFrame(t, text="自動生成ファイルの保存場所", padding=12)
         box.pack(fill="x")
         box.columnconfigure(1, weight=1)
@@ -5961,6 +5987,7 @@ Mod更新後だけ追加翻訳:
                     "action": {"毎回確認":"confirm","最小化":"minimize","終了":"quit"}.get(self.close_action_var.get(), "confirm"),
                 },
                 "target_lang": self.target_lang_var.get() if hasattr(self, "target_lang_var") else core.DEFAULT_TARGET_LANG,
+                "ui_language": (self.app_preferences or {}).get("ui_language") or getattr(self, "ui_language", i18n.LEGACY_UI_LANGUAGE),
             })
             core.save_json(APP_PREFS_PATH, data)
             self.app_preferences = data
