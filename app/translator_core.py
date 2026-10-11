@@ -2579,6 +2579,7 @@ def build_auto_glossary_candidates(pairs: Iterable[dict]) -> List[dict]:
             "conflict": len(variants) > 1,
             "keys": keys_by_source[src][:30],
             "source_kind": "auto",
+            "term_kind": _classify_glossary_term_kind(src, langs.get(src, "english"), keys_by_source[src][0], preferred),
         })
     out.sort(key=lambda x: (not x["conflict"], -x["occurrences"], x["source"]))
     return out
@@ -2627,6 +2628,75 @@ def _is_probable_specific_glossary_term(key: str, source: str, target: str, sour
             return True
 
     return False
+
+
+_TERM_KIND_VERBS = {
+    "increase", "decrease", "gain", "lose", "add", "remove", "enable", "disable",
+    "unlock", "lock", "can", "cannot", "is", "are", "has", "have", "will", "do",
+    "does", "get", "give", "take", "make", "build", "raise", "lower", "reduce",
+    "improve", "start", "stop", "join", "leave", "declare", "accept", "refuse",
+    "reject", "allow", "ban", "demand", "request", "send", "recruit", "grant",
+    "revoke", "choose", "select", "open", "close", "show", "hide",
+}
+_TERM_KIND_FUNCTION_WORDS = {"to", "for", "per", "by", "with", "from", "into", "than", "if", "when", "while", "not"}
+# 固有名詞（組織名・条約名など）の中で小文字のままでよい語。
+_TITLE_CONNECTORS = {"of", "the", "and", "for", "in", "on", "at", "to", "a", "an", "de", "del", "della", "la", "le", "les",
+                     "du", "des", "von", "van", "der", "den", "y", "e", "da", "do", "dos", "das", "und", "et", "di", "en", "i", "al", "el"}
+# "Ltd."・"Jr."・"S.A."・"H.R.M." のような略語は、文の終わりの「.」ではない。
+_ABBREVIATION_RE = re.compile(r"^(?:[A-Za-z]{1,4}\.){2,}$|^(?:Jr|Sr|Ltd|Co|Inc|Rev|Dr|Mr|Mrs|Ms|St|Gen|Col|Lt|Capt|Adm|Gov|Pres|Bros|No|Vol)\.$")
+# 形容詞としても使う動詞。"Close Air Support"・"Lower Yangtze"・"Open Door Policy" のような名前の頭に来る。
+_ADJECTIVE_VERBS = {"close", "lower", "open"}
+
+
+def _is_title_case_name(words: List[str]) -> bool:
+    """英語の各語が大文字で始まる（つなぎの語は小文字でよい）名詞句か。組織名・条約名・地名など。"""
+    words = [w for w in words if w[:1].isalpha()]  # "2nd" のような数字で始まる語は見ない
+    if not words or not (words[0][:1].isupper() or words[0] == "the"):
+        return False
+    capitalized = 0
+    for word in words:
+        if word[:1].isupper():
+            capitalized += 1
+        elif word.lower() not in _TITLE_CONNECTORS:
+            return False
+    # "Support for Infantry" のような UI の句と、"Cape to Cairo Railway" のような名前を分けるため、
+    # for・to を含むときは大文字の語が3つ以上あるときだけ名前とみなす。
+    if {"for", "to"} & {w.lower() for w in words}:
+        return capitalized >= 3
+    return capitalized >= (1 if words[0] == "the" else 2)
+
+
+def _classify_glossary_term_kind(source: str, source_lang: str, key: str = "", target: str = "") -> str:
+    """自動生成の用語候補の種類（要望C）。proper＝固有名詞、term＝単語、phrase＝定型句。原文の側だけで決める。
+
+    定型句の第一の目印は文の終わりの記号（出来事の選択肢の短い返事 "Great!"、"So be it." など）と変数。
+    大文字で始まる語が並ぶ名前（"The League of Eight Provinces" など）は、長くても固有名詞にする。
+    """
+    text = (source or "").strip()
+    if PROTECT_RE.search(text):
+        return "phrase"
+    plain = PROTECT_RE.sub('', text).strip()
+    if plain.endswith(('.', '!', '?', '…', '。', '！', '？')) and not _ABBREVIATION_RE.match(plain):
+        return "phrase"
+    words = re.findall(r"[^\W\d_][\w'\-]*", plain)
+    tokens = plain.split()
+    if source_lang == "english":
+        lowered = [word.lower() for word in words]
+        if len(words) >= 2 and lowered[0] in _TERM_KIND_VERBS and not (
+                lowered[0] in _ADJECTIVE_VERBS and _is_title_case_name(tokens)):
+            return "phrase"
+        if 2 <= len(tokens) <= 10 and _is_title_case_name(tokens):
+            return "proper"
+        if len(words) >= 4:
+            return "phrase"
+        if _TERM_KIND_FUNCTION_WORDS.intersection(lowered) or re.search(r"\d", plain):
+            return "phrase"
+    elif source_lang == "simp_chinese":
+        if plain.startswith(("增加", "减少", "获得", "失去", "提高", "降低", "解锁", "允许", "禁止", "可以", "需要")):
+            return "phrase"
+    if _is_probable_specific_glossary_term(key, source, target, source_lang):
+        return "proper"
+    return "term"
 
 
 def build_import_glossary_candidates_from_records(records: Iterable[dict], source_kind: str = "import",
@@ -2713,7 +2783,7 @@ def resolve_auto_glossary_conflicts(provider: str, url: str, model: str, candida
 
     Failure is non-fatal: the frequency-based preferred wording remains in place.
     """
-    conflicts = [c for c in candidates if c.get("conflict")][:80]
+    conflicts = [c for c in candidates if c.get("conflict") and c.get("term_kind") != "phrase"][:80]
     if not conflicts or not model:
         return candidates
     payload = [{
@@ -2745,7 +2815,8 @@ def glossary_variants_path(glossary_path: Path) -> Path:
     return glossary_path.with_name(glossary_path.stem + "_variants.json")
 
 
-def save_auto_glossary_candidates(glossary_path: Path, candidates: List[dict], preserve_existing: bool = True) -> dict:
+def save_auto_glossary_candidates(glossary_path: Path, candidates: List[dict], preserve_existing: bool = True,
+                                  include_phrases: bool = False) -> dict:
     """Merge generated terminology into the normal glossary and save variant metadata."""
     glossary_path = Path(glossary_path)
     glossary = load_glossary(glossary_path) if preserve_existing else {}
@@ -2754,16 +2825,21 @@ def save_auto_glossary_candidates(glossary_path: Path, candidates: List[dict], p
         variants = {}
     added = 0
     conflicts = 0
+    term_kind_counts = {"proper": 0, "term": 0, "phrase": 0}
     for c in candidates:
         src = str(c.get("source", "")).strip()
         preferred = str(c.get("preferred", "")).strip()
         if not src or not preferred:
             continue
+        term_kind = c.get("term_kind", "")
+        if term_kind in term_kind_counts:
+            term_kind_counts[term_kind] += 1
         existed = src in glossary
         was_generated = src in variants
         if not existed:
-            glossary[src] = preferred
-            added += 1
+            if term_kind != "phrase" or include_phrases:
+                glossary[src] = preferred
+                added += 1
         else:
             preferred = glossary[src]
         # A manually registered term must remain a manual term. Automatic generation
@@ -2780,10 +2856,12 @@ def save_auto_glossary_candidates(glossary_path: Path, candidates: List[dict], p
             "source_lang": c.get("source_lang", ""),
             "occurrences": int(c.get("occurrences", 0)),
             "source_kind": c.get("source_kind", "auto"),
+            "term_kind": term_kind,
         }
     save_glossary(glossary_path, glossary)
     save_json(glossary_variants_path(glossary_path), variants)
-    return {"added": added, "total": len(candidates), "conflicts": conflicts, "glossary_size": len(glossary)}
+    return {"added": added, "total": len(candidates), "conflicts": conflicts, "glossary_size": len(glossary),
+            "term_kind_counts": term_kind_counts, "include_phrases": include_phrases}
 
 
 def bulk_unify_qa_terms(target_path: Path, source_path: Path, glossary_path: Path) -> dict:

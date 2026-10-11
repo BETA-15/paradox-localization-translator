@@ -2452,8 +2452,8 @@ class App(BaseTk):
         top=ttk.LabelFrame(t,text="用語集設定",padding=8); top.pack(fill="x",pady=(0,6))
         ttk.Label(top,text="用語集ファイル").pack(side="left")
         ttk.Entry(top,textvariable=self.glossary_path_var).pack(side="left",fill="x",expand=True,padx=6)
-        ttk.Button(top,text="読込",command=self.load_glossary_ui).pack(side="left")
-        ttk.Button(top,text="保存",command=self.save_glossary_ui).pack(side="left",padx=(6,0))
+        ttk.Button(top,text="読込",command=lambda:self._run_glossary_action(self.load_glossary_ui)).pack(side="left")
+        ttk.Button(top,text="保存",command=lambda:self._run_glossary_action(self.save_glossary_ui)).pack(side="left",padx=(6,0))
         ttk.Label(top,textvariable=self.auto_glossary_status_var,foreground="#555").pack(side="right",padx=(8,0))
 
         panes=ttk.Panedwindow(t,orient="horizontal"); panes.pack(fill="both",expand=True)
@@ -2462,9 +2462,9 @@ class App(BaseTk):
         panes.add(manual,weight=1); panes.add(generated,weight=1)
 
         mbar=ttk.Frame(manual); mbar.pack(fill="x",pady=(0,6))
-        ttk.Button(mbar,text="用語追加",command=self.add_glossary_term).pack(side="left")
-        ttk.Button(mbar,text="選択編集",command=self.edit_glossary_term).pack(side="left",padx=(6,0))
-        ttk.Button(mbar,text="選択削除",command=self.delete_glossary_term).pack(side="left",padx=(6,0))
+        ttk.Button(mbar,text="用語追加",command=lambda:self._run_glossary_action(self.add_glossary_term)).pack(side="left")
+        ttk.Button(mbar,text="選択編集",command=lambda:self._run_glossary_action(self.edit_glossary_term)).pack(side="left",padx=(6,0))
+        ttk.Button(mbar,text="選択削除",command=lambda:self._run_glossary_action(self.delete_glossary_term)).pack(side="left",padx=(6,0))
         ttk.Label(manual,text="手動で固定した原語 → 日本語訳です。手動用語は自動生成で上書きされません。",foreground="#666",wraplength=520,justify="left").pack(fill="x",anchor="w",pady=(0,6))
         self.glossary_tree=ttk.Treeview(manual,columns=("src","dst"),show="headings")
         self.glossary_tree.heading("src",text="原語"); self.glossary_tree.heading("dst",text="日本語")
@@ -2487,13 +2487,22 @@ class App(BaseTk):
         ttk.Label(generated,text="通常翻訳・中国語基準翻訳・QA・差分調査で作成した用語と、ゲーム本体や既存日本語化から取り込んだ用語を表示します。自動生成は各作業タブから実行します。",foreground="#666",wraplength=560,justify="left").pack(fill="x",anchor="w",pady=(0,4))
         self.auto_glossary_drop_hint=ttk.Label(generated,text=("ドラッグ＆ドロップ対応 — 日本語YAML / 日本語化Mod / localizationフォルダ" if DND_AVAILABLE else "ドラッグ＆ドロップはこのビルドでは利用できません"),foreground="#555")
         self.auto_glossary_drop_hint.pack(fill="x",anchor="w",pady=(0,6))
-        self.auto_glossary_tree=ttk.Treeview(generated,columns=("src","dst","kind"),show="headings")
-        for c,label,w in (("src","原語",250),("dst","日本語",280),("kind","由来",140)):
+        self.auto_glossary_include_phrases_var=tk.BooleanVar(value=False)
+        ttk.Checkbutton(generated,text="定型句も用語集に入れる",variable=self.auto_glossary_include_phrases_var).pack(anchor="w",pady=(0,4))
+        filters=ttk.Frame(generated); filters.pack(fill="x",pady=(0,6))
+        self.auto_glossary_kind_filter_vars={}
+        for term_kind,label in (("proper","固有名詞"),("term","単語"),("phrase","定型句")):
+            variable=tk.BooleanVar(value=True)
+            self.auto_glossary_kind_filter_vars[term_kind]=variable
+            ttk.Checkbutton(filters,text=label,variable=variable,command=self._refresh_auto_glossary_tree).pack(side="left",padx=(0,8))
+        self.auto_glossary_tree=ttk.Treeview(generated,columns=("src","dst","kind","term_kind"),show="headings")
+        for c,label,w in (("src","原語",250),("dst","日本語",280),("kind","由来",140),("term_kind","種類",90)):
             self.auto_glossary_tree.heading(c,text=label); self.auto_glossary_tree.column(c,width=w,stretch=True)
         self._enable_tree_sort(self.auto_glossary_tree)
         gy=ttk.Scrollbar(generated,orient="vertical",command=self.auto_glossary_tree.yview); gx=ttk.Scrollbar(generated,orient="horizontal",command=self.auto_glossary_tree.xview)
         self.auto_glossary_tree.configure(yscrollcommand=gy.set,xscrollcommand=gx.set)
         self.auto_glossary_tree.pack(fill="both",expand=True); gx.pack(fill="x")
+        self.auto_glossary_tree.bind("<Map>",lambda event:self.after_idle(self._refresh_auto_glossary_tree))
         if DND_AVAILABLE:
             try:
                 self._register_dnd_widgets([generated,self.auto_glossary_drop_hint,self.auto_glossary_tree],self.on_glossary_import_drop_paths)
@@ -2501,6 +2510,7 @@ class App(BaseTk):
                 self.auto_glossary_drop_hint.configure(text=f"ドラッグ＆ドロップ初期化失敗: {exc}")
                 record_error("用語集DnD初期化",exc)
         self.load_glossary_ui(silent=True)
+        self._refresh_auto_glossary_tree()
 
     def _build_settings_tab(self):
         t = self.tab_settings
@@ -10811,12 +10821,14 @@ Mod更新後だけ追加翻訳:
         self.auto_glossary_controller=core.TranslationController(progress_callback=lambda p:self.events.put(("auto_glossary_progress",p)))
         settings={"provider":self.provider_var.get(),"url":self.url_var.get().strip(),"model":self.model_var.get().strip(),"preset":self.preset_var.get(),"api_key":self.api_key_var.get().strip()}
         glossary_path=Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY)
+        include_phrases_var=getattr(self,"auto_glossary_include_phrases_var",None)
+        include_phrases=bool(include_phrases_var.get()) if include_phrases_var is not None else False
         def work():
             try:
                 candidates=core.build_auto_glossary_candidates(pairs)
                 if candidates:
                     candidates=core.resolve_auto_glossary_conflicts(settings["provider"],settings["url"],settings["model"],candidates,settings["preset"],settings["api_key"],self.auto_glossary_controller)
-                result=core.save_auto_glossary_candidates(glossary_path,candidates,preserve_existing=True)
+                result=core.save_auto_glossary_candidates(glossary_path,candidates,preserve_existing=True,include_phrases=include_phrases)
                 self.events.put(("auto_glossary_done",result))
             except core.StopRequested:
                 self.events.put(("auto_glossary_error","停止しました"))
@@ -10826,6 +10838,43 @@ Mod更新後だけ追加翻訳:
         self.auto_glossary_thread.start()
 
     # ---------------- glossary ----------------
+    def _refresh_auto_glossary_tree(self, display_only=True):
+        if not hasattr(self,"auto_glossary_tree"):
+            return
+        path=Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY)
+        if core.glossary_file_problem(path):
+            return
+        glossary=core.load_glossary(path)
+        metadata=self._glossary_variant_metadata()
+        rows={source:(target,metadata[source]) for source,target in glossary.items() if isinstance(metadata.get(source),dict) and metadata[source]}
+        if display_only:
+            for source,meta in metadata.items():
+                if isinstance(meta,dict) and meta.get("term_kind")=="phrase" and source not in glossary and meta.get("preferred"):
+                    rows[source]=(meta["preferred"],meta)
+        for row_id in self.auto_glossary_tree.get_children():
+            self.auto_glossary_tree.delete(row_id)
+        labels={"proper":"固有名詞","term":"単語","phrase":"定型句"}
+        filters=getattr(self,"auto_glossary_kind_filter_vars",{})
+        for source,(target,meta) in sorted(rows.items()):
+            term_kind=meta.get("term_kind","")
+            variable=filters.get(term_kind)
+            if display_only and variable is not None and not variable.get():
+                continue
+            self.auto_glossary_tree.insert("","end",values=(source,target,self._glossary_kind_label(meta),labels.get(term_kind,"")))
+
+    def _run_glossary_action(self, action):
+        self._refresh_auto_glossary_tree(display_only=False)
+        try:
+            return action()
+        finally:
+            self._refresh_auto_glossary_tree()
+
+    @staticmethod
+    def _auto_glossary_kind_summary(result):
+        counts=result.get("term_kind_counts",{})
+        phrase_note="" if result.get("include_phrases") else "（用語集には入れていません）"
+        return f"固有名詞 {counts.get('proper',0)}／単語 {counts.get('term',0)}／定型句 {counts.get('phrase',0)}{phrase_note}"
+
     def _glossary_variant_metadata(self):
         p=Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY)
         data=core.load_json(core.glossary_variants_path(p), {})
@@ -11069,6 +11118,7 @@ Mod更新後だけ追加翻訳:
             return
         result=core.save_auto_glossary_candidates(Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY),candidates,preserve_existing=True)
         self.load_glossary_ui(silent=True)
+        if hasattr(self,"_refresh_auto_glossary_tree"): self._refresh_auto_glossary_tree()
         self.auto_glossary_status_var.set(f"{label}: {result.get('added',0)}件追加 / 候補 {result.get('total',0)}件")
         lines=[f"{label}が完了しました。",f"候補: {result.get('total',0)}件",f"新規追加: {result.get('added',0)}件"]
         if stats:
@@ -12006,8 +12056,10 @@ Mod更新後だけ追加翻訳:
                     self.auto_glossary_controller=None; self.auto_glossary_thread=None
                     self._set_llm_idle("LLM 待機中","自動用語作成が完了しました")
                     self.load_glossary_ui(silent=True)
-                    self.auto_glossary_status_var.set(f"追加 {payload.get('added',0)} / 候補 {payload.get('total',0)} / 表記揺れ {payload.get('conflicts',0)}")
-                    if not self._closing: messagebox.showinfo(APP_NAME, f"自動用語作成が完了しました。\n候補: {payload.get('total',0)}件\n新規追加: {payload.get('added',0)}件\n複数訳を統一: {payload.get('conflicts',0)}件")
+                    if hasattr(self,"_refresh_auto_glossary_tree"): self._refresh_auto_glossary_tree()
+                    kind_summary=App._auto_glossary_kind_summary(payload)
+                    self.auto_glossary_status_var.set(f"追加 {payload.get('added',0)} / 候補 {payload.get('total',0)} / 表記揺れ {payload.get('conflicts',0)} / {kind_summary}")
+                    if not self._closing: messagebox.showinfo(APP_NAME, f"自動用語作成が完了しました。\n候補: {payload.get('total',0)}件\n新規追加: {payload.get('added',0)}件\n複数訳を統一: {payload.get('conflicts',0)}件\n{kind_summary}")
                 elif kind=="auto_glossary_error":
                     self.auto_glossary_controller=None; self.auto_glossary_thread=None
                     self._set_llm_idle("LLM 待機中","自動用語作成を終了しました")
@@ -12043,6 +12095,7 @@ Mod更新後だけ追加翻訳:
                             lines=[f"{label}が完了しました。","取り込み可能な用語候補はありませんでした。"]
                         else:
                             self.load_glossary_ui(silent=True)
+                            if hasattr(self,"_refresh_auto_glossary_tree"): self._refresh_auto_glossary_tree()
                             self.auto_glossary_status_var.set(f"{label}: {result.get('added',0)}件追加 / 候補 {result.get('total',0)}件")
                             lines=[f"{label}が完了しました。",f"候補: {result.get('total',0)}件",f"新規追加: {result.get('added',0)}件"]
                         if stats:
