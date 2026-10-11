@@ -79,3 +79,15 @@ def test_non_japanese_items_never_target_a_japanese_translation_mod():
     state = SimpleNamespace(_source_overwrite_path_conflicts=lambda _item: conflicts)
     assert main.App._preferred_later_translation_conflict(state, {"target_lang": "french"})[0] is None
     assert main.App._preferred_later_translation_conflict(state, {})[0]["mod"] == "JP"
+
+
+def test_items_from_translation_status_stay_japanese(tmp_path):
+    loc = tmp_path / "Mod" / "localization"; loc.mkdir(parents=True)
+    state = SimpleNamespace(queue_items=[], target_lang_var=SimpleNamespace(get=lambda: "french"),
+                            normal_output_var=SimpleNamespace(get=lambda: str(tmp_path / "out")),
+                            _isolated_output_path=lambda *_a: tmp_path / "out" / "mod",
+                            _normal_queue_locked=lambda: False, _new_cache_path=lambda p: tmp_path / "c.json",
+                            _refresh_queue_tree=lambda: None, _save_workspace_state=lambda *_a: None)
+    state._append_queue = types.MethodType(main.App._append_queue, state)
+    item = main.App._queue_mod_status_result(state, {"localization": str(loc), "path": str(loc.parent), "mod": "Mod"})
+    assert item["target_lang"] == "japanese"

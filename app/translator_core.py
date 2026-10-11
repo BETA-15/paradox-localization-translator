@@ -148,7 +148,8 @@ def game_language_warning(target_lang: str, path=None, preset: str = "") -> str:
     if not supported or target_lang in supported:
         return ""
     names = "・".join(target_language_label(x) for x in supported)
-    return (f"{game} は{target_language_label(target_lang)}（l_{target_lang}）を読めません。"
+    basis = "" if game_for_translation(path, "") else "（Mod の場所からゲームが分からないため、ゲームプリセットから判断）"
+    return (f"{game} は{target_language_label(target_lang)}（l_{target_lang}）を読めません{basis}。"
             f"翻訳しても、ゲームの中には表示されません。{game} が読める言語: {names}")
 
 LINE_PATTERN = re.compile(
@@ -590,8 +591,12 @@ def _looks_untranslated_other(original: str, translated: str, source_lang: str, 
             words = re.findall(r"[^\W\d_]+(?:'[^\W\d_]+)?", orig_plain)
             return len(words) >= LATIN_SAME_AS_SOURCE_MIN_WORDS
         return False
-    if orig == trans and _letters_outside_script(orig_plain, script) >= 2:
-        return True
+    if orig == trans:
+        if target_language_script(source_lang) == "latin":
+            # 略語（AI・DLC・OK など）はそのままが正しいことが多い。日本語と同じ基準の「英語の語句が残っている」で判定する。
+            return _english_residue(orig_plain)
+        if _letters_outside_script(orig_plain, script) >= 2:
+            return True
     if _SCRIPT_RES[script].search(trans_plain):
         return False
     return looks_foreign_in_target(trans, target_lang)

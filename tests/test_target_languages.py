@@ -118,8 +118,12 @@ def test_non_latin_targets_are_checked_by_script():
         assert core.looks_foreign_in_target(src, lang) is True, lang
     # 中国語のまま残った韓国語・ロシア語の訳
     assert core.looks_untranslated("议会通过了法律", "议会通过了法律", "simp_chinese", "korean") is True
-    # 変数だけ・略語だけは未翻訳にしない
+    # 変数だけ・略語だけは未翻訳にしない（原文と同じでも）
     assert core.looks_untranslated("$NAME$", "$NAME$", "english", "russian") is False
+    for lang in ("korean", "russian", "simp_chinese"):
+        for abbr in ("AI", "DLC", "OK", "GDP"):
+            assert core.looks_untranslated(abbr, abbr, "english", lang) is False, (lang, abbr)
+        assert core.looks_untranslated("Declare war", "Declare war", "english", lang) is True, lang
     assert core.looks_foreign_in_target("NATO", "korean") is False
 
 
@@ -130,6 +134,7 @@ import json as _json
 import pytest
 
 FAKE_TEXT = {"french": "Texte traduit", "german": "Übersetzter Text", "korean": "번역된 문장",
+             "spanish": "Texto traducido", "polish": "Przetłumaczony tekst", "braz_por": "Texto traduzido",
              "russian": "Переведённый текст", "english": "Translated text", "simp_chinese": "已翻译的文本",
              "japanese": "翻訳された文", "turkish": "Çevrilmiş metin"}
 
@@ -159,6 +164,10 @@ ZH = 'l_simp_chinese:\n greet:0 "你好 $NAME$"\n title:0 "议会通过了新法
     ("korean", {"english/ev_l_english.yml": EN}, "english"),
     ("russian", {"english/ev_l_english.yml": EN}, "english"),
     ("turkish", {"english/ev_l_english.yml": EN}, "english"),
+    ("german", {"english/ev_l_english.yml": EN}, "english"),
+    ("spanish", {"english/ev_l_english.yml": EN}, "english"),
+    ("polish", {"english/ev_l_english.yml": EN}, "english"),
+    ("braz_por", {"english/ev_l_english.yml": EN}, "english"),
     # 翻訳先が english：english は原文から外し、simp_chinese を原文にする
     ("english", {"english/ev_l_english.yml": EN, "simp_chinese/ev_l_simp_chinese.yml": ZH}, "simp_chinese"),
     # 翻訳先が simp_chinese：simp_chinese は原文から外し、english を原文にする
@@ -225,3 +234,16 @@ def test_qa_on_french_output_reports_no_japanese_specific_errors():
     assert not [i for i in issues if i["severity"] in {"error", "warning"}]
     same = [i for i in issues if i["type"] == "same_as_source"]
     assert len(same) == 1 and same[0]["severity"] == "notice" and same[0]["repairable"] is False
+
+
+def test_without_english_simplified_chinese_is_preferred_over_other_languages(tmp_path, monkeypatch):
+    """英語が無く仏語と中国語があるとき、簡体字中国語を原文にする（日本語でも同じ。v0.11.80 までは仏語）。"""
+    calls = []
+    monkeypatch.setattr(core, "translate_batch", _fake_translate(calls))
+    src = _mod(tmp_path / "mod" / "localization",
+               {"french/ev_l_french.yml": 'l_french:\n greet:0 "Bonjour $NAME$"\n title:0 "Le conseil a approuvé la loi"\n',
+                "simp_chinese/ev_l_simp_chinese.yml": ZH})
+    for target in ("korean", "japanese"):
+        calls.clear()
+        core.run_translation(src, tmp_path / target, target_lang=target, verbose=False, auto_qa=False)
+        assert {c[0] for c in calls} == {"simp_chinese"}, target

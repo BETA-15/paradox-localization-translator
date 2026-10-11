@@ -6896,7 +6896,8 @@ Mod更新後だけ追加翻訳:
         if not loc.is_dir():
             return None
         isolated_out = self._isolated_output_path(loc, Path(self.normal_output_var.get().strip() or str(OUTPUT_ROOT)), result.get("mod", mod_root.name))
-        self._append_queue(loc, out=isolated_out)
+        # 翻訳状況（日本語化Modの調査）から入れた項目は、日本語化Modへの上書きなどを使うので日本語に固定する。
+        self._append_queue(loc, out=isolated_out, target_lang=core.DEFAULT_TARGET_LANG)
         item = self.queue_items[-1]
         item["mod_root"] = str(mod_root)
         item["mod_localization"] = str(loc)
@@ -7069,7 +7070,8 @@ Mod更新後だけ追加翻訳:
                 new_item, msg = self._append_chinese_queue(input_path, mod_name + ("（不足分）" if missing_only else ""))
             else:
                 before = len(self.queue_items)
-                self._append_queue(input_path)
+                # 中国語基準翻訳キュー（日本語専用）から移す項目は日本語に固定する。
+                self._append_queue(input_path, target_lang=core.DEFAULT_TARGET_LANG)
                 new_item = self.queue_items[-1] if len(self.queue_items) > before else None
                 msg = ""
             if not new_item:
@@ -8403,7 +8405,7 @@ Mod更新後だけ追加翻訳:
                 f"差分翻訳対象を確認しました。\n\nスナップショット: {snapshot_note}\n新規キー: {c['added']}\n変更キー: {c['changed']}\n削除キー: {c['removed']}\n翻訳状況の欠損（このキューで補完可能）: {missing_total}\n新規ファイル: {c['added_files']}\n削除ファイル: {c['removed_files']}\n\n原文差分と翻訳状況の欠損だけを補完します。")
         return diff
 
-    def _append_queue(self,p:Path,out:Path|None=None,status="待機",cache:Path|None=None):
+    def _append_queue(self,p:Path,out:Path|None=None,status="待機",cache:Path|None=None,target_lang:str|None=None):
         if self._normal_queue_locked():
             return None
         p = Path(p)
@@ -8412,7 +8414,7 @@ Mod更新後だけ追加翻訳:
         out=out or self._default_output(p)
         cache_path = cache or self._new_cache_path(p)
         item={"input":str(p),"output":str(out),"status":status,"cache":str(cache_path),"output_isolated_v2":True,
-              "target_lang":self.target_lang_var.get()}
+              "target_lang":target_lang or self.target_lang_var.get()}
         app_state.ensure_queue_item_id(item)
         self.queue_items.append(item)
         self._refresh_queue_tree(); self._save_workspace_state("normal_queue_changed")
