@@ -395,14 +395,22 @@ def escape_localization_value(value: str) -> str:
 def translation_cache_key(provider: str, model: str, preset: str, source_lang: str,
                           original: str, glossary: Optional[dict] = None,
                           dual_source: bool = False, zh_ref: str = "",
-                          translation_mode: str = "standard") -> str:
-    """Cache key including settings that materially change translation output."""
+                          translation_mode: str = "standard",
+                          target_lang: str = DEFAULT_TARGET_LANG) -> str:
+    """Cache key including settings that materially change translation output.
+
+    翻訳先が日本語のときは v0.11.80 までとまったく同じキーにする（利用者のキャッシュを捨てないため）。
+    ほかの言語のときだけ翻訳先を加え、別の言語の訳がキャッシュから返らないようにする。
+    """
     glossary_blob = json.dumps(glossary or {}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    cfg_blob = "\n".join([
+    cfg_parts = [
         normalize_provider(provider), model or "", preset or "", source_lang or "",
         "dual=1" if dual_source else "dual=0", f"mode={translation_mode}", text_hash(glossary_blob),
         text_hash(zh_ref or "") if dual_source else "no-zh",
-    ])
+    ]
+    if (target_lang or DEFAULT_TARGET_LANG) != DEFAULT_TARGET_LANG:
+        cfg_parts.append(f"target={target_lang}")
+    cfg_blob = "\n".join(cfg_parts)
     return f"v6:{text_hash(cfg_blob)}:{text_hash(original)}"
 
 

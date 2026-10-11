@@ -43,3 +43,12 @@ def test_game_language_warning_for_languages_the_game_cannot_read():
     assert core.game_language_warning("turkish", "/somewhere/else", "General") == ""
     # 場所の情報はプリセットより優先する
     assert core.game_language_warning("turkish", hoi4_mod, "Victoria 3") != ""
+
+
+def test_cache_keys_are_separated_by_target_language_except_japanese_unchanged():
+    args = ("Ollama", "qwen3:8b", "CK3", "english", "Hello")
+    japanese = core.translation_cache_key(*args)
+    assert core.translation_cache_key(*args, target_lang="japanese") == japanese
+    keys = {lang: core.translation_cache_key(*args, target_lang=lang) for lang in OFFICIAL}
+    assert len(set(keys.values())) == len(OFFICIAL)
+    assert keys["japanese"] == japanese
