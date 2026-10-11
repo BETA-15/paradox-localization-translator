@@ -107,8 +107,22 @@ def game_roots(game_name: str) -> list:
     return sorted(roots, key=str)
 
 
+def source_fingerprint(mod_root: Path) -> str:
+    """Mod のローカライズのファイルの数・大きさ・更新時刻（Steam Workshop の更新で中身が変わったかを見分ける）。"""
+    loc = core.mod_localization_root(Path(mod_root))
+    h = hashlib.sha256()
+    for fp in sorted(core.gather_yml_files(loc)) if loc else []:
+        try:
+            st = fp.stat()
+        except OSError:
+            continue
+        h.update(f"{fp.relative_to(mod_root)}|{st.st_size}|{int(st.st_mtime)}\n".encode("utf-8", "ignore"))
+    return h.hexdigest()[:16]
+
+
 def collect_game(game: str, out: Path, full: bool = False) -> dict:
     roots = game_roots(GAMES[game])
+    (out / f"sources_{game}.txt").write_text("".join(f"{r}\t{source_fingerprint(r)}\n" for r in roots), encoding="utf-8")
     started = time.time()
     eligible = [r for r in roots if _has_japanese(r)]
     index = core.build_translation_mod_index(eligible)
@@ -214,9 +228,27 @@ def diff(base, new, path="", out=None):
     return out
 
 
+def _changed_sources(base_dir: Path, new_dir: Path) -> list:
+    changed = []
+    for base_file in sorted(base_dir.glob("sources_*.txt")):
+        new_file = new_dir / base_file.name
+        if not new_file.exists():
+            continue
+        old = dict(line.split("\t", 1) for line in base_file.read_text(encoding="utf-8").splitlines() if "\t" in line)
+        new = dict(line.split("\t", 1) for line in new_file.read_text(encoding="utf-8").splitlines() if "\t" in line)
+        changed += [k for k in sorted(set(old) | set(new)) if old.get(k) != new.get(k)]
+    return changed
+
+
 def compare(args) -> int:
     base_dir, new_dir = Path(args.base), Path(args.new)
     failures = 0
+    changed_sources = _changed_sources(base_dir, new_dir)
+    if changed_sources:
+        print(f"注意：基準を取った後に中身が変わった Mod が {len(changed_sources)} 個あります（Steam Workshop の更新など）。"
+              "その Mod の差はコードの差とは限りません。同じ時に基準と新しい版を取り直して比べてください。")
+        for path in changed_sources[:20]:
+            print(f"  変わった Mod: {path}")
     for base_file in sorted(base_dir.glob("*.json")):
         if base_file.name == "summary.json":
             continue
