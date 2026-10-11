@@ -2329,10 +2329,10 @@ class App(BaseTk):
         win.geometry("980x520")
         win.transient(self)
         win.grab_set()
-        ttk.Label(win, text="使用する原文と日本語訳の組み合わせを選択してください。", padding=(10,10,10,4)).pack(anchor="w")
+        ttk.Label(win, text=i18n.t('u3.choose_pair'), padding=(10,10,10,4)).pack(anchor="w")
         frame = ttk.Frame(win, padding=(10,0,10,8)); frame.pack(fill="both", expand=True)
         tree = ttk.Treeview(frame, columns=("lang","src","dst"), show="headings", selectmode="browse")
-        for c, label, width in (("lang","原文言語",120),("src","原文YAML",390),("dst","日本語YAML",390)):
+        for c, label, width in (("lang",i18n.t('u3.source_language'),120),("src",i18n.t('u3.source_yaml'),390),("dst",i18n.t('u3.japanese_yaml'),390)):
             tree.heading(c, text=label); tree.column(c, width=width, anchor="w")
         sy = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
         sx = ttk.Scrollbar(frame, orient="horizontal", command=tree.xview)
@@ -2340,7 +2340,7 @@ class App(BaseTk):
         tree.pack(side="top", fill="both", expand=True)
         sx.pack(side="bottom", fill="x")
         sy.pack(side="right", fill="y")
-        labels = {"english":"英語", "simp_chinese":"簡体字中国語"}
+        labels = {"english":i18n.t('u3.english'), "simp_chinese":i18n.t('u3.simplified_chinese')}
         for i, pair in enumerate(pairs):
             tree.insert("", "end", iid=str(i), values=(labels.get(pair["lang"], pair["lang"]), self._localization_display_path(pair["source"]), self._localization_display_path(pair["target"])))
         tree.selection_set("0"); tree.focus("0")
@@ -2360,10 +2360,10 @@ class App(BaseTk):
             win.destroy()
         english_count=sum(pair.get("lang")=="english" for pair in pairs)
         chinese_count=sum(pair.get("lang")=="simp_chinese" for pair in pairs)
-        ttk.Button(buttons, text=f"英語をすべて ({english_count})", command=lambda:accept_language("english"), state="normal" if english_count else "disabled").pack(side="left")
-        ttk.Button(buttons, text=f"簡体字中国語をすべて ({chinese_count})", command=lambda:accept_language("simp_chinese"), state="normal" if chinese_count else "disabled").pack(side="left", padx=(6,0))
-        ttk.Button(buttons, text="選択したファイル", command=accept_selected).pack(side="right")
-        ttk.Button(buttons, text="キャンセル", command=win.destroy).pack(side="right", padx=(0,6))
+        ttk.Button(buttons, text=i18n.t('u3.all_english', english_count=english_count), command=lambda:accept_language("english"), state="normal" if english_count else "disabled").pack(side="left")
+        ttk.Button(buttons, text=i18n.t('u3.all_chinese', chinese_count=chinese_count), command=lambda:accept_language("simp_chinese"), state="normal" if chinese_count else "disabled").pack(side="left", padx=(6,0))
+        ttk.Button(buttons, text=i18n.t('u3.selected_files'), command=accept_selected).pack(side="right")
+        ttk.Button(buttons, text=i18n.t('u3.cancel'), command=win.destroy).pack(side="right", padx=(0,6))
         tree.bind("<Double-1>", accept_selected)
         self.wait_window(win)
         return result["value"]
@@ -2377,7 +2377,7 @@ class App(BaseTk):
             source_root = Path(item.get("input", ""))
             target_root = Path(item.get("output", ""))
             source_langs = ("english", "simp_chinese")
-            label = "通常翻訳"
+            label = i18n.t('u3.normal_translation')
         elif origin == "chinese":
             item = self._selected_chinese_queue_item()
             if not item:
@@ -2389,25 +2389,25 @@ class App(BaseTk):
         elif origin == "status":
             results = self._selected_mod_status_results()
             if not results:
-                messagebox.showinfo(APP_NAME, "翻訳状況一覧からModを1件選択してください。")
+                messagebox.showinfo(APP_NAME, i18n.t('u3.select_status_mod'))
                 return
             if len(results) != 1:
-                messagebox.showinfo(APP_NAME, "QA / 差分調査へ送る場合は、翻訳状況一覧からModを1件だけ選択してください。")
+                messagebox.showinfo(APP_NAME, i18n.t('u3.select_one_status_mod'))
                 return
             r = results[0]
             source_root = Path(r.get("localization") or core.localization_dir_path(Path(r.get("path", ""))))
             external = r.get("external_translation_localization", "")
             target_root = Path(external) if external and Path(external).exists() else source_root
             source_langs = ("english", "simp_chinese")
-            label = r.get("mod", "翻訳状況")
+            label = r.get("mod", i18n.t('u3.translation_status'))
         else:
             return
 
         pairs = self._collect_qa_diff_pairs(source_root, target_root, source_langs)
         if not pairs:
-            messagebox.showinfo(APP_NAME, f"{label}から、原文（英語/簡体字中国語）と対応する日本語YAMLの組み合わせを見つけられませんでした。\n翻訳完了後、または日本語化Modが存在する状態で実行してください。")
+            messagebox.showinfo(APP_NAME, i18n.t('u3.pair_not_found', label=label))
             return
-        selected_pairs = self._choose_qa_diff_pairs(pairs, f"{label}からQA / 差分用ファイルを選択")
+        selected_pairs = self._choose_qa_diff_pairs(pairs, i18n.t('u3.choose_pair_from', label=label))
         if not selected_pairs:
             return
         if destination == "review":
@@ -2419,105 +2419,105 @@ class App(BaseTk):
 
     def _build_review_tab(self):
         t=self.tab_review
-        pf=ttk.LabelFrame(t,text="原文 / 訳文",padding=8); pf.pack(fill="x")
+        pf=ttk.LabelFrame(t,text=i18n.t('u3.source_translation'),padding=8); pf.pack(fill="x")
         pf.columnconfigure(1,weight=1)
-        ttk.Label(pf,text="原文").grid(row=0,column=0,sticky="w")
+        ttk.Label(pf,text=i18n.t('u3.source')).grid(row=0,column=0,sticky="w")
         self.review_src_entry=ttk.Entry(pf,textvariable=self.review_src_display_var,state="readonly")
         self.review_src_entry.grid(row=0,column=1,sticky="ew",padx=6)
-        ttk.Button(pf,text="選択",command=lambda:self.pick_review_file(self.review_src_var)).grid(row=0,column=2)
-        ttk.Label(pf,text="訳文").grid(row=1,column=0,sticky="w",pady=(5,0))
+        ttk.Button(pf,text=i18n.t('u3.choose'),command=lambda:self.pick_review_file(self.review_src_var)).grid(row=0,column=2)
+        ttk.Label(pf,text=i18n.t('u3.translation')).grid(row=1,column=0,sticky="w",pady=(5,0))
         self.review_dst_entry=ttk.Entry(pf,textvariable=self.review_dst_display_var,state="readonly")
         self.review_dst_entry.grid(row=1,column=1,sticky="ew",padx=6,pady=(5,0))
-        ttk.Button(pf,text="選択",command=lambda:self.pick_review_file(self.review_dst_var)).grid(row=1,column=2,pady=(5,0))
-        ttk.Button(pf,text="比較を読み込む",command=self.load_review).grid(row=0,column=3,rowspan=2,padx=(8,0))
-        self.review_drop_hint=ttk.Label(pf,text="英語または簡体字中国語の原文YAMLと日本語YAMLをここへドラッグ＆ドロップできます" if DND_AVAILABLE else "ドラッグ＆ドロップはこのビルドでは利用できません",foreground="#555")
+        ttk.Button(pf,text=i18n.t('u3.choose'),command=lambda:self.pick_review_file(self.review_dst_var)).grid(row=1,column=2,pady=(5,0))
+        ttk.Button(pf,text=i18n.t('u3.load_comparison'),command=self.load_review).grid(row=0,column=3,rowspan=2,padx=(8,0))
+        self.review_drop_hint=ttk.Label(pf,text=i18n.t('u3.drop_pair', target_name=i18n.t("lang." + _current_target_lang(self))) if DND_AVAILABLE else i18n.t('u3.dnd_unavailable'),foreground="#555")
         self.review_drop_hint.grid(row=2,column=0,columnspan=4,sticky="ew",pady=(7,0))
         qa=ttk.Frame(t); qa.pack(fill="x",pady=(8,5))
-        ttk.Button(qa,text="QA再実行",command=self.run_review_qa).pack(side="left")
-        self.review_auto_repair_btn=ttk.Button(qa,text="バックアップして全エラーを自動修復",command=self.run_review_auto_repair,state="disabled")
+        ttk.Button(qa,text=i18n.t('u3.rerun_qa'),command=self.run_review_qa).pack(side="left")
+        self.review_auto_repair_btn=ttk.Button(qa,text=i18n.t('u3.backup_auto_repair'),command=self.run_review_auto_repair,state="disabled")
         self.review_auto_repair_btn.pack(side="left",padx=(6,0))
-        self.review_export_log_btn=ttk.Button(qa,text="QAログを書き出す",command=self.export_review_qa_log,state="disabled")
+        self.review_export_log_btn=ttk.Button(qa,text=i18n.t('u3.export_qa_log'),command=self.export_review_qa_log,state="disabled")
         self.review_export_log_btn.pack(side="left",padx=(6,0))
-        ttk.Button(qa,text="問題・注意だけ表示",command=lambda:self.populate_review(True)).pack(side="left",padx=(6,0))
-        ttk.Button(qa,text="全キー表示",command=lambda:self.populate_review(False)).pack(side="left",padx=(6,0))
-        ttk.Button(qa,text="用語不一致を一括統一",command=self.bulk_unify_review_terms).pack(side="left",padx=(8,0))
-        ttk.Button(qa,text="用語集を自動作成",command=lambda:self.start_auto_glossary_generation("review")).pack(side="left",padx=(8,0))
-        ttk.Button(qa,text="現在の翻訳設定を適用",command=self.apply_translation_settings_everywhere).pack(side="left",padx=(10,0))
-        ttk.Label(qa,text="AI校正は現在の翻訳モデル設定を使用 / 一覧は重要度→問題種別→キーで整理",foreground="#666").pack(side="left",padx=(12,0))
+        ttk.Button(qa,text=i18n.t('u3.issues_only'),command=lambda:self.populate_review(True)).pack(side="left",padx=(6,0))
+        ttk.Button(qa,text=i18n.t('u3.all_keys'),command=lambda:self.populate_review(False)).pack(side="left",padx=(6,0))
+        ttk.Button(qa,text=i18n.t('u3.unify_terms'),command=self.bulk_unify_review_terms).pack(side="left",padx=(8,0))
+        ttk.Button(qa,text=i18n.t('u3.create_glossary'),command=lambda:self.start_auto_glossary_generation("review")).pack(side="left",padx=(8,0))
+        ttk.Button(qa,text=i18n.t('u3.apply_settings'),command=self.apply_translation_settings_everywhere).pack(side="left",padx=(10,0))
+        ttk.Label(qa,text=i18n.t('u3.proofread_hint'),foreground="#666").pack(side="left",padx=(12,0))
         ttk.Label(qa,textvariable=self.qa_summary_var).pack(side="right")
 
         paned=ttk.Panedwindow(t,orient="horizontal"); paned.pack(fill="both",expand=True)
         left=ttk.Frame(paned); right=ttk.Frame(paned); paned.add(left,weight=2); paned.add(right,weight=3)
         self.review_tree=ttk.Treeview(left,columns=("type","file","key"),show="tree headings")
-        self.review_tree.heading("#0",text="重要度 / 分類"); self.review_tree.column("#0",width=150)
-        self.review_tree.heading("type",text="種別"); self.review_tree.column("type",width=130)
-        self.review_tree.heading("file",text="ファイル"); self.review_tree.column("file",width=220)
-        self.review_tree.heading("key",text="キー"); self.review_tree.column("key",width=300)
+        self.review_tree.heading("#0",text=i18n.t('u3.severity_category')); self.review_tree.column("#0",width=150)
+        self.review_tree.heading("type",text=i18n.t('u3.type')); self.review_tree.column("type",width=130)
+        self.review_tree.heading("file",text=i18n.t('u3.file')); self.review_tree.column("file",width=220)
+        self.review_tree.heading("key",text=i18n.t('u3.key')); self.review_tree.column("key",width=300)
         self.review_tree.bind("<<TreeviewSelect>>",self.on_review_select)
         self._enable_tree_sort(self.review_tree, recursive=True)
         rys=ttk.Scrollbar(left,command=self.review_tree.yview); self.review_tree.configure(yscrollcommand=rys.set)
         self.review_tree.pack(side="left",fill="both",expand=True); rys.pack(side="right",fill="y")
 
-        ttk.Label(right,text="原文（英語 / 簡体字中国語）").pack(anchor="w")
+        ttk.Label(right,text=i18n.t('u3.english_chinese_source')).pack(anchor="w")
         self.src_text=tk.Text(right,height=7,wrap="word"); self.src_text.pack(fill="x",pady=(2,8))
-        ttk.Label(right,text="訳文（編集可）").pack(anchor="w")
+        ttk.Label(right,text=i18n.t('u3.editable_translation')).pack(anchor="w")
         self.dst_text=tk.Text(right,height=10,wrap="word"); self.dst_text.pack(fill="both",expand=True,pady=(2,6))
         self.issue_text=tk.StringVar(value="")
         ttk.Label(right,textvariable=self.issue_text,wraplength=550).pack(fill="x",pady=(0,6))
         eb=ttk.Frame(right); eb.pack(fill="x")
-        ttk.Button(eb,text="この訳を日本語ファイルへ保存",command=self.save_review_value).pack(side="left")
-        ttk.Button(eb,text="この訳を用語集へ保存",command=self.save_review_glossary_term).pack(side="left",padx=(6,0))
-        ttk.Button(eb,text="AIで誤字脱字校正",command=self.ai_proofread_selected).pack(side="left",padx=(6,0))
-        ttk.Button(eb,text="原文に戻す",command=self.restore_source_to_target).pack(side="left",padx=(6,0))
+        ttk.Button(eb,text=i18n.t('u3.save_translation_file', target_name=i18n.t("lang." + _current_target_lang(self))),command=self.save_review_value).pack(side="left")
+        ttk.Button(eb,text=i18n.t('u3.save_glossary'),command=self.save_review_glossary_term).pack(side="left",padx=(6,0))
+        ttk.Button(eb,text=i18n.t('u3.ai_proofread'),command=self.ai_proofread_selected).pack(side="left",padx=(6,0))
+        ttk.Button(eb,text=i18n.t('u3.restore_source'),command=self.restore_source_to_target).pack(side="left",padx=(6,0))
         self._register_dnd_widgets([pf,self.review_src_entry,self.review_dst_entry,self.review_drop_hint,self.review_tree,self.src_text,self.dst_text],self.on_review_drop_paths)
 
     def _build_diff_tab(self):
         t = self.tab_diff
-        pf = ttk.LabelFrame(t, text="原文（英語 / 簡体字中国語） / 日本語ファイル", padding=8); pf.pack(fill="x")
+        pf = ttk.LabelFrame(t, text=i18n.t('u3.diff_files', target_name=i18n.t("lang." + _current_target_lang(self))), padding=8); pf.pack(fill="x")
         pf.columnconfigure(1, weight=1)
-        ttk.Label(pf, text="原文（英語 / 中国語）").grid(row=0, column=0, sticky="w")
+        ttk.Label(pf, text=i18n.t('u3.diff_source')).grid(row=0, column=0, sticky="w")
         self.diff_src_entry=ttk.Entry(pf, textvariable=self.diff_src_display_var, state="readonly")
         self.diff_src_entry.grid(row=0, column=1, sticky="ew", padx=6)
-        ttk.Button(pf, text="選択", command=lambda:self.pick_review_file(self.diff_src_var)).grid(row=0, column=2)
-        ttk.Label(pf, text="日本語").grid(row=1, column=0, sticky="w", pady=(5,0))
+        ttk.Button(pf, text=i18n.t('u3.choose'), command=lambda:self.pick_review_file(self.diff_src_var)).grid(row=0, column=2)
+        ttk.Label(pf, text=i18n.t('u3.target_language', target_name=i18n.t("lang." + _current_target_lang(self)))).grid(row=1, column=0, sticky="w", pady=(5,0))
         self.diff_dst_entry=ttk.Entry(pf, textvariable=self.diff_dst_display_var, state="readonly")
         self.diff_dst_entry.grid(row=1, column=1, sticky="ew", padx=6, pady=(5,0))
-        ttk.Button(pf, text="選択", command=lambda:self.pick_review_file(self.diff_dst_var)).grid(row=1, column=2, pady=(5,0))
-        ttk.Button(pf, text="差分を調査", command=self.load_diff_inspector).grid(row=0, column=3, rowspan=2, padx=(8,0))
-        self.diff_drop_hint=ttk.Label(pf,text="英語または簡体字中国語の原文YAMLと日本語YAMLをここへドラッグ＆ドロップできます" if DND_AVAILABLE else "ドラッグ＆ドロップはこのビルドでは利用できません",foreground="#555")
+        ttk.Button(pf, text=i18n.t('u3.choose'), command=lambda:self.pick_review_file(self.diff_dst_var)).grid(row=1, column=2, pady=(5,0))
+        ttk.Button(pf, text=i18n.t('u3.inspect_diff'), command=self.load_diff_inspector).grid(row=0, column=3, rowspan=2, padx=(8,0))
+        self.diff_drop_hint=ttk.Label(pf,text=i18n.t('u3.drop_pair', target_name=i18n.t("lang." + _current_target_lang(self))) if DND_AVAILABLE else i18n.t('u3.dnd_unavailable'),foreground="#555")
         self.diff_drop_hint.grid(row=2,column=0,columnspan=4,sticky="ew",pady=(7,0))
 
         bar = ttk.Frame(t); bar.pack(fill="x", pady=(8,5))
-        ttk.Button(bar, text="選択項目を翻訳", command=lambda:self.translate_diff_items(False)).pack(side="left")
-        ttk.Button(bar, text="欠落・未翻訳をまとめて翻訳", command=lambda:self.translate_diff_items(True)).pack(side="left", padx=(6,0))
-        ttk.Button(bar, text="選択訳を保存", command=self.save_diff_value).pack(side="left", padx=(6,0))
-        ttk.Button(bar,text="用語集を自動作成",command=lambda:self.start_auto_glossary_generation("diff")).pack(side="left",padx=(8,0))
-        ttk.Button(bar,text="現在の翻訳設定を適用",command=self.apply_translation_settings_everywhere).pack(side="left",padx=(10,0))
-        ttk.Label(bar,text="差分翻訳は現在の翻訳モデル設定を使用 / 一覧は状態→キーで整理",foreground="#666").pack(side="left",padx=(12,0))
+        ttk.Button(bar, text=i18n.t('u3.translate_selected'), command=lambda:self.translate_diff_items(False)).pack(side="left")
+        ttk.Button(bar, text=i18n.t('u3.translate_missing'), command=lambda:self.translate_diff_items(True)).pack(side="left", padx=(6,0))
+        ttk.Button(bar, text=i18n.t('u3.save_selected'), command=self.save_diff_value).pack(side="left", padx=(6,0))
+        ttk.Button(bar,text=i18n.t('u3.create_glossary'),command=lambda:self.start_auto_glossary_generation("diff")).pack(side="left",padx=(8,0))
+        ttk.Button(bar,text=i18n.t('u3.apply_settings'),command=self.apply_translation_settings_everywhere).pack(side="left",padx=(10,0))
+        ttk.Label(bar,text=i18n.t('u3.diff_hint'),foreground="#666").pack(side="left",padx=(12,0))
         ttk.Label(bar, textvariable=self.diff_summary_var).pack(side="right")
 
         paned = ttk.Panedwindow(t, orient="horizontal"); paned.pack(fill="both", expand=True)
         left = ttk.Frame(paned); right = ttk.Frame(paned); paned.add(left, weight=2); paned.add(right, weight=3)
         self.diff_tree = ttk.Treeview(left, columns=("file","key"), show="tree headings", selectmode="extended")
         self._enable_ctrl_multiselect(self.diff_tree)
-        self.diff_tree.heading("#0", text="状態"); self.diff_tree.column("#0", width=150)
-        self.diff_tree.heading("file", text="ファイル"); self.diff_tree.column("file", width=220)
-        self.diff_tree.heading("key", text="キー"); self.diff_tree.column("key", width=360)
+        self.diff_tree.heading("#0", text=i18n.t('u3.status')); self.diff_tree.column("#0", width=150)
+        self.diff_tree.heading("file", text=i18n.t('u3.file')); self.diff_tree.column("file", width=220)
+        self.diff_tree.heading("key", text=i18n.t('u3.key')); self.diff_tree.column("key", width=360)
         self.diff_tree.tag_configure("missing", background="#fee2e2")
         self.diff_tree.tag_configure("untranslated", background="#fef3c7")
         self.diff_tree.tag_configure("extra", background="#e0e7ff")
         self.diff_tree.bind("<<TreeviewSelect>>", self.on_diff_select)
         self._enable_tree_sort(self.diff_tree, recursive=True)
         ys = ttk.Scrollbar(left, command=self.diff_tree.yview); self.diff_tree.configure(yscrollcommand=ys.set)
-        hint = ttk.Label(left, text="Ctrlキーを押しながらクリックすると複数選択できます。", foreground="#666")
+        hint = ttk.Label(left, text=i18n.t('u3.multi_select_hint'), foreground="#666")
         hint.pack(side="bottom", fill="x", pady=(3,0))
         self.diff_tree.pack(side="left", fill="both", expand=True); ys.pack(side="right", fill="y")
 
         compare = ttk.Panedwindow(right, orient="horizontal"); compare.pack(fill="both", expand=True)
         srcf = ttk.Frame(compare); dstf = ttk.Frame(compare); compare.add(srcf, weight=1); compare.add(dstf, weight=1)
-        ttk.Label(srcf, text="原文（英語 / 簡体字中国語）").pack(anchor="w")
+        ttk.Label(srcf, text=i18n.t('u3.english_chinese_source')).pack(anchor="w")
         self.diff_src_text = tk.Text(srcf, wrap="word"); self.diff_src_text.pack(fill="both", expand=True, padx=(0,4), pady=(2,0))
-        ttk.Label(dstf, text="日本語（直接編集可）").pack(anchor="w")
+        ttk.Label(dstf, text=i18n.t('u3.editable_target', target_name=i18n.t("lang." + _current_target_lang(self)))).pack(anchor="w")
         self.diff_dst_text = tk.Text(dstf, wrap="word"); self.diff_dst_text.pack(fill="both", expand=True, padx=(4,0), pady=(2,0))
         self.diff_message_var = tk.StringVar(value="")
         ttk.Label(right, textvariable=self.diff_message_var, wraplength=650).pack(fill="x", pady=(4,0))
@@ -2525,20 +2525,20 @@ class App(BaseTk):
 
     def _build_search_tab(self):
         t = self.tab_search
-        top = ttk.LabelFrame(t, text="ゲーム内の日本語翻訳を検索", padding=8); top.pack(fill="x")
+        top = ttk.LabelFrame(t, text=i18n.t('u3.search_japanese'), padding=8); top.pack(fill="x")
         top.columnconfigure(1, weight=1)
-        ttk.Label(top, text="対象ゲーム").grid(row=0, column=0, sticky="w")
+        ttk.Label(top, text=i18n.t('u3.game')).grid(row=0, column=0, sticky="w")
         self.search_game_combo = ttk.Combobox(top, textvariable=self.search_game_var, values=list(core.PARADOX_STEAM_GAMES), state="readonly", width=28)
         self.search_game_combo.grid(row=0, column=1, sticky="w", padx=6)
         self.search_game_combo.bind("<<ComboboxSelected>>", lambda e:self.refresh_translation_search_mods())
-        ttk.Button(top, text="ゲーム / Mod場所を再検出", command=self.discover_mod_locations).grid(row=0, column=2, columnspan=2, sticky="e")
-        ttk.Label(top, text="検索語").grid(row=1, column=0, sticky="w", pady=(6,0))
+        ttk.Button(top, text=i18n.t('u3.rediscover_locations'), command=self.discover_mod_locations).grid(row=0, column=2, columnspan=2, sticky="e")
+        ttk.Label(top, text=i18n.t('u3.search_term')).grid(row=1, column=0, sticky="w", pady=(6,0))
         ent = ttk.Entry(top, textvariable=self.search_query_var); ent.grid(row=1, column=1, sticky="ew", padx=6, pady=(6,0)); ent.bind("<Return>", lambda e:self.run_translation_search())
-        ttk.Button(top, text="検索", command=self.run_translation_search).grid(row=1, column=2, sticky="ew", pady=(6,0))
-        ttk.Button(top, text="結果を消去", command=self.clear_translation_search_results).grid(row=1, column=3, sticky="ew", padx=(6,0), pady=(6,0))
-        ttk.Label(top, text="検索語は必須です。ローカライズキー・日本語本文・原文を検索し、原文にあるのに日本語側にないキーは「未訳」として表示します。", foreground="#666").grid(row=2, column=0, columnspan=4, sticky="w", pady=(6,0))
+        ttk.Button(top, text=i18n.t('u3.search'), command=self.run_translation_search).grid(row=1, column=2, sticky="ew", pady=(6,0))
+        ttk.Button(top, text=i18n.t('u3.clear_results'), command=self.clear_translation_search_results).grid(row=1, column=3, sticky="ew", padx=(6,0), pady=(6,0))
+        ttk.Label(top, text=i18n.t('u3.search_hint'), foreground="#666").grid(row=2, column=0, columnspan=4, sticky="w", pady=(6,0))
 
-        target = ttk.LabelFrame(t, text="対象Mod（翻訳状況 / 未翻訳監視から取得）", padding=6); target.pack(fill="x", pady=(6,0))
+        target = ttk.LabelFrame(t, text=i18n.t('u3.search_mods'), padding=6); target.pack(fill="x", pady=(6,0))
         target.columnconfigure(0, weight=1)
         listframe=ttk.Frame(target); listframe.grid(row=0,column=0,rowspan=2,sticky="ew")
         listframe.columnconfigure(0,weight=1)
@@ -2547,11 +2547,11 @@ class App(BaseTk):
         self.search_mod_list.grid(row=0,column=0,sticky="ew"); smy.grid(row=0,column=1,sticky="ns")
         self.search_mod_list.bind("<<ListboxSelect>>", lambda e:self._remember_translation_search_mod_selection())
         buttons=ttk.Frame(target); buttons.grid(row=0,column=1,sticky="ns",padx=(8,0))
-        ttk.Button(buttons,text="対象Modを更新",command=self.refresh_translation_search_mods).pack(fill="x")
-        ttk.Button(buttons,text="すべて選択",command=self._select_all_translation_search_mods).pack(fill="x",pady=(4,0))
-        ttk.Button(buttons,text="選択解除",command=self._clear_translation_search_mod_selection).pack(fill="x",pady=(4,0))
+        ttk.Button(buttons,text=i18n.t('u3.refresh_mods'),command=self.refresh_translation_search_mods).pack(fill="x")
+        ttk.Button(buttons,text=i18n.t('u3.select_all'),command=self._select_all_translation_search_mods).pack(fill="x",pady=(4,0))
+        ttk.Button(buttons,text=i18n.t('u3.deselect_all'),command=self._clear_translation_search_mod_selection).pack(fill="x",pady=(4,0))
         ttk.Label(target,textvariable=self.search_mod_status_var,foreground="#555").grid(row=1,column=1,sticky="sw",padx=(8,0))
-        ttk.Label(target,text="Modを選択した場合はそのModだけを検索します。未選択なら、取得済みの対象ゲームModすべてを検索します。",foreground="#666").grid(row=2,column=0,columnspan=2,sticky="w",pady=(4,0))
+        ttk.Label(target,text=i18n.t('u3.search_scope'),foreground="#666").grid(row=2,column=0,columnspan=2,sticky="w",pady=(4,0))
 
         ttk.Label(t, textvariable=self.search_summary_var).pack(anchor="w", pady=(7,4))
         paned = ttk.Panedwindow(t, orient="horizontal"); paned.pack(fill="both", expand=True)
@@ -2561,7 +2561,7 @@ class App(BaseTk):
         search_table.rowconfigure(0, weight=1)
         search_table.columnconfigure(0, weight=1)
         self.search_tree = ttk.Treeview(search_table, columns=("mod","file","key","value"), show="headings")
-        for c, txt, w in (("mod","Mod",260),("file","ファイル",260),("key","キー",360),("value","日本語訳",520)):
+        for c, txt, w in (("mod","Mod",260),("file",i18n.t('u3.file'),260),("key",i18n.t('u3.key'),360),("value",i18n.t('u3.japanese_translation'),520)):
             self.search_tree.heading(c, text=txt)
             self.search_tree.column(c, width=w, minwidth=w, stretch=False, anchor="w")
         self.search_tree.bind("<<TreeviewSelect>>", self.on_search_select)
@@ -2572,10 +2572,10 @@ class App(BaseTk):
         self.search_tree.grid(row=0, column=0, sticky="nsew")
         ys.grid(row=0, column=1, sticky="ns")
         xs.grid(row=1, column=0, sticky="ew")
-        self.search_selected_var = tk.StringVar(value="検索結果を選択してください")
+        self.search_selected_var = tk.StringVar(value=i18n.t('u3.select_result'))
         ttk.Label(right, textvariable=self.search_selected_var, wraplength=420).pack(fill="x", anchor="w")
         self.search_edit_text = tk.Text(right, wrap="word"); self.search_edit_text.pack(fill="both", expand=True, pady=(6,6))
-        ttk.Button(right, text="この日本語訳を保存", command=self.save_search_value).pack(anchor="w")
+        ttk.Button(right, text=i18n.t('u3.save_japanese'), command=self.save_search_value).pack(anchor="w")
         self.after_idle(self.refresh_translation_search_mods)
 
     def _build_glossary_tab(self):
@@ -6394,12 +6394,12 @@ class App(BaseTk):
 
     def _start_mod_research(self, roots, replace=True, translation_pool=None):
         if self.mod_research_thread and self.mod_research_thread.is_alive():
-            messagebox.showinfo(APP_NAME,"すでに調査中です。")
+            messagebox.showinfo(APP_NAME,i18n.t('u3.research_running'))
             return
         self.mod_research_stop_event.clear()
         self.mod_research_stop_btn.config(state="normal")
-        self.mod_status_summary_var.set(f"バックグラウンド調査中: 0/{len(roots)}")
-        self._set_monitor_scan_status(f"● 未翻訳Mod探索開始 — 0/{len(roots)}", "Mod一覧と別日本語化Modを確認しています")
+        self.mod_status_summary_var.set(i18n.t('u3.research_progress', count=len(roots)))
+        self._set_monitor_scan_status(i18n.t('u3.research_start', count=len(roots)), i18n.t('u3.research_detail'))
         if replace:
             # 調べ直すModの古い結果だけを除く。別の保管場所（ローカル／Workshop）の結果は残して一緒に見られるようにする。
             self.mod_status_search_var.set("")
@@ -6413,7 +6413,7 @@ class App(BaseTk):
         self.mod_research_stop_event.set()
         if self.monitor_llm_controller:
             self.monitor_llm_controller.request_stop(save=False)
-        self.mod_status_summary_var.set("調査停止要求済み…")
+        self.mod_status_summary_var.set(i18n.t('u3.research_stop'))
 
     def _mod_research_worker(self, roots, translation_pool=None):
         try:
@@ -6455,11 +6455,11 @@ class App(BaseTk):
                             result["gap_count"] = len(refined)
                             if refined:
                                 result["status"]=status_value("mod_external_gaps")
-                                result["message"]=f"{result['mod']}には日本語化Mod『{result['external_translation_mod']}』がありますが、翻訳に欠損があります（{len(refined)}件）。 {core.gap_reason_text(refined)}。"
+                                result["message"]=i18n.t('u3.external_gaps', mod=result['mod'], external_translation_mod=result['external_translation_mod'], count=len(refined), value=core.gap_reason_text(refined))
                             else:
                                 result["status"]=status_value("mod_external_complete")
                                 result["external_translation_complete"] = True
-                                result["message"]=f"{result['mod']}には日本語化Mod『{result['external_translation_mod']}』があり、完全な日本語化を確認できました。"
+                                result["message"]=i18n.t('u3.external_complete', mod=result['mod'], external_translation_mod=result['external_translation_mod'])
                         elif result.get("japanese_files",0)==0 or result.get("japanese_keys",0)==0:
                             if result.get("external_translation_complete"):
                                 result["status"]=status_value("mod_external_complete")
@@ -6467,25 +6467,25 @@ class App(BaseTk):
                                 result["status"]=status_value("mod_external_gaps")
                             else:
                                 result["status"]=status_value("mod_not_translated")
-                                result["message"]=f"{result['mod']}というModは日本語翻訳がありません。日本語化Modも確認できませんでした。"
+                                result["message"]=i18n.t('u3.no_japanese', mod=result['mod'])
                         elif refined:
                             result["status"]=status_value("mod_gaps")
                             result["gap_count"] = len(refined)
-                            result["message"]=f"{result['mod']}のModに翻訳の欠損箇所があります（{len(refined)}件）。 {core.gap_reason_text(refined)}。"
+                            result["message"]=i18n.t('u3.mod_gaps', mod=result['mod'], count=len(refined), value=core.gap_reason_text(refined))
                         elif not result.get("external_translation_mod"):
                             result["status"]=status_value("mod_translated")
                             result["gap_count"] = 0
-                            result["message"]=f"{result['mod']}のModは日本語翻訳が確認できました。"
+                            result["message"]=i18n.t('u3.japanese_found', mod=result['mod'])
                     except core.StopRequested:
                         if self.mod_research_stop_event.is_set(): break
                     except Exception as e:
-                        record_error("Mod翻訳状況 LLM精査", e, str(mod_root))
-                        self.events.put(("monitor_log",f"{result.get('mod','Mod')} のLLM精査をスキップ: {e}"))
+                        record_error(i18n.t('u3.research_llm_error'), e, str(mod_root))
+                        self.events.put(("monitor_log",i18n.t('u3.research_llm_skip', mod=result.get('mod','Mod'), e=e)))
                     result["game"] = str(result.get("game") or self._backup_game_name_for_root(Path(mod_root)))
                     core.apply_translation_warning_status(result)
                     self._cache_mod_status_result(Path(mod_root), signature, result)
                 else:
-                    self.events.put(("monitor_log", f"{result.get('mod', Path(mod_root).name)}: 前回調査結果をキャッシュから再利用"))
+                    self.events.put(("monitor_log", i18n.t('u3.research_cache', mod=result.get('mod', Path(mod_root).name))))
                 result["game"] = str(result.get("game") or self._backup_game_name_for_root(Path(mod_root)))
                 results.append(result)
                 self.events.put(("mod_status_append",result))
@@ -8094,7 +8094,7 @@ class App(BaseTk):
         try:
             missing = self._translation_status_missing_for_item(item, source_language)
         except Exception as exc:
-            record_error("差分翻訳 翻訳状況欠損取得", exc, str(p))
+            record_error(i18n.t('u3.diff_status_error'), exc, str(p))
             missing = {"count": 0, "details": [], "source_language": source_language, "status_gap_total": 0}
 
         previous = self._find_previous_cache(p, exclude=current_cache, mode=mode)
@@ -8179,9 +8179,9 @@ class App(BaseTk):
             "detected_at": datetime.now().isoformat(timespec="seconds"), "diff": diff
         })
         if not silent:
-            snapshot_note = "あり" if old_manifest else "なし（現在の欠損から判定）"
+            snapshot_note = i18n.t('u3.snapshot_present') if old_manifest else i18n.t('u3.snapshot_absent')
             messagebox.showinfo(APP_NAME,
-                f"差分翻訳対象を確認しました。\n\nスナップショット: {snapshot_note}\n新規キー: {c['added']}\n変更キー: {c['changed']}\n削除キー: {c['removed']}\n翻訳状況の欠損（このキューで補完可能）: {missing_total}\n新規ファイル: {c['added_files']}\n削除ファイル: {c['removed_files']}\n\n原文差分と翻訳状況の欠損だけを補完します。")
+                i18n.t('u3.diff_confirmation', snapshot_note=snapshot_note, added=c['added'], changed=c['changed'], removed=c['removed'], missing_total=missing_total, added_files=c['added_files'], removed_files=c['removed_files']))
         return diff
 
     def _append_queue(self,p:Path,out:Path|None=None,status=None,cache:Path|None=None,target_lang:str|None=None):
@@ -8203,9 +8203,9 @@ class App(BaseTk):
         if not item: return
         diff = self._prepare_differential_cache(item, silent=False)
         if diff is None:
-            messagebox.showinfo(APP_NAME, "同じ入力元に対応する過去の差分スナップショット付きキャッシュが見つかりません。\n一度v0.5.6以降で通常翻訳すると、次回更新から自動判定できます。")
+            messagebox.showinfo(APP_NAME, i18n.t('u3.snapshot_not_found'))
         elif sum(diff["counts"][k] for k in ("added","changed","removed")) == 0:
-            messagebox.showinfo(APP_NAME, "前回翻訳時から原文の差分はありません。")
+            messagebox.showinfo(APP_NAME, i18n.t('u3.no_source_changes'))
         self._refresh_queue_tree()
 
     def _register_dnd_widgets(self, widgets, handler):
@@ -8295,10 +8295,10 @@ class App(BaseTk):
         if src and dst:
             self.load_review()
         elif files:
-            side = "日本語YAML" if src else "英語または簡体字中国語の原文YAML"
-            self.qa_summary_var.set(f"片方を受け取りました。{side}もドロップしてください。")
+            side = i18n.t('u3.japanese_yaml') if src else i18n.t('u3.source_yaml_languages')
+            self.qa_summary_var.set(i18n.t('u3.drop_other_side', side=side))
         else:
-            messagebox.showinfo(APP_NAME,"QAにはYAMLファイル、またはYAMLを含むフォルダをドロップしてください。")
+            messagebox.showinfo(APP_NAME,i18n.t('u3.review_drop_files'))
         return event.action if hasattr(event,"action") else None
 
     def on_diff_drop_paths(self,event):
@@ -8309,9 +8309,9 @@ class App(BaseTk):
         if src and dst:
             self.load_diff_inspector()
         elif files:
-            self.diff_summary_var.set("片方を受け取りました。英語または簡体字中国語の原文と日本語の両方をドロップしてください。")
+            self.diff_summary_var.set(i18n.t('u3.diff_drop_both'))
         else:
-            messagebox.showinfo(APP_NAME,"差分調査にはYAMLファイル、またはYAMLを含むフォルダをドロップしてください。")
+            messagebox.showinfo(APP_NAME,i18n.t('u3.diff_drop_files'))
         return event.action if hasattr(event,"action") else None
 
     def on_drop_paths(self, event):
@@ -8430,24 +8430,23 @@ class App(BaseTk):
 
     def _start_manual_qa_repair(self, pairs, origin, _llm_ready=False):
         if self.qa_repair_thread is not None:
-            messagebox.showinfo(APP_NAME,"QA・自動修正はすでに実行中です。"); return
+            messagebox.showinfo(APP_NAME,i18n.t('u3.qa_repair_running')); return
         conflicting=any(self._operation_pending(thread) for thread in (
             self.worker,self.chinese_worker,getattr(self,"benchmark_worker",None),
             self.diff_translate_thread,self.proofread_thread,self.auto_glossary_thread))
         if conflicting or self.llm_busy_count>0:
-            messagebox.showinfo(APP_NAME,"別の翻訳用LLM処理が動作中です。完了または停止後にQA・自動修正を開始してください。"); return
+            messagebox.showinfo(APP_NAME,i18n.t('u3.qa_llm_busy')); return
         pairs=[dict(pair) for pair in (pairs or []) if pair.get("source_file") and pair.get("target_file")]
         if not pairs:
-            messagebox.showinfo(APP_NAME,"原文と日本語出力の組み合わせを見つけられませんでした。"); return
-        label={"normal":"通常翻訳キュー","chinese":"中国語基準翻訳キュー","review":"QA／比較編集"}.get(origin,"QA")
+            messagebox.showinfo(APP_NAME,i18n.t('u3.qa_pair_missing', target_name=i18n.t("lang." + _current_target_lang(self)))); return
+        label={"normal":i18n.t('u3.normal_queue'),"chinese":i18n.t('u3.chinese_queue'),"review":i18n.t('u3.qa_review')}.get(origin,"QA")
         if not _llm_ready:
             saved_pairs=tuple(dict(pair) for pair in pairs)
-            self._begin_llm_preflight(f"{label}のQA・自動修正",
+            self._begin_llm_preflight(i18n.t('u3.qa_repair_label', label=label),
                 lambda:self._start_manual_qa_repair(saved_pairs,origin,_llm_ready=True))
             return
         if not messagebox.askyesno(APP_NAME,
-            f"{label}の{len(pairs)}ファイルをQAし、注意・警告を除く修復可能な全エラーを自動修正します。\n\n"
-            "変更前ファイルはバックアップし、修正後にエラーが減らなければ自動復元します。\n続行しますか？"):
+            i18n.t('u3.qa_repair_confirm', label=label, count=len(pairs))):
             return
         settings={
             "normalize_spacing":_normalize_spacing_enabled(self),
@@ -8455,9 +8454,9 @@ class App(BaseTk):
             "model":self.model_var.get().strip(), "api_key":self.api_key_var.get().strip(),
             "preset":self.preset_var.get(), "glossary":self.glossary_path_var.get().strip() or None,
         }
-        if origin=="review": self.qa_summary_var.set(f"バックアップ・自動QA・修正中… {len(pairs)}ファイル")
-        elif origin=="chinese": self._append_chinese_log(f"QA・自動修正開始: {len(pairs)}ファイル")
-        else: self._append_log(f"QA・自動修正開始: {len(pairs)}ファイル")
+        if origin=="review": self.qa_summary_var.set(i18n.t('u3.qa_repair_working', count=len(pairs)))
+        elif origin=="chinese": self._append_chinese_log(i18n.t('u3.qa_repair_start', count=len(pairs)))
+        else: self._append_log(i18n.t('u3.qa_repair_start', count=len(pairs)))
         self._qa_repair_origin=origin
         self.qa_repair_controller=core.TranslationController(
             progress_callback=lambda payload:self.events.put(("qa_repair_event",payload)))
@@ -8490,26 +8489,23 @@ class App(BaseTk):
     def _apply_qa_auto_repair_done(self, origin, result, report_path, contexts):
         self.qa_repair_thread=None; self.qa_repair_controller=None; self._qa_repair_origin=None
         summary=result.get("summary") or {}; failures=list(result.get("failures") or [])
-        text=(f"修正前エラー {summary.get('initial_errors',0)} / 修正後 {summary.get('final_errors',0)} / "
-              f"解消 {summary.get('resolved_errors',0)} / 修正キー {summary.get('repaired_keys',0)} / "
-              f"警告 {summary.get('warnings',0)} / 注意 {summary.get('notices',0)} / "
-              f"失敗ファイル {summary.get('failed_files',0)} / 半角スペース除去 {summary.get('spaces_removed',0)}個")
+        text=(i18n.t('u3.qa_repair_summary', initial_errors=summary.get('initial_errors',0), final_errors=summary.get('final_errors',0), resolved_errors=summary.get('resolved_errors',0), repaired_keys=summary.get('repaired_keys',0), warnings=summary.get('warnings',0), notices=summary.get('notices',0), failed_files=summary.get('failed_files',0), spaces_removed=summary.get('spaces_removed',0)))
         if origin=="review":
             self.review_last_qa_repair_result=result
             self._apply_review_qa_batch_loaded(contexts,failures)
             self.review_last_qa_repair_result=result
-            self.qa_summary_var.set("QA・自動修正完了: "+text)
+            self.qa_summary_var.set(i18n.t('u3.qa_repair_complete_log', text=text))
         elif origin=="chinese":
-            self._append_chinese_log("QA・自動修正完了: "+text)
-            self._append_chinese_log(f"修正ログ: {report_path}")
+            self._append_chinese_log(i18n.t('u3.qa_repair_complete_log', text=text))
+            self._append_chinese_log(i18n.t('u3.repair_log', report_path=report_path))
         else:
-            self._append_log("QA・自動修正完了: "+text)
-            self._append_log(f"修正ログ: {report_path}")
+            self._append_log(i18n.t('u3.qa_repair_complete_log', text=text))
+            self._append_log(i18n.t('u3.repair_log', report_path=report_path))
         self._refresh_operation_states()
-        self._set_llm_idle("LLM 待機中","QA・自動修正が完了しました")
-        message=(f"QA・自動修正が完了しました。\n\n{text}\nバックアップ: {result.get('backup_dir','')}\nログ: {report_path}")
+        self._set_llm_idle(i18n.t('u3.llm_idle'),i18n.t('u3.qa_repair_complete'))
+        message=(i18n.t('u3.qa_repair_complete_message', text=text, backup_dir=result.get('backup_dir',''), report_path=report_path))
         if result.get("interrupted"):
-            messagebox.showinfo(APP_NAME,"QA・自動修正を停止しました。\n\n"+text+f"\nログ: {report_path}")
+            messagebox.showinfo(APP_NAME,i18n.t('u3.qa_repair_stopped', text=text, report_path=report_path))
         elif failures: messagebox.showwarning(APP_NAME,message)
         else: messagebox.showinfo(APP_NAME,message)
 
@@ -8518,44 +8514,43 @@ class App(BaseTk):
         file_no=int(payload.get("file_no",0) or 0); file_total=int(payload.get("file_total",0) or 0)
         filename=Path(payload.get("target_file") or payload.get("source_file") or "").name
         labels={
-            "file_start":"ファイル開始", "initial_qa":"初回QA中", "backup":"バックアップ中",
-            "repair_pass":"修復対象を整理中", "mechanical_repair":"機械修復中",
-            "llm_retranslate":"LLM再翻訳準備中", "recheck":"再QA中",
-            "final_qa":"最終QA中", "rollback":"復元中", "file_done":"ファイル完了",
+            "file_start":i18n.t('u3.file_start'), "initial_qa":i18n.t('u3.initial_qa'), "backup":i18n.t('u3.backup'),
+            "repair_pass":i18n.t('u3.repair_pass'), "mechanical_repair":i18n.t('u3.mechanical_repair'),
+            "llm_retranslate":i18n.t('u3.llm_retranslate'), "recheck":i18n.t('u3.recheck'),
+            "final_qa":i18n.t('u3.final_qa'), "rollback":i18n.t('u3.rollback'), "file_done":i18n.t('u3.file_done'),
         }
-        stage_label=labels.get(stage,stage or "処理中")
+        stage_label=labels.get(stage,stage or i18n.t('u3.processing'))
         progress=f"{file_no}/{file_total}" if file_total else ""
-        self.llm_operation="QA自動修正"
+        self.llm_operation=i18n.t('u3.qa_auto_repair')
         self.llm_banner.config(bg="#4f46e5")
         self.llm_status_label.config(bg="#4f46e5",fg="white")
         self.llm_detail_label.config(bg="#4f46e5",fg="white")
-        self.llm_status_var.set(f"● QA自動修正中 — {stage_label}")
+        self.llm_status_var.set(i18n.t('u3.qa_repair_stage', stage_label=stage_label))
         detail=" / ".join(x for x in (progress,filename) if x)
-        if payload.get("repairable_errors") is not None: detail+=f" / 修復対象 {payload.get('repairable_errors')}件"
-        if payload.get("repair_keys") is not None: detail+=f" / 対象 {payload.get('repair_keys')}件"
-        self.llm_detail_var.set(detail or "処理状況を確認中")
+        if payload.get("repairable_errors") is not None: detail = i18n.t('u3.repairable_detail', repairable_errors=payload.get('repairable_errors'), detail=detail)
+        if payload.get("repair_keys") is not None: detail = i18n.t('u3.repair_keys_detail', repair_keys=payload.get('repair_keys'), detail=detail)
+        self.llm_detail_var.set(detail or i18n.t('u3.checking_progress'))
         self.llm_stop_btn.config(state="normal")
         origin=getattr(self,"_qa_repair_origin",None)
         if origin=="review":
-            self.qa_summary_var.set(f"QA・自動修正 {progress} — {filename} — {stage_label}")
+            self.qa_summary_var.set(i18n.t('u3.qa_repair_progress', progress=progress, filename=filename, stage_label=stage_label))
         if stage=="file_done":
-            summary=(f"{progress} {filename}: error {payload.get('initial_errors',0)}→{payload.get('final_errors',0)} / "
-                     f"修正 {payload.get('repaired',0)}")
-            if origin=="chinese": self._append_chinese_log("QA修正: "+summary)
-            elif origin=="normal": self._append_log("QA修正: "+summary)
+            summary=(i18n.t('u3.qa_file_summary', progress=progress, filename=filename, initial_errors=payload.get('initial_errors',0), final_errors=payload.get('final_errors',0), repaired=payload.get('repaired',0)))
+            if origin=="chinese": self._append_chinese_log(i18n.t('u3.qa_repair_file_log', summary=summary))
+            elif origin=="normal": self._append_log(i18n.t('u3.qa_repair_file_log', summary=summary))
 
     def _apply_qa_auto_repair_error(self, origin, error_type, message):
         self.qa_repair_thread=None; self.qa_repair_controller=None; self._qa_repair_origin=None
-        self._refresh_operation_states(); self._set_llm_idle("LLM 待機中","QA・自動修正でエラーが発生しました")
-        if origin=="review": self.qa_summary_var.set("QA・自動修正エラー")
-        record_error("QA・自動修正",detail=f"{error_type}: {message}")
-        messagebox.showerror(APP_NAME,f"QA・自動修正に失敗しました。\n{error_type}: {message}")
+        self._refresh_operation_states(); self._set_llm_idle(i18n.t('u3.llm_idle'),i18n.t('u3.qa_repair_failed'))
+        if origin=="review": self.qa_summary_var.set(i18n.t('u3.qa_repair_error_context'))
+        record_error(i18n.t('u3.qa_repair'),detail=f"{error_type}: {message}")
+        messagebox.showerror(APP_NAME,i18n.t('u3.qa_repair_error', error_type=error_type, message=message))
 
     def run_selected_translation_qa(self):
         """Back up, QA, and automatically repair selected normal queue items."""
         entries=self._selected_normal_queue_entries()
         if not entries:
-            messagebox.showinfo(APP_NAME,"QA・自動修正する通常翻訳項目を選択してください。"); return
+            messagebox.showinfo(APP_NAME,i18n.t('u3.select_qa_items')); return
         pairs=[]
         for _idx,item in entries:
             inp=Path(item.get("input", "")); out=Path(item.get("output", ""))
@@ -8603,7 +8598,7 @@ class App(BaseTk):
         try:
             missing = self._translation_status_missing_for_item(item, source_language)
         except Exception as exc:
-            record_error("差分翻訳 言語別完了判定", exc, str(item.get("input", "")))
+            record_error(i18n.t('u3.diff_completion_error'), exc, str(item.get("input", "")))
             return {"language_complete": False, "status_gap_total": 0, "current_missing": 0}
         total = int(missing.get("status_gap_total", 0) or 0)
         current = int(missing.get("count", 0) or 0)
@@ -8649,17 +8644,17 @@ class App(BaseTk):
         active_worker=self.chinese_worker if mode=='chinese' else self.worker
         if active_worker is not None: return
         if self.differential_prepare_thread is not None:
-            messagebox.showinfo(APP_NAME,'差分翻訳の準備はすでにバックグラウンドで実行中です。'); return
+            messagebox.showinfo(APP_NAME,i18n.t('u3.diff_preparing')); return
         entries=list(entries or [])
         if not entries:
-            messagebox.showinfo(APP_NAME,'差分翻訳する項目を選択してください。'); return
+            messagebox.showinfo(APP_NAME,i18n.t('u3.select_diff_items')); return
         if mode!='chinese':
             stop,_warnings=_target_language_problems([item for _idx,item in entries], diff_requested=True)
             if stop:
                 messagebox.showinfo(APP_NAME, stop); return
         repair_enabled=bool(self.repair_var.get())
-        if mode=='chinese': self.chinese_progress_var.set(f'差分をバックグラウンド解析中… 0/{len(entries)}')
-        else: self.progress_text.set(f'差分をバックグラウンド解析中… 0/{len(entries)}')
+        if mode=='chinese': self.chinese_progress_var.set(i18n.t('u3.diff_prepare_progress', count=len(entries)))
+        else: self.progress_text.set(i18n.t('u3.diff_prepare_progress', count=len(entries)))
         def prepare_work():
             unavailable=[]; notices=[]; prepared=[]
             source_language='simp_chinese' if mode=='chinese' else 'english'
@@ -8698,17 +8693,17 @@ class App(BaseTk):
             self._save_workspace_state("differential_prepare_stopped_for_exit")
             return
         if unavailable:
-            msg='差分スナップショットがなく、翻訳状況にも判定材料となる欠損がないため、差分を判定できない項目があります。\n\n'+'\n'.join(unavailable[:10])
-            if language_complete_notices: msg+='\n\n言語別に完了している項目:\n'+'\n'.join(language_complete_notices[:10])
+            msg=i18n.t('u3.diff_unavailable', value='\n'.join(unavailable[:10]))
+            if language_complete_notices: msg = i18n.t('u3.language_completed_list', value='\n'.join(language_complete_notices[:10]), prefix=msg)
             messagebox.showinfo(APP_NAME,msg)
         if prepared_indices:
-            if language_complete_notices: messagebox.showinfo(APP_NAME,'一部項目は現在の言語で翻訳が完了しています。\n\n'+'\n'.join(language_complete_notices[:10]))
+            if language_complete_notices: messagebox.showinfo(APP_NAME,i18n.t('u3.some_completed', value='\n'.join(language_complete_notices[:10])))
             if mode=='chinese': self._start_chinese_selected(prepared_indices,diff_requested=True)
             else: self._start_normal_selected(prepared_indices,diff_requested=True)
         elif language_complete_notices and not unavailable:
             messagebox.showinfo(APP_NAME,'\n'.join(language_complete_notices[:10]))
         elif not unavailable:
-            messagebox.showinfo(APP_NAME,'原文差分も翻訳状況の欠損もありません。')
+            messagebox.showinfo(APP_NAME,i18n.t('u3.no_diff_gaps'))
 
     def start_queue(self):
         if self._closing: return
@@ -9759,11 +9754,11 @@ class App(BaseTk):
     def load_diff_inspector(self):
         src=Path(self.diff_src_var.get()); dst=Path(self.diff_dst_var.get())
         if not src.exists() or not dst.exists():
-            messagebox.showerror(APP_NAME,'英語または簡体字中国語の原文ファイルと日本語ファイルの両方を選択してください。'); return
+            messagebox.showerror(APP_NAME,i18n.t('u3.select_diff_files', target_name=i18n.t("lang." + _current_target_lang(self)))); return
         if self.diff_load_worker and self.diff_load_worker.is_alive():
-            self.diff_summary_var.set('差分をバックグラウンド解析中…'); return
+            self.diff_summary_var.set(i18n.t('u3.diff_background')); return
         self.diff_batch_contexts=[]
-        self.diff_summary_var.set('差分をバックグラウンド解析中… GUIは操作できます')
+        self.diff_summary_var.set(i18n.t('u3.diff_background_hint'))
         target_lang=_current_target_lang(self)
         def work():
             try:
@@ -9783,9 +9778,9 @@ class App(BaseTk):
             self.diff_src_var.set(str(pairs[0]["source"])); self.diff_dst_var.set(str(pairs[0]["target"]))
             self.load_diff_inspector(); return
         if self.diff_load_worker and self.diff_load_worker.is_alive():
-            self.diff_summary_var.set('差分をバックグラウンド解析中…'); return
+            self.diff_summary_var.set(i18n.t('u3.diff_background')); return
         self.diff_src_var.set(str(pairs[0]["source"])); self.diff_dst_var.set(str(pairs[0]["target"]))
-        self.diff_summary_var.set(f'差分を一括解析中… {len(pairs)}ファイル / GUIは操作できます')
+        self.diff_summary_var.set(i18n.t('u3.diff_batch_background', count=len(pairs)))
         target_lang=_current_target_lang(self)
         def work():
             contexts=[]; errors=[]
@@ -9808,12 +9803,12 @@ class App(BaseTk):
         self.diff_rows=list(rows or []); self.diff_row_by_key={r['key']:r for r in self.diff_rows}
         for iid in self.diff_tree.get_children(): self.diff_tree.delete(iid)
         self.diff_tree_key_map={}
-        labels={'missing':'欠落','untranslated':'未翻訳','extra':'日本語のみ','ok':'対応あり'}
+        labels={'missing':i18n.t('u3.missing'),'untranslated':i18n.t('u3.untranslated'),'extra':i18n.t('u3.target_only', target_name=i18n.t("lang." + _current_target_lang(self))),'ok':i18n.t('u3.matched')}
         counts={k:0 for k in labels}; parents={}
         for status in ('missing','untranslated','extra','ok'):
             parents[status]=self.diff_tree.insert('','end',iid=f'diff_group_{status}',text=labels[status],open=status!='ok',values=('',''),tags=(status,))
         for row in self.diff_rows: counts[row['status']]=counts.get(row['status'],0)+1
-        self.diff_summary_var.set(f"欠落 {counts['missing']} / 未翻訳 {counts['untranslated']} / 日本語のみ {counts['extra']} / 対応あり {counts['ok']} — 表示作成中…")
+        self.diff_summary_var.set(i18n.t('u3.diff_summary_rendering', missing=counts['missing'], untranslated=counts['untranslated'], extra=counts['extra'], ok=counts['ok'], target_name=i18n.t("lang." + _current_target_lang(self))))
         self._populate_diff_rows_chunked(0,parents)
 
     def _populate_diff_rows_chunked(self, start, parents, chunk=400):
@@ -9826,7 +9821,7 @@ class App(BaseTk):
         else:
             counts={k:0 for k in ('missing','untranslated','extra','ok')}
             for row in self.diff_rows: counts[row['status']]=counts.get(row['status'],0)+1
-            self.diff_summary_var.set(f"欠落 {counts['missing']} / 未翻訳 {counts['untranslated']} / 日本語のみ {counts['extra']} / 対応あり {counts['ok']}")
+            self.diff_summary_var.set(i18n.t('u3.diff_summary', missing=counts['missing'], untranslated=counts['untranslated'], extra=counts['extra'], ok=counts['ok'], target_name=i18n.t("lang." + _current_target_lang(self))))
 
     def _activate_diff_context(self, index):
         if not (0 <= index < len(self.diff_batch_contexts)):
@@ -9840,23 +9835,23 @@ class App(BaseTk):
         self.diff_load_worker=None; self.diff_batch_contexts=list(contexts or []); self.diff_tree_record_map={}; self.diff_tree_key_map={}
         for iid in self.diff_tree.get_children(): self.diff_tree.delete(iid)
         if not self.diff_batch_contexts:
-            self.diff_summary_var.set(f'差分一括解析失敗: {len(errors)}ファイル')
-            if errors: messagebox.showerror(APP_NAME,'差分を読み込めるファイルがありませんでした。\n\n'+'\n'.join(errors[:20]))
+            self.diff_summary_var.set(i18n.t('u3.diff_batch_failed', count=len(errors)))
+            if errors: messagebox.showerror(APP_NAME,i18n.t('u3.diff_no_files', value='\n'.join(errors[:20])))
             return
         self._activate_diff_context(0)
-        labels={'missing':'欠落','untranslated':'未翻訳','extra':'日本語のみ','ok':'対応あり'}
+        labels={'missing':i18n.t('u3.missing'),'untranslated':i18n.t('u3.untranslated'),'extra':i18n.t('u3.target_only', target_name=i18n.t("lang." + _current_target_lang(self))),'ok':i18n.t('u3.matched')}
         parents={status:self.diff_tree.insert('','end',iid=f'diff_batch_group_{status}',text=label,open=status!='ok',values=('',''),tags=(status,)) for status,label in labels.items()}
         counts={k:0 for k in labels}; n=0
         for ci,c in enumerate(self.diff_batch_contexts):
-            file_label=f'{"English" if c["lang"]=="english" else "簡体字中国語"}: {Path(c["source_path"]).name}'
+            file_label=f'{"English" if c["lang"]=="english" else i18n.t("u3.simplified_chinese")}: {Path(c["source_path"]).name}'
             for row in c["rows"]:
                 status=row['status']; counts[status]=counts.get(status,0)+1; iid=f'diff_batch_leaf_{n}'; n+=1
                 self.diff_tree.insert(parents[status],'end',iid=iid,values=(file_label,row['key']),tags=(status,))
                 self.diff_tree_key_map[iid]=row['key']; self.diff_tree_record_map[iid]=(ci,row['key'])
         failed=len(errors or [])
-        self.diff_summary_var.set(f'差分一括: {len(self.diff_batch_contexts)}ファイル / 欠落 {counts["missing"]} / 未翻訳 {counts["untranslated"]} / 日本語のみ {counts["extra"]} / 対応あり {counts["ok"]}'+(f' / 読込失敗 {failed}' if failed else ''))
+        self.diff_summary_var.set((i18n.t('u3.diff_batch_summary_failed', count=len(self.diff_batch_contexts), missing=counts["missing"], untranslated=counts["untranslated"], extra=counts["extra"], ok=counts["ok"], target_name=i18n.t("lang." + _current_target_lang(self)), failed=failed) if failed else i18n.t('u3.diff_batch_summary', count=len(self.diff_batch_contexts), missing=counts["missing"], untranslated=counts["untranslated"], extra=counts["extra"], ok=counts["ok"], target_name=i18n.t("lang." + _current_target_lang(self)))))
         if failed:
-            messagebox.showwarning(APP_NAME,f'{failed}ファイルをスキップし、残りの差分調査を完了しました。\n\n'+'\n'.join((errors or [])[:20]))
+            messagebox.showwarning(APP_NAME,i18n.t('u3.diff_batch_skipped', failed=failed, value='\n'.join((errors or [])[:20])))
 
     def _selected_diff_keys(self):
         out=[]
@@ -9896,7 +9891,7 @@ class App(BaseTk):
                 if k==key and self.diff_tree.exists(iid):
                     self.diff_tree.selection_set(iid); self.diff_tree.see(iid); break
         except Exception as e:
-            record_error("差分訳保存", e); messagebox.showerror(APP_NAME, str(e))
+            record_error(i18n.t('u3.save_diff_error'), e); messagebox.showerror(APP_NAME, str(e))
 
     def _backup_before_diff_write(self, target_paths):
         """差分翻訳・差分訳の保存で書き込む前に、ほかの上書きと同じ方式でバックアップを取る。
@@ -9916,7 +9911,7 @@ class App(BaseTk):
             done.add(key)
             root,_manifest=self._create_full_localization_snapshot(
                 mod_root,"差分翻訳",category="上書き",
-                state_label="差分翻訳の書き込み直前のlocalization全体")
+                state_label=i18n.t('u3.diff_backup_label'))
             backups.append(root)
         if loose:
             backup_dir=core.create_qa_repair_backup_dir(BACKUP_ROOT/"差分翻訳","diff_translate")
@@ -9943,7 +9938,7 @@ class App(BaseTk):
         if self._closing:
             return
         if self.diff_controller is not None:
-            messagebox.showinfo(APP_NAME, "差分翻訳はすでに実行中です。")
+            messagebox.showinfo(APP_NAME, i18n.t('u3.diff_translation_running'))
             return
         if not self.diff_rows and not self.diff_batch_contexts:
             self.load_diff_inspector()
@@ -9974,11 +9969,11 @@ class App(BaseTk):
         contexts=self.diff_batch_contexts if len(self.diff_batch_contexts)>1 else [single]
         tasks=_dedupe_diff_translation_tasks(contexts,tasks)
         if not tasks:
-            messagebox.showinfo(APP_NAME, "翻訳対象の欠落/未翻訳キーを選択してください。")
+            messagebox.showinfo(APP_NAME, i18n.t('u3.select_missing_keys'))
             return
         self.diff_controller = core.TranslationController(progress_callback=lambda p:self.events.put(("diff_translate_progress", p)))
         self.llm_operation = "差分翻訳"
-        self.diff_message_var.set(f"差分翻訳中… {len(tasks)}件")
+        self.diff_message_var.set(i18n.t('u3.diff_translating', count=len(tasks)))
         target_lang = _current_target_lang(self)
         glossary_path = _existing_language_glossary(self.glossary_path_var.get().strip(),target_lang)
         diff_settings = {
@@ -10009,7 +10004,7 @@ class App(BaseTk):
                         except core.StopRequested:
                             raise
                         except Exception as exc:
-                            translated=""; problem=f"翻訳に失敗しました: {type(exc).__name__}: {exc}"
+                            translated=""; problem=i18n.t('u3.translation_failed', value=type(exc).__name__, exc=exc)
                             continue
                         problem=_diff_translation_problem(source_text, translated, source_lang, target_lang)
                         if not problem:
@@ -10041,21 +10036,21 @@ class App(BaseTk):
 
     def pick_search_folder(self):
         # Legacy compatibility: translation search is now game-scoped.
-        messagebox.showinfo(APP_NAME, "翻訳検索はゲーム単位の検索に変更されました。対象ゲームを選んで検索してください。")
+        messagebox.showinfo(APP_NAME, i18n.t('u3.search_game_scope'))
 
     def pick_search_file(self):
-        messagebox.showinfo(APP_NAME, "翻訳検索はゲーム単位の検索に変更されました。個別YAMLはQA / 比較編集または差分調査から選択できます。")
+        messagebox.showinfo(APP_NAME, i18n.t('u3.search_yaml_scope'))
 
     def clear_translation_search_results(self):
         if hasattr(self, "search_tree"):
             for iid in self.search_tree.get_children():
                 self.search_tree.delete(iid)
         self.search_result_map = {}
-        self.search_summary_var.set("検索待機中")
+        self.search_summary_var.set(i18n.t('u3.search_idle'))
         if hasattr(self, "search_edit_text"):
             self.search_edit_text.delete("1.0", "end")
         if hasattr(self, "search_selected_var"):
-            self.search_selected_var.set("検索結果を選択してください")
+            self.search_selected_var.set(i18n.t('u3.select_result'))
 
     def _translation_search_location_rows_for_game(self, game):
         rows=[]
@@ -10139,7 +10134,7 @@ class App(BaseTk):
         self.search_mod_refresh_generation += 1
         generation=self.search_mod_refresh_generation
         wanted=set(self.search_selected_mod_paths or [])
-        self.search_mod_status_var.set("対象Modをバックグラウンド取得中…")
+        self.search_mod_status_var.set(i18n.t('u3.search_mods_background'))
         def work():
             try:
                 roots=self._translation_search_mod_roots_for_game(game)
@@ -10169,9 +10164,9 @@ class App(BaseTk):
         q_raw=self.search_query_var.get().strip()
         q=q_raw.casefold()
         if not game:
-            messagebox.showerror(APP_NAME,"検索するゲームを選択してください。"); return
+            messagebox.showerror(APP_NAME,i18n.t('u3.select_search_game')); return
         if not q:
-            messagebox.showinfo(APP_NAME,"全件列挙を防ぐため、検索語を入力してください。"); return
+            messagebox.showinfo(APP_NAME,i18n.t('u3.require_search_term')); return
         selected=[Path(p) for p in (self.search_selected_mod_paths or []) if Path(p).exists()]
         if not selected:
             selected=[Path(v) for v in self.search_mod_map.values() if Path(v).exists()]
@@ -10182,7 +10177,7 @@ class App(BaseTk):
             rows=[]
         self.search_generation += 1
         generation=self.search_generation
-        self.search_summary_var.set(f"{game}: バックグラウンド検索中…")
+        self.search_summary_var.set(i18n.t('u3.search_background', game=game))
         def work():
             try:
                 roots=selected or self._translation_search_mod_roots_for_game(game)
@@ -10247,7 +10242,7 @@ class App(BaseTk):
         if row.get("missing"):
             src = self._localization_display_path(source_file) if source_file else ""
             dst = self._localization_display_path(target_file) if target_file else ""
-            self.search_selected_var.set(f"{mod_name} / {key} / 未訳  原文: {src}  → 日本語: {dst}")
+            self.search_selected_var.set(i18n.t('u3.search_missing_path', mod_name=mod_name, localization_key=key, src=src, dst=dst))
         else:
             self.search_selected_var.set(f"{mod_name} / {self._localization_display_path(target_file)} / {key}")
         self.search_edit_text.delete("1.0", "end")
@@ -10264,22 +10259,22 @@ class App(BaseTk):
         key = row.get("key", "")
         mod_name = row.get("mod_name", "")
         if not target_file:
-            messagebox.showerror(APP_NAME, "日本語ファイルの保存先を特定できませんでした。")
+            messagebox.showerror(APP_NAME, i18n.t('u3.search_target_missing'))
             return
         value = self.search_edit_text.get("1.0", "end-1c")
         try:
             if row.get("missing"):
                 core.upsert_localization_values(Path(target_file), {key: value}, "japanese")
             elif not core.update_localization_value(Path(target_file), key, value):
-                raise RuntimeError("対象キーをファイル内で更新できませんでした")
+                raise RuntimeError(i18n.t('u3.search_update_failed'))
             row["value"] = value
             row["missing"] = False
             self.search_result_map[sel[0]] = row
             self.search_tree.item(sel[0], values=(mod_name, self._localization_display_path(target_file), key, value[:180]))
             self.search_selected_var.set(f"{mod_name} / {self._localization_display_path(target_file)} / {key}")
-            self.search_summary_var.set(f"保存しました: {key}")
+            self.search_summary_var.set(i18n.t('u3.saved_key', localization_key=key))
         except Exception as e:
-            record_error("翻訳検索から直接訂正", e)
+            record_error(i18n.t('u3.search_save_error'), e)
             messagebox.showerror(APP_NAME, str(e))
 
     # ---------------- QA/editor ----------------
@@ -10289,7 +10284,7 @@ class App(BaseTk):
 
     def load_review(self):
         dst=Path(self.review_dst_var.get())
-        if not dst.exists(): messagebox.showerror(APP_NAME,'訳文ファイルを選択してください。'); return
+        if not dst.exists(): messagebox.showerror(APP_NAME,i18n.t('u3.select_translation_file')); return
         self.review_batch_contexts=[]
         self._start_review_background(load_files=True)
 
@@ -10317,16 +10312,16 @@ class App(BaseTk):
             payload=_build_qa_log_payload(contexts,failures,repair_result=getattr(self,"review_last_qa_repair_result",None))
             path=QA_LOG_ROOT / f'qa_report_{datetime.now().strftime("%Y%m%d_%H%M%S_%f")}.json'
             core.save_json(path,payload)
-            messagebox.showinfo(APP_NAME,f'QAログを書き出しました。\n\n{path}')
+            messagebox.showinfo(APP_NAME,i18n.t('u3.qa_log_exported', path=path))
         except Exception as exc:
-            record_error("QAログ書き出し",exc)
-            messagebox.showerror(APP_NAME,f'QAログの書き出しに失敗しました。\n{exc}')
+            record_error(i18n.t('u3.qa_log_error_context'),exc)
+            messagebox.showerror(APP_NAME,i18n.t('u3.qa_log_export_failed', exc=exc))
 
     def run_review_auto_repair(self):
         contexts=list(self.review_batch_contexts or self.review_last_qa_contexts or [])
         if not _qa_contexts_have_repairable_errors(contexts):
             self._set_review_auto_repair_enabled(False)
-            messagebox.showinfo(APP_NAME,"現在のQA結果に自動修復できるエラーはありません。"); return
+            messagebox.showinfo(APP_NAME,i18n.t('u3.no_repairable_errors')); return
         pairs=[{"source_file":str(c.get("source_path") or ""),"target_file":str(c.get("target_path") or ""),
                 "source_language":str(c.get("lang") or "english"),
                 "target_language":str(c.get("target_lang") or core.DEFAULT_TARGET_LANG)} for c in contexts]
@@ -10349,17 +10344,17 @@ class App(BaseTk):
 
     def _start_review_pairs_background(self, pairs):
         if self.review_worker and self.review_worker.is_alive():
-            self.qa_summary_var.set('QAをバックグラウンド解析中…'); return
+            self.qa_summary_var.set(i18n.t('u3.qa_background')); return
         self._clear_pending_review_qa_log()
         target_lang=_current_target_lang(self)
         glossary_path=_existing_language_glossary(self.glossary_path_var.get(),target_lang)
-        self.qa_summary_var.set(f'QAを一括解析中… {len(pairs)}ファイル / GUIは操作できます')
+        self.qa_summary_var.set(i18n.t('u3.qa_batch_background', count=len(pairs)))
         def work():
             contexts=[]; errors=[]
             try:
                 glossary=core.load_glossary(glossary_path) if glossary_path else {}
             except Exception as exc:
-                errors.append({"source_file":"","target_file":"","source_language":"","stage":"glossary_read","error_type":type(exc).__name__,"message":str(exc),"action":"QAを中止"})
+                errors.append({"source_file":"","target_file":"","source_language":"","stage":"glossary_read","error_type":type(exc).__name__,"message":str(exc),"action":i18n.t('u3.cancel_qa')})
                 self.events.put(('review_qa_batch_loaded',(contexts,errors))); return
             for pair in pairs:
                 source_path=Path(pair["source"]); target_path=Path(pair["target"]); lang=str(pair.get("lang") or "")
@@ -10374,26 +10369,26 @@ class App(BaseTk):
                                      "source_entries":source,"target_entries":target,"issues":list(issues or [])})
                 except Exception as exc:
                     errors.append({"source_file":str(source_path),"target_file":str(target_path),"source_language":lang,"stage":stage,
-                                   "error_type":type(exc).__name__,"message":str(exc),"action":"スキップして継続"})
+                                   "error_type":type(exc).__name__,"message":str(exc),"action":i18n.t('u3.skip_continue')})
             self.events.put(('review_qa_batch_loaded',(contexts,errors)))
         self.review_worker=threading.Thread(target=work,daemon=True,name='review-qa-batch'); self.review_worker.start()
 
     def _start_review_background(self, load_files=False):
         if self.review_worker and self.review_worker.is_alive():
-            self.qa_summary_var.set('QAをバックグラウンド解析中…'); return
+            self.qa_summary_var.set(i18n.t('u3.qa_background')); return
         self._clear_pending_review_qa_log()
         dst=Path(self.review_dst_var.get()) if self.review_dst_var.get() else None
         src=Path(self.review_src_var.get()) if self.review_src_var.get() else None
         target_lang=_current_target_lang(self)
         glossary_path=_existing_language_glossary(self.glossary_path_var.get(),target_lang)
         existing_target=dict(self.review_target_entries); existing_source=dict(self.review_source_entries); existing_lang=self.review_source_lang
-        self.qa_summary_var.set('QAをバックグラウンド解析中… GUIは操作できます')
+        self.qa_summary_var.set(i18n.t('u3.qa_background_hint'))
         def work():
             stage="qa_analysis"
             try:
                 target=existing_target; source=existing_source; source_lang=existing_lang
                 if load_files or not target:
-                    if not dst or not dst.exists(): raise RuntimeError('訳文ファイルを選択してください。')
+                    if not dst or not dst.exists(): raise RuntimeError(i18n.t('u3.select_translation_file'))
                     stage="target_read"
                     _,target,_=core.parse_localization_file(dst)
                     if src and src.exists():
@@ -10410,7 +10405,7 @@ class App(BaseTk):
                 self.events.put(('review_qa_loaded',(source_lang,source,target,issues)))
             except Exception as exc:
                 self.events.put(('review_qa_error',{"source_file":str(src or ""),"target_file":str(dst or ""),"source_language":str(existing_lang or ""),
-                                                    "stage":stage,"error_type":type(exc).__name__,"message":str(exc),"action":"QAを中止"}))
+                                                    "stage":stage,"error_type":type(exc).__name__,"message":str(exc),"action":i18n.t('u3.cancel_qa')}))
         self.review_worker=threading.Thread(target=work,daemon=True,name='review-qa'); self.review_worker.start()
 
     def _apply_review_qa_loaded(self, source_lang, source_entries, target_entries, issues):
@@ -10426,7 +10421,7 @@ class App(BaseTk):
                                       "source_entries":source_entries,"target_entries":target_entries,"issues":self.review_issues}]
         self.review_last_qa_errors=[]; self._set_review_qa_log_enabled(True)
         self._set_review_auto_repair_enabled(_qa_contexts_have_repairable_errors(self.review_last_qa_contexts))
-        self.qa_summary_var.set(f'QA: エラー {errs} / 警告 {warns} / 注意 {notices} / キー {len(self.review_target_entries)}')
+        self.qa_summary_var.set(i18n.t('u3.qa_summary', errs=errs, warns=warns, notices=notices, count=len(self.review_target_entries)))
         self.populate_review(True)
 
     def _activate_review_context(self, index):
@@ -10444,8 +10439,8 @@ class App(BaseTk):
         self._set_review_qa_log_enabled(bool(self.review_last_qa_contexts or self.review_last_qa_errors))
         self._set_review_auto_repair_enabled(_qa_contexts_have_repairable_errors(self.review_last_qa_contexts))
         if not self.review_batch_contexts:
-            self.qa_summary_var.set(f'QA一括解析失敗: {len(errors)}ファイル')
-            if errors: messagebox.showerror(APP_NAME,'QAで読み込めるファイルがありませんでした。\n\n'+'\n'.join(_qa_failure_display(x) for x in errors[:20]))
+            self.qa_summary_var.set(i18n.t('u3.qa_batch_failed', count=len(errors)))
+            if errors: messagebox.showerror(APP_NAME,i18n.t('u3.qa_no_files', value='\n'.join(_qa_failure_display(x) for x in errors[:20])))
             return
         self._activate_review_context(0)
         self.populate_review_batch(True,errors)
@@ -10460,7 +10455,7 @@ class App(BaseTk):
                 issue_by_key.setdefault(issue['key'],[]).append(issue); counts[issue['severity']]=counts.get(issue['severity'],0)+1
             keys=sorted(set(c["target_entries"]) | set(c["source_entries"]))
             total_keys += len(keys)
-            file_label=f'{"English" if c["lang"]=="english" else "簡体字中国語"}: {Path(c["source_path"]).name}'
+            file_label=f'{"English" if c["lang"]=="english" else i18n.t("u3.simplified_chinese")}: {Path(c["source_path"]).name}'
             for key in keys:
                 issues=issue_by_key.get(key,[])
                 if warnings_only and not issues: continue
@@ -10468,7 +10463,7 @@ class App(BaseTk):
                 types=sorted(set(i['type'] for i in issues)) or ['']
                 for typ in types:
                     if group not in parents:
-                        parents[group]=self.review_tree.insert('', 'end', iid=f'qa_batch_group_{group}', text={'error':'エラー','warning':'警告','notice':'注意','ok':'問題なし'}[group], open=group!='ok', values=('','',''))
+                        parents[group]=self.review_tree.insert('', 'end', iid=f'qa_batch_group_{group}', text={'error':'エラー','warning':i18n.t('u3.warning'),'notice':i18n.t('u3.notice'),'ok':i18n.t('u3.no_issues')}[group], open=group!='ok', values=('','',''))
                     parent=parents[group]
                     if group!='ok':
                         token=(group,typ)
@@ -10479,9 +10474,9 @@ class App(BaseTk):
                     self.review_tree.insert(parent,'end',iid=iid,values=(typ,file_label,key))
                     self.review_tree_key_map[iid]=key; self.review_tree_record_map[iid]=(ci,key)
         failed=len(errors or [])
-        self.qa_summary_var.set(f'QA一括: {len(self.review_batch_contexts)}ファイル / エラー {counts["error"]} / 警告 {counts["warning"]} / 注意 {counts["notice"]} / キー {total_keys}'+(f' / 読込失敗 {failed}' if failed else ''))
+        self.qa_summary_var.set((i18n.t('u3.qa_batch_summary_failed', count=len(self.review_batch_contexts), error=counts["error"], warning=counts["warning"], notice=counts["notice"], total_keys=total_keys, failed=failed) if failed else i18n.t('u3.qa_batch_summary', count=len(self.review_batch_contexts), error=counts["error"], warning=counts["warning"], notice=counts["notice"], total_keys=total_keys)))
         if failed:
-            messagebox.showwarning(APP_NAME,f'{failed}ファイルをスキップし、残りのQAを完了しました。\n\n'+'\n'.join(_qa_failure_display(x) for x in (errors or [])[:20]))
+            messagebox.showwarning(APP_NAME,i18n.t('u3.qa_batch_skipped', failed=failed, value='\n'.join(_qa_failure_display(x) for x in (errors or [])[:20])))
 
     def populate_review(self,warnings_only):
         if self.review_batch_contexts:
@@ -10496,11 +10491,11 @@ class App(BaseTk):
             if warnings_only and not issues: continue
             if issues:
                 group=_qa_severity_group(issues)
-                for typ in (sorted(set(i['type'] for i in issues)) or ['その他']): rows.append((group,typ,key))
+                for typ in (sorted(set(i['type'] for i in issues)) or [i18n.t('u3.other')]): rows.append((group,typ,key))
             else:
                 rows.append(('ok','',key))
         parents={}; type_parents={}
-        self.qa_summary_var.set(self.qa_summary_var.get() + f' / 表示 {len(rows)}件を分割描画中…')
+        self.qa_summary_var.set(i18n.t('u3.review_rendering', value=self.qa_summary_var.get(), count=len(rows)))
         self._populate_review_rows_chunked(rows,0,parents,type_parents)
 
     def _populate_review_rows_chunked(self, rows, start, parents, type_parents, chunk=350):
@@ -10511,13 +10506,13 @@ class App(BaseTk):
         def ensure_type(group,typ):
             k=(group,typ)
             if k not in type_parents:
-                parent=ensure_parent(group,{'error':'エラー','warning':'警告','notice':'注意','ok':'問題なし'}[group])
+                parent=ensure_parent(group,{'error':'エラー','warning':i18n.t('u3.warning'),'notice':i18n.t('u3.notice'),'ok':i18n.t('u3.no_issues')}[group])
                 type_parents[k]=self.review_tree.insert(parent,'end',text=typ,open=True,values=(typ,'',''))
             return type_parents[k]
         end=min(len(rows),start+chunk)
         for n in range(start,end):
             group,typ,key=rows[n]
-            if group=='ok': parent=ensure_parent('ok','問題なし')
+            if group=='ok': parent=ensure_parent('ok',i18n.t('u3.no_issues'))
             else: parent=ensure_type(group,typ)
             iid=f'qa_leaf_{n}'; self.review_tree.insert(parent,'end',iid=iid,text='',values=(typ,'',key)); self.review_tree_key_map[iid]=key
         if end < len(rows):
@@ -10525,7 +10520,7 @@ class App(BaseTk):
         else:
             errs=sum(x['severity']=='error' for x in self.review_issues); warns=sum(x['severity']=='warning' for x in self.review_issues)
             notices=sum(x['severity']=='notice' for x in self.review_issues)
-            self.qa_summary_var.set(f'QA: エラー {errs} / 警告 {warns} / 注意 {notices} / キー {len(self.review_target_entries)}')
+            self.qa_summary_var.set(i18n.t('u3.qa_summary', errs=errs, warns=warns, notices=notices, count=len(self.review_target_entries)))
 
     def _selected_review_key(self):
         for iid in self.review_tree.selection():
@@ -10600,8 +10595,8 @@ class App(BaseTk):
         key=self._selected_review_key()
         if not key: return
         text=self.dst_text.get("1.0","end-1c"); src=self.review_source_entries.get(key,"")
-        self.issue_text.set("AI校正中…（上部のLLM動作表示から停止できます）")
-        self.llm_operation = "AI誤字脱字校正"
+        self.issue_text.set(i18n.t('u3.ai_proofreading'))
+        self.llm_operation = i18n.t('u3.ai_typo_check')
         self.proofread_controller=core.TranslationController(progress_callback=lambda p:self.events.put(("proofread_progress",p)))
         target_lang = _current_target_lang(self)
         glossary_path = _existing_language_glossary(self.glossary_path_var.get().strip(),target_lang)
@@ -10626,20 +10621,20 @@ class App(BaseTk):
         src = Path(self.review_src_var.get()) if self.review_src_var.get() else None
         dst = Path(self.review_dst_var.get()) if self.review_dst_var.get() else None
         if not src or not src.exists() or not dst or not dst.exists():
-            messagebox.showinfo(APP_NAME, "先にQA / 比較編集で原文と日本語訳を読み込んでください。")
+            messagebox.showinfo(APP_NAME, i18n.t('u3.load_before_unify', target_name=i18n.t("lang." + _current_target_lang(self))))
             return
         term_issues=[x for x in self.review_issues if x.get("type")=="term_mismatch"]
         if not term_issues:
-            messagebox.showinfo(APP_NAME, "現在のQA結果に用語不一致はありません。")
+            messagebox.showinfo(APP_NAME, i18n.t('u3.no_term_issues'))
             return
-        if not messagebox.askyesno(APP_NAME, f"用語集の自動用語候補を使って、用語不一致 {len(term_issues)}件を一括統一しますか？\n\n既知の表記揺れだけを安全に置換します。判定できない箇所は変更しません。"):
+        if not messagebox.askyesno(APP_NAME, i18n.t('u3.unify_confirm', count=len(term_issues))):
             return
         try:
             result=core.bulk_unify_qa_terms(dst, src, Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY))
             self.load_review()
-            messagebox.showinfo(APP_NAME, f"用語統一が完了しました。\n変更: {result.get('changed',0)}件\n自動置換できなかった候補: {result.get('skipped',0)}件")
+            messagebox.showinfo(APP_NAME, i18n.t('u3.unify_complete', changed=result.get('changed',0), skipped=result.get('skipped',0)))
         except Exception as exc:
-            record_error("QA用語一括統一", exc)
+            record_error(i18n.t('u3.unify_error_context'), exc)
             messagebox.showerror(APP_NAME, str(exc))
 
     def _auto_glossary_pairs_from_origin(self, origin):
