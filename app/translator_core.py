@@ -85,12 +85,12 @@ TARGET_LANGUAGES = {
     "french": {"label": "フランス語", "name": "French", "script": "latin", "remove_cjk_spaces": False},
     "german": {"label": "ドイツ語", "name": "German", "script": "latin", "remove_cjk_spaces": False},
     "spanish": {"label": "スペイン語", "name": "Spanish", "script": "latin", "remove_cjk_spaces": False},
-    "japanese": {"label": "日本語", "name": "Japanese", "script": "japanese", "remove_cjk_spaces": True},
+    "japanese": {"label": "日本語", "name": "Japanese", "script": "japanese", "remove_cjk_spaces": True, "cjk_space_rule": "japanese"},
     "korean": {"label": "韓国語", "name": "Korean", "script": "hangul", "remove_cjk_spaces": False},
     "polish": {"label": "ポーランド語", "name": "Polish", "script": "latin", "remove_cjk_spaces": False},
     "braz_por": {"label": "ポルトガル語（ブラジル）", "name": "Brazilian Portuguese", "script": "latin", "remove_cjk_spaces": False},
     "russian": {"label": "ロシア語", "name": "Russian", "script": "cyrillic", "remove_cjk_spaces": False},
-    "simp_chinese": {"label": "簡体字中国語", "name": "Simplified Chinese", "script": "han", "remove_cjk_spaces": True},
+    "simp_chinese": {"label": "簡体字中国語", "name": "Simplified Chinese", "script": "han", "remove_cjk_spaces": True, "cjk_space_rule": "zh_punctuation"},
     "turkish": {"label": "トルコ語", "name": "Turkish", "script": "latin", "remove_cjk_spaces": False},
 }
 
@@ -188,12 +188,24 @@ def _is_katakana_word_char(character: str) -> bool:
 
 
 def normalize_cjk_spacing(text: str, target_lang: str) -> tuple[str, int]:
-    """Remove ASCII spaces at CJK boundaries without altering protected tokens."""
+    """Apply language-specific ASCII spacing rules without altering protected tokens."""
     if not TARGET_LANGUAGES.get(target_lang, {}).get("remove_cjk_spaces", False):
         return text, 0
+    spacing_rule = TARGET_LANGUAGES[target_lang].get("cjk_space_rule", "japanese")
 
     def character_kind(character):
         codepoint = ord(character)
+        if spacing_rule == "zh_punctuation":
+            if character in "，。、；：？！）》」』〉】":
+                return "zh_close"
+            if character in "（《「『〈【":
+                return "zh_open"
+            if any(start <= codepoint <= end for start, end in (
+                (0x3400, 0x4DBF), (0x4E00, 0x9FFF), (0xF900, 0xFAFF),
+                (0x20000, 0x323AF),
+            )):
+                return "zh_text"
+            return "other"
         if any(start <= codepoint <= end for start, end in (
             (0x3001, 0x303F), (0x3040, 0x30FF), (0x31F0, 0x31FF),
             (0x3400, 0x4DBF), (0x4E00, 0x9FFF), (0xF900, 0xFAFF),
@@ -222,6 +234,15 @@ def normalize_cjk_spacing(text: str, target_lang: str) -> tuple[str, int]:
     output = []
     removed = 0
     for index, (kind, piece) in enumerate(atoms):
+        if spacing_rule == "zh_punctuation":
+            if kind == "space" and piece == " " and 0 < index < len(atoms) - 1:
+                previous, following = atoms[index - 1], atoms[index + 1]
+                if ((previous[0] == "zh_text" and following[0] == "zh_close")
+                        or (previous[0] == "zh_open" and following[0] == "zh_text")):
+                    removed += len(piece)
+                    continue
+            output.append(piece)
+            continue
         if kind == "space" and 0 < index < len(atoms) - 1:
             left, right = atoms[index - 1][0], atoms[index + 1][0]
             if ((left == "cjk" and right in {"cjk", "alnum", "variable", "color_end"})
