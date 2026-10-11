@@ -35,13 +35,13 @@ def test_cache_for_other_languages_is_kept_apart_from_japanese(tmp_path):
     assert french.parent != cache.parent and french.parent.is_dir()
 
 
-def test_start_checks_block_diff_mode_and_warn_about_unreadable_languages():
+def test_start_checks_allow_diff_mode_and_warn_about_unreadable_languages():
     hoi4 = {"input": "/Steam/steamapps/workshop/content/394360/1/", "target_lang": "turkish"}
     vic3 = {"input": "/Steam/steamapps/workshop/content/529340/2/", "target_lang": "turkish"}
     stop, warnings = main._target_language_problems([hoi4, vic3], diff_requested=False, preset="CK3")
     assert stop == "" and len(warnings) == 1 and "Hearts of Iron IV" in warnings[0]
     stop, _ = main._target_language_problems([vic3], diff_requested=True)
-    assert "差分だけ翻訳" in stop
+    assert stop == ""
     assert main._target_language_problems([{"input": "/x"}], diff_requested=True) == ("", [])
 
 

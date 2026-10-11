@@ -1,6 +1,8 @@
 """U1 翻訳/キュー（english）。key の頭は単位の名前にする。"""
 
 STRINGS = {
+    'u1.no_target_yaml': 'No translated {target_name} YAML files are available.',
+    'u1.confirm_target_missing_overwrite': 'Add only the {count} missing translations to the existing {target_name} text.\n\nTarget: {target}\n\nExisting values will not be replaced. Continue?',
     "u1.normal_translation": "Normal translation",
     "u1.intro": "Translate Paradox localization from English and other languages into {target_name}. Add YAML files or a Mod / localization folder directly to the translation queue.\nLLM, batch, workers, preset and Glossary use the shared settings in the Models / Connection tab.",
     "u1.target_language": "Target language",

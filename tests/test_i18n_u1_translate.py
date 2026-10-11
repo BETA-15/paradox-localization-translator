@@ -193,6 +193,13 @@ ORIGINAL_CASES = [['u1.normal_translation', {}, '通常翻訳'],
  ['u1.queue_start', {'mod': 'Example Mod', 'pos': 2, 'total': 3}, '開始: Example Mod (2/3)']]
 
 
+ORIGINAL_CASES += [
+    ['u1.no_target_yaml', {'target_name': '韓国語'}, '翻訳済み韓国語 YAMLがありません。'],
+    ['u1.confirm_target_missing_overwrite', {'count': 3, 'target': 'Fixture', 'target_name': '韓国語'},
+     '不足していた翻訳 3件だけを既存韓国語本文へ追加します。\n\n対象: Fixture\n\n既存の値は置き換えません。続行しますか？'],
+]
+
+
 @pytest.fixture(autouse=True)
 def restore_ui_language():
     previous = i18n.get_ui_language()
@@ -273,7 +280,8 @@ def test_internal_values_and_comparisons_are_unchanged():
     assert '.startswith("差分")' in reset
     merge = ast.get_source_segment(source, methods["_merge_missing_only_output"])
     assert 'target_root, "不足分上書き", category="上書き"' in merge
-    assert 'target_loc / "japanese" / "paradox_localization_translator_missing_l_japanese.yml"' in merge
+    assert 'core.remap_rel_dir(Path(), target_lang)' in merge
+    assert 'core.rename_for_target(Path("paradox_localization_translator_missing_l_japanese.yml"), target_lang, "japanese")' in merge
     transfer = ast.get_source_segment(source, methods["transfer_selected_queue_to_opposite"])
     assert transfer.count('"（不足分）"') == 2
 

@@ -132,6 +132,60 @@ def _current_target_lang(app):
     return _target_lang_from_choice(var.get()) if var is not None else core.DEFAULT_TARGET_LANG
 
 
+def _overwrite_target_lang(app, item):
+    return _item_target_lang(item) if item.get("target_lang") else _current_target_lang(app)
+
+
+def _overwrite_language_problem(app, item, *, external=False, destination=None):
+    target_lang = _overwrite_target_lang(app, item)
+    if external and target_lang == "english":
+        return i18n.t('u6.english_external_overwrite_unavailable')
+    preset_var = getattr(app, "preset_var", None)
+    preset = item.get("preset") or (preset_var.get() if preset_var is not None else "")
+    for path in (item.get("mod_root"), item.get("input"), destination):
+        game = item.get("game") or core.game_for_translation(path, preset)
+        supported = core.GAME_LANGUAGES.get(game)
+        if supported and target_lang not in supported:
+            return i18n.t('u6.unsupported_overwrite_language', game=game,
+                          target_name=i18n.t("lang." + target_lang))
+    return ""
+
+
+def _record_written_target(backup_root, metadata, target_lang):
+    if target_lang != core.DEFAULT_TARGET_LANG:
+        metadata["written_target_lang"] = target_lang
+        core.save_json(backup_root / "backup_manifest.json", metadata)
+
+
+def _copy_target_output(src, dst, target_lang, existing_keys):
+    if target_lang == core.DEFAULT_TARGET_LANG:
+        shutil.copy2(src, dst)
+        return True
+    language, entries, _ = core.parse_localization_file(src)
+    if language != target_lang:
+        return False
+    missing = {key: value for key, value in entries.items() if key not in existing_keys}
+    if not missing:
+        return False
+    text = core.read_localization_text(dst) if dst.exists() else f"l_{target_lang}:\n"
+    if not text.endswith("\n"):
+        text += "\n"
+    for key, value in missing.items():
+        text += f' {key}: "{core.escape_localization_value(value)}"\n'
+    dst.write_text("\ufeff" + text.lstrip("\ufeff"), encoding="utf-8")
+    existing_keys.update(missing)
+    return True
+
+
+def _existing_target_keys(root, target_lang):
+    keys = set()
+    for path in _generated_language_files(root, target_lang):
+        language, entries, _ = core.parse_localization_file(path)
+        if language == target_lang:
+            keys.update(entries)
+    return keys
+
+
 def _relation_language_items(payload, field, target_lang, *, create=False):
     container = payload
     if target_lang != core.DEFAULT_TARGET_LANG:
@@ -204,9 +258,6 @@ def _cache_for_target(cache_path, lang):
 
 def _target_language_problems(items, diff_requested=False, preset=""):
     """翻訳開始前の確認：(止める理由, ゲームが読めない言語の警告の一覧) を返す。"""
-    other=[it for it in items if _item_target_lang(it) != core.DEFAULT_TARGET_LANG]
-    if diff_requested and other:
-        return i18n.t('p0.missing_only_translation_is_available'), []
     warnings=[]
     for it in items:
         warning=core.game_language_warning(_item_target_lang(it), it.get("input",""), preset)
@@ -7010,16 +7061,27 @@ class App(BaseTk):
         messagebox.showinfo(APP_NAME, text)
 
     def _merge_missing_only_output(self, item, target_loc: Path, target_root: Path, confirm=True, notify=True):
-        """Merge sparse missing-only translation output without replacing unrelated Japanese text."""
+        """Merge sparse output for the item's language, preserving the legacy Japanese path."""
+        target_lang = _overwrite_target_lang(self, item)
+        problem = _overwrite_language_problem(self, item, external=False)
+        if problem:
+            return False, problem
+        external = bool((item.get("mod_root") and
+                         Path(target_root).resolve() != Path(item["mod_root"]).resolve()) or
+                        (item.get("external_translation_path") and
+                         Path(target_root).resolve() == Path(item["external_translation_path"]).resolve()))
+        problem = _overwrite_language_problem(self, item, external=external, destination=target_root)
+        if problem:
+            return False, problem
         out_root = Path(item.get("output", ""))
-        generated = self._generated_japanese_files(out_root)
+        generated = _generated_language_files(out_root, target_lang)
         if not generated:
-            return False, i18n.t('u1.no_japanese_yaml')
+            return False, i18n.t('u1.no_japanese_yaml') if target_lang == core.DEFAULT_TARGET_LANG else i18n.t('u1.no_target_yaml', target_name=i18n.t('lang.' + target_lang))
         translations = {}
         for fp in generated:
             try:
                 lang, entries, _ = core.parse_localization_file(fp)
-                if lang == "japanese":
+                if lang == target_lang:
                     translations.update(entries)
             except Exception:
                 continue
@@ -7028,20 +7090,25 @@ class App(BaseTk):
         if not patch_values:
             return False, i18n.t('u1.no_missing_results')
         target_loc = Path(target_loc); target_root = Path(target_root)
-        patch_file = target_loc / "japanese" / "paradox_localization_translator_missing_l_japanese.yml"
+        patch_file = target_loc / core.remap_rel_dir(Path(), target_lang) / core.rename_for_target(Path("paradox_localization_translator_missing_l_japanese.yml"), target_lang, "japanese")
         if confirm:
-            if not messagebox.askyesno(i18n.t('u1.overwrite_missing'), i18n.t('u1.confirm_missing_overwrite', count=len(patch_values), target=target_root), icon="warning"):
+            warning = (i18n.t('u1.confirm_missing_overwrite', count=len(patch_values), target=target_root)
+                       if target_lang == core.DEFAULT_TARGET_LANG else
+                       i18n.t('u1.confirm_target_missing_overwrite', count=len(patch_values), target=target_root,
+                              target_name=i18n.t('lang.' + target_lang)))
+            if not messagebox.askyesno(i18n.t('u1.overwrite_missing'), warning, icon="warning"):
                 return False,i18n.t("p0.reason.cancelled")
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         backup_root, backup_meta = self._create_full_localization_snapshot(
             target_root, "不足分上書き", category="上書き", source_mod_name=item.get("mod_name", ""),
-            state_label=i18n.t('u1.before_missing_overwrite'), stamp=stamp
+            state_label=i18n.t('u1.before_missing_overwrite'), stamp=stamp, target_lang=target_lang
         )
+        _record_written_target(backup_root, backup_meta, target_lang)
         try:
             # Existing Japanese keys are updated in place. Truly absent keys are
             # collected in the dedicated patch file, so unrelated files are never replaced.
             existing_key_file = {}
-            for fp in self._generated_japanese_files(target_loc):
+            for fp in _generated_language_files(target_loc, target_lang):
                 try:
                     _, entries, _ = core.parse_localization_file(fp)
                     for key in entries:
@@ -7051,6 +7118,8 @@ class App(BaseTk):
             backed = set(); updated = 0; added_values = {}
             for key, value in patch_values.items():
                 target = existing_key_file.get(key)
+                if target and target_lang != core.DEFAULT_TARGET_LANG:
+                    continue
                 if target:
                     if target not in backed and target.exists():
                         try:
@@ -7081,7 +7150,7 @@ class App(BaseTk):
                         shutil.copy2(patch_file, bdst); backed.add(patch_file)
                 patch_entries.update(added_values)
                 patch_file.parent.mkdir(parents=True, exist_ok=True)
-                lines = ["l_japanese:"]
+                lines = [f"l_{target_lang}:"]
                 for key in sorted(patch_entries):
                     lines.append(f' {key}: "{core.escape_localization_value(patch_entries[key])}"')
                 patch_file.write_text("\ufeff" + "\n".join(lines) + "\n", encoding="utf-8")
@@ -7089,10 +7158,10 @@ class App(BaseTk):
             validation_text = i18n.t('u1.validation_unknown')
             if source_mod_root.is_dir():
                 if target_root.resolve() == source_mod_root.resolve():
-                    post = core.analyze_mod_translation_status(source_mod_root)
+                    post = core.analyze_mod_translation_status(source_mod_root, target_lang=target_lang)
                     validation_text = i18n.t('u1.validation_complete') if not post.get("gap_count") else i18n.t('u1.text_has_gaps', reason=post.get('gap_reason') or core.gap_reason_text(post.get('candidates', [])))
                 else:
-                    post = core.analyze_external_translation_coverage(source_mod_root, target_root)
+                    post = core.analyze_external_translation_coverage(source_mod_root, target_root, target_lang=target_lang)
                     validation_text = i18n.t('u1.validation_complete') if post.get("complete") else i18n.t('u1.text_has_gaps', reason=post.get('gap_reason',i18n.t('u1.translation_gaps')))
             if notify:
                 messagebox.showinfo(APP_NAME, i18n.t('u1.missing_overwrite_done', updated=updated, added=len(added_values), files=len(backed), validation=validation_text))
@@ -7146,7 +7215,7 @@ class App(BaseTk):
         input_path = Path(item.get("input", ""))
         target_base = loc_root if input_path.is_dir() and core.is_localization_dir_name(input_path.name) else mod_root
         mappings=[]
-        target_lang=_item_target_lang(item)
+        target_lang=_overwrite_target_lang(self, item)
         for src in _generated_language_files(out_root, target_lang):
             try:
                 rel=src.relative_to(out_root)
@@ -7174,29 +7243,43 @@ class App(BaseTk):
 
     def _preferred_later_translation_conflict(self, item):
         conflicts=self._source_overwrite_path_conflicts(item)
-        if _item_target_lang(item) != core.DEFAULT_TARGET_LANG:
-            return None,conflicts  # 後順位の「日本語化Mod」の判定は日本語だけ
+        target_lang = _overwrite_target_lang(self, item)
+        if target_lang == "english":
+            return None, conflicts
+        if target_lang != core.DEFAULT_TARGET_LANG:
+            linked = item.get("external_translation_path")
+            preferred = next((row for row in reversed(conflicts)
+                              if linked and row.get("effective") and row.get("path")
+                              and Path(row["path"]).resolve() == Path(linked).resolve()), None)
+            return preferred, conflicts
         preferred=next((row for row in reversed(conflicts)
                         if row.get("effective") and row.get("stale_translation_candidate")),None)
         return preferred,conflicts
 
     def _perform_full_translation_mod_overwrite(self, item, conflict, confirm=True, notify=True):
-        """Replace stale same-path files in a later Japanese translation Mod."""
+        """Write target-language output to a linked later translation Mod."""
+        target_lang = _overwrite_target_lang(self, item)
+        problem = _overwrite_language_problem(self, item, external=True)
+        if problem:
+            return False, problem
         ext_root=Path(conflict.get("path", "")); ext_loc=Path(conflict.get("localization", ""))
+        problem = _overwrite_language_problem(self, item, external=True, destination=ext_root)
+        if problem:
+            return False, problem
         out_root=Path(item.get("output", ""))
-        generated=self._generated_japanese_files(out_root)
+        generated=_generated_language_files(out_root, target_lang)
         if not ext_root.is_dir() or not ext_loc.is_dir():
-            return False,i18n.t('u6.cannot_identify_the_later_translation_mod', target_name=i18n.t("lang." + 'japanese'))
+            return False,i18n.t('u6.cannot_identify_the_later_translation_mod', target_name=i18n.t("lang." + target_lang))
         mappings=[]
         for src in generated:
             try: rel=src.relative_to(out_root)
             except ValueError: continue
-            safe_parent=core.remap_rel_dir(rel.parent,"japanese")
-            safe_name=core.rename_for_target(src,"japanese","japanese")
+            safe_parent=core.remap_rel_dir(rel.parent,target_lang)
+            safe_name=core.rename_for_target(src,target_lang,target_lang)
             safe_rel=safe_parent / safe_name
             mappings.append((src,ext_loc / safe_rel,safe_rel))
         if not mappings:
-            return False,i18n.t('u6.no_completed_japanese_yaml_files_to', target_name=i18n.t("lang." + 'japanese'))
+            return False,i18n.t('u6.no_completed_japanese_yaml_files_to', target_name=i18n.t("lang." + target_lang))
         ext_name=conflict.get("mod") or ext_root.name
         src_name=item.get("mod_name") or Path(item.get("mod_root", "")).name
         shared=int(conflict.get("shared_keys",0) or 0)
@@ -7204,32 +7287,40 @@ class App(BaseTk):
         paths="\n".join(i18n.t('u6.detail_5', path=path) for path in conflict.get("relative_paths",[])[:8])
         if confirm:
             warning=(
-                i18n.t('u6.a_later_translation_mod_overrides_same', src_name=src_name, value=int(conflict.get('source_position', 0)) + 1, ext_name=ext_name, value_2=int(conflict.get('position', 0)) + 1, value_3=int(conflict.get('path_match_count', 0)), paths=paths, shared=shared, source_only=source_only, target_name=i18n.t("lang." + 'japanese')))
-            if not messagebox.askyesno(i18n.t('u6.warning_overwrite_later_translation_mod', target_name=i18n.t("lang." + 'japanese')),warning,icon="warning"):
+                i18n.t('u6.a_later_translation_mod_overrides_same', src_name=src_name, value=int(conflict.get('source_position', 0)) + 1, ext_name=ext_name, value_2=int(conflict.get('position', 0)) + 1, value_3=int(conflict.get('path_match_count', 0)), paths=paths, shared=shared, source_only=source_only, target_name=i18n.t("lang." + target_lang)))
+            if target_lang != core.DEFAULT_TARGET_LANG:
+                warning += "\n\n" + i18n.t('u6.preserve_target_values', target_name=i18n.t('lang.' + target_lang))
+            if not messagebox.askyesno(i18n.t('u6.warning_overwrite_later_translation_mod', target_name=i18n.t("lang." + target_lang)),warning,icon="warning"):
                 return False,i18n.t("p0.reason.cancelled")
         stamp=datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         backup_root,_meta=self._create_full_localization_snapshot(
-            ext_root,i18n.t('u6.same_name_file_conflict_legacy_translation', target_name=i18n.t("lang." + 'japanese')),category="上書き",source_mod_name=src_name,
-            state_label=i18n.t('u6.before_updating_same_name_files_in', target_name=i18n.t("lang." + 'japanese')),stamp=stamp)
+            ext_root,i18n.t('u6.same_name_file_conflict_legacy_translation', target_name=i18n.t("lang." + target_lang)),category="上書き",source_mod_name=src_name,
+            state_label=i18n.t('u6.before_updating_same_name_files_in', target_name=i18n.t("lang." + target_lang)),stamp=stamp, target_lang=target_lang)
+        _record_written_target(backup_root, _meta, target_lang)
+        existing_keys = _existing_target_keys(ext_loc, target_lang) if target_lang != core.DEFAULT_TARGET_LANG else set()
         copied=0; replaced=0
         try:
             for src,dst,_rel in mappings:
                 if dst.exists(): replaced += 1
                 dst.parent.mkdir(parents=True,exist_ok=True)
-                shutil.copy2(src,dst); copied += 1
-            coverage=core.analyze_external_translation_coverage(Path(item.get("mod_root") or ext_root),ext_root)
+                copied += int(_copy_target_output(src, dst, target_lang, existing_keys))
+            coverage=core.analyze_external_translation_coverage(Path(item.get("mod_root") or ext_root),ext_root, target_lang=target_lang)
             validation=(i18n.t('u6.post_overwrite_check_no_gaps') if coverage.get("complete") else
                         i18n.t('u6.gaps_remain_after_overwrite', gap_reason=coverage.get('gap_reason', i18n.t('u6.translations_are_missing'))))
             self._invalidate_mod_status_cache_paths([ext_root])
-            reason=(i18n.t('u6.updated_later_translation_mod_replaced_shared', copied=copied, replaced=replaced, shared=shared, source_only=source_only, validation=validation, target_name=i18n.t("lang." + 'japanese')))
+            reason=(i18n.t('u6.updated_later_translation_mod_replaced_shared', copied=copied, replaced=replaced, shared=shared, source_only=source_only, validation=validation, target_name=i18n.t("lang." + target_lang)))
+            if target_lang != core.DEFAULT_TARGET_LANG:
+                reason = i18n.t('u6.target_overwrite_preserved', copied=copied, backup_root=backup_root,
+                                validation=validation, target_name=i18n.t('lang.' + target_lang))
             if notify:
-                messagebox.showinfo(APP_NAME,
-                    i18n.t('u6.updated_later_translation_mod_target_files', ext_name=ext_name, copied=copied, replaced=replaced, backup_root=backup_root, validation=validation, target_name=i18n.t("lang." + 'japanese')))
+                text = (i18n.t('u6.updated_later_translation_mod_target_files', ext_name=ext_name, copied=copied, replaced=replaced, backup_root=backup_root, validation=validation, target_name=i18n.t("lang." + target_lang))
+                        if target_lang == core.DEFAULT_TARGET_LANG else reason)
+                messagebox.showinfo(APP_NAME, text)
             return True,reason
         except Exception as exc:
-            record_error(i18n.t('u6.same_name_file_conflict_translation_mod', target_name=i18n.t("lang." + 'japanese')),exc,str(ext_root))
+            record_error(i18n.t('u6.same_name_file_conflict_translation_mod', target_name=i18n.t("lang." + target_lang)),exc,str(ext_root))
             if notify:
-                messagebox.showerror(APP_NAME,i18n.t('u6.could_not_overwrite_later_translation_mod', exc=exc, backup_root=backup_root, target_name=i18n.t("lang." + 'japanese')))
+                messagebox.showerror(APP_NAME,i18n.t('u6.could_not_overwrite_later_translation_mod', exc=exc, backup_root=backup_root, target_name=i18n.t("lang." + target_lang)))
             return False,str(exc)
 
     def _queue_item_is_completed(self, item):
@@ -7288,21 +7379,28 @@ class App(BaseTk):
             core.save_json(MOD_STATUS_CACHE_PATH,self.mod_status_cache)
 
     def _perform_external_gap_overwrite(self, item, confirm=True, notify=True):
-        """Write only translated gap keys into a detected external Japanese mod."""
+        """Write translated gap keys to the item's linked target-language Mod."""
+        target_lang = _overwrite_target_lang(self, item)
+        problem = _overwrite_language_problem(self, item, external=True)
+        if problem:
+            return False, problem
         ext_root = Path(item.get("external_translation_path", ""))
+        problem = _overwrite_language_problem(self, item, external=True, destination=ext_root)
+        if problem:
+            return False, problem
         ext_loc = Path(item.get("external_translation_localization", ""))
         gap_keys = {k for k in item.get("external_gap_keys", []) if k}
         out_root = Path(item.get("output", ""))
         if not ext_root.is_dir() or not ext_loc.is_dir():
-            return False,i18n.t('u6.cannot_identify_the_translation_mod_location', target_name=i18n.t("lang." + 'japanese'))
+            return False,i18n.t('u6.cannot_identify_the_translation_mod_location', target_name=i18n.t("lang." + target_lang))
         if not gap_keys:
             return False,i18n.t("p0.reason.no_gap_info")
-        generated = self._generated_japanese_files(out_root)
+        generated = _generated_language_files(out_root, target_lang)
         translations = {}
         for fp in generated:
             try:
                 lang, entries, _ = core.parse_localization_file(fp)
-                if lang == "japanese":
+                if lang == target_lang:
                     translations.update(entries)
             except Exception:
                 continue
@@ -7314,14 +7412,14 @@ class App(BaseTk):
         src_name = item.get("mod_name") or Path(item.get("mod_root", "")).name
         if confirm:
             warning=(
-                i18n.t('u6.write_only_missing_translations_to_another', src_name=src_name, ext_name=ext_name, ext_root=ext_root, patch_values_count=len(patch_values), target_name=i18n.t("lang." + 'japanese')))
-            if not messagebox.askyesno(i18n.t('u6.warning_overwrite_differences_to_translation_mod', target_name=i18n.t("lang." + 'japanese')), warning, icon="warning"):
+                i18n.t('u6.write_only_missing_translations_to_another', src_name=src_name, ext_name=ext_name, ext_root=ext_root, patch_values_count=len(patch_values), target_name=i18n.t("lang." + target_lang)))
+            if not messagebox.askyesno(i18n.t('u6.warning_overwrite_differences_to_translation_mod', target_name=i18n.t("lang." + target_lang)), warning, icon="warning"):
                 return False,i18n.t("p0.reason.cancelled")
-            if not messagebox.askyesno(i18n.t('u6.final_confirmation'), i18n.t('u6.write_only_missing_translations_to_the', target_name=i18n.t("lang." + 'japanese')), icon="warning"):
+            if not messagebox.askyesno(i18n.t('u6.final_confirmation'), i18n.t('u6.write_only_missing_translations_to_the', target_name=i18n.t("lang." + target_lang)), icon="warning"):
                 return False,i18n.t("p0.reason.cancelled")
 
         existing_key_file = {}
-        for fp in self._generated_japanese_files(ext_loc):
+        for fp in _generated_language_files(ext_loc, target_lang):
             try:
                 _, entries, _ = core.parse_localization_file(fp)
                 for key in entries:
@@ -7330,15 +7428,16 @@ class App(BaseTk):
                 continue
         stamp=datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         backup_root, backup_meta = self._create_full_localization_snapshot(
-            ext_root, i18n.t('u6.translation_mod_difference_overwrite', target_name=i18n.t("lang." + 'japanese')), category="上書き", source_mod_name=src_name,
-            state_label=i18n.t('u6.source_text_before_difference_overwrite_to', target_name=i18n.t("lang." + 'japanese')), stamp=stamp
+            ext_root, i18n.t('u6.translation_mod_difference_overwrite', target_name=i18n.t("lang." + target_lang)), category="上書き", source_mod_name=src_name,
+            state_label=i18n.t('u6.source_text_before_difference_overwrite_to', target_name=i18n.t("lang." + target_lang)), stamp=stamp, target_lang=target_lang
         )
+        _record_written_target(backup_root, backup_meta, target_lang)
         backed=set(); updated=0; added=0
-        patch_file = ext_loc / "japanese" / "paradox_localization_translator_missing_l_japanese.yml"
+        patch_file = ext_loc / core.remap_rel_dir(Path(), target_lang) / core.rename_for_target(Path("paradox_localization_translator_missing_l_japanese.yml"), target_lang, "japanese")
         try:
             for key, value in patch_values.items():
                 target = existing_key_file.get(key)
-                if not target:
+                if not target or target_lang != core.DEFAULT_TARGET_LANG:
                     continue
                 if target not in backed and target.exists():
                     rel=target.relative_to(ext_root)
@@ -7357,7 +7456,7 @@ class App(BaseTk):
                     text=core.read_localization_text(patch_file)
                     if not text.endswith("\n"): text += "\n"
                 else:
-                    text="l_japanese:\n"
+                    text=f"l_{target_lang}:\n"
                 for key,value in missing:
                     escaped_value = core.escape_localization_value(value)
                     text += f' {key}: "{escaped_value}"\n'
@@ -7367,7 +7466,7 @@ class App(BaseTk):
             validation_text = i18n.t('u6.post_overwrite_check_cannot_identify_assessment')
             validation_warning = False
             if source_mod_root and Path(source_mod_root).is_dir():
-                coverage = core.analyze_external_translation_coverage(source_mod_root, ext_root)
+                coverage = core.analyze_external_translation_coverage(source_mod_root, ext_root, target_lang=target_lang)
                 if coverage.get("complete"):
                     validation_text = i18n.t('u6.post_overwrite_check_no_gaps')
                 else:
@@ -7375,13 +7474,13 @@ class App(BaseTk):
                     validation_text = i18n.t('u6.the_text_itself_has_gaps', gap_reason=coverage.get('gap_reason', i18n.t('u6.translations_are_missing')))
             if notify:
                 messagebox.showinfo(APP_NAME,
-                    i18n.t('u6.applied_differences_to_translation_mod_existing', updated=updated, added=added, backed_count=len(backed), value=backup_root if backed else i18n.t('u6.no_pre_change_files'), validation_text=validation_text, target_name=i18n.t("lang." + 'japanese')))
+                    i18n.t('u6.applied_differences_to_translation_mod_existing', updated=updated, added=added, backed_count=len(backed), value=backup_root if backed else i18n.t('u6.no_pre_change_files'), validation_text=validation_text, target_name=i18n.t("lang." + target_lang)))
             reason=i18n.t('u6.existing_keys_updated_new_keys_added', updated=updated, added=added, validation_text=validation_text)
             return True,reason
         except Exception as e:
-            record_error(i18n.t('u6.translation_mod_difference_overwrite', target_name=i18n.t("lang." + 'japanese')), e, str(ext_root))
+            record_error(i18n.t('u6.translation_mod_difference_overwrite', target_name=i18n.t("lang." + target_lang)), e, str(ext_root))
             if notify:
-                messagebox.showerror(APP_NAME, i18n.t('u6.error_overwriting_differences_to_translation_mod', value=e, backup_root=backup_root, target_name=i18n.t("lang." + 'japanese')))
+                messagebox.showerror(APP_NAME, i18n.t('u6.error_overwriting_differences_to_translation_mod', value=e, backup_root=backup_root, target_name=i18n.t("lang." + target_lang)))
             return False,str(e)
 
     def _merge_translation_gaps_into_external_mod(self, item):
@@ -7395,17 +7494,26 @@ class App(BaseTk):
         return ok
 
     def _perform_source_mod_overwrite(self, item, confirm=True, notify=True):
+        target_lang = _overwrite_target_lang(self, item)
+        problem = _overwrite_language_problem(self, item, external=False)
+        if problem:
+            return False, problem
         loc_root, mod_root, mappings = self._source_overwrite_layout(item)
+        problem = _overwrite_language_problem(self, item, destination=mod_root)
+        if problem:
+            return False, problem
         if not loc_root:
             return False,i18n.t('u6.cannot_identify_the_source_mod_s')
         if not mappings:
-            return False,i18n.t('u6.no_completed_yaml_files_in_the', target_name=i18n.t("lang." + _item_target_lang(item)))
+            return False,i18n.t('u6.no_completed_yaml_files_in_the', target_name=i18n.t("lang." + _overwrite_target_lang(self, item)))
 
         existing=sum(1 for _,dst,_ in mappings if dst.exists())
         mod_name=item.get("mod_name") or Path(mod_root).name
         if confirm:
             warning=(
-                i18n.t('u6.write_translated_files_directly_to_the', mod_name=mod_name, mod_root=mod_root, mappings_count=len(mappings), existing=existing, target_name=i18n.t("lang." + _item_target_lang(item))))
+                i18n.t('u6.write_translated_files_directly_to_the', mod_name=mod_name, mod_root=mod_root, mappings_count=len(mappings), existing=existing, target_name=i18n.t("lang." + _overwrite_target_lang(self, item))))
+            if target_lang != core.DEFAULT_TARGET_LANG:
+                warning += "\n\n" + i18n.t('u6.preserve_target_values', target_name=i18n.t('lang.' + target_lang))
             if not messagebox.askyesno(i18n.t('u6.warning_overwrite_mod_directly'), warning, icon="warning"):
                 return False,i18n.t("p0.reason.cancelled")
             if not messagebox.askyesno(i18n.t('u6.final_confirmation'), i18n.t('u6.write_to_the_source_mod_this'), icon="warning"):
@@ -7414,8 +7522,10 @@ class App(BaseTk):
         stamp=datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         backup_root, backup_meta = self._create_full_localization_snapshot(
             mod_root, i18n.t('u6.source_mod_overwrite'), category="上書き", source_mod_name=mod_name,
-            state_label=i18n.t('u6.source_text_before_direct_source_mod'), stamp=stamp, target_lang=_item_target_lang(item)
+            state_label=i18n.t('u6.source_text_before_direct_source_mod'), stamp=stamp, target_lang=_overwrite_target_lang(self, item)
         )
+        _record_written_target(backup_root, backup_meta, target_lang)
+        existing_keys = _existing_target_keys(loc_root, target_lang) if target_lang != core.DEFAULT_TARGET_LANG else set()
         copied=0; backed=0
         try:
             for src,dst,rel in mappings:
@@ -7424,20 +7534,20 @@ class App(BaseTk):
                     bdst.parent.mkdir(parents=True,exist_ok=True)
                     shutil.copy2(dst,bdst); backed += 1
                 dst.parent.mkdir(parents=True,exist_ok=True)
-                shutil.copy2(src,dst); copied += 1
-            if _item_target_lang(item) != core.DEFAULT_TARGET_LANG:
-                backup_meta["written_target_lang"] = _item_target_lang(item)
-                core.save_json(backup_root / "backup_manifest.json", backup_meta)
-                # 上書き後の欠落確認（翻訳状況の判定）は日本語だけ
-                validation_text = i18n.t('u6.post_overwrite_check_skipped_for_non')
-            elif (post := core.analyze_mod_translation_status(mod_root)).get("gap_count", 0):
+                copied += int(_copy_target_output(src, dst, target_lang, existing_keys))
+            if (post := core.analyze_mod_translation_status(mod_root, target_lang=target_lang)).get("gap_count", 0):
                 validation_text = i18n.t('u6.the_text_itself_has_gaps_2', value=post.get('gap_reason') or core.gap_reason_text(post.get('candidates', [])))
             else:
                 validation_text = i18n.t('u6.post_overwrite_check_no_gaps')
+            reason = i18n.t('u6.files_written_backups', copied=copied, backed=backed, validation_text=validation_text)
+            if target_lang != core.DEFAULT_TARGET_LANG:
+                reason = i18n.t('u6.target_overwrite_preserved', copied=copied, backup_root=backup_root,
+                                validation=validation_text, target_name=i18n.t('lang.' + target_lang))
             if notify:
-                messagebox.showinfo(APP_NAME,
-                    i18n.t('u6.overwrote_mod_with_translated_files_files', copied=copied, backed=backed, value=backup_root if backed else i18n.t('u6.no_existing_files'), validation_text=validation_text, target_name=i18n.t("lang." + _item_target_lang(item))))
-            return True,i18n.t('u6.files_written_backups', copied=copied, backed=backed, validation_text=validation_text)
+                text = (i18n.t('u6.overwrote_mod_with_translated_files_files', copied=copied, backed=backed, value=backup_root if backed else i18n.t('u6.no_existing_files'), validation_text=validation_text, target_name=i18n.t("lang." + _overwrite_target_lang(self, item)))
+                        if target_lang == core.DEFAULT_TARGET_LANG else reason)
+                messagebox.showinfo(APP_NAME, text)
+            return True, reason
         except Exception as e:
             record_error(i18n.t('u6.direct_mod_overwrite'), e, str(mod_root))
             if notify:
@@ -7445,24 +7555,29 @@ class App(BaseTk):
             return False,str(e)
 
     def _overwrite_single_item_interactive(self, item, prefer_external=True):
+        problem = _overwrite_language_problem(self, item)
+        if problem:
+            messagebox.showinfo(APP_NAME, problem); return False
         if self.single_overwrite_thread is not None:
             messagebox.showinfo(APP_NAME,i18n.t('u6.an_overwrite_is_already_running_in')); return False
         if not self._queue_item_is_completed(item):
             messagebox.showinfo(APP_NAME,i18n.t('u6.only_completed_translation_items_can_be')); return False
         use_external=False; conflict_target=None
-        if prefer_external:
+        if prefer_external and item.get('external_translation_path') and _overwrite_target_lang(self, item) == "english":
+            messagebox.showinfo(APP_NAME, i18n.t('u6.english_external_overwrite_unavailable'))
+        if prefer_external and _overwrite_target_lang(self, item) != "english":
             preferred,conflicts=self._preferred_later_translation_conflict(item)
             if preferred:
                 ext_name=preferred.get('mod') or Path(preferred.get('path','')).name
                 paths='\n'.join(i18n.t('u6.detail_6', value=p) for p in preferred.get('relative_paths',[])[:6])
                 choice=messagebox.askyesnocancel(
                     i18n.t('u6.same_name_localization_file_conflict'),
-                    i18n.t('u6.saving_to_the_source_mod_will', ext_name=ext_name, paths=paths, shared_keys=preferred.get('shared_keys', 0), source_only_keys=preferred.get('source_only_keys', 0), target_name=i18n.t("lang." + _item_target_lang(item))),icon='warning')
+                    i18n.t('u6.saving_to_the_source_mod_will', ext_name=ext_name, paths=paths, shared_keys=preferred.get('shared_keys', 0), source_only_keys=preferred.get('source_only_keys', 0), target_name=i18n.t("lang." + _overwrite_target_lang(self, item))),icon='warning')
                 if choice is None: return False
                 if choice: conflict_target=preferred
-            elif item.get('external_translation_path') and _item_target_lang(item) == core.DEFAULT_TARGET_LANG:
+            elif item.get('external_translation_path') and _overwrite_target_lang(self, item) != "english":
                 ext_name=item.get('external_translation_mod','') or Path(item.get('external_translation_path','')).name
-                choice=messagebox.askyesnocancel(i18n.t('u6.confirm_overwrite_destination'),i18n.t('u6.translation_mod_found_yes_overwrite_differences', ext_name=ext_name, target_name=i18n.t("lang." + _item_target_lang(item))),icon='question')
+                choice=messagebox.askyesnocancel(i18n.t('u6.confirm_overwrite_destination'),i18n.t('u6.translation_mod_found_yes_overwrite_differences', ext_name=ext_name, target_name=i18n.t("lang." + _overwrite_target_lang(self, item))),icon='question')
                 if choice is None: return False
                 use_external=bool(choice)
             elif conflicts:
@@ -7473,11 +7588,11 @@ class App(BaseTk):
                     icon='warning'):
                     return False
         target_label=((conflict_target.get('mod') or Path(conflict_target.get('path','')).name) if conflict_target
-                      else (item.get('external_translation_mod') or i18n.t('u6.translation_mod', target_name=i18n.t("lang." + _item_target_lang(item)))) if use_external
+                      else (item.get('external_translation_mod') or i18n.t('u6.translation_mod', target_name=i18n.t("lang." + _overwrite_target_lang(self, item)))) if use_external
                       else (item.get('mod_name') or i18n.t('u6.source_mod_4')))
         if not messagebox.askyesno(i18n.t('u6.warning_overwrite_mod'),i18n.t('u6.target_existing_localization_is_backed_up', target_label=target_label),icon='warning'):
             return False
-        if not messagebox.askyesno(i18n.t('u6.final_confirmation'),i18n.t('u6.write_these_files_this_changes_localization', value=i18n.t('lang.' + _item_target_lang(item))),icon='warning'):
+        if not messagebox.askyesno(i18n.t('u6.final_confirmation'),i18n.t('u6.write_these_files_this_changes_localization', value=i18n.t('lang.' + _overwrite_target_lang(self, item))),icon='warning'):
             return False
         self.progress_text.set(i18n.t('u6.overwriting_in_the_background', target_label=target_label))
         def work():
@@ -7529,18 +7644,22 @@ class App(BaseTk):
         for _idx,item in eligible:
             try:
                 preferred,_conflicts=self._preferred_later_translation_conflict(item)
-                if preferred: conflict_targets[id(item)]=preferred
+                if preferred and _overwrite_target_lang(self, item) != "english": conflict_targets[id(item)]=preferred
             except Exception as exc:
                 record_error(i18n.t('u6.same_name_file_conflict_check_before'),exc,item.get('mod_name',''))
-        has_external=any((item.get('external_translation_path') and _item_target_lang(item) == core.DEFAULT_TARGET_LANG)
+        target_name = ", ".join(dict.fromkeys(i18n.t("lang." + _overwrite_target_lang(self, item))
+                                             for _, item in eligible if _overwrite_target_lang(self, item) != "english"))
+        has_external=any((item.get('external_translation_path') and _overwrite_target_lang(self, item) != "english")
                          or id(item) in conflict_targets for _,item in eligible); policy='source'
         if has_external:
             choice=messagebox.askyesnocancel(i18n.t('u6.bulk_overwrite_destination_policy'),
-                i18n.t('u6.bulk_overwrite_completed_items_yes_prefer', eligible_count=len(eligible), target_name=i18n.t("lang." + 'japanese')),icon='question')
+                i18n.t('u6.bulk_overwrite_completed_items_yes_prefer', eligible_count=len(eligible), target_name=target_name),icon='question')
             if choice is None: return
             policy='external' if choice else 'source'
-        policy_text=i18n.t('u6.prefer_existing_translation_mods', target_name=i18n.t("lang." + 'japanese')) if policy=='external' else i18n.t('u6.write_everything_to_source_mods')
-        relationship_warning=i18n.t('u6.for_items_written_to_translation_mods', target_name=i18n.t("lang." + 'japanese')) if policy=='external' else ''
+        policy_text=i18n.t('u6.prefer_existing_translation_mods', target_name=target_name) if policy=='external' else i18n.t('u6.write_everything_to_source_mods')
+        relationship_warning=i18n.t('u6.for_items_written_to_translation_mods', target_name=target_name) if policy=='external' else ''
+        if any(item.get('external_translation_path') and _overwrite_target_lang(self, item) == "english" for _, item in eligible):
+            relationship_warning += "\n" + i18n.t('u6.english_external_overwrite_unavailable')
         if conflict_targets:
             relationship_warning += i18n.t('u6.items_hidden_by_later_mods_same', conflict_targets_count=len(conflict_targets))
         if not messagebox.askyesno(i18n.t('u6.confirm_bulk_overwrite'),
@@ -7553,11 +7672,14 @@ class App(BaseTk):
                 name=item.get('mod_name') or Path(item.get('input','')).name or i18n.t('u6.item')
                 self.events.put(('bulk_overwrite_progress',(pos,len(eligible),name)))
                 try:
+                    problem = _overwrite_language_problem(self, item)
+                    if problem:
+                        skipped += 1; details.append(i18n.t("u6.skipped", name=name, reason=problem)); continue
                     conflict_target=conflict_targets.get(id(item)) if policy=='external' else None
                     if item.get('missing_only'):
                         if conflict_target:
                             target_root=Path(conflict_target.get('path','')); target_loc=Path(conflict_target.get('localization',''))
-                        elif policy=='external' and item.get('external_translation_path'):
+                        elif policy=='external' and item.get('external_translation_path') and _overwrite_target_lang(self, item) != 'english':
                             target_root=Path(item.get('external_translation_path','')); target_loc=Path(item.get('external_translation_localization',''))
                         else:
                             target_loc,target_root=self._infer_mod_target_for_item(item)
@@ -7565,7 +7687,7 @@ class App(BaseTk):
                         else: ok,reason=self._merge_missing_only_output(item,Path(target_loc),Path(target_root),confirm=False,notify=False)
                     elif conflict_target:
                         ok,reason=self._perform_full_translation_mod_overwrite(item,conflict_target,confirm=False,notify=False)
-                    elif policy=='external' and item.get('external_translation_path') and _item_target_lang(item) == core.DEFAULT_TARGET_LANG:
+                    elif policy=='external' and item.get('external_translation_path') and _overwrite_target_lang(self, item) != "english":
                         ok,reason=self._perform_external_gap_overwrite(item,confirm=False,notify=False)
                         if not ok and reason in {i18n.t("p0.reason.no_gap_info"),i18n.t("p0.reason.no_gap_translation")}:
                             skipped+=1; details.append(i18n.t('u6.skipped', name=name, reason=reason)); continue
@@ -8191,19 +8313,26 @@ class App(BaseTk):
 
         candidates = []
         status_label = ""
+        target_lang = _overwrite_target_lang(self, item)
         try:
             ext_root = Path(item.get("external_translation_path", "")) if item.get("external_translation_path") else None
+            if target_lang == "english":
+                ext_root = None
             if ext_root and ext_root.is_dir() and Path(mod_root).exists():
-                result = core.analyze_external_translation_coverage(Path(mod_root), ext_root, target_lang=_item_target_lang(item))
+                result = core.analyze_external_translation_coverage(Path(mod_root), ext_root, target_lang=target_lang)
                 candidates = list(result.get("gaps", []))
                 status_label = "別Mod翻訳・欠損" if candidates else "別Modで完全翻訳"
             elif Path(mod_root).exists():
-                result = core.analyze_mod_translation_status(Path(mod_root), preferred_source=source_language, target_lang=_item_target_lang(item))
+                result = core.analyze_mod_translation_status(Path(mod_root), preferred_source=source_language, target_lang=target_lang)
                 candidates = list(result.get("candidates", []))
                 status_label = result.get("status", "")
+            if target_lang != core.DEFAULT_TARGET_LANG:
+                target_root = ext_root if ext_root and ext_root.is_dir() else loc
+                existing_keys = _existing_target_keys(target_root, target_lang)
+                candidates = [candidate for candidate in candidates if candidate.get("key") not in existing_keys]
         except Exception as exc:
             record_error(i18n.t('u6.difference_translation_translation_status_gap_assessment'), exc, str(mod_root))
-            candidates = list(item.get("status_gap_candidates", []))
+            candidates = list(item.get("status_gap_candidates", [])) if target_lang == core.DEFAULT_TARGET_LANG else []
             status_label = i18n.t('u6.saved_translation_status')
 
         wanted = {str(c.get("key")) for c in candidates if c.get("key")}
@@ -8225,7 +8354,7 @@ class App(BaseTk):
             rel_dir = source_file.parent.relative_to(base_dir) if p.is_dir() else Path('.')
             details.append({
                 "source_file": str(source_file),
-                "target_file": str(Path(item.get("output", "")) / core.remap_rel_dir(rel_dir, _item_target_lang(item)) / core.rename_for_target(source_file, _item_target_lang(item), source_language)),
+                "target_file": str(Path(item.get("output", "")) / core.remap_rel_dir(rel_dir, target_lang) / core.rename_for_target(source_file, target_lang, source_language)),
                 "keys": keys,
             })
         opposite_origin = "english_only" if source_language == "simp_chinese" else "chinese_only"
@@ -8257,7 +8386,7 @@ class App(BaseTk):
         p = Path(item["input"])
         output_root = Path(item.get("output", ""))
         current_cache = Path(self._ensure_item_cache(item))
-        source_language = "simp_chinese" if mode == "chinese" else "english"
+        source_language = "simp_chinese" if mode == "chinese" or _overwrite_target_lang(self, item) == "english" else "english"
 
         # 欠損は独自計算せず、翻訳状況タブと同じ判定ロジックから取得する。
         # スナップショットがなくても、翻訳状況で欠損と判断されたキーを差分対象にできる。
@@ -8267,7 +8396,8 @@ class App(BaseTk):
             record_error(i18n.t('u3.diff_status_error'), exc, str(p))
             missing = {"count": 0, "details": [], "source_language": source_language, "status_gap_total": 0}
 
-        previous = self._find_previous_cache(p, exclude=current_cache, mode=mode)
+        previous = (self._find_previous_cache(p, exclude=current_cache, mode=mode)
+                    if _overwrite_target_lang(self, item) == core.DEFAULT_TARGET_LANG else None)
         old_manifest = core.load_source_manifest(previous) if previous else {}
         try:
             if mode == "chinese":
@@ -8828,13 +8958,32 @@ class App(BaseTk):
         else: self.progress_text.set(i18n.t('u3.diff_prepare_progress', count=len(entries)))
         def prepare_work():
             unavailable=[]; notices=[]; prepared=[]
-            source_language='simp_chinese' if mode=='chinese' else 'english'
             for pos,(idx,item) in enumerate(entries,1):
+                target_lang = _overwrite_target_lang(self, item)
+                source_language = 'simp_chinese' if mode == 'chinese' or target_lang == 'english' else 'english'
                 self.events.put(('differential_prepare_progress',(mode,pos,len(entries),item.get('mod_name') or Path(item.get('input','')).name)))
+                problem = _overwrite_language_problem(self, item) if target_lang != core.DEFAULT_TARGET_LANG else ""
+                if problem:
+                    name = item.get('mod_name') or Path(item.get('input','')).name
+                    unavailable.append(f"{name}: {problem}"); continue
                 if mode=='chinese': self._ensure_item_cache(item)
                 diff=self._prepare_differential_cache(item,silent=True,mode=mode,repair_enabled=repair_enabled)
                 if diff is None:
                     unavailable.append(item.get('mod_name') or Path(item.get('input','')).name); continue
+                if target_lang != core.DEFAULT_TARGET_LANG:
+                    missing_keys = diff.get('missing', {}).get('selected_keys', [])
+                    if missing_keys:
+                        loc, mod_root = self._infer_mod_target_for_item(item)
+                        sparse = self._write_missing_source_subset(Path(loc), source_language, missing_keys,
+                                                                   item.get('mod_name') or Path(mod_root).name) if loc and mod_root else None
+                        if not sparse:
+                            unavailable.append(item.get('mod_name') or Path(item.get('input','')).name); continue
+                        item['mod_localization'] = str(loc)
+                        item['mod_root'] = str(mod_root)
+                        item['input'] = str(sparse)
+                        item['target_lang'] = target_lang
+                        item['missing_only'] = True
+                        item['missing_keys'] = list(missing_keys)
                 item['diff_mode']=True
                 counts=diff.get('counts',{})
                 changed_total=sum(int(counts.get(k,0) or 0) for k in ('added','changed','removed','added_files','removed_files','missing'))

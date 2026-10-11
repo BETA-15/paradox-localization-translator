@@ -384,7 +384,9 @@ def test_all_added_keys_have_independent_original_cases():
         "p0.japanese_keys": "u4.target_keys",
         "p0.import_glossary_from_japanese_localization": "u4.target_localization_import",
     }
-    assert {migrated.get(key, key) for key in cases} <= referenced
+    retired = {"p0.missing_only_translation_is_available"}
+    assert main._target_language_problems([{"target_lang": "english"}], diff_requested=True)[0] == ""
+    assert {migrated.get(key, key) for key in cases - retired} <= referenced
     assert len(cases) == len(FIXED_ORIGINALS) + len(DYNAMIC_ORIGINALS)
 
 
