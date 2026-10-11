@@ -27,6 +27,8 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 import translator_core as core
 import i18n
 from i18n import t
+import ui_status
+from ui_status import status_value, display_status
 import app_state
 
 try:
@@ -1102,7 +1104,8 @@ class App(BaseTk):
         last_monitor = self.app_preferences.get("monitor_llm", {})
         close_prefs = self.app_preferences.get("window_close", {}) if isinstance(self.app_preferences.get("window_close", {}), dict) else {}
         # ×ボタン時の既定動作。confirm / minimize / quit の3種類。
-        self.close_action_var = tk.StringVar(value={"confirm":"毎回確認","minimize":"最小化","quit":"終了"}.get(close_prefs.get("action"), close_prefs.get("action", "毎回確認")))
+        # 保存は confirm / minimize / quit（古い版の日本語の値も読む）。選択欄には画面の言語の表示を出す。
+        self.close_action_var = tk.StringVar(value=ui_status.close_action_label(ui_status.close_action_from_label(close_prefs.get("action", "confirm"))))
 
         self.provider_var = tk.StringVar(value=last_translation.get("provider", "Ollama"))
         self.api_key_var = tk.StringVar(value="")
@@ -1115,7 +1118,7 @@ class App(BaseTk):
         self.target_lang_choice_var = tk.StringVar(value=_target_lang_choice(self.target_lang_var.get()))
         self.batch_var = tk.IntVar(value=max(1, int(last_translation.get("batch", 40) or 40)))
         self.workers_var = tk.IntVar(value=max(1, int(last_translation.get("workers", 1) or 1)))
-        self.performance_preset_var = tk.StringVar(value="標準（40 / 1）")
+        self.performance_preset_var = tk.StringVar(value=ui_status.performance_preset_label("standard"))
         self.repair_var = tk.BooleanVar(value=True)
         self.normalize_spacing_var = tk.BooleanVar(value=bool(last_translation.get("normalize_spacing", True)))
         self.dual_var = tk.BooleanVar(value=False)
@@ -1877,7 +1880,7 @@ class App(BaseTk):
                 item.get("mod_name",Path(item.get("input","")).name),
                 self._queue_display_path(item.get("input","")),
                 self._queue_display_path(item.get("output","")),
-                item.get("status","待機")
+                display_status(item.get("status") or status_value("waiting"))
             ))
 
     def _append_chinese_queue(self, path, mod_name=""):
@@ -2065,7 +2068,7 @@ class App(BaseTk):
         for _idx, item in entries:
             self._reset_item_for_full_translation(item)
             item["cache"] = str(self._new_cache_path(Path(item["input"])))
-            item["status"] = "待機"
+            item["status"] = status_value("waiting")
 
     def start_chinese_differential_translation(self, entries=None):
         entries=entries if entries is not None else self._selected_chinese_queue_entries()
@@ -2125,8 +2128,8 @@ class App(BaseTk):
                     live_item=app_state.queue_item_by_id(self.chinese_queue_items,item_id)
                     if live_item is None:
                         raise RuntimeError("中国語基準キュー項目が処理中に失われました")
-                    live_item["status"]="翻訳中"
-                    self.events.put(("chinese_queue_status",(item_id,"翻訳中")))
+                    live_item["status"]=status_value("translating")
+                    self.events.put(("chinese_queue_status",(item_id,status_value("translating"))))
                     self.events.put(("chinese_queue_current",(pos+1,total,item.get("mod_name",""))))
                     inp=Path(item["input"]); safe=re.sub(r'[^0-9A-Za-z_\-\u3040-\u30ff\u4e00-\u9fff]+','_',item.get("mod_name") or inp.name).strip("_") or f"item_{pos+1}"
                     out=Path(item.get("output") or (out_root/safe)); out.mkdir(parents=True,exist_ok=True)
@@ -2143,21 +2146,21 @@ class App(BaseTk):
                     if result.get("qa_backup"): qa_backups.append(result["qa_backup"])
                     self._register_cache_job(live_item, mode="chinese")
                     if result.get("interrupted"):
-                        live_item["status"]="中断"
-                        self.events.put(("chinese_queue_status",(item_id,"中断"))); break
+                        live_item["status"]=status_value("interrupted")
+                        self.events.put(("chinese_queue_status",(item_id,status_value("interrupted")))); break
                     completed += 1
                     if live_item.get("diff_mode"):
                         lang_done = self._differential_language_completion(live_item, "simp_chinese")
                         if lang_done.get("language_complete"):
                             final_status = self._language_complete_status_text("simp_chinese", int(lang_done.get("opposite_only_count", 0) or 0))
                         elif self._item_has_remaining_translation_gap(live_item):
-                            final_status = "完了（一部差分欠落あり）"
+                            final_status = status_value("done_partial_gap")
                         else:
-                            final_status = "完了（差分更新）"
+                            final_status = status_value("done_diff_updated")
                     elif self._item_has_remaining_translation_gap(live_item):
-                        final_status = "完了（一部差分欠落あり）"
+                        final_status = status_value("done_partial_gap")
                     else:
-                        final_status = "完了"
+                        final_status = status_value("done")
                     live_item["status"]=final_status
                     self.events.put(("chinese_queue_status",(item_id,final_status)))
                 self.events.put(("chinese_done",{"interrupted":self.chinese_controller.stop_event.is_set(),"processed_files":completed,"jobs":0,"output":str(out_root),"queue_total":total,"qa_errors":qa_errors,"qa_warnings":qa_warnings,"qa_notices":qa_notices,"qa_repaired":qa_repaired,"qa_reports":qa_reports,"qa_backups":qa_backups}))
@@ -2694,7 +2697,7 @@ class App(BaseTk):
         close_box.pack(fill="x", pady=(12,0))
         ttk.Label(close_box, text="既定動作").grid(row=0, column=0, sticky="w")
         close_combo = ttk.Combobox(close_box, textvariable=self.close_action_var, state="readonly", width=20,
-                                   values=("毎回確認", "最小化", "終了"))
+                                   values=tuple(ui_status.close_action_label(a) for a in ui_status.CLOSE_ACTIONS))
         close_combo.grid(row=0, column=1, sticky="w", padx=(8,12))
         ttk.Label(close_box, text="通常は『毎回確認』を推奨します。", foreground="#555").grid(row=0,column=2,sticky="w")
         ttk.Button(close_box, text="この設定を保存", command=self.save_close_behavior_settings).grid(row=0,column=3,padx=(12,0))
@@ -2989,19 +2992,15 @@ class App(BaseTk):
         メモリ容量に左右される。
         """
         name = self.performance_preset_var.get()
-        presets = {
-            "安定重視（20 / 1）": (20, 1),
-            "標準（40 / 1）": (40, 1),
-            "高速（60 / 2）": (60, 2),
-        }
-        batch, workers = presets.get(name, (40, 1))
+        preset_id = ui_status.performance_preset_from_label(name)
+        batch, workers = ui_status.PERFORMANCE_PRESETS[preset_id]
         self.batch_var.set(batch)
         self.workers_var.set(workers)
         note = {
-            "安定重視（20 / 1）": "長文が多いMod、初回利用、メモリに余裕がない環境向けです。",
-            "標準（40 / 1）": "通常はこちらを推奨します。速度と安定性のバランスを優先します。",
-            "高速（60 / 2）": "同時2リクエストを処理できる環境向けです。Ollama/LM Studio側の並列処理と十分なメモリが必要です。",
-        }.get(name, "")
+            "stable": "長文が多いMod、初回利用、メモリに余裕がない環境向けです。",
+            "standard": "通常はこちらを推奨します。速度と安定性のバランスを優先します。",
+            "fast": "同時2リクエストを処理できる環境向けです。Ollama/LM Studio側の並列処理と十分なメモリが必要です。",
+        }.get(preset_id, "")
         messagebox.showinfo(
             "おすすめ設定",
             f"{name} を適用しました。\n\nバッチ: {batch}\n並列: {workers}\n\n{note}\n\n"
@@ -4805,7 +4804,7 @@ Mod更新後だけ追加翻訳:
             path=str(r.get("path") or "")
             if not path or path in seen or not Path(path).exists(): continue
             seen.add(path); iid=f"diagmod_{count}"; count+=1
-            self.diagnostic_target_tree.insert("","end",iid=iid,values=(r.get("mod") or Path(path).name,r.get("status") or "",path))
+            self.diagnostic_target_tree.insert("","end",iid=iid,values=(r.get("mod") or Path(path).name,display_status(r.get("status") or ""),path))
             if path in selected_paths: self.diagnostic_target_tree.selection_add(iid)
         self.diagnostic_target_var.set(f"対象Mod: {count}件" if count else "対象Mod: 翻訳状況タブでMod調査を実行してください")
 
@@ -5500,7 +5499,7 @@ Mod更新後だけ追加翻訳:
             return True
         fields = [
             result.get("mod", ""),
-            result.get("status", ""),
+            result.get("status", ""), display_status(result.get("status", "")),
             result.get("external_translation_mod", ""),
             result.get("translation_candidate_mod", ""),
             result.get("message", ""),
@@ -5571,7 +5570,7 @@ Mod更新後だけ追加翻訳:
                 except ValueError:
                     continue
             self.mod_status_tree.insert("", "end", iid=f"mod_{i}", values=(
-                r.get("status", ""), r.get("mod", ""), r.get("gap_count", 0),
+                display_status(r.get("status", "")), r.get("mod", ""), r.get("gap_count", 0),
                 "あり" if r.get("simp_chinese_files", 0) else "なし",
                 r.get("external_translation_mod", "") or (("候補: " + r.get("translation_candidate_mod", "")) if r.get("translation_candidate_mod") else ""),
                 r.get("external_translation_gap_count", 0) if r.get("external_translation_mod") else ((f"{float(r.get('translation_candidate_score',0.0) or 0.0):.1f}点") if r.get("translation_candidate_mod") else "")
@@ -5984,7 +5983,7 @@ Mod更新後だけ追加翻訳:
                     "model": self.monitor_model_var.get().strip(),
                 },
                 "window_close": {
-                    "action": {"毎回確認":"confirm","最小化":"minimize","終了":"quit"}.get(self.close_action_var.get(), "confirm"),
+                    "action": ui_status.close_action_from_label(self.close_action_var.get()),
                 },
                 "target_lang": self.target_lang_var.get() if hasattr(self, "target_lang_var") else core.DEFAULT_TARGET_LANG,
                 "ui_language": (self.app_preferences or {}).get("ui_language") or getattr(self, "ui_language", i18n.LEGACY_UI_LANGUAGE),
@@ -6800,26 +6799,26 @@ Mod更新後だけ追加翻訳:
                             result["external_translation_gap_count"] = len(refined)
                             result["gap_count"] = len(refined)
                             if refined:
-                                result["status"]="別Mod翻訳・欠損"
+                                result["status"]=status_value("mod_external_gaps")
                                 result["message"]=f"{result['mod']}には日本語化Mod『{result['external_translation_mod']}』がありますが、翻訳に欠損があります（{len(refined)}件）。 {core.gap_reason_text(refined)}。"
                             else:
-                                result["status"]="別Modで完全翻訳"
+                                result["status"]=status_value("mod_external_complete")
                                 result["external_translation_complete"] = True
                                 result["message"]=f"{result['mod']}には日本語化Mod『{result['external_translation_mod']}』があり、完全な日本語化を確認できました。"
                         elif result.get("japanese_files",0)==0 or result.get("japanese_keys",0)==0:
                             if result.get("external_translation_complete"):
-                                result["status"]="別Modで完全翻訳"
+                                result["status"]=status_value("mod_external_complete")
                             elif result.get("external_translation_mod"):
-                                result["status"]="別Mod翻訳・欠損"
+                                result["status"]=status_value("mod_external_gaps")
                             else:
-                                result["status"]="翻訳なし"
+                                result["status"]=status_value("mod_not_translated")
                                 result["message"]=f"{result['mod']}というModは日本語翻訳がありません。日本語化Modも確認できませんでした。"
                         elif refined:
-                            result["status"]="欠損あり"
+                            result["status"]=status_value("mod_gaps")
                             result["gap_count"] = len(refined)
                             result["message"]=f"{result['mod']}のModに翻訳の欠損箇所があります（{len(refined)}件）。 {core.gap_reason_text(refined)}。"
                         elif not result.get("external_translation_mod"):
-                            result["status"]="翻訳あり"
+                            result["status"]=status_value("mod_translated")
                             result["gap_count"] = 0
                             result["message"]=f"{result['mod']}のModは日本語翻訳が確認できました。"
                     except core.StopRequested:
@@ -7487,7 +7486,7 @@ Mod更新後だけ追加翻訳:
         return out
 
     def _set_overwritten_status(self, item):
-        item["status"]="上書き済み"
+        item["status"]=status_value("overwritten")
 
     def _invalidate_status_cache_for_item(self, item):
         """Drop cached translation-status rows touched by an overwrite.
@@ -7948,7 +7947,7 @@ Mod更新後だけ追加翻訳:
         ttk.Label(common,text="並列").grid(row=5,column=0,sticky="w",pady=(5,0))
         ttk.Spinbox(common,from_=1,to=8,textvariable=self.workers_var,width=8,command=self._save_llm_preferences).grid(row=5,column=1,sticky="w",padx=(6,0),pady=(5,0))
         ttk.Label(common,text="おすすめ").grid(row=6,column=0,sticky="w",pady=(5,0))
-        perf_combo=ttk.Combobox(common,textvariable=self.performance_preset_var,values=["安定重視（20 / 1）","標準（40 / 1）","高速（60 / 2）"],state="readonly",width=18)
+        perf_combo=ttk.Combobox(common,textvariable=self.performance_preset_var,values=[ui_status.performance_preset_label(x) for x in ui_status.PERFORMANCE_PRESETS],state="readonly",width=18)
         perf_combo.grid(row=6,column=1,sticky="ew",padx=(6,0),pady=(5,0))
         ttk.Button(common,text="おすすめ設定を適用",command=self.apply_performance_preset).grid(row=7,column=0,columnspan=2,sticky="ew",pady=(5,0))
         ttk.Label(common,text="用語集").grid(row=8,column=0,sticky="w",pady=(7,0))
@@ -8498,8 +8497,8 @@ Mod更新後だけ追加翻訳:
             item["diff"] = diff
             if previous:
                 item["previous_cache"] = str(previous)
-            if item.get("status") == "待機" and not language_complete:
-                item["status"] = "差分なし"
+            if item.get("status") == status_value("waiting") and not language_complete:
+                item["status"] = status_value("no_diff")
             return diff
 
         # 過去キャッシュがある場合は複製し、既訳を再利用しつつ
@@ -8515,11 +8514,11 @@ Mod更新後だけ追加翻訳:
         item["diff"] = diff
         item["diff_mode"] = True
         if source_changed and missing_total:
-            item["status"] = f"差分 +{c['added']} / 変更{c['changed']} / 欠損{missing_total}"
+            item["status"] = status_value("diff_added_changed_missing", added=c['added'], changed=c['changed'], missing=missing_total)
         elif missing_total:
-            item["status"] = f"欠損補完 {missing_total}"
+            item["status"] = status_value("gap_fill", missing=missing_total)
         else:
-            item["status"] = f"差分 +{c['added']} / 変更{c['changed']}"
+            item["status"] = status_value("diff_added_changed", added=c['added'], changed=c['changed'])
         core.save_json(current_cache.parent / "diff_report.json", {
             "previous_cache": str(previous) if previous else "", "current_input": str(p),
             "detected_at": datetime.now().isoformat(timespec="seconds"), "diff": diff
@@ -8530,7 +8529,7 @@ Mod更新後だけ追加翻訳:
                 f"差分翻訳対象を確認しました。\n\nスナップショット: {snapshot_note}\n新規キー: {c['added']}\n変更キー: {c['changed']}\n削除キー: {c['removed']}\n翻訳状況の欠損（このキューで補完可能）: {missing_total}\n新規ファイル: {c['added_files']}\n削除ファイル: {c['removed_files']}\n\n原文差分と翻訳状況の欠損だけを補完します。")
         return diff
 
-    def _append_queue(self,p:Path,out:Path|None=None,status="待機",cache:Path|None=None,target_lang:str|None=None):
+    def _append_queue(self,p:Path,out:Path|None=None,status=None,cache:Path|None=None,target_lang:str|None=None):
         if self._normal_queue_locked():
             return None
         p = Path(p)
@@ -8538,7 +8537,7 @@ Mod更新後だけ追加翻訳:
             return
         out=out or self._default_output(p)
         cache_path = cache or self._new_cache_path(p)
-        item={"input":str(p),"output":str(out),"status":status,"cache":str(cache_path),"output_isolated_v2":True,
+        item={"input":str(p),"output":str(out),"status":status or status_value("waiting"),"cache":str(cache_path),"output_isolated_v2":True,
               "target_lang":target_lang or self.target_lang_var.get()}
         app_state.ensure_queue_item_id(item)
         self.queue_items.append(item)
@@ -8691,7 +8690,7 @@ Mod更新後だけ追加翻訳:
                 label,
                 self._queue_display_path(item.get("input", "")),
                 self._queue_display_path(item.get("output", "")),
-                item.get("status", "")
+                display_status(item.get("status", ""))
             ))
 
     def remove_queue(self):
@@ -8967,8 +8966,8 @@ Mod更新後だけ追加翻訳:
 
     def _language_complete_status_text(self, source_language: str, count: int) -> str:
         if source_language == "simp_chinese":
-            return f"完了（中国語側完了・英語欠損{count}）"
-        return f"完了（通常側完了・中国語欠損{count}）"
+            return status_value("done_lang_chinese", count=count)
+        return status_value("done_lang_normal", count=count)
 
     def _language_complete_notice_text(self, source_language: str, count: int) -> str:
         if source_language == "simp_chinese":
@@ -8985,7 +8984,7 @@ Mod更新後だけ追加翻訳:
         if was_diff:
             item["cache"] = str(self._new_cache_path(Path(item["input"])))
         if str(item.get("status", "")).startswith("差分"):
-            item["status"] = "待機"
+            item["status"] = status_value("waiting")
 
     def start_differential_queue(self, entries=None):
         entries=entries if entries is not None else self._selected_normal_queue_entries()
@@ -9022,9 +9021,9 @@ Mod更新後だけ追加翻訳:
                     n=int(diff.get('opposite_only_count',0) or 0); item['status']=self._language_complete_status_text(source_language,n)
                     notices.append(f"{item.get('mod_name') or Path(item.get('input','')).name}: "+self._language_complete_notice_text(source_language,n))
                 elif changed_total==0:
-                    item['status']='完了（差分なし）'
+                    item['status']=status_value("done_no_diff")
                 else:
-                    item['status']='待機'; prepared.append(idx)
+                    item['status']=status_value("waiting"); prepared.append(idx)
             self.events.put(('differential_prepare_done',(mode,prepared,unavailable,notices)))
         def work():
             try:
@@ -9142,7 +9141,7 @@ Mod更新後だけ追加翻訳:
                 raise RuntimeError("通常翻訳キュー項目が処理中に失われました")
             i=app_state.queue_index_by_id(self.queue_items,item_id)
             self.current_queue_index=i
-            item["status"]="エラー項目を再試行中" if retry_pass else "翻訳中"
+            item["status"]=status_value("retrying_errors") if retry_pass else "翻訳中"
             self.events.put(("queue_refresh",None))
             phase = "再試行" if retry_pass else "開始"
             self.events.put(("normal_log", f"{phase}: {item_label(item)} ({pos+1}/{total})"))
@@ -9198,31 +9197,27 @@ Mod更新後だけ追加翻訳:
             unresolved=bool(skipped or failed)
             if unresolved:
                 unresolved_ids.add(item_id)
-                details=[]
-                if skipped: details.append(f"{skipped}ファイルスキップ")
-                if failed: details.append(f"翻訳失敗{failed}件")
-                suffix="・".join(details)
-                item["status"]=(f"警告あり（{suffix}・再試行予定）" if not retry_pass
-                                else f"完了（未解決: {suffix}）")
+                item["status"]=(status_value("warn_retry", skipped=skipped, failed=failed) if not retry_pass
+                                else status_value("done_unresolved", skipped=skipped, failed=failed))
                 return
             if item_id in unresolved_ids:
                 unresolved_ids.discard(item_id)
                 recovered_ids.add(item_id)
             if warnings:
-                item["status"]=f"完了（警告 {warnings}件）"
+                item["status"]=status_value("done_warnings", count=warnings)
                 return
             if item.get("diff_mode"):
                 lang_done = self._differential_language_completion(item, "english")
                 if lang_done.get("language_complete"):
                     item["status"] = self._language_complete_status_text("english", int(lang_done.get("opposite_only_count", 0) or 0))
                 elif self._item_has_remaining_translation_gap(item):
-                    item["status"] = "完了（一部差分欠落あり）"
+                    item["status"] = status_value("done_partial_gap")
                 else:
-                    item["status"] = "完了（差分更新）"
+                    item["status"] = status_value("done_diff_updated")
             elif self._item_has_remaining_translation_gap(item):
-                item["status"] = "完了（一部差分欠落あり）"
+                item["status"] = status_value("done_partial_gap")
             else:
-                item["status"] = "完了"
+                item["status"] = status_value("done")
 
         try:
             for pos,item_id in enumerate(active):
@@ -9230,7 +9225,7 @@ Mod更新後だけ追加翻訳:
                     item,result=run_item(item_id,pos,len(active),retry_pass=False)
                     if result.get("interrupted"):
                         interrupted = True
-                        item["status"]="中断（再開可）"
+                        item["status"]=status_value("interrupted_resumable")
                         self.events.put(("queue_refresh",None))
                         self._write_session_file(active=True,restore_on_launch=True)
                         break
@@ -9239,7 +9234,7 @@ Mod更新後だけ追加翻訳:
                 except core.StopRequested:
                     interrupted=True
                     item=app_state.queue_item_by_id(self.queue_items,item_id)
-                    if item: item["status"]="中断（再開可）"
+                    if item: item["status"]=status_value("interrupted_resumable")
                     break
                 except Exception as exc:
                     item=app_state.queue_item_by_id(self.queue_items,item_id)
@@ -9251,7 +9246,7 @@ Mod更新後だけ追加翻訳:
                     })
                     unresolved_ids.add(item_id)
                     if item:
-                        item["status"]="エラー（後で再試行）"
+                        item["status"]=status_value("error_retry_later")
                         item["translation_error_summary"]={"queue_error":str(exc),"retry_pass_completed":False}
                     self.events.put(("normal_log",f"[警告] {item_label(item or {})} を後で再試行します: {type(exc).__name__}: {exc}"))
                 self.events.put(("queue_refresh",None))
@@ -9272,7 +9267,7 @@ Mod更新後だけ追加翻訳:
                             item,result=run_item(item_id,retry_pos,len(retry_ids),retry_pass=True)
                             if result.get("interrupted"):
                                 interrupted=True
-                                item["status"]="中断（再開可）"
+                                item["status"]=status_value("interrupted_resumable")
                                 break
                             completed_ids.add(item_id)
                             set_completed_status(item,result,retry_pass=True)
@@ -9288,7 +9283,7 @@ Mod更新後だけ追加翻訳:
                                 "message":str(exc), "action":"未解決として記録",
                             })
                             if item:
-                                item["status"]="未解決エラー"
+                                item["status"]=status_value("unresolved_error")
                                 summary=dict(item.get("translation_error_summary") or {})
                                 summary.update({"queue_error":str(exc),"retry_pass_completed":True})
                                 item["translation_error_summary"]=summary
@@ -9647,7 +9642,7 @@ Mod更新後だけ追加翻訳:
                 "target_lang":self._workspace_scalar(self.target_lang_var,core.DEFAULT_TARGET_LANG),
                 "batch":self._workspace_scalar(self.batch_var,40),
                 "workers":self._workspace_scalar(self.workers_var,1),
-                "performance_preset":self._workspace_scalar(self.performance_preset_var,"標準（40 / 1）"),
+                "performance_preset":ui_status.performance_preset_from_label(self._workspace_scalar(self.performance_preset_var,"standard")),
                 "repair":bool(self._workspace_scalar(self.repair_var,True)),
                 "normalize_spacing":_normalize_spacing_enabled(self),
                 "dual":bool(self._workspace_scalar(self.dual_var,False)),
@@ -9738,7 +9733,7 @@ Mod更新後だけ追加翻訳:
                         self._clear_stale_external_translation_relation(item)
                     for k in ("input","output","cache","previous_cache"):
                         if item.get(k): item[k]=remap(item[k])
-                    if item.get("status")=="翻訳中": item["status"]="中断（再開可）"
+                    if item.get("status")==status_value("translating"): item["status"]=status_value("interrupted_resumable")
             self._refresh_queue_tree()
 
             z=data.get("chinese_translation") or {}
@@ -9752,7 +9747,7 @@ Mod更新後だけ追加翻訳:
                         self._clear_stale_external_translation_relation(item)
                     for k in ("input","output","cache","previous_cache"):
                         if item.get(k): item[k]=remap(item[k])
-                    if item.get("status")=="翻訳中": item["status"]="中断（再開可）"
+                    if item.get("status")==status_value("translating"): item["status"]=status_value("interrupted_resumable")
             self._refresh_chinese_queue_tree()
 
             q=data.get("qa_review") or {}; self.review_src_var.set(remap(q.get("source","")) or ""); self.review_dst_var.set(remap(q.get("target","")) or "")
@@ -9763,7 +9758,7 @@ Mod更新後だけ追加翻訳:
             self.provider_var.set(m.get("provider",self.provider_var.get())); self.url_var.set(m.get("url",self.url_var.get())); self.model_var.set(m.get("model",self.model_var.get()))
             self.preset_var.set(m.get("preset",self.preset_var.get())); self.batch_var.set(max(1,int(m.get("batch",self.batch_var.get()) or 40))); self.workers_var.set(max(1,int(m.get("workers",self.workers_var.get()) or 1)))
             self.normalize_spacing_var.set(bool(m.get("normalize_spacing",_normalize_spacing_enabled(self))))
-            self.performance_preset_var.set(m.get("performance_preset",self.performance_preset_var.get())); self.repair_var.set(bool(m.get("repair",self.repair_var.get()))); self.dual_var.set(bool(m.get("dual",self.dual_var.get())))
+            self.performance_preset_var.set(ui_status.performance_preset_label(ui_status.performance_preset_from_label(m.get("performance_preset",self.performance_preset_var.get())))); self.repair_var.set(bool(m.get("repair",self.repair_var.get()))); self.dual_var.set(bool(m.get("dual",self.dual_var.get())))
             self.autoqa_var.set(bool(m.get("autoqa",self.autoqa_var.get()))); self.chinese_autoqa_var.set(bool(m.get("chinese_autoqa",self.chinese_autoqa_var.get()))); self.profile_var.set(m.get("profile",self.profile_var.get()))
             self._set_target_lang(m.get("target_lang",self.target_lang_var.get()),save=False)
 
@@ -9927,7 +9922,7 @@ Mod更新後だけ追加翻訳:
         self.batch_var.set(s.get("batch",40)); self.workers_var.set(s.get("workers",1)); self.repair_var.set(s.get("repair",True)); self.dual_var.set(s.get("dual",False)); self.autoqa_var.set(s.get("autoqa",True)); self.glossary_path_var.set(s.get("glossary",str(DEFAULT_GLOSSARY)))
         for item in self.queue_items:
             self._ensure_item_cache(item)
-            if item.get("status") == "翻訳中": item["status"]="中断（再開可）"
+            if item.get("status") == "翻訳中": item["status"]=status_value("interrupted_resumable")
         previous_version=data.get("app_version") or data.get("version") or "不明"
         # 復元直後は古いactiveフラグを解除し、新バージョン形式へ移行して保存する。
         self._write_session_file(active=False,restore_on_launch=False)
@@ -12489,11 +12484,11 @@ Mod更新後だけ追加翻訳:
     def on_close(self):
         """Handle the window × button according to the user's preference."""
         self._save_llm_preferences()
-        setting = self.close_action_var.get()
+        setting = ui_status.close_action_from_label(self.close_action_var.get())
 
-        if setting == "毎回確認":
+        if setting == "confirm":
             action = self._show_close_choice_dialog()
-        elif setting == "最小化":
+        elif setting == "minimize":
             action = "minimize"
         else:
             action = "quit"
