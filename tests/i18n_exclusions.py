@@ -65,9 +65,15 @@ ALLOWED_COMPARISONS = {
 #    OWNERS は (ファイル, 関数) の組、VALUES は文字列、COMPARISONS は ALLOWED_COMPARISONS と同じ形。足すときは理由をコメントに書く。
 
 # ---- U1_translate_queue
-U1_OWNERS = set()
+U1_OWNERS = {
+    ("app/main.py", "_queue_item_is_completed"),  # 保存済み状態の完了・上書き済み判定を維持する。
+    ("app/main.py", "_reset_item_for_full_translation"),  # 保存済み状態の差分プレフィックス判定を維持する。
+    ("app/main.py", "_merge_missing_only_output"),  # 残る文字列はバックアップ名「不足分上書き」と保存カテゴリ「上書き」のみ。
+}
 # ---- U1_translate_queue（値）
-U1_VALUES = set()
+U1_VALUES = {
+    "（不足分）",  # mod_name に保存する識別用の接尾辞。画面言語によって保存名を変えない。
+}
 # ---- U1_translate_queue（比較）
 U1_COMPARISONS = set()
 
