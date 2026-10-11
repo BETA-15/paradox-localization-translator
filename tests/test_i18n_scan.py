@@ -140,3 +140,16 @@ def test_widget_labels_are_never_japanese_literals():
              and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
              and jp.search(node.value.value)]
     assert not found, f"辞書に移す: {found[:20]}"
+
+
+# 段階2で辞書がそろった言語（開発部門がマージのときに足す）。ここにある言語は、日本語と同じ key がすべてある。
+COMPLETE_LANGUAGES = ("japanese", "english")
+
+
+def test_complete_languages_have_every_key():
+    ja = set(i18n.strings("japanese"))
+    for lang in COMPLETE_LANGUAGES:
+        missing = sorted(ja - set(i18n.strings(lang)))
+        extra = sorted(set(i18n.strings(lang)) - ja)
+        assert not missing, f"{lang} に無い key（{len(missing)} 個）: {missing[:20]}"
+        assert not extra, f"{lang} にだけある key: {extra[:20]}"
