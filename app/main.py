@@ -2682,67 +2682,37 @@ class App(BaseTk):
         ui_combo.grid(row=0, column=1, sticky="w", padx=(8,12))
         ui_combo.bind("<<ComboboxSelected>>", lambda _e: self._choose_ui_language())
         ttk.Label(lang_box, text=i18n.t("p0.settings.ui_language_note"), foreground="#555").grid(row=0, column=2, sticky="w")
-        box = ttk.LabelFrame(t, text="自動生成ファイルの保存場所", padding=12)
+        box = ttk.LabelFrame(t, text=i18n.t('u5.storage_frame'), padding=12)
         box.pack(fill="x")
         box.columnconfigure(1, weight=1)
-        ttk.Label(box, text="保存フォルダ").grid(row=0, column=0, sticky="w")
+        ttk.Label(box, text=i18n.t('u5.storage_folder')).grid(row=0, column=0, sticky="w")
         ttk.Entry(box, textvariable=self.data_root_var, state="readonly").grid(row=0, column=1, sticky="ew", padx=(8,8))
-        self.data_root_change_btn=ttk.Button(box, text="保存場所を変更", command=self.change_data_root)
+        self.data_root_change_btn=ttk.Button(box, text=i18n.t('u5.change_storage'), command=self.change_data_root)
         self.data_root_change_btn.grid(row=0, column=2)
         self._data_root_controls=[self.data_root_change_btn]
-        ttk.Button(box, text="フォルダを開く", command=lambda:self._open_path(DATA_ROOT)).grid(row=0, column=3, padx=(6,0))
-        ttk.Button(box, text="エラーログを開く", command=lambda:self._open_path(LOG_ROOT)).grid(row=2, column=2, pady=(10,0))
-        ttk.Button(box, text="診断ログを収集", command=self.collect_error_logs).grid(row=2, column=3, padx=(6,0), pady=(10,0))
-        ttk.Label(box, text="翻訳結果・キャッシュ・バックアップ・設定・セッション・モデル統計など、アプリが自動生成するデータはすべてこの『Paradox Localization Translator』フォルダ内にまとめます。", wraplength=920, foreground="#555").grid(row=1, column=0, columnspan=4, sticky="w", pady=(10,0))
+        ttk.Button(box, text=i18n.t('u5.open_folder'), command=lambda:self._open_path(DATA_ROOT)).grid(row=0, column=3, padx=(6,0))
+        ttk.Button(box, text=i18n.t('u5.open_error_logs'), command=lambda:self._open_path(LOG_ROOT)).grid(row=2, column=2, pady=(10,0))
+        ttk.Button(box, text=i18n.t('u5.collect_logs'), command=self.collect_error_logs).grid(row=2, column=3, padx=(6,0), pady=(10,0))
+        ttk.Label(box, text=i18n.t('u5.storage_note'), wraplength=920, foreground="#555").grid(row=1, column=0, columnspan=4, sticky="w", pady=(10,0))
 
-        close_box = ttk.LabelFrame(t, text="ウィンドウの×ボタンを押したときの動作", padding=12)
+        close_box = ttk.LabelFrame(t, text=i18n.t('u5.close_behavior'), padding=12)
         close_box.pack(fill="x", pady=(12,0))
-        ttk.Label(close_box, text="既定動作").grid(row=0, column=0, sticky="w")
+        ttk.Label(close_box, text=i18n.t('u5.default_action')).grid(row=0, column=0, sticky="w")
         close_combo = ttk.Combobox(close_box, textvariable=self.close_action_var, state="readonly", width=20,
                                    values=tuple(ui_status.close_action_label(a) for a in ui_status.CLOSE_ACTIONS))
         close_combo.grid(row=0, column=1, sticky="w", padx=(8,12))
-        ttk.Label(close_box, text="通常は『毎回確認』を推奨します。", foreground="#555").grid(row=0,column=2,sticky="w")
-        ttk.Button(close_box, text="この設定を保存", command=self.save_close_behavior_settings).grid(row=0,column=3,padx=(12,0))
+        ttk.Label(close_box, text=i18n.t('u5.close_recommendation'), foreground="#555").grid(row=0,column=2,sticky="w")
+        ttk.Button(close_box, text=i18n.t('u5.save_setting'), command=self.save_close_behavior_settings).grid(row=0,column=3,padx=(12,0))
         ttk.Label(close_box, text=(
-            "毎回確認: ×ボタンを押すたびに『最小化 / 終了 / キャンセル』を選びます。\n"
-            "最小化: 確認せずウィンドウだけを最小化し、翻訳・探索・LLM処理は続行します。\n"
-            "終了: 確認せず、翻訳中ならセッションとキャッシュを保存して停止要求を出してから終了します。"
+            i18n.t('u5.close_help')
         ), foreground="#555", wraplength=1100, justify="left").grid(row=1,column=0,columnspan=4,sticky="w",pady=(5,0))
 
-        structure = ttk.LabelFrame(t, text="フォルダ構成", padding=12)
+        structure = ttk.LabelFrame(t, text=i18n.t('u5.folder_structure'), padding=12)
         structure.pack(fill="both", expand=True, pady=(12,0))
         text = tk.Text(structure, height=16, wrap="none")
         text.pack(fill="both", expand=True)
         text.insert("1.0",
-            "Paradox Localization Translator/\n"
-            "├── 翻訳結果/\n"
-            "├── キャッシュ/\n"
-            "│   ├── mod_translation_status_cache.json\n"
-            "│   ├── mod_classification_cache.json\n"
-            "│   ├── mod_relation_overrides.json\n"
-            "│   ├── translation_status_state.json\n"
-            "│   ├── diagnostic_state.json\n"
-            "│   └── shared_mod_state_cache.json\n"
-            "├── バックアップ/\n"
-            "├── ログ/\n"
-            "│   ├── QA/\n"
-            "│   ├── エラー/\n"
-            "│   ├── 日本語化Mod判定/\n"
-            "│   ├── 診断/\n"
-            "│   ├── 夜間処理/\n"
-            "│   └── システム・履歴/\n"
-            "├── 作業データ/  ← バージョン非依存の一時・作業状態用\n"
-            "└── 設定/\n"
-            "    ├── session.json\n"
-            "    ├── resume_state.json\n"
-            "    ├── storage_migration.json\n"
-            "    ├── glossary.json\n"
-            "    ├── model_stats.json\n"
-            "    ├── model_profiles.json\n"
-            "    ├── steam_library_roots.json\n"
-            "    └── app_preferences.json  ← 前回LLM設定・×ボタン動作\n\n"
-            "既定位置: 書類/Documents/Paradox Localization Translator\n"
-            "［保存場所を変更］から、別ドライブ・外付けSSD・任意のフォルダへ移動できます。")
+            i18n.t('u5.folder_tree'))
         text.config(state="disabled")
 
     def change_data_root(self):
@@ -2750,20 +2720,20 @@ class App(BaseTk):
         if blockers:
             return
         if self.data_root_move_thread is not None:
-            messagebox.showinfo(APP_NAME,'保存場所の変更はすでにバックグラウンドで実行中です。'); return
+            messagebox.showinfo(APP_NAME,i18n.t('u5.storage_busy')); return
         old_root=DATA_ROOT
-        chosen=filedialog.askdirectory(title='Paradox Localization Translator フォルダの保存先を選択',initialdir=str(old_root.parent if old_root.exists() else Path.home()))
+        chosen=filedialog.askdirectory(title=i18n.t('u5.choose_storage'),initialdir=str(old_root.parent if old_root.exists() else Path.home()))
         if not chosen: return
         selected=Path(chosen).expanduser(); new_root=selected if selected.name==DATA_FOLDER_NAME else selected/DATA_FOLDER_NAME
         try:
-            if new_root.resolve()==old_root.resolve(): messagebox.showinfo(APP_NAME,'現在と同じ保存場所です。'); return
+            if new_root.resolve()==old_root.resolve(): messagebox.showinfo(APP_NAME,i18n.t('u5.same_storage')); return
         except Exception: pass
-        if not _is_writable_dir(new_root): messagebox.showerror(APP_NAME,f'選択した場所へ書き込めません。\n{new_root}'); return
-        ans=messagebox.askyesnocancel(APP_NAME,'自動生成ファイルの保存場所を変更します。\n\n'+f'現在: {old_root}\n変更後: {new_root}\n\n'+'［はい］: 現在のデータを新しい場所へコピーしてから切り替える\n［いいえ］: データは移動せず、今後の生成先だけ変更する\n［キャンセル］: 変更しない')
+        if not _is_writable_dir(new_root): messagebox.showerror(APP_NAME,i18n.t('u5.storage_unwritable', new_root=new_root)); return
+        ans=messagebox.askyesnocancel(APP_NAME,i18n.t('u5.confirm_storage_change', old_root=old_root, new_root=new_root))
         if ans is None: return
         current_glossary=self.glossary_path_var.get().strip()
         queue_snapshot=[dict(x) if isinstance(x,dict) else x for x in self.queue_items]
-        self.progress_text.set('保存場所をバックグラウンドで変更中…' if ans else '保存場所を切り替え中…')
+        self.progress_text.set(i18n.t('u5.storage_copying') if ans else i18n.t('u5.storage_switching'))
         def work():
             try:
                 if ans and old_root.exists(): shutil.copytree(old_root,new_root,dirs_exist_ok=True)
@@ -2793,19 +2763,19 @@ class App(BaseTk):
                 self.glossary_path_var.set(str(DATA_ROOT/rel) if rel is not None else str(DEFAULT_GLOSSARY))
             except Exception:
                 if not current_glossary or current_glossary==str(old_root/'設定'/'glossary.json'): self.glossary_path_var.set(str(DEFAULT_GLOSSARY))
-            self.model_stats=load_persistent_json(STATS_PATH,{},"モデル統計"); self.model_profiles=load_persistent_json(PROFILES_PATH,{},"モデルプロファイル")
+            self.model_stats=load_persistent_json(STATS_PATH,{},i18n.t('u5.model_stats')); self.model_profiles=load_persistent_json(PROFILES_PATH,{},i18n.t('u5.model_profiles'))
             # Large status cache is intentionally not decoded here; its worker does that.
             self.mod_status_cache={'version':MOD_STATUS_CACHE_VERSION,'items':{}}
-            _cls=load_persistent_json(MOD_CLASSIFICATION_CACHE_PATH,{'schema':2,'mods':{}},"Mod分類キャッシュ"); _cls=_cls if isinstance(_cls,dict) else {'schema':2,'mods':{}}
+            _cls=load_persistent_json(MOD_CLASSIFICATION_CACHE_PATH,{'schema':2,'mods':{}},i18n.t('u5.classification_cache')); _cls=_cls if isinstance(_cls,dict) else {'schema':2,'mods':{}}
             self.mod_classification_cache={'schema':2,'mods':dict(_cls.get('mods') or {}),'updated_at':_cls.get('updated_at','')}
-            _ov=load_persistent_json(MOD_RELATION_OVERRIDES_PATH,{'schema':1,'mods':{}},"Mod関連付け設定"); _ov=_ov if isinstance(_ov,dict) else {'schema':1,'mods':{}}
+            _ov=load_persistent_json(MOD_RELATION_OVERRIDES_PATH,{'schema':1,'mods':{}},i18n.t('u5.relation_settings')); _ov=_ov if isinstance(_ov,dict) else {'schema':1,'mods':{}}
             self.mod_relation_overrides={'schema':1,'mods':dict(_ov.get('mods') or {}),'updated_at':_ov.get('updated_at','')}
             self._restore_shared_mod_state_cache(); self.refresh_profiles_ui(); self._restore_cached_mod_status(); self._restore_diagnostic_state(); self._refresh_backup_restore_entries()
-            self.progress_text.set('保存場所を変更しました')
+            self.progress_text.set(i18n.t('u5.storage_changed'))
             if not self._closing:
-                messagebox.showinfo(APP_NAME,'保存場所を変更しました。\n\n'+str(DATA_ROOT)+'\n\n'+('既存データもコピーしました。' if copied else '今後作成するデータから新しい場所を使用します。'))
+                messagebox.showinfo(APP_NAME,i18n.t('u5.storage_changed_copy', root=str(DATA_ROOT)) if copied else i18n.t('u5.storage_changed_new', root=str(DATA_ROOT)))
         except Exception as exc:
-            record_error('保存場所切替適用',exc); messagebox.showerror(APP_NAME,f'保存場所の変更に失敗しました。\n{exc}')
+            record_error(i18n.t('u5.storage_apply_error'),exc); messagebox.showerror(APP_NAME,i18n.t('u5.storage_failed', exc=exc))
 
     def save_close_behavior_settings(self, silent=False):
         """Save the single × button behavior setting."""
@@ -2993,21 +2963,13 @@ class App(BaseTk):
         self.batch_var.set(batch)
         self.workers_var.set(workers)
         note = {
-            "stable": "長文が多いMod、初回利用、メモリに余裕がない環境向けです。",
-            "standard": "通常はこちらを推奨します。速度と安定性のバランスを優先します。",
-            "fast": "同時2リクエストを処理できる環境向けです。Ollama/LM Studio側の並列処理と十分なメモリが必要です。",
+            "stable": i18n.t('u5.stable_note'),
+            "standard": i18n.t('u5.standard_note'),
+            "fast": i18n.t('u5.fast_note'),
         }.get(preset_id, "")
         messagebox.showinfo(
-            "おすすめ設定",
-            f"{name} を適用しました。\n\nバッチ: {batch}\n並列: {workers}\n\n{note}\n\n"
-            "安定性の目安\n"
-            "・バッチ 1–60: 通常範囲\n"
-            "・バッチ 80超: 長文では応答欠落・タイムアウトに注意\n"
-            "・バッチ 120超: 非推奨\n"
-            "・並列 1: 最も安定\n"
-            "・並列 2: サーバー側が同時処理できる場合のみ推奨\n"
-            "・並列 3以上: ローカルLLMではVRAM/RAM圧迫、待ち行列、タイムアウトが増えやすい\n\n"
-            "クラウドAPIでは並列数を上げられる場合がありますが、API側のレート制限を優先してください。"
+            i18n.t('u5.recommended_settings'),
+            i18n.t('u5.preset_applied', name=name, batch=batch, workers=workers, note=note)
         )
 
     def _build_help_tab(self):
@@ -5648,7 +5610,7 @@ class App(BaseTk):
             if threading.current_thread() is threading.main_thread() and hasattr(self,"notebook"):
                 self._save_workspace_state("settings_changed")
         except Exception as e:
-            record_error("LLM設定保存", e)
+            record_error(i18n.t('u5.save_llm_settings'), e)
 
     def apply_monitor_settings(self, silent=False):
         """Apply monitor/research LLM settings. Current in-flight request is not interrupted."""
@@ -5686,13 +5648,12 @@ class App(BaseTk):
                     "glossary":glossary_path or None,"dual":self.dual_var.get()}
                 self.save_session(active=True)
             except Exception as e:
-                record_error("翻訳設定全体適用", e)
-                if not silent: messagebox.showerror(APP_NAME,f"設定の適用に失敗しました。\n{e}")
+                record_error(i18n.t('u5.apply_translation_settings'), e)
+                if not silent: messagebox.showerror(APP_NAME,i18n.t('u5.settings_failed', e=e))
                 return False
         if not silent:
             messagebox.showinfo(APP_NAME,
-                "現在の翻訳設定を適用しました。\n\nQAのAI校正と差分翻訳は、この画面で現在選択されているプロバイダ・URL・モデル・用語集を使用します。"
-                + ("\n実行中の通常翻訳は次のバッチから切り替わります。" if self.controller and self.worker and self.worker.is_alive() else ""))
+                i18n.t('u5.settings_applied_running') if self.controller and self.worker and self.worker.is_alive() else i18n.t('u5.settings_applied'))
         return True
 
     def _snapshot_monitor_worker_settings(self):
@@ -7575,63 +7536,63 @@ class App(BaseTk):
         left.bind("<Configure>",lambda e:canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.bind("<Configure>",lambda e:canvas.itemconfigure(win,width=e.width))
 
-        conn=ttk.LabelFrame(left,text="LLM接続",padding=8); conn.pack(fill="x")
+        conn=ttk.LabelFrame(left,text=i18n.t('u5.llm_connection'),padding=8); conn.pack(fill="x")
         conn.columnconfigure(1,weight=1)
-        ttk.Label(conn,text="プロバイダ").grid(row=0,column=0,sticky="w")
+        ttk.Label(conn,text=i18n.t('u5.provider')).grid(row=0,column=0,sticky="w")
         pc=ttk.Combobox(conn,textvariable=self.provider_var,values=["Ollama","LM Studio","OpenAI","Anthropic","Gemini","OpenAI Compatible"],state="readonly",width=14)
         pc.grid(row=0,column=1,padx=6,sticky="ew"); pc.bind("<<ComboboxSelected>>",lambda e:self.on_provider_change())
         ttk.Label(conn,text="API URL").grid(row=1,column=0,sticky="w",pady=(6,0))
         ttk.Entry(conn,textvariable=self.url_var).grid(row=1,column=1,sticky="ew",padx=6,pady=(6,0))
-        ttk.Button(conn,text="接続確認 / モデル再読込",command=self.refresh_models).grid(row=2,column=0,columnspan=2,sticky="ew",pady=(6,0))
+        ttk.Button(conn,text=i18n.t('u5.refresh_connection'),command=self.refresh_models).grid(row=2,column=0,columnspan=2,sticky="ew",pady=(6,0))
         ttk.Label(conn,textvariable=self.connection_var).grid(row=3,column=0,columnspan=2,sticky="w",pady=(7,0))
-        ttk.Label(conn,text="モデル").grid(row=4,column=0,sticky="w",pady=(6,0))
+        ttk.Label(conn,text=i18n.t('u5.model')).grid(row=4,column=0,sticky="w",pady=(6,0))
         self.model_combo=ttk.Combobox(conn,textvariable=self.model_var,state="normal")
         self.model_combo.grid(row=4,column=1,sticky="ew",padx=6,pady=(6,0))
-        ttk.Label(conn,text="APIキー").grid(row=5,column=0,sticky="w",pady=(6,0))
+        ttk.Label(conn,text=i18n.t('u5.api_key')).grid(row=5,column=0,sticky="w",pady=(6,0))
         ttk.Entry(conn,textvariable=self.api_key_var,show="•").grid(row=5,column=1,sticky="ew",padx=6,pady=(6,0))
-        ttk.Label(conn,text="APIキーは保存しません。ローカル: Ollama / LM Studio　クラウド: OpenAI / Anthropic / Gemini / OpenAI互換API",foreground="#666",wraplength=430,justify="left").grid(row=6,column=0,columnspan=2,sticky="w",pady=(4,0))
+        ttk.Label(conn,text=i18n.t('u5.api_key_note'),foreground="#666",wraplength=430,justify="left").grid(row=6,column=0,columnspan=2,sticky="w",pady=(4,0))
 
-        common=ttk.LabelFrame(left,text="翻訳共通設定",padding=8); common.pack(fill="x",pady=(10,0))
+        common=ttk.LabelFrame(left,text=i18n.t('u5.common_settings'),padding=8); common.pack(fill="x",pady=(10,0))
         common.columnconfigure(1,weight=1)
-        ttk.Label(common,text="ゲームプリセット").grid(row=0,column=0,sticky="w")
+        ttk.Label(common,text=i18n.t('u5.game_preset')).grid(row=0,column=0,sticky="w")
         ttk.Combobox(common,textvariable=self.preset_var,values=list(core.GAME_PRESETS),state="readonly",width=15).grid(row=0,column=1,sticky="ew",padx=(6,0))
-        ttk.Checkbutton(common,text="既存日本語の未翻訳を修復",variable=self.repair_var,command=self._save_llm_preferences).grid(row=1,column=0,columnspan=2,sticky="w",pady=(6,0))
-        ttk.Checkbutton(common,text="通常翻訳後にバックアップ・自動QA・エラー修正",variable=self.autoqa_var,command=self._save_llm_preferences).grid(row=2,column=0,columnspan=2,sticky="w",pady=(4,0))
-        ttk.Checkbutton(common,text="中国語基準翻訳後にバックアップ・自動QA・エラー修正",variable=self.chinese_autoqa_var,command=self._save_llm_preferences).grid(row=3,column=0,columnspan=2,sticky="w",pady=(4,0))
-        ttk.Checkbutton(common,text="日本語・中国語の文字の間の半角スペースを取り除く",variable=self.normalize_spacing_var,command=self._save_llm_preferences).grid(row=11,column=0,columnspan=2,sticky="w",pady=(4,0))
-        ttk.Label(common,text="バッチ").grid(row=4,column=0,sticky="w",pady=(7,0))
+        ttk.Checkbutton(common,text=i18n.t('u5.repair_existing', target_name=i18n.t('lang.' + _current_target_lang(self))),variable=self.repair_var,command=self._save_llm_preferences).grid(row=1,column=0,columnspan=2,sticky="w",pady=(6,0))
+        ttk.Checkbutton(common,text=i18n.t('u5.auto_qa'),variable=self.autoqa_var,command=self._save_llm_preferences).grid(row=2,column=0,columnspan=2,sticky="w",pady=(4,0))
+        ttk.Checkbutton(common,text=i18n.t('u5.chinese_auto_qa'),variable=self.chinese_autoqa_var,command=self._save_llm_preferences).grid(row=3,column=0,columnspan=2,sticky="w",pady=(4,0))
+        ttk.Checkbutton(common,text=i18n.t('u5.normalize_spacing'),variable=self.normalize_spacing_var,command=self._save_llm_preferences).grid(row=11,column=0,columnspan=2,sticky="w",pady=(4,0))
+        ttk.Label(common,text=i18n.t('u5.batch')).grid(row=4,column=0,sticky="w",pady=(7,0))
         ttk.Spinbox(common,from_=1,to=500,textvariable=self.batch_var,width=8,command=self._save_llm_preferences).grid(row=4,column=1,sticky="w",padx=(6,0),pady=(7,0))
-        ttk.Label(common,text="並列").grid(row=5,column=0,sticky="w",pady=(5,0))
+        ttk.Label(common,text=i18n.t('u5.workers')).grid(row=5,column=0,sticky="w",pady=(5,0))
         ttk.Spinbox(common,from_=1,to=8,textvariable=self.workers_var,width=8,command=self._save_llm_preferences).grid(row=5,column=1,sticky="w",padx=(6,0),pady=(5,0))
-        ttk.Label(common,text="おすすめ").grid(row=6,column=0,sticky="w",pady=(5,0))
+        ttk.Label(common,text=i18n.t('u5.recommended')).grid(row=6,column=0,sticky="w",pady=(5,0))
         perf_combo=ttk.Combobox(common,textvariable=self.performance_preset_var,values=[ui_status.performance_preset_label(x) for x in ui_status.PERFORMANCE_PRESETS],state="readonly",width=18)
         perf_combo.grid(row=6,column=1,sticky="ew",padx=(6,0),pady=(5,0))
-        ttk.Button(common,text="おすすめ設定を適用",command=self.apply_performance_preset).grid(row=7,column=0,columnspan=2,sticky="ew",pady=(5,0))
-        ttk.Label(common,text="用語集").grid(row=8,column=0,sticky="w",pady=(7,0))
+        ttk.Button(common,text=i18n.t('u5.apply_preset'),command=self.apply_performance_preset).grid(row=7,column=0,columnspan=2,sticky="ew",pady=(5,0))
+        ttk.Label(common,text=i18n.t('u5.glossary')).grid(row=8,column=0,sticky="w",pady=(7,0))
         ttk.Entry(common,textvariable=self.glossary_path_var).grid(row=8,column=1,sticky="ew",padx=(6,0),pady=(7,0))
-        ttk.Button(common,text="用語集を選択",command=self.pick_glossary).grid(row=9,column=0,columnspan=2,sticky="ew",pady=(5,0))
-        ttk.Label(common,text="推奨: バッチ20–60 / 並列1–2",foreground="#8a5a00").grid(row=10,column=0,columnspan=2,sticky="w",pady=(5,0))
-        self.apply_current_translation_btn=ttk.Button(common,text="現在の翻訳へ設定を適用",command=self.apply_settings_to_current_translation)
+        ttk.Button(common,text=i18n.t('u5.choose_glossary'),command=self.pick_glossary).grid(row=9,column=0,columnspan=2,sticky="ew",pady=(5,0))
+        ttk.Label(common,text=i18n.t('u5.batch_recommendation'),foreground="#8a5a00").grid(row=10,column=0,columnspan=2,sticky="w",pady=(5,0))
+        self.apply_current_translation_btn=ttk.Button(common,text=i18n.t('u5.apply_current_settings'),command=self.apply_settings_to_current_translation)
         self.apply_current_translation_btn.grid(row=11,column=0,columnspan=2,sticky="ew",pady=(7,0))
 
-        profsel=ttk.LabelFrame(left,text="モデルプロファイル選択",padding=8); profsel.pack(fill="x",pady=(10,0))
+        profsel=ttk.LabelFrame(left,text=i18n.t('u5.profile_selection'),padding=8); profsel.pack(fill="x",pady=(10,0))
         profsel.columnconfigure(0,weight=1)
         self.profile_combo=ttk.Combobox(profsel,textvariable=self.profile_var,state="readonly")
         self.profile_combo.grid(row=0,column=0,sticky="ew")
         pbar=ttk.Frame(profsel); pbar.grid(row=1,column=0,sticky="ew",pady=(6,0))
-        ttk.Button(pbar,text="適用",command=self.apply_selected_profile).pack(side="left")
-        ttk.Button(pbar,text="削除",command=self.delete_selected_profile_combo).pack(side="left",padx=(5,0))
-        ttk.Button(pbar,text="現在設定を保存",command=self.save_current_profile).pack(side="left",padx=(5,0))
+        ttk.Button(pbar,text=i18n.t('u5.apply'),command=self.apply_selected_profile).pack(side="left")
+        ttk.Button(pbar,text=i18n.t('u5.delete'),command=self.delete_selected_profile_combo).pack(side="left",padx=(5,0))
+        ttk.Button(pbar,text=i18n.t('u5.save_current_settings'),command=self.save_current_profile).pack(side="left",padx=(5,0))
 
-        pf=ttk.LabelFrame(left,text="保存済みモデルプロファイル",padding=8); pf.pack(fill="both",expand=True,pady=(10,0))
+        pf=ttk.LabelFrame(left,text=i18n.t('u5.saved_profiles'),padding=8); pf.pack(fill="both",expand=True,pady=(10,0))
         pb=ttk.Frame(pf); pb.pack(fill="x",pady=(0,6))
-        ttk.Button(pb,text="現在設定をプロファイル保存",command=self.save_current_profile).pack(side="left")
-        ttk.Button(pb,text="選択を適用",command=self.apply_profile_from_tree).pack(side="left",padx=(6,0))
-        ttk.Button(pb,text="選択を削除",command=self.delete_profile).pack(side="left",padx=(6,0))
+        ttk.Button(pb,text=i18n.t('u5.save_profile'),command=self.save_current_profile).pack(side="left")
+        ttk.Button(pb,text=i18n.t('u5.apply_selected'),command=self.apply_profile_from_tree).pack(side="left",padx=(6,0))
+        ttk.Button(pb,text=i18n.t('u5.delete_selected'),command=self.delete_profile).pack(side="left",padx=(6,0))
         self.profile_tree=ttk.Treeview(pf,columns=("name","label","provider","model","batch","workers"),show="headings",height=7)
         # 列幅は表示領域に合わせて縮ませず固定する。必要幅を超えた分は
         # 下部の横スクロールバーで確認する。
-        for c,txt,w in (("name","名前",140),("label","用途",160),("provider","方式",150),("model","モデル",420),("batch","バッチ",80),("workers","並列",80)):
+        for c,txt,w in (("name",i18n.t('u5.name'),140),("label",i18n.t('u5.purpose'),160),("provider",i18n.t('u5.method'),150),("model",i18n.t('u5.model'),420),("batch",i18n.t('u5.batch'),80),("workers",i18n.t('u5.workers'),80)):
             self.profile_tree.heading(c,text=txt)
             self.profile_tree.column(c,width=w,minwidth=w,stretch=False)
         self._enable_tree_sort(self.profile_tree)
@@ -7640,22 +7601,22 @@ class App(BaseTk):
         self.profile_tree.pack(fill="both",expand=True); pscroll_x.pack(fill="x")
         self.profile_tree.bind("<Double-1>",lambda e:self.apply_profile_from_tree())
 
-        bench=ttk.LabelFrame(right,text="モデル速度比較（実翻訳時の統計も自動記録）",padding=8); bench.pack(fill="both",expand=True)
+        bench=ttk.LabelFrame(right,text=i18n.t('u5.speed_comparison'),padding=8); bench.pack(fill="both",expand=True)
         bar=ttk.Frame(bench); bar.pack(fill="x",pady=(0,6))
-        ttk.Button(bar,text="現在のLLMを速度テスト",command=self.benchmark_selected_model).pack(side="left")
-        ttk.Button(bar,text="選択したモデルを比較テスト",command=self.benchmark_selected_models).pack(side="left",padx=(6,0))
-        self.benchmark_stop_btn=ttk.Button(bar,text="速度テスト停止",command=self.stop_benchmark,state="disabled"); self.benchmark_stop_btn.pack(side="left",padx=(6,0))
-        ttk.Button(bar,text="統計を消去",command=self.clear_model_stats).pack(side="left",padx=(6,0))
+        ttk.Button(bar,text=i18n.t('u5.benchmark_current'),command=self.benchmark_selected_model).pack(side="left")
+        ttk.Button(bar,text=i18n.t('u5.benchmark_selected'),command=self.benchmark_selected_models).pack(side="left",padx=(6,0))
+        self.benchmark_stop_btn=ttk.Button(bar,text=i18n.t('u5.stop_benchmark'),command=self.stop_benchmark,state="disabled"); self.benchmark_stop_btn.pack(side="left",padx=(6,0))
+        ttk.Button(bar,text=i18n.t('u5.clear_stats'),command=self.clear_model_stats).pack(side="left",padx=(6,0))
         self.benchmark_status_var=tk.StringVar(value=""); ttk.Label(bar,textvariable=self.benchmark_status_var).pack(side="right")
 
-        select_box=ttk.LabelFrame(bench,text="比較するモデルを選択（最大5モデル）",padding=6); select_box.pack(fill="x",pady=(0,8))
-        ttk.Label(select_box,text="Ctrlキーを押しながらクリックすると複数選択できます。最大5モデルまで選択できます。",foreground="#666").pack(anchor="w",pady=(0,4))
+        select_box=ttk.LabelFrame(bench,text=i18n.t('u5.choose_models'),padding=6); select_box.pack(fill="x",pady=(0,8))
+        ttk.Label(select_box,text=i18n.t('u5.multiselect_note'),foreground="#666").pack(anchor="w",pady=(0,4))
         self.benchmark_model_list=tk.Listbox(select_box,selectmode=tk.EXTENDED,exportselection=False,height=6)
         self._enable_ctrl_multiselect(self.benchmark_model_list,max_items=5); self.benchmark_model_list.pack(fill="x"); self.benchmark_model_list.bind("<<ListboxSelect>>",self._limit_benchmark_selection)
 
         cols=("provider","model","requests","avg","tps","fail")
         self.stats_tree=ttk.Treeview(bench,columns=cols,show="headings",height=16)
-        for c,txt,w in (("provider","プロバイダ",100),("model","モデル",330),("requests","回数",70),("avg","平均秒",90),("tps","tokens/s",100),("fail","失敗率",90)):
+        for c,txt,w in (("provider",i18n.t('u5.provider'),100),("model",i18n.t('u5.model'),330),("requests",i18n.t('u5.requests'),70),("avg",i18n.t('u5.average_seconds'),90),("tps","tokens/s",100),("fail",i18n.t('u5.failure_rate'),90)):
             self.stats_tree.heading(c,text=txt); self.stats_tree.column(c,width=w,anchor="center" if c not in ("model",) else "w")
         self._enable_tree_sort(self.stats_tree)
         sscroll_x=ttk.Scrollbar(bench,orient="horizontal",command=self.stats_tree.xview)
@@ -7710,7 +7671,7 @@ class App(BaseTk):
 
     def benchmark_selected_model(self):
         model=self.model_var.get().strip()
-        if not model: messagebox.showinfo(APP_NAME,"モデルを選択してください。"); return
+        if not model: messagebox.showinfo(APP_NAME,i18n.t('u5.select_model')); return
         self._start_benchmark([model])
 
     def _limit_benchmark_selection(self,event=None):
@@ -7720,25 +7681,25 @@ class App(BaseTk):
         # Tkの選択順は取得できないため、先頭5件を残して6件目以降を解除する。
         for idx in selected[5:]:
             self.benchmark_model_list.selection_clear(idx)
-        self.benchmark_status_var.set("比較テストは最大5モデルまで選択できます")
+        self.benchmark_status_var.set(i18n.t('u5.benchmark_limit_status'))
 
     def benchmark_selected_models(self):
         if not hasattr(self,"benchmark_model_list"):
             return
         selected=list(self.benchmark_model_list.curselection())
         if not selected:
-            messagebox.showinfo(APP_NAME,"比較するモデルを1〜5個選択してください。")
+            messagebox.showinfo(APP_NAME,i18n.t('u5.select_comparison_models'))
             return
         if len(selected)>5:
-            messagebox.showinfo(APP_NAME,"比較テストで選択できるのは最大5モデルです。")
+            messagebox.showinfo(APP_NAME,i18n.t('u5.benchmark_limit'))
             return
         models=[self.benchmark_model_list.get(i) for i in selected]
         self._start_benchmark(models)
 
     def _start_benchmark(self,models):
         if getattr(self,"benchmark_worker",None) and self.benchmark_worker.is_alive(): return
-        self.benchmark_status_var.set(f"速度テスト中 0/{len(models)} — 開始準備")
-        self.llm_operation = "モデル速度テスト"
+        self.benchmark_status_var.set(i18n.t('u5.benchmark_starting', count=len(models)))
+        self.llm_operation = i18n.t('u5.model_benchmark')
         self.benchmark_stop_btn.config(state="normal")
         provider=self.provider_var.get(); url=self.url_var.get().strip(); api_key=self.api_key_var.get().strip()
         self.benchmark_controller=core.TranslationController(progress_callback=lambda p:self.events.put(("benchmark_progress",p)))
@@ -7770,12 +7731,12 @@ class App(BaseTk):
     def stop_benchmark(self):
         if self.benchmark_controller and not self.benchmark_controller.stop_event.is_set():
             self.benchmark_controller.request_stop(save=False)
-            self.benchmark_status_var.set("速度テスト停止要求済み — 現在のLLM応答完了を待っています")
+            self.benchmark_status_var.set(i18n.t('u5.benchmark_stop_requested'))
             self.benchmark_stop_btn.config(state="disabled")
-            self.llm_detail_var.set("停止要求済み — 現在のAPI/LLM応答が返り次第停止します")
+            self.llm_detail_var.set(i18n.t('u5.api_stop_requested'))
 
     def clear_model_stats(self):
-        if messagebox.askyesno(APP_NAME,"モデル速度統計をすべて消去しますか？"):
+        if messagebox.askyesno(APP_NAME,i18n.t('u5.confirm_clear_stats')):
             self.model_stats={}; core.save_json(STATS_PATH,self.model_stats); self.refresh_model_stats_ui()
 
     def refresh_profiles_ui(self):
@@ -7788,9 +7749,9 @@ class App(BaseTk):
                 self.profile_tree.insert("","end",iid=name,values=(name,p.get("label",""),p.get("provider",""),p.get("model",""),p.get("batch",40),p.get("workers",1)))
 
     def save_current_profile(self):
-        name=simpledialog.askstring("モデルプロファイル","プロファイル名（例: Qwen 30B 品質重視）")
+        name=simpledialog.askstring(i18n.t('u5.model_profiles'),i18n.t('u5.profile_name'))
         if not name: return
-        label=simpledialog.askstring("モデルプロファイル","用途メモ（例: 品質重視 / 高速）",initialvalue=self.model_profiles.get(name,{}).get("label","")) or ""
+        label=simpledialog.askstring(i18n.t('u5.model_profiles'),i18n.t('u5.profile_purpose'),initialvalue=self.model_profiles.get(name,{}).get("label","")) or ""
         self.model_profiles[name]={"label":label,"provider":self.provider_var.get(),"url":self.url_var.get(),"model":self.model_var.get(),"batch":self.batch_var.get(),"workers":self.workers_var.get(),"preset":self.preset_var.get()}
         core.save_json(PROFILES_PATH,self.model_profiles); self.profile_var.set(name); self.refresh_profiles_ui()
 
@@ -7811,10 +7772,10 @@ class App(BaseTk):
     def delete_profile(self):
         sel=self.profile_tree.selection()
         if not sel:
-            messagebox.showinfo(APP_NAME, "削除するモデルプロファイルを選択してください。")
+            messagebox.showinfo(APP_NAME, i18n.t('u5.select_profile_delete'))
             return
         names=list(sel)
-        if not messagebox.askyesno(APP_NAME, "次のモデルプロファイルを削除しますか？\n\n" + "\n".join(names)):
+        if not messagebox.askyesno(APP_NAME, i18n.t('u5.confirm_delete_profiles', names="\n".join(names))):
             return
         for name in names: self.model_profiles.pop(name,None)
         if self.profile_var.get() in names: self.profile_var.set("")
@@ -7823,9 +7784,9 @@ class App(BaseTk):
     def delete_selected_profile_combo(self):
         name=self.profile_var.get().strip()
         if not name:
-            messagebox.showinfo(APP_NAME,"削除するモデルプロファイルを選択してください。")
+            messagebox.showinfo(APP_NAME,i18n.t('u5.select_profile_delete'))
             return
-        if not messagebox.askyesno(APP_NAME,f"モデルプロファイル『{name}』を削除しますか？"):
+        if not messagebox.askyesno(APP_NAME,i18n.t('u5.confirm_delete_profile', name=name)):
             return
         self.model_profiles.pop(name,None)
         self.profile_var.set("")
@@ -7926,7 +7887,7 @@ class App(BaseTk):
             return str(Path(p).absolute())
 
     def _load_cache_registry(self) -> dict:
-        data = load_persistent_json(CACHE_REGISTRY_PATH, {}, "キャッシュ台帳")
+        data = load_persistent_json(CACHE_REGISTRY_PATH, {}, i18n.t('u5.cache_registry'))
         return data if isinstance(data, dict) else {}
 
     def _save_cache_registry(self, data: dict):
@@ -8385,14 +8346,14 @@ class App(BaseTk):
         cache_path = Path(item["cache"])
         cache = core.load_cache(cache_path) if cache_path.exists() else {}
         win = tk.Toplevel(self)
-        win.title(f"キャッシュを見る — {Path(item['input']).name}")
+        win.title(i18n.t('u5.cache_title', filename=Path(item['input']).name))
         win.geometry("900x600")
         top = ttk.Frame(win, padding=8); top.pack(fill="x")
-        ttk.Label(top, text=f"キャッシュ: {cache_path}", wraplength=700).pack(side="left", fill="x", expand=True)
-        ttk.Label(top, text=f"{len(cache)}件").pack(side="right", padx=(8,0))
+        ttk.Label(top, text=i18n.t('u5.cache_path', cache_path=cache_path), wraplength=700).pack(side="left", fill="x", expand=True)
+        ttk.Label(top, text=i18n.t('u5.entry_count', count=len(cache))).pack(side="right", padx=(8,0))
         bar = ttk.Frame(win, padding=(8,0,8,6)); bar.pack(fill="x")
-        ttk.Button(bar, text="保存場所を開く", command=lambda:self._open_path(cache_path.parent)).pack(side="left")
-        ttk.Button(bar, text="JSONを再読込", command=lambda:self._reload_cache_view(text, cache_path)).pack(side="left", padx=(6,0))
+        ttk.Button(bar, text=i18n.t('u5.open_storage'), command=lambda:self._open_path(cache_path.parent)).pack(side="left")
+        ttk.Button(bar, text=i18n.t('u5.reload_json'), command=lambda:self._reload_cache_view(text, cache_path)).pack(side="left", padx=(6,0))
         text = tk.Text(win, wrap="none")
         y = ttk.Scrollbar(win, orient="vertical", command=text.yview); text.configure(yscrollcommand=y.set)
         text.pack(side="left", fill="both", expand=True, padx=(8,0), pady=(0,8)); y.pack(side="right", fill="y", pady=(0,8), padx=(0,8))
@@ -8410,15 +8371,15 @@ class App(BaseTk):
         item = self._selected_queue_item()
         if not item:
             return
-        src = filedialog.askopenfilename(title="追加するキャッシュを選択", filetypes=[("JSON cache", "*.json"), ("All", "*")])
+        src = filedialog.askopenfilename(title=i18n.t('u5.choose_cache'), filetypes=[("JSON cache", "*.json"), ("All", "*")])
         if not src:
             return
         try:
             imported = core.load_cache(Path(src))
             if not isinstance(imported, dict):
-                raise ValueError("キャッシュJSONが辞書形式ではありません")
+                raise ValueError(i18n.t('u5.cache_not_dictionary'))
             dst_path = Path(item["cache"]); dst = core.load_cache(dst_path) if dst_path.exists() else {}
-            overwrite = messagebox.askyesno(APP_NAME, f"{len(imported)}件のキャッシュを追加します。\n同じキーがある場合、追加するキャッシュで上書きしますか？")
+            overwrite = messagebox.askyesno(APP_NAME, i18n.t('u5.confirm_import_cache', count=len(imported)))
             if overwrite:
                 dst.update(imported)
             else:
@@ -8426,9 +8387,9 @@ class App(BaseTk):
                     dst.setdefault(k,v)
             core.save_cache(dst_path, dst)
             self.save_session(active=bool(self.worker and self.worker.is_alive()))
-            messagebox.showinfo(APP_NAME, f"キャッシュを追加しました。\n現在: {len(dst)}件\n保存先: {dst_path}")
+            messagebox.showinfo(APP_NAME, i18n.t('u5.cache_imported', count=len(dst), dst_path=dst_path))
         except Exception as e:
-            messagebox.showerror(APP_NAME, f"キャッシュの追加に失敗しました。\n{e}")
+            messagebox.showerror(APP_NAME, i18n.t('u5.cache_import_failed', e=e))
 
     def _start_manual_qa_repair(self, pairs, origin, _llm_ready=False):
         if self.qa_repair_thread is not None:
@@ -9030,7 +8991,7 @@ class App(BaseTk):
             }
             core.save_json(SHARED_MOD_STATE_CACHE_PATH, payload)
         except Exception as exc:
-            record_error("共通Mod状態キャッシュ保存", exc)
+            record_error(i18n.t('u5.save_shared_state'), exc)
 
     def _restore_shared_mod_state_cache(self):
         """Use the shared cache as a safety fallback if the primary cache files are missing/incomplete."""
@@ -9623,8 +9584,8 @@ class App(BaseTk):
         self.llm_banner.config(bg="#b91c1c")
         self.llm_status_label.config(bg="#b91c1c",fg="white")
         self.llm_detail_label.config(bg="#b91c1c",fg="white")
-        self.llm_status_var.set("● LLM接続なし")
-        self.llm_detail_var.set(f"{info['provider']} / {info['endpoint']} — 起動状態・モデル・接続設定を確認してください")
+        self.llm_status_var.set(i18n.t('u5.llm_disconnected'))
+        self.llm_detail_var.set(i18n.t('u5.connection_check_note', provider=info['provider'], endpoint=info['endpoint']))
         self.llm_stop_btn.config(state="disabled")
 
     def _close_llm_connection_alert(self, *, reset_key=False):
@@ -9637,8 +9598,9 @@ class App(BaseTk):
             try: win.destroy()
             except (tk.TclError,AttributeError): pass
 
-    def _show_llm_connection_alert(self, provider, url, model="", error="", *, context="LLM処理", retry_command=None, cancel_command=None, force=False):
+    def _show_llm_connection_alert(self, provider, url, model="", error="", *, context=None, retry_command=None, cancel_command=None, force=False):
         if self._closing: return
+        if context is None: context=i18n.t("u5.llm_task")
         info=_llm_connection_alert_content(provider,url,model,error)
         key=f"{info['category']}|{info['provider']}|{info['endpoint']}"
         existing=getattr(self,"_llm_connection_alert_window",None)
@@ -9656,7 +9618,7 @@ class App(BaseTk):
         header=tk.Frame(win,bg="#b91c1c",padx=20,pady=18); header.pack(fill="x")
         tk.Label(header,text="⚠  "+info["heading"],bg="#b91c1c",fg="white",font=("",20,"bold")).pack(anchor="w")
         body=ttk.Frame(win,padding=22); body.pack(fill="both",expand=True)
-        ttk.Label(body,text=f"{context}を開始できません。",font=("",13,"bold")).pack(anchor="w",pady=(0,12))
+        ttk.Label(body,text=i18n.t('u5.cannot_start', context=context),font=("",13,"bold")).pack(anchor="w",pady=(0,12))
         ttk.Label(body,text=info["message"],justify="left",wraplength=660).pack(anchor="w",fill="x")
         buttons=ttk.Frame(body); buttons.pack(side="bottom",fill="x",pady=(18,0))
         def retry():
@@ -9672,9 +9634,9 @@ class App(BaseTk):
             self.llm_preflight_thread=None
             self._refresh_operation_states()
             if cancel_command: cancel_command()
-        ttk.Button(buttons,text="再接続を確認",command=retry).pack(side="left")
-        ttk.Button(buttons,text="設定を開く",command=settings).pack(side="left",padx=(8,0))
-        ttk.Button(buttons,text="処理を中止",command=cancel).pack(side="right")
+        ttk.Button(buttons,text=i18n.t('u5.retry_connection'),command=retry).pack(side="left")
+        ttk.Button(buttons,text=i18n.t('u5.open_settings'),command=settings).pack(side="left",padx=(8,0))
+        ttk.Button(buttons,text=i18n.t('u5.cancel_task'),command=cancel).pack(side="right")
         win.protocol("WM_DELETE_WINDOW",cancel)
         try: win.grab_set(); win.lift(); win.focus_force()
         except tk.TclError: pass
@@ -9684,16 +9646,16 @@ class App(BaseTk):
         if not request or self._closing: return
         token=uuid.uuid4().hex; request["token"]=token
         provider=request["provider"]; url=request["url"]; model=request["model"]; api_key=request["api_key"]
-        self.connection_var.set(f"{provider} 接続確認中…")
-        self.llm_status_var.set("● LLM 接続確認中")
+        self.connection_var.set(i18n.t('u5.checking_connection', provider=provider))
+        self.llm_status_var.set(i18n.t('u5.llm_checking'))
         self.llm_detail_var.set(f"{provider} / {url}")
         def work():
             try:
                 if not model:
-                    raise RuntimeError("翻訳に使用するモデルが選択されていません")
+                    raise RuntimeError(i18n.t('u5.no_translation_model'))
                 models=core.list_models(provider,url,timeout=8,api_key=api_key)
                 if core.normalize_provider(provider) in {"ollama","lmstudio"} and not models:
-                    raise RuntimeError("接続には成功しましたが、読み込み済みのモデルがありません")
+                    raise RuntimeError(i18n.t('u5.no_loaded_models'))
                 warning=core.unusable_model_warning(provider,url,model) or core.reasoning_model_probe_warning(provider,url,model,api_key)
                 if warning:
                     raise RuntimeError(warning)
@@ -9705,7 +9667,7 @@ class App(BaseTk):
 
     def _begin_llm_preflight(self, context, callback):
         if self.llm_preflight_thread is not None:
-            messagebox.showinfo(APP_NAME,"現在LLMの接続を確認中です。"); return False
+            messagebox.showinfo(APP_NAME,i18n.t('u5.connection_check_busy')); return False
         provider=self.provider_var.get(); url=self.url_var.get().strip() or core.default_url_for_provider(provider)
         self._llm_preflight_request={"context":context,"callback":callback,"provider":provider,"url":url,
                                      "model":self.model_var.get().strip(),"api_key":self.api_key_var.get().strip()}
@@ -9721,8 +9683,8 @@ class App(BaseTk):
         callback=request.get("callback"); models=list(payload.get("models") or [])
         self.llm_preflight_thread=None; self._llm_preflight_request=None; self._llm_connection_alert_key=""
         self._close_llm_connection_alert(reset_key=True)
-        self.connection_var.set(f"{request['provider']} 接続済み / {len(models)}モデル")
-        self._set_llm_idle("LLM 待機中","接続確認が完了しました")
+        self.connection_var.set(i18n.t('u5.connected_models', provider=request['provider'], count=len(models)))
+        self._set_llm_idle(i18n.t('u5.llm_idle'),i18n.t('u5.connection_checked'))
         self._refresh_operation_states()
         if callback and not self._closing: self.after_idle(callback)
 
@@ -9730,8 +9692,8 @@ class App(BaseTk):
         request=self._llm_preflight_request
         if not request or payload.get("token")!=request.get("token"): return
         self.llm_preflight_thread=None; self._refresh_operation_states()
-        error=str(payload.get("error") or "LLM接続確認に失敗しました")
-        record_error("LLM開始前接続確認",detail=f"{request['context']}: {error}")
+        error=str(payload.get("error") or i18n.t('u5.connection_failed'))
+        record_error(i18n.t('u5.preflight_error'),detail=f"{request['context']}: {error}")
         self._show_llm_connection_alert(request["provider"],request["url"],request["model"],error,
                                         context=request["context"],retry_command=self._retry_llm_preflight,force=True)
 
@@ -9739,9 +9701,9 @@ class App(BaseTk):
         label=self.provider_var.get()
         key = self.api_key_var.get().strip() or core.env_api_key_for_provider(label)
         if core.normalize_provider(label) in {"openai","anthropic","gemini","openai_compat"} and not key:
-            self.connection_var.set(f"{label}: APIキーが未設定です")
+            self.connection_var.set(i18n.t('u5.missing_api_key', label=label))
         else:
-            self.connection_var.set(f"{label} 接続確認中…")
+            self.connection_var.set(i18n.t('u5.checking_connection', provider=label))
         provider = self.provider_var.get()
         url = self.url_var.get().strip()
         api_key = self.api_key_var.get().strip()
@@ -9752,7 +9714,7 @@ class App(BaseTk):
         try:
             models=core.list_models(provider,url,timeout=8,api_key=api_key)
             if core.normalize_provider(provider) in {"ollama","lmstudio"} and not models:
-                raise RuntimeError("接続には成功しましたが、読み込み済みのモデルがありません")
+                raise RuntimeError(i18n.t('u5.no_loaded_models'))
             self.events.put(("models",models))
         except Exception as e:
             self.events.put(("model_error",{"provider":provider,"url":url,"model":model,"error":str(e)}))
@@ -11309,7 +11271,7 @@ class App(BaseTk):
         provider = payload.get("provider", "")
         model = payload.get("model", "")
         received = datetime.now().strftime("%H:%M:%S")
-        meta = f"{received} / {provider} / {model} / {len(content):,}文字"
+        meta = i18n.t('u5.response_meta', received=received, provider=provider, model=model, count=len(content))
         if monitor:
             self.monitor_llm_last_response = content
             self.monitor_llm_response_meta = meta
@@ -11323,7 +11285,7 @@ class App(BaseTk):
         widget.config(state="normal")
         widget.delete("1.0", "end")
         # 常設欄は巨大応答で画面を重くしないよう末尾8,000文字を表示。全文は別窓で確認可能。
-        preview = content if len(content) <= 8000 else "…（前半省略）…\n" + content[-8000:]
+        preview = content if len(content) <= 8000 else i18n.t('u5.response_truncated', content=content[-8000:])
         widget.insert("1.0", preview)
         widget.see("end")
         widget.config(state="disabled")
@@ -11331,13 +11293,13 @@ class App(BaseTk):
     def _clear_llm_response(self, monitor=False):
         if monitor:
             self.monitor_llm_last_response = ""
-            self.monitor_llm_response_meta = "応答待機中"
-            self.monitor_response_meta_var.set("応答待機中")
+            self.monitor_llm_response_meta = i18n.t('u5.waiting_response')
+            self.monitor_response_meta_var.set(i18n.t('u5.waiting_response'))
             widget = self.monitor_response_text
         else:
             self.translation_llm_last_response = ""
-            self.translation_llm_response_meta = "応答待機中"
-            self.translation_response_meta_var.set("応答待機中")
+            self.translation_llm_response_meta = i18n.t('u5.waiting_response')
+            self.translation_response_meta_var.set(i18n.t('u5.waiting_response'))
             widget = self.translation_response_text
         widget.config(state="normal"); widget.delete("1.0", "end"); widget.config(state="disabled")
 
@@ -11345,10 +11307,10 @@ class App(BaseTk):
         content = self.monitor_llm_last_response if monitor else self.translation_llm_last_response
         meta = self.monitor_llm_response_meta if monitor else self.translation_llm_response_meta
         if not content:
-            messagebox.showinfo(APP_NAME, "まだLLM応答はありません。")
+            messagebox.showinfo(APP_NAME, i18n.t('u5.no_response'))
             return
         win = tk.Toplevel(self)
-        win.title(("探索用" if monitor else "翻訳用") + "LLM 応答全文")
+        win.title(i18n.t('u5.discovery_response_title') if monitor else i18n.t('u5.translation_response_title'))
         win.geometry("900x650")
         ttk.Label(win, text=meta, padding=(10,8)).pack(fill="x")
         frame=ttk.Frame(win, padding=(10,0,10,10)); frame.pack(fill="both", expand=True)
@@ -11373,24 +11335,24 @@ class App(BaseTk):
             self.llm_banner.config(bg="#d97706")
             self.llm_status_label.config(bg="#d97706",fg="white")
             self.llm_detail_label.config(bg="#d97706",fg="white")
-            op=self.llm_operation or "LLM処理"
-            self.llm_status_var.set(f"● LLM 動作中 — {op}")
-            self.llm_detail_var.set(f"{provider} / {model} — 応答を待っています")
+            op=self.llm_operation or i18n.t('u5.llm_task')
+            self.llm_status_var.set(i18n.t('u5.llm_running', op=op))
+            self.llm_detail_var.set(i18n.t('u5.llm_waiting', provider=provider, model=model))
             self.llm_stop_btn.config(state="normal")
             self.after(250,self._update_llm_elapsed)
         elif state=="retry":
-            self.llm_status_var.set(f"● LLM 再試行中 — {self.llm_operation or 'LLM処理'}")
-            self.llm_detail_var.set(f"{provider} / {model} — 再試行 {payload.get('attempt',0)}/{payload.get('retries',0)}")
+            self.llm_status_var.set(i18n.t('u5.llm_retrying', operation=self.llm_operation or i18n.t('u5.llm_task')))
+            self.llm_detail_var.set(i18n.t('u5.llm_retry_detail', provider=provider, model=model, attempt=payload.get('attempt', 0), retries=payload.get('retries', 0)))
         elif state=="end":
             self.llm_active_ids.discard(activity_id)
             self.llm_busy_count=len(self.llm_active_ids)
             if self.llm_busy_count==0:
-                self._set_llm_idle("LLM 待機中", "直前のLLM処理が終了しました")
+                self._set_llm_idle(i18n.t('u5.llm_idle'), i18n.t('u5.llm_finished'))
             error=str(payload.get("error") or "")
             if payload.get("success") is False and _is_llm_connection_alert_error(error):
                 self._show_llm_connection_alert(self.provider_var.get(),self.url_var.get().strip(),
                                                 self.model_var.get().strip(),error,
-                                                context=self.llm_operation or "LLM処理",cancel_command=self.stop_current_llm)
+                                                context=self.llm_operation or i18n.t('u5.llm_task'),cancel_command=self.stop_current_llm)
             elif payload.get("success") is True:
                 self._llm_connection_alert_key=""
 
@@ -11398,11 +11360,13 @@ class App(BaseTk):
         if self.llm_busy_count<=0 or self.llm_busy_since is None: return
         import time
         secs=max(0,int(time.time()-self.llm_busy_since))
-        base=self.llm_detail_var.get().split(" / 経過 ")[0]
-        self.llm_detail_var.set(f"{base} / 経過 {secs}秒")
+        base=self.llm_detail_var.get().split(i18n.lookup("u5.elapsed").split("{base}", 1)[1].split("{seconds}", 1)[0])[0]
+        self.llm_detail_var.set(i18n.t('u5.elapsed', base=base, seconds=secs))
         self.after(1000,self._update_llm_elapsed)
 
-    def _set_llm_idle(self,status="LLM 待機中",detail="LLM処理は実行されていません"):
+    def _set_llm_idle(self,status=None,detail=None):
+        if status is None: status=i18n.t("u5.llm_idle")
+        if detail is None: detail=i18n.t("u5.llm_not_running")
         self.llm_busy_count=0; self.llm_active_ids.clear(); self.llm_busy_since=None
         self.llm_status_var.set(status); self.llm_detail_var.set(detail)
         self.llm_banner.config(bg="#e5e7eb")
@@ -11418,21 +11382,21 @@ class App(BaseTk):
             self.stop_chinese_basis_translation(); return
         if getattr(self,"qa_repair_controller",None) and self.qa_repair_thread and self.qa_repair_thread.is_alive():
             self.qa_repair_controller.request_stop(save=False)
-            self.llm_status_var.set("QA自動修正 停止要求済み")
-            self.llm_detail_var.set("現在のAPI/LLM応答完了後、安全な位置で停止します")
+            self.llm_status_var.set(i18n.t('u5.qa_stop_requested'))
+            self.llm_detail_var.set(i18n.t('u5.safe_stop_note'))
             self.llm_stop_btn.config(state="disabled")
             return
         if self.benchmark_controller and getattr(self,"benchmark_worker",None) and self.benchmark_worker.is_alive():
             self.stop_benchmark(); return
         if self.diff_controller:
             self.diff_controller.request_stop(save=False)
-            self.diff_message_var.set("差分翻訳の停止を要求しました。現在のLLM応答完了後に停止します。")
-            self.llm_detail_var.set("停止要求済み — 現在のAPI/LLM応答完了を待っています")
+            self.diff_message_var.set(i18n.t('u5.diff_stop_requested'))
+            self.llm_detail_var.set(i18n.t('u5.waiting_stop'))
             return
         if self.proofread_controller:
             self.proofread_controller.request_stop(save=False)
-            self.issue_text.set("AI校正の停止を要求しました。現在のLLM応答完了後に停止します。")
-            self.llm_detail_var.set("停止要求済み — 現在のAPI/LLM応答完了を待っています")
+            self.issue_text.set(i18n.t('u5.proofread_stop_requested'))
+            self.llm_detail_var.set(i18n.t('u5.waiting_stop'))
 
     # ---------------- monitor/research LLM activity ----------------
     def _handle_monitor_llm_activity(self, payload, operation="未翻訳Mod探索"):
