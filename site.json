@@ -32,6 +32,7 @@
     {"name": "Hearts of Iron IV", "langs": ["l_english", "l_french", "l_german", "l_spanish", "l_japanese", "l_korean", "l_polish", "l_braz_por", "l_russian", "l_simp_chinese"]},
     {"name": "Stellaris", "langs": ["l_english", "l_french", "l_german", "l_spanish", "l_japanese", "l_korean", "l_polish", "l_braz_por", "l_russian", "l_simp_chinese"]},
     {"name": "Crusader Kings III", "langs": ["l_english", "l_french", "l_german", "l_spanish", "l_japanese", "l_korean", "l_polish", "l_russian", "l_simp_chinese"]},
+    {"name": "Imperator: Rome", "langs": ["l_english", "l_french", "l_german", "l_spanish", "l_russian", "l_simp_chinese"]},
     {"name": "Europa Universalis IV", "langs": ["l_english", "l_french", "l_german", "l_spanish"]}
   ],
 
