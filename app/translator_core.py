@@ -179,6 +179,11 @@ PROTECT_RE = re.compile('(' + '|'.join(PROTECT_PATTERNS) + ')')
 _SPACING_TOKEN_RE = None
 
 
+def _is_katakana_word_char(character: str) -> bool:
+    """名前の一部になるカタカナ（長音「ー」を含む。中黒「・」と記号は含めない）。"""
+    return len(character) == 1 and ("\u30a1" <= character <= "\u30fa" or character in "ーヽヾ")
+
+
 def normalize_cjk_spacing(text: str, target_lang: str) -> tuple[str, int]:
     """Remove ASCII spaces at CJK boundaries without altering protected tokens."""
     if not TARGET_LANGUAGES.get(target_lang, {}).get("remove_cjk_spaces", False):
@@ -219,6 +224,10 @@ def normalize_cjk_spacing(text: str, target_lang: str) -> tuple[str, int]:
             if ((left == "cjk" and right in {"cjk", "alnum", "variable", "color_end"})
                     or (right == "cjk" and left in {"cjk", "alnum", "variable", "color_start"})):
                 removed += len(piece)
+                # カタカナの語どうしの空白（外国の名前の区切り。例「ブリストル ブレニム」）は、取らずに中黒「・」にする（著者の判断）。
+                if (left == right == "cjk" and _is_katakana_word_char(atoms[index - 1][1])
+                        and _is_katakana_word_char(atoms[index + 1][1])):
+                    output.append("・")
                 continue
         output.append(piece)
     return "".join(output), removed

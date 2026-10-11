@@ -221,3 +221,16 @@ def test_hoi4_icons_without_closing_pound_keep_their_terminating_space():
     for text in ("£trigger_no 特別計画が研究されている", "£KR_game_rule_flag_LKT  汪主席", "£pol_idea 影響"):
         assert core.normalize_cjk_spacing(text, "japanese") == (text, 0)
     assert core.normalize_cjk_spacing("£gold£ 金貨", "japanese") == ("£gold£金貨", 1)
+
+
+def test_space_between_katakana_words_becomes_a_middle_dot():
+    """著者の判断：カタカナの語どうしの空白は取らずに「・」にする。英数字・漢字・ひらがなの隣は今までどおり詰める。"""
+    assert core.normalize_cjk_spacing("ブリストル ブレニム", "japanese") == ("ブリストル・ブレニム", 1)
+    assert core.normalize_cjk_spacing("フェアリー  バトル", "japanese") == ("フェアリー・バトル", 2)
+    assert core.normalize_cjk_spacing("フェアリー ・バトル", "japanese") == ("フェアリー・バトル", 1)
+    assert core.normalize_cjk_spacing("三菱 A5M", "japanese") == ("三菱A5M", 1)
+    assert core.normalize_cjk_spacing("フォッカー G.III", "japanese") == ("フォッカーG.III", 1)
+    assert core.normalize_cjk_spacing("ホンジュラス 国家方針", "japanese") == ("ホンジュラス国家方針", 1)
+    assert core.normalize_cjk_spacing("債務 危機", "japanese") == ("債務危機", 1)
+    # 簡体字中国語にはカタカナが無いので影響しない。韓国語は何もしない
+    assert core.normalize_cjk_spacing("ブリストル ブレニム", "korean") == ("ブリストル ブレニム", 0)
