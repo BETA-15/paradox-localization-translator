@@ -277,7 +277,76 @@ SNAPSHOTS = json.loads(r'''
   ["u9.missing_output.braz_por","対応するポルトガル語（ブラジル）の出力ファイルがありません",{}],
   ["u9.missing_output.russian","対応するロシア語の出力ファイルがありません",{}],
   ["u9.missing_output.simp_chinese","対応する簡体字中国語の出力ファイルがありません",{}],
-  ["u9.missing_output.turkish","対応するトルコ語の出力ファイルがありません",{}]
+  ["u9.missing_output.turkish","対応するトルコ語の出力ファイルがありません",{}],
+  ["u9.column_translation_match.target","日本語化Mod側の一致率",{"target_name":"日本語"}],
+  ["u9.column_translation_weighted.target","重み付き一致率（日本語化Mod側）",{"target_name":"日本語"}],
+  ["u9.gap_missing_target","日本語キーなし",{"target_name":"日本語"}],
+  ["u9.gap_foreign_target","日本語訳の原文/外国語残り",{"target_name":"日本語"}],
+  ["u9.mod_no_other_sources","sampleには判定対象となる日本語以外の原文ローカライズが見つかりませんでした。",{"mod_name":"sample","target_name":"日本語"}],
+  ["u9.game_language_separator","・",{}],
+  ["u9.gap_chinese_only.target","簡体字中国語にのみ存在するキーのうち、日本語訳が必要な sample件が欠如",{"count":"sample","target_name":"日本語"}],
+  ["u9.gap_english_only.target","英語にのみ存在するキーのうち、日本語訳が必要な sample件が欠如",{"count":"sample","target_name":"日本語"}],
+  ["u9.legacy_base_no_penalty.target","日本語化Mod側から見たゲーム本体キー一致率 2.5% (sample/sample) / 70%未満 → 減点なし",{"percent":2.5,"matched":"sample","total":"sample","target_name":"日本語"}],
+  ["u9.legacy_base_penalty.target","日本語化Mod側から見たゲーム本体キー一致率 2.5% (sample/sample) / 70%以上 → 本体和訳修正の可能性が高いため 2.5点",{"percent":2.5,"matched":"sample","total":"sample","points":2.5,"target_name":"日本語"}],
+  ["u9.legacy_candidate_coverage.target","参考: 日本語化Mod側一致率 2.5% (sample/sample)",{"percent":2.5,"matched":"sample","total":"sample","target_name":"日本語"}],
+  ["u9.legacy_exception_gate.target","日本語localization専用の例外ゲート: 日本語化Mod側一致率 2.5% / 完全一致 sampleキー → 関係判定対象",{"percent":2.5,"matched":"sample","target_name":"日本語"}],
+  ["u9.legacy_structure_score.target","構成評価 sample: 日本語YAML sample / 他言語YAML sample / localization比率 2.5% / 非localization sampleファイル → 2.5点",{"kind":"sample","japanese_file_count":"sample","other_language_file_count":"sample","localization_percent":2.5,"non_localization_file_count":"sample","points":2.5,"target_name":"日本語"}],
+  ["u9.manual_relation_override.target","手動例外: この日本語化Modと元Modの対応関係をユーザーが指定",{"target_name":"日本語"}],
+  ["u9.manual_translation_override.target","手動例外: このModを日本語化Modとして固定（対応元は自動判定）",{"target_name":"日本語"}],
+  ["u9.mod_external_also.target","別Mod『sample』にも日本語化があります。",{"translation_mod_name":"sample","target_name":"日本語"}],
+  ["u9.mod_external_complete.target","sampleには日本語化Mod『sample』があり、完全な日本語化を確認できました。",{"mod_name":"sample","translation_mod_name":"sample","target_name":"日本語"}],
+  ["u9.mod_external_gaps_chinese_only.target","sampleには日本語化Mod『sample』がありますが、翻訳に欠損があります（4件）。 簡体字中国語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如。",{"name":"sample","gap_count":4,"mod":"sample","chinese_only":1,"target_name":"日本語"}],
+  ["u9.mod_external_gaps_chinese_only_other.target","sampleには日本語化Mod『sample』がありますが、翻訳に欠損があります（4件）。 簡体字中国語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如 / その他の翻訳不足 1件。",{"name":"sample","gap_count":4,"mod":"sample","chinese_only":1,"other":1,"target_name":"日本語"}],
+  ["u9.mod_external_gaps_chinese_only_shared.target","sampleには日本語化Mod『sample』がありますが、翻訳に欠損があります（4件）。 簡体字中国語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如 / 英語・簡体字中国語の共通キーで 1件が欠如または未翻訳。",{"name":"sample","gap_count":4,"mod":"sample","chinese_only":1,"shared":1,"target_name":"日本語"}],
+  ["u9.mod_external_gaps_chinese_only_shared_other.target","sampleには日本語化Mod『sample』がありますが、翻訳に欠損があります（4件）。 簡体字中国語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如 / 英語・簡体字中国語の共通キーで 1件が欠如または未翻訳 / その他の翻訳不足 1件。",{"name":"sample","gap_count":4,"mod":"sample","chinese_only":1,"shared":1,"other":1,"target_name":"日本語"}],
+  ["u9.mod_external_gaps_english_only.target","sampleには日本語化Mod『sample』がありますが、翻訳に欠損があります（4件）。 英語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如。",{"name":"sample","gap_count":4,"mod":"sample","english_only":1,"target_name":"日本語"}],
+  ["u9.mod_external_gaps_english_only_chinese_only.target","sampleには日本語化Mod『sample』がありますが、翻訳に欠損があります（4件）。 英語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如 / 簡体字中国語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如。",{"name":"sample","gap_count":4,"mod":"sample","english_only":1,"chinese_only":1,"target_name":"日本語"}],
+  ["u9.mod_external_gaps_english_only_chinese_only_other.target","sampleには日本語化Mod『sample』がありますが、翻訳に欠損があります（4件）。 英語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如 / 簡体字中国語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如 / その他の翻訳不足 1件。",{"name":"sample","gap_count":4,"mod":"sample","english_only":1,"chinese_only":1,"other":1,"target_name":"日本語"}],
+  ["u9.mod_external_gaps_english_only_chinese_only_shared.target","sampleには日本語化Mod『sample』がありますが、翻訳に欠損があります（4件）。 英語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如 / 簡体字中国語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如 / 英語・簡体字中国語の共通キーで 1件が欠如または未翻訳。",{"name":"sample","gap_count":4,"mod":"sample","english_only":1,"chinese_only":1,"shared":1,"target_name":"日本語"}],
+  ["u9.mod_external_gaps_english_only_chinese_only_shared_other.target","sampleには日本語化Mod『sample』がありますが、翻訳に欠損があります（4件）。 英語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如 / 簡体字中国語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如 / 英語・簡体字中国語の共通キーで 1件が欠如または未翻訳 / その他の翻訳不足 1件。",{"name":"sample","gap_count":4,"mod":"sample","english_only":1,"chinese_only":1,"shared":1,"other":1,"target_name":"日本語"}],
+  ["u9.mod_external_gaps_english_only_other.target","sampleには日本語化Mod『sample』がありますが、翻訳に欠損があります（4件）。 英語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如 / その他の翻訳不足 1件。",{"name":"sample","gap_count":4,"mod":"sample","english_only":1,"other":1,"target_name":"日本語"}],
+  ["u9.mod_external_gaps_english_only_shared.target","sampleには日本語化Mod『sample』がありますが、翻訳に欠損があります（4件）。 英語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如 / 英語・簡体字中国語の共通キーで 1件が欠如または未翻訳。",{"name":"sample","gap_count":4,"mod":"sample","english_only":1,"shared":1,"target_name":"日本語"}],
+  ["u9.mod_external_gaps_english_only_shared_other.target","sampleには日本語化Mod『sample』がありますが、翻訳に欠損があります（4件）。 英語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如 / 英語・簡体字中国語の共通キーで 1件が欠如または未翻訳 / その他の翻訳不足 1件。",{"name":"sample","gap_count":4,"mod":"sample","english_only":1,"shared":1,"other":1,"target_name":"日本語"}],
+  ["u9.mod_external_gaps_none.target","sampleには日本語化Mod『sample』がありますが、翻訳に欠損があります（4件）。 欠損なし。",{"name":"sample","gap_count":4,"mod":"sample","target_name":"日本語"}],
+  ["u9.mod_external_gaps_other.target","sampleには日本語化Mod『sample』がありますが、翻訳に欠損があります（4件）。 その他の翻訳不足 1件。",{"name":"sample","gap_count":4,"mod":"sample","other":1,"target_name":"日本語"}],
+  ["u9.mod_external_gaps_shared.target","sampleには日本語化Mod『sample』がありますが、翻訳に欠損があります（4件）。 英語・簡体字中国語の共通キーで 1件が欠如または未翻訳。",{"name":"sample","gap_count":4,"mod":"sample","shared":1,"target_name":"日本語"}],
+  ["u9.mod_external_gaps_shared_other.target","sampleには日本語化Mod『sample』がありますが、翻訳に欠損があります（4件）。 英語・簡体字中国語の共通キーで 1件が欠如または未翻訳 / その他の翻訳不足 1件。",{"name":"sample","gap_count":4,"mod":"sample","shared":1,"other":1,"target_name":"日本語"}],
+  ["u9.mod_no_translation.target","sampleというModは日本語翻訳がありません。日本語化Modも確認できませんでした。",{"mod_name":"sample","target_name":"日本語"}],
+  ["u9.mod_review_candidate.target","日本語化Mod候補『sample』を検出しましたが、関連度 2.5/100 のため自動関連付けしていません。",{"mod_name":"sample","score":2.5,"target_name":"日本語"}],
+  ["u9.mod_translated.target","sampleのModは日本語翻訳が確認できました。",{"mod_name":"sample","target_name":"日本語"}],
+  ["u9.mod_translated_fallback.target","sampleのModは日本語翻訳が確認できました。",{"mod_name":"sample","target_name":"日本語"}],
+  ["u9.mod_translation_gaps_chinese_only.target","sampleのModに翻訳の欠損箇所があります（4件）。 簡体字中国語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如。",{"name":"sample","gap_count":4,"chinese_only":1,"target_name":"日本語"}],
+  ["u9.mod_translation_gaps_chinese_only_other.target","sampleのModに翻訳の欠損箇所があります（4件）。 簡体字中国語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如 / その他の翻訳不足 1件。",{"name":"sample","gap_count":4,"chinese_only":1,"other":1,"target_name":"日本語"}],
+  ["u9.mod_translation_gaps_chinese_only_shared.target","sampleのModに翻訳の欠損箇所があります（4件）。 簡体字中国語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如 / 英語・簡体字中国語の共通キーで 1件が欠如または未翻訳。",{"name":"sample","gap_count":4,"chinese_only":1,"shared":1,"target_name":"日本語"}],
+  ["u9.mod_translation_gaps_chinese_only_shared_other.target","sampleのModに翻訳の欠損箇所があります（4件）。 簡体字中国語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如 / 英語・簡体字中国語の共通キーで 1件が欠如または未翻訳 / その他の翻訳不足 1件。",{"name":"sample","gap_count":4,"chinese_only":1,"shared":1,"other":1,"target_name":"日本語"}],
+  ["u9.mod_translation_gaps_english_only.target","sampleのModに翻訳の欠損箇所があります（4件）。 英語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如。",{"name":"sample","gap_count":4,"english_only":1,"target_name":"日本語"}],
+  ["u9.mod_translation_gaps_english_only_chinese_only.target","sampleのModに翻訳の欠損箇所があります（4件）。 英語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如 / 簡体字中国語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如。",{"name":"sample","gap_count":4,"english_only":1,"chinese_only":1,"target_name":"日本語"}],
+  ["u9.mod_translation_gaps_english_only_chinese_only_other.target","sampleのModに翻訳の欠損箇所があります（4件）。 英語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如 / 簡体字中国語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如 / その他の翻訳不足 1件。",{"name":"sample","gap_count":4,"english_only":1,"chinese_only":1,"other":1,"target_name":"日本語"}],
+  ["u9.mod_translation_gaps_english_only_chinese_only_shared.target","sampleのModに翻訳の欠損箇所があります（4件）。 英語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如 / 簡体字中国語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如 / 英語・簡体字中国語の共通キーで 1件が欠如または未翻訳。",{"name":"sample","gap_count":4,"english_only":1,"chinese_only":1,"shared":1,"target_name":"日本語"}],
+  ["u9.mod_translation_gaps_english_only_chinese_only_shared_other.target","sampleのModに翻訳の欠損箇所があります（4件）。 英語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如 / 簡体字中国語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如 / 英語・簡体字中国語の共通キーで 1件が欠如または未翻訳 / その他の翻訳不足 1件。",{"name":"sample","gap_count":4,"english_only":1,"chinese_only":1,"shared":1,"other":1,"target_name":"日本語"}],
+  ["u9.mod_translation_gaps_english_only_other.target","sampleのModに翻訳の欠損箇所があります（4件）。 英語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如 / その他の翻訳不足 1件。",{"name":"sample","gap_count":4,"english_only":1,"other":1,"target_name":"日本語"}],
+  ["u9.mod_translation_gaps_english_only_shared.target","sampleのModに翻訳の欠損箇所があります（4件）。 英語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如 / 英語・簡体字中国語の共通キーで 1件が欠如または未翻訳。",{"name":"sample","gap_count":4,"english_only":1,"shared":1,"target_name":"日本語"}],
+  ["u9.mod_translation_gaps_english_only_shared_other.target","sampleのModに翻訳の欠損箇所があります（4件）。 英語にのみ存在するキーのうち、日本語訳が必要な 1件が欠如 / 英語・簡体字中国語の共通キーで 1件が欠如または未翻訳 / その他の翻訳不足 1件。",{"name":"sample","gap_count":4,"english_only":1,"shared":1,"other":1,"target_name":"日本語"}],
+  ["u9.mod_translation_gaps_none.target","sampleのModに翻訳の欠損箇所があります（4件）。 欠損なし。",{"name":"sample","gap_count":4}],
+  ["u9.mod_translation_gaps_other.target","sampleのModに翻訳の欠損箇所があります（4件）。 その他の翻訳不足 1件。",{"name":"sample","gap_count":4,"other":1}],
+  ["u9.mod_translation_gaps_shared.target","sampleのModに翻訳の欠損箇所があります（4件）。 英語・簡体字中国語の共通キーで 1件が欠如または未翻訳。",{"name":"sample","gap_count":4,"shared":1}],
+  ["u9.mod_translation_gaps_shared_other.target","sampleのModに翻訳の欠損箇所があります（4件）。 英語・簡体字中国語の共通キーで 1件が欠如または未翻訳 / その他の翻訳不足 1件。",{"name":"sample","gap_count":4,"shared":1,"other":1}],
+  ["u9.relation_base_excluded.target","候補が本体キー80%以上・50キー以上の本体日本語化型で、明示的な関係証拠がないため除外",{"target_name":"日本語"}],
+  ["u9.relation_standalone_excluded.target","候補が原文と日本語を80%以上同梱する独立Mod型で、明示的な関係証拠がないため除外",{"target_name":"日本語"}],
+  ["u9.relation_weighted.target","情報量で重み付けした一致率（多くのModに共通するキーほど軽く数える）: 元Mod側 2.5% / 日本語化Mod側 2.5% → sample",{"source_percent":2.5,"candidate_percent":2.5,"level":"sample","target_name":"日本語"}],
+  ["u9.report_flag_explanation.target","「要確認」の印の意味：候補のみ＝自動では紐付けていない／一致が少ない＝元Modのキーのうち日本語化Modにもある割合（重み付き）が2%未満／名前が似ていない＝名前に共通の語が無い／複数に紐付き＝同じ日本語化Modが2つ以上の元Modに紐付いている（総合和訳なら正しいこともある）。",{"threshold_percent":2.5,"target_name":"日本語"}],
+  ["u9.report_multiple_sources.target","同じ日本語化Modが複数の元Modに紐付いている",{"target_name":"日本語"}],
+  ["u9.report_source_columns.target","| 要確認 | ゲーム | 元Mod | 元Modの保管場所 | 状態 | 紐付け先 | 紐付け先の保管場所 | 種別 | 点数 | 重み付き一致率（元Mod側） | 重み付き一致率（日本語化Mod側） |",{"target_name":"日本語"}],
+  ["u9.report_translation_columns.target","| 日本語化Mod | 保管場所 | 元Modの数 | 元Mod |",{"target_name":"日本語"}],
+  ["u9.report_translation_heading.target","## 日本語化Modごとの紐付け先",{"target_name":"日本語"}],
+  ["u9.structure_helper_only.target","日本語化補助ファイルのみ",{"target_name":"日本語"}],
+  ["u9.structure_helper_only_new.target","日本語化補助ファイルのみ",{"target_name":"日本語"}],
+  ["u9.structure_japanese_only.target","日本語localization専用（大幅加点）",{"target_name":"日本語"}],
+  ["u9.structure_japanese_only_new.target","日本語localization専用（大幅加点）",{"target_name":"日本語"}],
+  ["u9.external_english_skipped","翻訳先が日本語のため、英語のローカライズを持つだけでは翻訳Modを見分けられません。外部の翻訳Modの照合を省略し、Mod内の翻訳だけを調べました。",{"target_name":"日本語"}],
+  ["u9.report_target_match_field","日本語化Mod側の一致率",{"target_name":"日本語"}],
+  ["u9.report_target_weighted_field","重み付き一致率（日本語化Mod側）",{"target_name":"日本語"}],
+  ["u9.report_target_mod_field","日本語化Mod",{"target_name":"日本語"}]
 ]
 ''')
 
@@ -359,7 +428,7 @@ def test_analyze_missing_localization_rebuilds(monkeypatch, tmp_path):
     monkeypatch.setattr(core, "detect_mod_name", lambda path: "Test Mod")
     result = core.analyze_mod_translation_status(tmp_path)
     assert result["message"] == "Test Modのlocalizationフォルダを確認できませんでした。"
-    assert result["message_parts"] == [ui_status.message_part("u9.mod_localization_missing", mod_name="Test Mod")]
+    assert result["message_parts"] == [ui_status.message_part("u9.mod_localization_missing", mod_name="Test Mod", target_name="日本語")]
     i18n.set_ui_language("english")
     assert ui_status.display_message(result) == "Could not find Test Mod’s localization folder."
 
@@ -1324,11 +1393,24 @@ def test_analyzed_gap_messages_preserve_original_and_rebuild(monkeypatch, tmp_pa
     assert result["message"] == expected
     assert ui_status.build_message(result["message_parts"]) == expected
     fields = result["message_parts"][0]["fields"]
-    assert all(isinstance(value, int) or value in ("Test Mod", "Add-on") for value in fields.values())
+    assert fields["target_name"] == "日本語"
+    assert all(isinstance(value, int) or value in ("Test Mod", "Add-on")
+               for key, value in fields.items() if key != "target_name")
     saved = json.loads(json.dumps(result))
     i18n.set_ui_language("english")
-    assert ui_status.display_message(saved) != expected
-    assert "日本語" not in ui_status.display_message(saved)
+    english_reasons = {
+        "english_only": "1 English-only keys requiring 日本語 translation are missing",
+        "chinese_only": "1 Simplified-Chinese-only keys requiring 日本語 translation are missing",
+        "shared": "1 shared English/Simplified Chinese keys are missing or untranslated",
+        "other": "1 other translation gaps",
+    }
+    english_details = " / ".join(english_reasons[origin] for index, origin in enumerate(origins) if mask & (1 << index))
+    english_expected = (
+        f"Test Mod has a 日本語 translation mod, “Add-on”, but translations have gaps ({len(candidates)}). {english_details}."
+        if external else f"Test Mod has translation gaps ({len(candidates)}). {english_details}."
+    )
+    assert ui_status.display_message(saved) == english_expected
+    assert saved["message_parts"][0]["fields"] == fields
 
 
 def test_report_status_is_displayed_without_changing_stored_value():
