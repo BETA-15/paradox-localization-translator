@@ -44,4 +44,11 @@ STRINGS = {
     'performance_preset.stable': 'Stable ({batch} / {workers})',
     'performance_preset.standard': 'Standard ({batch} / {workers})',
     'performance_preset.fast': 'Fast ({batch} / {workers})',
+    'p0.reason.cancelled': 'Cancelled',
+    'p0.reason.no_gap_info': 'There is no gap information to write to the translation mod',
+    'p0.reason.no_gap_translation': 'No gap translations were found in the finished output',
+    'p0.filter.all_games': 'All games',
+    'p0.filter.all_mods': 'All mods',
+    'p0.filter.selected_mod': 'Selected mod: {mod}',
+    'p0.event.stopped': 'Stopped',
 }

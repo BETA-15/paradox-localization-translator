@@ -2227,11 +2227,15 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
     qa_backup_dir = (create_qa_repair_backup_dir(Path(qa_backup_root), "normal_translation")
                      if auto_qa and qa_backup_root else None)
 
-    def collect_file_error(path: Path, stage: str, exc: Exception, action: str = "スキップして継続"):
-        skipped = action.startswith("スキップ")
+    # 処置は ID で判断する（文は画面の言語で変わるため。第3段 2-5 章）。文は表示とログ用。
+    file_error_actions = {"skip_continue": "スキップして継続", "keep_result_continue": "翻訳結果を保持して継続"}
+
+    def collect_file_error(path: Path, stage: str, exc: Exception, action_id: str = "skip_continue"):
+        action = file_error_actions[action_id]
+        skipped = action_id == "skip_continue"
         row = {
             "file": str(path), "stage": stage, "error_type": type(exc).__name__,
-            "message": str(exc), "action": action, "skipped": skipped,
+            "message": str(exc), "action": action, "action_id": action_id, "skipped": skipped,
             "retryable": skipped,
         }
         file_errors.append(row)
@@ -2375,7 +2379,7 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
                 except StopRequested:
                     raise
                 except Exception as exc:
-                    collect_file_error(out, "翻訳後QA", exc, action="翻訳結果を保持して継続")
+                    collect_file_error(out, "翻訳後QA", exc, action_id="keep_result_continue")
             if controller:
                 controller.notify(kind="file_done", file=str(f), file_no=i, file_total=len(file_info))
                 if controller.stop_event.is_set():
@@ -5913,14 +5917,17 @@ def build_relation_report(results: Iterable[dict]) -> dict:
     for r in results or []:
         if not r.get("path"):
             continue
+        # 種別は ID（_kind_id）で判断する。「種別」の欄は表示とレポート用の文。
+        relation_kinds = {"auto": "自動で紐付け", "candidate": "候補（自動では紐付けず）", "": ""}
         if r.get("external_translation_mod"):
-            prefix, kind = "external_translation", "自動で紐付け"
+            prefix, kind_id = "external_translation", "auto"
             if r.get("external_translation_confidence") == "candidate":
-                kind = "候補（自動では紐付けず）"
+                kind_id = "candidate"
         elif r.get("translation_candidate_mod"):
-            prefix, kind = "translation_candidate", "候補（自動では紐付けず）"
+            prefix, kind_id = "translation_candidate", "candidate"
         else:
-            prefix, kind = "", ""
+            prefix, kind_id = "", ""
+        kind = relation_kinds[kind_id]
         get = (lambda k, d=None: r.get(f"{prefix}_{k}", d)) if prefix else (lambda k, d=None: d)
         target_path = str(get("path", "") or "")
         coverage = float(get("coverage", 0.0) or 0.0)
@@ -5936,6 +5943,7 @@ def build_relation_report(results: Iterable[dict]) -> dict:
             "紐付け先": str(get("mod", "") or ""),
             "紐付け先の保管場所": mod_location_kind(target_path),
             "種別": kind,
+            "_kind_id": kind_id,
             "点数": round(float(get("score", 0.0) or 0.0), 1) if prefix else "",
             "元Mod側の一致率": f"{coverage*100:.1f}%" if prefix else "",
             "日本語化Mod側の一致率": f"{precision*100:.1f}%" if prefix else "",
@@ -5958,7 +5966,7 @@ def build_relation_report(results: Iterable[dict]) -> dict:
         if not row["紐付け先"]:
             row["要確認"] = ""
             continue
-        if row["種別"].startswith("候補"):
+        if row["_kind_id"] == "candidate":
             flags.append("候補のみ（自動では紐付けていない）")
         if row["_coverage"] < RELATION_REPORT_LOW_COVERAGE:
             flags.append(f"元Modのキーとの一致が少ない（重み付き {row['重み付き一致率（元Mod側）']}）")
@@ -5966,9 +5974,9 @@ def build_relation_report(results: Iterable[dict]) -> dict:
         if related is False:
             flags.append("名前が似ていない")
         linked = by_target.get(row["紐付け先の場所"], [])
-        auto_links = [x for x in linked if x["種別"] == "自動で紐付け"]
+        auto_links = [x for x in linked if x["_kind_id"] == "auto"]
         # 自動の紐付けが2つ以上あるとき、または候補が「すでに別の元Modに使われている日本語化Mod」を指すとき。
-        if len(linked) > 1 and (len(auto_links) > 1 or row["種別"] != "自動で紐付け"):
+        if len(linked) > 1 and (len(auto_links) > 1 or row["_kind_id"] != "auto"):
             flags.append("同じ日本語化Modが複数の元Modに紐付いている")
         row["要確認"] = "、".join(flags)
 
@@ -5983,6 +5991,7 @@ def build_relation_report(results: Iterable[dict]) -> dict:
         })
     for row in rows:
         row.pop("_coverage", None)
+        row.pop("_kind_id", None)
     rows.sort(key=lambda x: (0 if x["要確認"] else 1, x["ゲーム"], x["元Mod"].lower()))
     return {"rows": rows, "by_translation": by_translation}
 

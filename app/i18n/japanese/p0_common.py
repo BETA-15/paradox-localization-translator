@@ -44,4 +44,11 @@ STRINGS = {
     'performance_preset.stable': '安定重視（{batch} / {workers}）',
     'performance_preset.standard': '標準（{batch} / {workers}）',
     'performance_preset.fast': '高速（{batch} / {workers}）',
+    'p0.reason.cancelled': 'キャンセル',
+    'p0.reason.no_gap_info': '日本語化Modへ反映する差分情報がありません',
+    'p0.reason.no_gap_translation': '完成済み出力に差分訳が見つかりません',
+    'p0.filter.all_games': 'すべてのゲーム',
+    'p0.filter.all_mods': 'すべてのMod',
+    'p0.filter.selected_mod': '選択Mod: {mod}',
+    'p0.event.stopped': '停止しました',
 }

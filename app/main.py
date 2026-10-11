@@ -1225,8 +1225,8 @@ class App(BaseTk):
         self.backup_restore_entry_map = {}
         self.backup_restore_summary_var = tk.StringVar(value="バックアップ未読込")
         self.backup_restore_detail_var = tk.StringVar(value="一覧からバックアップを選択してください。")
-        self.backup_restore_game_var = tk.StringVar(value="すべてのゲーム")
-        self.backup_restore_mod_var = tk.StringVar(value="すべてのMod")
+        self.backup_restore_game_var = tk.StringVar(value=t("p0.filter.all_games"))
+        self.backup_restore_mod_var = tk.StringVar(value=t("p0.filter.all_mods"))
         self.backup_restore_search_var = tk.StringVar(value="")
         # v0.11.56: restore-target resolution may need a large persisted Translation Status
         # snapshot. Keep one in-memory copy per refresh instead of reparsing the same JSON
@@ -4431,7 +4431,7 @@ Mod更新後だけ追加翻訳:
         self.backup_restore_reload_btn.pack(fill='x')
 
         action=ttk.Frame(right); action.pack(fill='x')
-        self.backup_restore_selected_mod_label=ttk.Label(action,text='選択Mod: すべてのMod',font=('',11,'bold'))
+        self.backup_restore_selected_mod_label=ttk.Label(action,text=t("p0.filter.selected_mod",mod=t("p0.filter.all_mods")),font=('',11,'bold'))
         self.backup_restore_selected_mod_label.pack(side='left',fill='x',expand=True)
         self.backup_restore_btn=ttk.Button(action,text='選択バックアップを復元',command=self._restore_selected_backup,state='disabled')
         self.backup_restore_btn.pack(side='right',padx=(8,0))
@@ -4607,7 +4607,7 @@ Mod更新後だけ追加翻訳:
         self.backup_restore_refresh_thread=None
         self.backup_restore_entries=list(entries or [])
         games=sorted({str(e.get('game') or 'ゲーム未特定') for e in self.backup_restore_entries},key=str.casefold)
-        game_values=['すべてのゲーム']+games
+        game_values=[t("p0.filter.all_games")]+games
         self.backup_restore_game_combo['values']=game_values
         if self.backup_restore_game_var.get() not in game_values:
             self.backup_restore_game_var.set(game_values[0])
@@ -4639,12 +4639,12 @@ Mod更新後だけ追加翻訳:
         return normalized_query in normalized_haystack
 
     def _refresh_backup_restore_mod_filter(self):
-        game=self.backup_restore_game_var.get() or 'すべてのゲーム'
+        game=self.backup_restore_game_var.get() or t("p0.filter.all_games")
         query=self.backup_restore_search_var.get().strip() if hasattr(self,'backup_restore_search_var') else ''
         mods=sorted({str(e.get('mod') or 'Mod') for e in self.backup_restore_entries
-                     if (game == 'すべてのゲーム' or str(e.get('game')) == game)
+                     if (game == t("p0.filter.all_games") or str(e.get('game')) == game)
                      and self._backup_restore_entry_matches_search(e,query)},key=str.casefold)
-        values=['すべてのMod']+mods
+        values=[t("p0.filter.all_mods")]+mods
         if hasattr(self,'backup_restore_mod_list'):
             current=self.backup_restore_mod_var.get()
             self.backup_restore_mod_list.delete(0,'end')
@@ -4673,7 +4673,7 @@ Mod更新後だけ追加翻訳:
             self.backup_restore_search_entry.focus_set()
 
     def _on_backup_restore_game_changed(self, _event=None):
-        self.backup_restore_mod_var.set('すべてのMod')
+        self.backup_restore_mod_var.set(t("p0.filter.all_mods"))
         self._refresh_backup_restore_mod_filter()
         self._render_backup_restore_entries()
 
@@ -4681,13 +4681,13 @@ Mod更新後だけ追加翻訳:
         if not hasattr(self,'backup_restore_tree'): return
         for iid in self.backup_restore_tree.get_children(): self.backup_restore_tree.delete(iid)
         self.backup_restore_entry_map={}
-        game=self.backup_restore_game_var.get() or 'すべてのゲーム'
-        mod=self.backup_restore_mod_var.get() or 'すべてのMod'
+        game=self.backup_restore_game_var.get() or t("p0.filter.all_games")
+        mod=self.backup_restore_mod_var.get() or t("p0.filter.all_mods")
         query=self.backup_restore_search_var.get().strip() if hasattr(self,'backup_restore_search_var') else ''
         visible=[]
         for e in self.backup_restore_entries:
-            if game != 'すべてのゲーム' and str(e.get('game')) != game: continue
-            if mod != 'すべてのMod' and str(e.get('mod')) != mod: continue
+            if game != t("p0.filter.all_games") and str(e.get('game')) != game: continue
+            if mod != t("p0.filter.all_mods") and str(e.get('mod')) != mod: continue
             if not self._backup_restore_entry_matches_search(e,query): continue
             visible.append(e)
         for idx,e in enumerate(visible):
@@ -4698,8 +4698,8 @@ Mod更新後だけ追加翻訳:
             target=str(e.get('target_root') or '復元先未特定')
             self.backup_restore_tree.insert('', 'end', iid=iid, values=(gen,created,e['kind'],e['state'],target,e['format']))
         scope=[]
-        if game != 'すべてのゲーム': scope.append(game)
-        if mod != 'すべてのMod': scope.append(mod)
+        if game != t("p0.filter.all_games"): scope.append(game)
+        if mod != t("p0.filter.all_mods"): scope.append(mod)
         suffix=(' / ' + ' → '.join(scope)) if scope else ''
         search_suffix=(f" / 検索: {query}" if query else '')
         self.backup_restore_summary_var.set(f'バックアップ: {len(visible)}件（全{len(self.backup_restore_entries)}件）{suffix}{search_suffix}')
@@ -7245,7 +7245,7 @@ Mod更新後だけ追加翻訳:
         patch_file = target_loc / "japanese" / "paradox_localization_translator_missing_l_japanese.yml"
         if confirm:
             if not messagebox.askyesno("不足翻訳の上書き", f"不足していた翻訳 {len(patch_values)}件だけを既存日本語本文へ追加します。\n\n対象: {target_root}\n\n既存の他キーは置き換えません。続行しますか？", icon="warning"):
-                return False, "キャンセル"
+                return False,t("p0.reason.cancelled")
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         backup_root, backup_meta = self._create_full_localization_snapshot(
             target_root, "不足分上書き", category="上書き", source_mod_name=item.get("mod_name", ""),
@@ -7427,7 +7427,7 @@ Mod更新後だけ追加翻訳:
                 "後順位Modの既存localization全体をバックアップしてから、完成済み翻訳で同名ファイルを更新します。\n"
                 "続行しますか？")
             if not messagebox.askyesno("警告 — 後順位日本語化Modへ上書き",warning,icon="warning"):
-                return False,"キャンセル"
+                return False,t("p0.reason.cancelled")
         stamp=datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         backup_root,_meta=self._create_full_localization_snapshot(
             ext_root,"同名ファイル競合・旧版日本語化Mod更新",category="上書き",source_mod_name=src_name,
@@ -7518,7 +7518,7 @@ Mod更新後だけ追加翻訳:
         if not ext_root.is_dir() or not ext_loc.is_dir():
             return False,"日本語化Modの場所を特定できません"
         if not gap_keys:
-            return False,"日本語化Modへ反映する差分情報がありません"
+            return False,t("p0.reason.no_gap_info")
         generated = self._generated_japanese_files(out_root)
         translations = {}
         for fp in generated:
@@ -7530,7 +7530,7 @@ Mod更新後だけ追加翻訳:
                 continue
         patch_values = {k: translations[k] for k in gap_keys if k in translations}
         if not patch_values:
-            return False,"完成済み出力に差分訳が見つかりません"
+            return False,t("p0.reason.no_gap_translation")
 
         ext_name = item.get("external_translation_mod") or ext_root.name
         src_name = item.get("mod_name") or Path(item.get("mod_root", "")).name
@@ -7543,9 +7543,9 @@ Mod更新後だけ追加翻訳:
                 "既存の日本語訳は維持し、欠損・未翻訳と判定されたキーだけ更新/追加します。\n"
                 "変更対象ファイルは実行前にバックアップします。\n続行しますか？")
             if not messagebox.askyesno("警告 — 日本語化Modへ差分上書き", warning, icon="warning"):
-                return False,"キャンセル"
+                return False,t("p0.reason.cancelled")
             if not messagebox.askyesno("最終確認", "日本語化Modへ不足分だけを書き込みます。本当に続行しますか？", icon="warning"):
-                return False,"キャンセル"
+                return False,t("p0.reason.cancelled")
 
         existing_key_file = {}
         for fp in self._generated_japanese_files(ext_loc):
@@ -7638,9 +7638,9 @@ Mod更新後だけ追加翻訳:
                 "既存ファイルは実行前にバックアップされます。\n"
                 "Mod更新・Steam Workshop更新時には上書き内容が失われる可能性があります。\n\n続行しますか？")
             if not messagebox.askyesno("警告 — Modへ直接上書き", warning, icon="warning"):
-                return False,"キャンセル"
+                return False,t("p0.reason.cancelled")
             if not messagebox.askyesno("最終確認", "本当に元のModへ書き込みますか？\nこの操作は対象ファイルを置き換えます。", icon="warning"):
-                return False,"キャンセル"
+                return False,t("p0.reason.cancelled")
 
         stamp=datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         backup_root, backup_meta = self._create_full_localization_snapshot(
@@ -7748,7 +7748,7 @@ Mod更新後だけ追加翻訳:
             if not self._closing: messagebox.showinfo(APP_NAME,f'上書きが完了しました。\n\n対象: {target_label}\n{reason}')
         else:
             self.progress_text.set('上書きできませんでした')
-            if reason not in {'キャンセル'} and not self._closing: messagebox.showinfo(APP_NAME,f'上書きできませんでした。\n{reason}')
+            if reason != t("p0.reason.cancelled") and not self._closing: messagebox.showinfo(APP_NAME,f'上書きできませんでした。\n{reason}')
 
     def _bulk_overwrite_queue_entries(self, entries, queue_kind="normal"):
         if self.bulk_overwrite_thread is not None:
@@ -7801,7 +7801,7 @@ Mod更新後だけ追加翻訳:
                         ok,reason=self._perform_full_translation_mod_overwrite(item,conflict_target,confirm=False,notify=False)
                     elif policy=='external' and item.get('external_translation_path') and _item_target_lang(item) == core.DEFAULT_TARGET_LANG:
                         ok,reason=self._perform_external_gap_overwrite(item,confirm=False,notify=False)
-                        if not ok and reason in {'日本語化Modへ反映する差分情報がありません','完成済み出力に差分訳が見つかりません'}:
+                        if not ok and reason in {t("p0.reason.no_gap_info"),t("p0.reason.no_gap_translation")}:
                             skipped+=1; details.append(f'{name}: スキップ ({reason})'); continue
                     else:
                         ok,reason=self._perform_source_mod_overwrite(item,confirm=False,notify=False)
@@ -11063,7 +11063,7 @@ Mod更新後だけ追加翻訳:
                 result=core.save_auto_glossary_candidates(glossary_path,candidates,preserve_existing=True,include_phrases=include_phrases)
                 self.events.put(("auto_glossary_done",result))
             except core.StopRequested:
-                self.events.put(("auto_glossary_error","停止しました"))
+                self.events.put(("auto_glossary_error",t("p0.event.stopped")))
             except Exception as exc:
                 self.events.put(("auto_glossary_error",str(exc)))
         self.auto_glossary_thread=threading.Thread(target=work,daemon=True,name="auto-glossary")
@@ -12419,7 +12419,7 @@ Mod更新後だけ追加翻訳:
                     self.auto_glossary_controller=None; self.auto_glossary_thread=None
                     self._set_llm_idle("LLM 待機中","自動用語作成を終了しました")
                     self.auto_glossary_status_var.set("自動用語作成: "+str(payload))
-                    if str(payload)!="停止しました" and not self._closing: messagebox.showerror(APP_NAME,"自動用語作成エラー: "+str(payload))
+                    if str(payload)!=t("p0.event.stopped") and not self._closing: messagebox.showerror(APP_NAME,"自動用語作成エラー: "+str(payload))
                 elif kind=="glossary_import_status":
                     self.auto_glossary_status_var.set(str(payload))
                 elif kind=="glossary_import_needs_fallback":

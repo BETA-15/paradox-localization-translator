@@ -70,3 +70,31 @@ def main(argv):
 
 if __name__ == "__main__":
     main(sys.argv[1:])
+
+
+def japanese_comparisons(path: Path) -> list[dict]:
+    """日本語の文字列と比べている所（==・!=・in・not in・startswith・endswith）。文で判断している所の洗い出しに使う。"""
+    source = Path(path).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    rows = []
+
+    def has_ja(node):
+        return any(isinstance(n, ast.Constant) and isinstance(n.value, str) and JAPANESE_RE.search(n.value)
+                   for n in ast.walk(node))
+
+    owners = {}
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for child in ast.walk(node):
+                owners.setdefault(id(child), node.name)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Compare):
+            if any(isinstance(op, (ast.Eq, ast.NotEq, ast.In, ast.NotIn)) for op in node.ops) and \
+                    (has_ja(node.left) or any(has_ja(c) for c in node.comparators)):
+                rows.append({"owner": owners.get(id(node), "<module>"), "line": node.lineno,
+                             "code": ast.get_source_segment(source, node)})
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and \
+                node.func.attr in ("startswith", "endswith") and any(has_ja(a) for a in node.args):
+            rows.append({"owner": owners.get(id(node), "<module>"), "line": node.lineno,
+                         "code": ast.get_source_segment(source, node)})
+    return rows
