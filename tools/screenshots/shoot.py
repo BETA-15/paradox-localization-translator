@@ -41,6 +41,10 @@ def run(app):
         print("NOT FOUND", label, flush=True)
     def entries(tab):
         return [w for w in walk(getattr(app, tab)) if w.winfo_class() in ("TEntry", "Entry")]
+    def s0():
+        app._append_queue(MOD); nb.select(app.tab_translate); cap(app, "translate")
+        nb.select(app.tab_models); cap(app, "model")
+    app.after(1500, s0)
     def s1():
         nb.select(app.tab_status); click("tab_status", "ゲーム/Mod場所を自動検出")
     app.after(3000, s1)

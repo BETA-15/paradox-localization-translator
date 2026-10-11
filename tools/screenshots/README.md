@@ -12,5 +12,5 @@ rm -rf $D
 ```
 
 `shoot.py` turns off the scan of external volumes, then drives the tabs on a timer and saves
-translate / survey / qa (and model, in the first version) as PNG into `$OUT`.
+translate / model / survey / qa as PNG into `$OUT`.
 Copy them to `assets/shots/<lang>/` (or `assets/shots/` for the shared English ones) and run `build.py`.
