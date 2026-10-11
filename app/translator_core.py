@@ -375,7 +375,7 @@ def glossary_file_problem(path: Path) -> str:
     problem = (
         f"対応していない形式です（{format_name}）。"
         'このアプリの用語集は {"原語": "訳語"} 形式のJSONです。'
-        "ParaTranz などから書き出した用語集はまだ読み込めません。"
+        "ParaTranz の用語集は『ParaTranz の用語集を取り込む』から取り込めます。"
     )
     if isinstance(data, list) and data and isinstance(data[0], dict):
         if "term" in data[0] and "translation" in data[0]:
@@ -3125,6 +3125,132 @@ def resolve_auto_glossary_conflicts(provider: str, url: str, model: str, candida
 def glossary_variants_path(glossary_path: Path) -> Path:
     glossary_path = Path(glossary_path)
     return glossary_path.with_name(glossary_path.stem + "_variants.json")
+
+
+def is_paratranz_glossary(data) -> bool:
+    return isinstance(data, list) and all(
+        isinstance(item, dict) and "term" in item and "translation" in item
+        for item in data
+    )
+
+
+def classify_paratranz_glossary(items: list) -> dict:
+    """Classify entries before importing; counts are exclusive by rule priority.
+
+    terms counts all accepted keys, including variants. spaces_fixed and
+    duplicates count source occurrences, including variants.
+    """
+    if not is_paratranz_glossary(items):
+        raise ValueError("ParaTranz の用語集（term / translation を持つリスト）ではありません。")
+    result = {"terms": {}, "meta": {}, "rules": [], "short_terms": [], "note_rules": []}
+    counts = dict.fromkeys(("items", "terms", "from_variants", "rules", "affixes", "symbols",
+                           "short_terms", "spaces_fixed", "duplicates", "note_rules"), 0)
+    counts["items"] = len(items)
+    seen = set()
+
+    def add_source(raw, item, variant_of=None):
+        if not isinstance(raw, str) or not raw.strip() or not isinstance(item["translation"], str):
+            raise ValueError("原語と訳語は文字列で、原語は空白だけでない必要があります。")
+        source = raw.strip()
+        counts["spaces_fixed"] += int(source != raw)
+        if source in seen:
+            counts["duplicates"] += 1
+            return
+        seen.add(source)
+        translation = item["translation"]
+        note = item.get("note", "")
+        note = note if isinstance(note, str) else ""
+        entry = {"term": source, "translation": translation, "note": note}
+        if translation.startswith("※"):
+            category, reason = "rules", "訳語が「※」で始まるルールの項目"
+        elif source.startswith("-") or source.endswith("-"):
+            category, reason = "affixes", "原語が「-」で始まるか終わる接辞の項目"
+        elif not any(character.isalnum() and re.fullmatch(
+                r"[A-Za-z0-9\u1100-\u11ff\u3000-\u312f\u3130-\u318f\u31a0-\u31bf"
+                r"\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff\ua960-\ua97f\uac00-\ud7ff"
+                r"\uf900-\ufaff\uff66-\uffdc\U00020000-\U000323af]", character) for character in source):
+            category, reason = "symbols", "英字・数字・CJKの文字がない記号だけの項目"
+        else:
+            category, reason = None, None
+        if category:
+            counts[category] += 1
+            result["rules"].append({**entry, "reason": reason})
+            return
+        result["terms"][source] = translation
+        result["meta"][source] = {
+            "source_kind": "import:paratranz", "paratranz_id": item.get("id"),
+            "note": note, "pos": item.get("pos", ""),
+            "case_sensitive": item.get("caseSensitive", False),
+            "variant_of": variant_of, "project": item.get("project"),
+        }
+        counts["terms"] += 1
+        counts["from_variants"] += int(variant_of is not None)
+        if re.fullmatch(r"[A-Za-z]{1,2}", source):
+            result["short_terms"].append(entry)
+            counts["short_terms"] += 1
+        if any(word in note for word in ("ルール", "入れないように", "しないように", "禁止")):
+            result["note_rules"].append({**entry, "reason": "note にルールがある（自動でプロンプトには入れません）"})
+            counts["note_rules"] += 1
+
+    for item in items:
+        add_source(item["term"], item)
+        variants = item.get("variants") or []  # ParaTranz は variants が無い語を null で書き出す
+        if not isinstance(variants, list):
+            variants = []
+        for variant in variants:
+            if isinstance(variant, str) and variant.strip():
+                add_source(variant, item, item["term"].strip())
+    result["counts"] = counts
+    return result
+
+
+def glossary_notation_rules_path(glossary_path: Path) -> Path:
+    glossary_path = Path(glossary_path)
+    return glossary_path.with_name(glossary_path.stem + "_notation_rules.json")
+
+
+def save_paratranz_import(glossary_path, classified, mode) -> dict:
+    if mode not in ("merge", "replace"):
+        raise ValueError("取り込み方法は merge または replace を指定してください。")
+    glossary_path = Path(glossary_path)
+    with _JSON_SAVE_LOCK:
+        problem = glossary_file_problem(glossary_path)
+        if problem:
+            raise ValueError(problem + " 対応していない形式のファイルには上書きしません。")
+        existing = load_glossary(glossary_path)
+        glossary = dict(existing) if mode == "merge" else {}
+        metadata = load_json(glossary_variants_path(glossary_path), {})
+        if not isinstance(metadata, dict):
+            raise ValueError("用語の補助ファイルが辞書形式ではないため上書きしません。")
+        if mode == "replace":
+            metadata = {source: value for source, value in metadata.items() if source in classified["terms"]}
+        added, updated, conflicts = [], [], []
+        for source, translation in classified["terms"].items():
+            if mode == "merge" and source in existing and existing[source] != translation:
+                conflicts.append({"term": source, "existing": existing[source], "incoming": translation})
+                continue
+            if source not in existing:
+                added.append(source)
+            elif existing[source] != translation:
+                updated.append(source)
+            glossary[source] = translation
+            previous = metadata.get(source, {})
+            metadata[source] = {**(previous if isinstance(previous, dict) else {}), **classified["meta"][source]}
+        rules_path = glossary_notation_rules_path(glossary_path)
+        notation = load_json(rules_path, {}) if mode == "merge" else {}
+        if not isinstance(notation, dict) or any(not isinstance(notation.get(key, []), list) for key in ("rules", "note_rules")):
+            raise ValueError("表記ルールのファイルの形式が不正なため上書きしません。")
+        for key in ("rules", "note_rules"):
+            entries = list(notation.get(key, []))
+            for entry in classified[key]:
+                if entry not in entries:
+                    entries.append(entry)
+            notation[key] = entries
+        save_glossary(glossary_path, glossary)
+        save_json(glossary_variants_path(glossary_path), metadata)
+        save_json(rules_path, notation)
+    return {"added": added, "updated": updated, "conflicts": conflicts,
+            "counts": {"added": len(added), "updated": len(updated), "conflicts": len(conflicts)}}
 
 
 def save_auto_glossary_candidates(glossary_path: Path, candidates: List[dict], preserve_existing: bool = True,
