@@ -49,7 +49,7 @@ def test_append_queue_records_the_selected_target(tmp_path):
     mod = tmp_path / "mod"; mod.mkdir()
     saved = []
     state = SimpleNamespace(queue_items=[], target_lang_var=SimpleNamespace(get=lambda: "german"),
-                            _normal_queue_locked=lambda: False, _default_output=lambda p: tmp_path / "out",
+                            _normal_queue_locked=lambda: False, _default_output=lambda p, *_a: tmp_path / "out",
                             _new_cache_path=lambda p: tmp_path / "cache.json", _refresh_queue_tree=lambda: None,
                             _save_workspace_state=saved.append)
     main.App._append_queue(state, mod)
@@ -91,3 +91,36 @@ def test_items_from_translation_status_stay_japanese(tmp_path):
     state._append_queue = types.MethodType(main.App._append_queue, state)
     item = main.App._queue_mod_status_result(state, {"localization": str(loc), "path": str(loc.parent), "mod": "Mod"})
     assert item["target_lang"] == "japanese"
+
+
+def test_output_folder_name_follows_the_target_language(tmp_path):
+    """v0.12.1：日本語以外の出力先が「…_japanese」になり、同じ Mod の日本語と出力先を共有していた。"""
+    state = SimpleNamespace(_output_identity_source=lambda p: p)
+    mod = tmp_path / "mods" / "Example"; mod.mkdir(parents=True)
+    ja = main.App._isolated_output_path(state, mod, tmp_path / "out", "Example")
+    fr = main.App._isolated_output_path(state, mod, tmp_path / "out", "Example", target_lang="french")
+    assert ja.name.endswith("_japanese") and fr.name.endswith("_french")
+    assert ja.name[:-len("_japanese")] == fr.name[:-len("_french")]  # 言語以外は同じ（Mod ごとに分ける部分）
+    assert main.App._isolated_output_path(state, mod, tmp_path / "out", "Example", target_lang="klingon") == ja
+
+
+def test_queue_items_get_a_per_language_output_and_old_items_are_corrected(tmp_path):
+    mod = tmp_path / "Example"; mod.mkdir()
+    state = SimpleNamespace(queue_items=[], target_lang_var=SimpleNamespace(get=lambda: "french"),
+                            normal_output_var=SimpleNamespace(get=lambda: str(tmp_path / "out")),
+                            _normal_queue_locked=lambda: False, _new_cache_path=lambda p: tmp_path / "c.json",
+                            _refresh_queue_tree=lambda: None, _save_workspace_state=lambda *_a: None,
+                            _output_identity_source=lambda p: p)
+    state._isolated_output_path = types.MethodType(main.App._isolated_output_path, state)
+    state._default_output = types.MethodType(main.App._default_output, state)
+    main.App._append_queue(state, mod)
+    main.App._append_queue(state, mod, target_lang="japanese")
+    fr, ja = state.queue_items
+    assert fr["output"].endswith("_french") and ja["output"].endswith("_japanese") and fr["output"] != ja["output"]
+    # v0.12.0 で保存したフランス語の項目（出力先が _japanese）は、次に始めるときに正しい出力先に直る
+    old = {"input": str(mod), "mod_name": "Example", "target_lang": "french", "output_isolated_v2": True,
+           "output": ja["output"]}
+    main.App._ensure_isolated_item_output(state, old)
+    assert old["output"] == fr["output"]
+    main.App._ensure_isolated_item_output(state, ja)
+    assert ja["output"].endswith("_japanese")
