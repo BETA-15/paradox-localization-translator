@@ -265,10 +265,10 @@ def test_variants_null_is_treated_as_no_variants():
     assert result["terms"] == {"Fleet": "艦隊", "Army": "陸軍", "Armies": "陸軍"}
 
 
-def test_real_paratranz_excerpt_boundaries():
-    """利用者の ParaTranz の用語集から境目の項目だけを抜き出したもの（uid・updatedBy は削除）。"""
+def test_paratranz_boundary_sample():
+    """ParaTranz の書き出しと同じ形の架空のデータ。実物の境目の性質（ルール・接辞・記号・前後の空白・重なり・短い語・variants が null）をそろえてある。"""
     import json as _json
-    data = _json.loads((Path(__file__).parent / "fixtures" / "paratranz_real_excerpt.json").read_text(encoding="utf-8"))
+    data = _json.loads((Path(__file__).parent / "fixtures" / "paratranz_boundary_sample.json").read_text(encoding="utf-8"))
     result = core.classify_paratranz_glossary(data)
     counts = result["counts"]
     assert counts["rules"] == 1 and counts["affixes"] == 4 and counts["symbols"] == 3
