@@ -5,6 +5,8 @@
 """
 
 RULE_IDS_JA = {
+    "QA-KO-HANJA-001": "韓国語の訳文の括弧外に漢字が残っている（korean_hanja_outside・警告）",
+    "QA-KO-HANJA-002": "韓国語の訳文の括弧内に漢字の添え書きがある（korean_hanja_annotation・注意・曖昧さ回避と初出のみか確認）",
     "QA-SPACE-001": "文字の間に余分な半角スペースがある（cjk_space・注意）",
     "QA-UNTRANSLATED-EN-001": "原文を指定せずに見つけた英語（または中国語）の未翻訳候補（untranslated・エラー）",
     "QA-UNTRANSLATED-EN-002": "原文が未翻訳のまま残っている（untranslated・エラー・再翻訳で直せる）",

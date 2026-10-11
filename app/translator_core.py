@@ -59,6 +59,7 @@ DEFAULT_ANTHROPIC_URL = "https://api.anthropic.com/v1"
 DEFAULT_GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta"
 DEFAULT_OPENAI_COMPAT_URL = ""
 DEFAULT_TARGET_LANG = "japanese"
+CHINESE_BASIS_TARGETS = ("japanese", "korean")
 CACHE_FILE_NAME = "translate_cache.json"
 SESSION_FILE_NAME = ".plt_session.json"
 
@@ -1322,7 +1323,10 @@ def build_system_prompt(source_lang: str, glossary: Optional[dict] = None,
                         preset: str = "General", dual_source: bool = False,
                         chinese_basis: bool = False, target_lang: str = DEFAULT_TARGET_LANG) -> str:
     if (target_lang or DEFAULT_TARGET_LANG) != DEFAULT_TARGET_LANG:
-        return _build_system_prompt_other(source_lang, glossary, preset, dual_source, target_lang)
+        prompt = _build_system_prompt_other(source_lang, glossary, preset, dual_source, target_lang)
+        if chinese_basis and target_lang == "korean":
+            prompt += _korean_chinese_basis_instructions()
+        return prompt
     lang_label = {"english": "英語", "simp_chinese": "簡体字中国語"}.get(source_lang, source_lang)
     preset_text = GAME_PRESETS.get(preset, GAME_PRESETS["General"])
     glossary_text = ""
@@ -1357,9 +1361,22 @@ def build_system_prompt(source_lang: str, glossary: Optional[dict] = None,
 """
 
 
+def _korean_chinese_basis_instructions() -> str:
+    return """
+This is Chinese-basis translation into Korean. Use the vocabulary of the Simplified Chinese source as the primary basis for institutional, official and historical terminology.
+1. If a Chinese term is intelligible as an established Korean Sino-Korean word, write its Korean reading in Hangul. Restore simplified characters to their original traditional forms before determining the reading: 经济 → 經濟 → 경제; 中央集权 → 중앙집권; 科举 → 과거; 节度使 → 절도사; 内阁 → 내각.
+2. Do not write Hanja in the output. Only when identical Hangul readings would make the meaning ambiguous may you add Hanja in parentheses, for example 과거(科擧). Do this only at the first occurrence of the same term.
+3. Do not overuse Sino-Korean words. Prefer ordinary Korean native words or loanwords where established: 坦克 → 탱크 (not 탄극); 咖啡 → 커피; 沙发 → 소파. Never invent Sino-Korean words that Korean readers would not understand.
+4. Do not derive Korean terms through Japanese readings or Japanese-style Sino-Korean coinages. Use terms ordinarily used in Korean.
+5. Use natural Korean word order, particles and sentence structure. Do not copy Chinese syntax.
+6. For Chinese and Korean personal and place names, use the Korean reading of the Hanja: 李鸿章 → 이홍장. Prefer an established local-pronunciation form where customary in Korean: 北京 → 베이징. For other foreign proper names, use conventional Korean loanword spelling.
+Glossary translations have the highest priority and override these terminology preferences wherever applicable.
+"""
+
+
 def _build_system_prompt_other(source_lang: str, glossary: Optional[dict], preset: str,
                                dual_source: bool, target_lang: str) -> str:
-    """日本語以外の翻訳先の指示文（英語で書いたテンプレート）。中国語基準翻訳は日本語専用なので使わない。"""
+    """日本語以外の翻訳先の指示文（英語で書いたテンプレート）。"""
     source_name = target_language_name(source_lang)
     target_name = target_language_name(target_lang)
     preset_text = GAME_PRESETS_EN.get(preset, GAME_PRESETS_EN["General"])
@@ -2355,7 +2372,7 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
                             out, source_ref, source_lang=source_lang, glossary=glossary,
                             model=model, url=url, provider=provider, api_key=api_key, preset=preset,
                             controller=controller,
-                            chinese_basis=(source_lang == "simp_chinese" and target_lang == DEFAULT_TARGET_LANG),
+                            chinese_basis=(source_lang == "simp_chinese" and target_lang in CHINESE_BASIS_TARGETS),
                             max_passes=qa_repair_max_passes, backup_dir=qa_backup_dir,
                             backup_relative_root=output_path, target_lang=target_lang,
                             normalize_spacing=normalize_spacing)
@@ -2500,6 +2517,21 @@ def qa_entries(target_entries: Dict[str,str], source_entries: Optional[Dict[str,
     issues = []
     glossary = glossary or {}
     for key, value in target_entries.items():
+        if source_lang == "simp_chinese" and target_lang == "korean":
+            plain = PROTECT_RE.sub("", value)
+            annotations = re.findall(r"\([^()]*\)|（[^（）]*）", plain)
+            outside = re.sub(r"\([^()]*\)|（[^（）]*）", "", plain)
+            hanja_pattern = r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\U00020000-\U000323af]"
+            if re.search(hanja_pattern, outside):
+                issues.append(_qa_issue(key, "warning", "korean_hanja_outside",
+                                        "Hanja remains outside parentheses in Korean output", value,
+                                        rule_id="QA-KO-HANJA-001", repairable=False,
+                                        recommended_action="Review and replace with natural Hangul"))
+            if any(re.search(hanja_pattern, annotation) for annotation in annotations):
+                issues.append(_qa_issue(key, "notice", "korean_hanja_annotation",
+                                        "Parenthetical Hanja annotation in Korean output", value,
+                                        rule_id="QA-KO-HANJA-002", repairable=False,
+                                        recommended_action="Check ambiguity and first occurrence only"))
         _, removable_spaces = normalize_cjk_spacing(value, target_lang)
         if removable_spaces:
             issues.append(_qa_issue(key, "notice", "cjk_space",
@@ -2930,6 +2962,10 @@ def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
         target = Path(pair.get("target_file") or pair.get("target") or "")
         source_lang = str(pair.get("source_language") or pair.get("lang") or "english")
         pair_target = target_language_of_pair(pair, target_lang)
+        pair_glossary = glossary if pair_target == DEFAULT_TARGET_LANG else None
+        if pair_target == "korean" and glossary_path:
+            korean_glossary = glossary_path_for_language(glossary_path, pair_target)
+            pair_glossary = load_glossary(korean_glossary) if korean_glossary.is_file() else None
         created_target = False
         try:
             if controller:
@@ -2944,9 +2980,9 @@ def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
                 created_target = True
             result = qa_file_with_auto_repair(
                 target, source, source_lang=source_lang,
-                glossary=glossary if pair_target == DEFAULT_TARGET_LANG else None,
+                glossary=pair_glossary,
                 model=model, url=url, provider=provider, api_key=api_key, preset=preset,
-                controller=controller, chinese_basis=(source_lang == "simp_chinese" and pair_target == DEFAULT_TARGET_LANG),
+                controller=controller, chinese_basis=(source_lang == "simp_chinese" and pair_target in CHINESE_BASIS_TARGETS),
                 max_passes=max_passes, backup_dir=backup_dir,
                 backup_relative_root=None,
                 progress_context={"file_no":file_index,"file_total":len(pair_list)},
@@ -3590,6 +3626,9 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
                                   provider="Ollama", api_key="", qa_backup_root=None,
                                   qa_repair_max_passes=2, normalize_spacing: bool = True):
     """Translate only Simplified Chinese localization using Chinese wording as the terminology basis."""
+    target_lang = target_lang or DEFAULT_TARGET_LANG
+    if target_lang not in CHINESE_BASIS_TARGETS:
+        raise ValueError("Chinese-basis translation supports only Japanese and Korean")
     input_path = Path(input_path)
     output_path = Path(output_path)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -3651,7 +3690,7 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
                     model=model, url=url, provider=provider, api_key=api_key, preset=preset,
                     controller=controller, chinese_basis=True, max_passes=qa_repair_max_passes,
                     backup_dir=qa_backup_dir, backup_relative_root=output_path,
-                    normalize_spacing=normalize_spacing)
+                    normalize_spacing=normalize_spacing, target_lang=target_lang)
                 issues = qa_result["issues"]
                 spaces_removed += qa_result.get("spaces_removed", 0)
                 severe = sum(1 for x in issues if x["severity"] == "error")
@@ -3759,8 +3798,11 @@ def qa_translation_output(input_path: Path, output_path: Path, glossary_path=Non
             "issues": issues_all}
 
 
-def qa_chinese_basis_translation(input_path: Path, output_path: Path, glossary_path=None) -> dict:
+def qa_chinese_basis_translation(input_path: Path, output_path: Path, glossary_path=None,
+                                target_lang: str = DEFAULT_TARGET_LANG) -> dict:
     """Run Chinese-source-aware QA against an existing Chinese-basis translation output."""
+    if target_lang not in CHINESE_BASIS_TARGETS:
+        raise ValueError("Chinese-basis translation supports only Japanese and Korean")
     input_path = Path(input_path)
     output_path = Path(output_path)
     glossary = load_glossary(Path(glossary_path)) if glossary_path else {}
@@ -3784,7 +3826,7 @@ def qa_chinese_basis_translation(input_path: Path, output_path: Path, glossary_p
         if lang != "simp_chinese":
             continue
         rel = f.parent.relative_to(base_dir) if input_path.is_dir() else Path(".")
-        out = output_path / remap_rel_dir(rel, DEFAULT_TARGET_LANG) / rename_for_target(f, DEFAULT_TARGET_LANG, "simp_chinese")
+        out = output_path / remap_rel_dir(rel, target_lang) / rename_for_target(f, target_lang, "simp_chinese")
         if not out.exists():
             missing_outputs += 1
             try:
@@ -3792,10 +3834,12 @@ def qa_chinese_basis_translation(input_path: Path, output_path: Path, glossary_p
             except Exception:
                 src_entries = {}
             for key in src_entries:
-                issues_all.append({"source_file": str(f), "target_file": str(out), "key": key, "severity": "error", "type": "missing_output", "message": "対応する日本語出力ファイルがありません", "value": ""})
+                message = "対応する日本語出力ファイルがありません" if target_lang == DEFAULT_TARGET_LANG else "Corresponding Korean output file is missing"
+                issues_all.append({"source_file": str(f), "target_file": str(out), "key": key, "severity": "error", "type": "missing_output", "message": message, "value": ""})
             continue
         checked += 1
-        qa_result = qa_file_with_syntax_repair(out, f, source_lang="simp_chinese", glossary=glossary)
+        qa_result = qa_file_with_syntax_repair(out, f, source_lang="simp_chinese", glossary=glossary,
+                                             target_lang=target_lang)
         syntax_detected += qa_result["syntax_detected"]
         syntax_repaired += qa_result["syntax_repaired"]
         syntax_unresolved += qa_result["syntax_unresolved"]

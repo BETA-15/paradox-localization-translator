@@ -1,0 +1,31 @@
+{
+  "cache_key": "v6:9f2df69b2b79d594:b0c08f481fac1b7a",
+  "source": {
+    "label": "科举",
+    "unchanged": "制度改革",
+    "tag": "$NAME$",
+    "term": "节度使"
+  },
+  "target": {
+    "label": "科挙",
+    "unchanged": "制度改革",
+    "tag": "人物",
+    "term": "節度使"
+  },
+  "qa": [
+    {
+      "key": "tag",
+      "severity": "error",
+      "type": "syntax",
+      "message": "ゲーム変数/タグが原文と一致しません",
+      "value": "人物",
+      "rule_id": "QA-TOKEN-001",
+      "repairable": true,
+      "recommended_action": "安全なトークン修復後、必要なら再翻訳",
+      "expected_tokens": [
+        "$NAME$"
+      ],
+      "actual_tokens": []
+    }
+  ]
+}

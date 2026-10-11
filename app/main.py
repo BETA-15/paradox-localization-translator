@@ -1399,6 +1399,8 @@ class App(BaseTk):
         self._operation_state_refreshed_at = now
         self._set_control_group_state(self._normal_queue_controls, normal_locked)
         self._set_control_group_state(self._chinese_queue_controls, chinese_locked)
+        if not chinese_locked and hasattr(self, "chinese_target_combo"):
+            self.chinese_target_combo.configure(state="readonly")
         self._set_control_group_state(self._cross_queue_controls, normal_locked or chinese_locked)
 
         if hasattr(self, "start_btn"):
@@ -1752,6 +1754,8 @@ class App(BaseTk):
 
     def _build_chinese_tab(self):
         t = self.tab_chinese
+        self.chinese_target_lang_var = tk.StringVar(value=core.DEFAULT_TARGET_LANG)
+        self.chinese_target_display_var = tk.StringVar(value=i18n.t("lang." + core.DEFAULT_TARGET_LANG))
 
         # 中国語基準翻訳は基準デザインとして維持し、入力追加だけ単純化する。
         main=ttk.Panedwindow(t,orient="horizontal"); main.pack(fill="both",expand=True)
@@ -1759,8 +1763,18 @@ class App(BaseTk):
         main.add(left,weight=2); main.add(right,weight=3)
 
         intro=ttk.LabelFrame(left,text=i18n.t("u2.intro_title", target_name=i18n.t("lang." + core.DEFAULT_TARGET_LANG)),padding=9); intro.pack(fill="x")
-        ttk.Label(intro,text=(i18n.t("u2.intro_description", target_name=i18n.t("lang." + core.DEFAULT_TARGET_LANG))),
-                  wraplength=430,foreground="#333",justify="left").pack(fill="x")
+        self.chinese_intro_frame = intro
+        self.chinese_intro_label = ttk.Label(intro,text=(i18n.t("u2.intro_description", target_name=i18n.t("lang." + core.DEFAULT_TARGET_LANG))),
+                  wraplength=430,foreground="#333",justify="left")
+        self.chinese_intro_label.pack(fill="x")
+        ttk.Label(intro, text=i18n.t("u2.target_language")).pack(anchor="w")
+        self.chinese_target_combo = ttk.Combobox(intro, state="readonly", textvariable=self.chinese_target_display_var,
+                                                values=[i18n.t("lang." + language) for language in core.TARGET_LANGUAGES])
+        self.chinese_target_combo.pack(fill="x")
+        self.chinese_target_combo.bind("<<ComboboxSelected>>", self._select_chinese_target_language)
+        ttk.Label(intro, text=i18n.t("u2.supported_targets_reason"), wraplength=430).pack(fill="x")
+        self.chinese_korean_hint = ttk.Label(intro, text="", wraplength=430, justify="left")
+        self.chinese_korean_hint.pack(fill="x")
 
         src=ttk.LabelFrame(left,text=i18n.t("u2.input_output"),padding=9); src.pack(fill="x",pady=(5,0)); src.columnconfigure(0,weight=1)
         ttk.Label(src,text=i18n.t("u2.chinese_input")).grid(row=0,column=0,sticky="w")
@@ -1785,7 +1799,8 @@ class App(BaseTk):
         settings=ttk.LabelFrame(left,text=i18n.t("u2.shared_settings"),padding=9); settings.pack(fill="x",pady=(5,0))
         ttk.Label(settings,text=i18n.t("u2.shared_settings_hint"),wraplength=430,justify="left").pack(anchor="w")
         ttk.Button(settings,text=i18n.t("u2.open_settings"),command=lambda:self.notebook.select(self.tab_models)).pack(anchor="w",pady=(6,0))
-        ttk.Label(settings,text=i18n.t("u2.vocabulary_hint"),foreground="#7a4b00",wraplength=430).pack(anchor="w",pady=(6,0))
+        self.chinese_vocabulary_label = ttk.Label(settings,text=i18n.t("u2.vocabulary_hint"),foreground="#7a4b00",wraplength=430)
+        self.chinese_vocabulary_label.pack(anchor="w",pady=(6,0))
         ttk.Checkbutton(settings,text=i18n.t("u2.autoqa"),variable=self.chinese_autoqa_var,command=self._save_llm_preferences).pack(anchor="w",pady=(7,0))
         ttk.Label(settings,text=i18n.t("u2.autoqa_hint"),foreground="#555",wraplength=430,justify="left").pack(anchor="w",pady=(5,0))
 
@@ -1806,13 +1821,15 @@ class App(BaseTk):
         self.chinese_transfer_btn=ttk.Button(qbar,text=i18n.t("u2.send_to_normal"),command=lambda:self.transfer_selected_queue_to_opposite("chinese",False)); self.chinese_transfer_btn.pack(side="left",padx=(10,0))
         self.chinese_transfer_missing_btn=ttk.Button(qbar2,text=i18n.t("u2.queue_missing_english"),command=lambda:self.transfer_selected_queue_to_opposite("chinese",True)); self.chinese_transfer_missing_btn.pack(side="left",padx=(6,0))
         ttk.Label(qbox,text=i18n.t("u2.overwrite_hint"),foreground="#8a5a00",wraplength=900,justify="left").pack(fill="x",anchor="w",pady=(0,5))
-        cols=("mod","input","output","status")
+        cols=("mod","input","output","status","target")
         chinese_queue_table=ttk.Frame(qbox)
         chinese_queue_table.pack(fill="both",expand=True)
         self.chinese_queue_tree=ttk.Treeview(chinese_queue_table,columns=cols,show="headings",height=10,selectmode="extended")
         for c,txt,w in (("mod",i18n.t("u2.mod_item"),240),("input",i18n.t("u2.chinese_localization"),430),("output",i18n.t("u2.output"),390),("status",i18n.t("u2.status"),230)):
             self.chinese_queue_tree.heading(c,text=txt)
             self.chinese_queue_tree.column(c,width=w,minwidth=120,stretch=False,anchor="center" if c=="status" else "w")
+        self.chinese_queue_tree.heading("target", text=i18n.t("u2.target_language"))
+        self.chinese_queue_tree.column("target", width=120, minwidth=100, stretch=False)
         self._enable_ctrl_multiselect(self.chinese_queue_tree)
         self._enable_tree_sort(self.chinese_queue_tree)
         sy=ttk.Scrollbar(chinese_queue_table,orient="vertical",command=self.chinese_queue_tree.yview)
@@ -1822,6 +1839,7 @@ class App(BaseTk):
         sy.pack(side="right",fill="y")
         self.chinese_queue_tree.pack(side="left",fill="both",expand=True)
         self._chinese_queue_controls=[
+            self.chinese_target_combo,
             self.chinese_add_menu_button,self.chinese_output_entry,self.chinese_pick_output_btn,
             self.chinese_remove_btn,self.chinese_clear_btn,self.chinese_change_output_btn,self.chinese_import_cache_btn,
             self.chinese_overwrite_btn,self.chinese_qa_btn,self.chinese_glossary_btn,self.chinese_send_qa_btn,
@@ -1845,6 +1863,23 @@ class App(BaseTk):
         y=ttk.Scrollbar(logbox,command=self.chinese_log.yview); self.chinese_log.configure(yscrollcommand=y.set)
         self.chinese_log.pack(side="left",fill="both",expand=True); y.pack(side="right",fill="y")
         self._register_dnd_widgets([t,intro,src,self.chinese_input_entry,qbox,self.chinese_queue_tree],self.on_chinese_drop_paths)
+
+    def _select_chinese_target_language(self, event=None):
+        selected = next((language for language in core.TARGET_LANGUAGES
+                         if i18n.t("lang." + language) == self.chinese_target_display_var.get()), "")
+        if selected not in core.CHINESE_BASIS_TARGETS:
+            messagebox.showinfo(APP_NAME, i18n.t("u2.supported_targets_reason"))
+            self.chinese_target_display_var.set(i18n.t("lang." + self.chinese_target_lang_var.get()))
+            return
+        self.chinese_target_lang_var.set(selected)
+        target_name = i18n.t("lang." + selected)
+        self.chinese_intro_frame.config(text=i18n.t("u2." + "intro_title", target_name=target_name))
+        description = (i18n.t("u2.korean_intro_description", target_name=target_name) if selected == "korean"
+                       else i18n.t("u2." + "intro_description", target_name=target_name))
+        self.chinese_intro_label.config(text=description)
+        self.chinese_korean_hint.config(text=i18n.t("u2.korean_basis_hint") if selected == "korean" else "")
+        self.chinese_vocabulary_label.config(text=i18n.t("u2.korean_basis_hint") if selected == "korean"
+                                            else i18n.t("u2." + "vocabulary_hint"))
 
     def _append_chinese_log(self, text):
         if not hasattr(self, "chinese_log"):
@@ -1880,7 +1915,8 @@ class App(BaseTk):
                 item.get("mod_name",Path(item.get("input","")).name),
                 self._queue_display_path(item.get("input","")),
                 self._queue_display_path(item.get("output","")),
-                display_status(item.get("status") or status_value("waiting"))
+                display_status(item.get("status") or status_value("waiting")),
+                i18n.t("lang." + _item_target_lang(item))
             ))
 
     def _append_chinese_queue(self, path, mod_name=""):
@@ -1889,13 +1925,17 @@ class App(BaseTk):
         path=Path(path); ok,msg=self._validate_chinese_input(path)
         if not ok: return None,msg
         key=str(path.resolve())
+        target_var = getattr(self, "chinese_target_lang_var", None)
+        target_lang = target_var.get() if target_var is not None else core.DEFAULT_TARGET_LANG
+        if target_lang not in core.CHINESE_BASIS_TARGETS:
+            return None, i18n.t("u2.supported_targets_reason")
         for item in self.chinese_queue_items:
             try:
-                if str(Path(item.get("input","")).resolve())==key: return item,i18n.t("u2.already_queued")
+                if str(Path(item.get("input","")).resolve())==key and _item_target_lang(item) == target_lang: return item,i18n.t("u2.already_queued")
             except Exception: pass
         output_root = Path(self.chinese_output_var.get().strip() or str(OUTPUT_ROOT/"中国語基準翻訳"))
-        isolated_output = self._isolated_output_path(path, output_root, mod_name or "")
-        item={"input":str(path),"mod_name":mod_name or path.name,"status":status_value("waiting"),"output":str(isolated_output),"output_isolated_v2":True}
+        isolated_output = self._isolated_output_path(path, output_root, mod_name or "", target_lang=target_lang)
+        item={"input":str(path),"mod_name":mod_name or path.name,"status":status_value("waiting"),"output":str(isolated_output),"output_isolated_v2":True,"target_lang":target_lang}
         app_state.ensure_queue_item_id(item)
         if path.is_dir() and core.is_localization_dir_name(path.name):
             item["mod_localization"]=str(path); item["mod_root"]=str(path.parent)
@@ -1993,7 +2033,7 @@ class App(BaseTk):
         pairs=[]
         for _idx,item in entries:
             inp=Path(item.get("input", "")); out=Path(item.get("output", ""))
-            if inp.exists(): pairs.extend(core.collect_translation_qa_pairs(inp,out,("simp_chinese",)))
+            if inp.exists(): pairs.extend(core.collect_translation_qa_pairs(inp,out,("simp_chinese",), target_lang=_item_target_lang(item)))
         self._start_manual_qa_repair(pairs,"chinese")
 
     def pick_chinese_file(self):
@@ -2103,6 +2143,9 @@ class App(BaseTk):
         selected_indices = sorted(set(int(x) for x in selected_indices if 0 <= int(x) < len(self.chinese_queue_items)))
         if not selected_indices:
             messagebox.showinfo(APP_NAME,i18n.t("u2.select_translation")); return
+        if any(_item_target_lang(self.chinese_queue_items[index]) not in core.CHINESE_BASIS_TARGETS
+               for index in selected_indices):
+            messagebox.showinfo(APP_NAME, i18n.t("u2.supported_targets_reason")); return
         if not _llm_ready:
             indices=tuple(selected_indices)
             self._begin_llm_preflight("中国語基準翻訳",
@@ -2136,7 +2179,7 @@ class App(BaseTk):
                     cache=Path(item.get("cache", "")) if item.get("cache") else self._new_cache_path(inp)
                     item["output"]=str(out); item["cache"]=str(cache)
                     live_item["output"]=str(out); live_item["cache"]=str(cache)
-                    result=core.run_chinese_basis_translation(inp,out,model=settings["model"],url=settings["url"],workers=settings["workers"],batch_size=settings["batch"],cache_path=cache,controller=self.chinese_controller,glossary_path=settings["glossary"],preset=settings["preset"],auto_qa=settings["autoqa"],provider=settings["provider"],api_key=settings["api_key"],qa_backup_root=BACKUP_ROOT/"QA自動修復",normalize_spacing=settings["normalize_spacing"])
+                    result=core.run_chinese_basis_translation(inp,out,target_lang=_item_target_lang(item),model=settings["model"],url=settings["url"],workers=settings["workers"],batch_size=settings["batch"],cache_path=cache,controller=self.chinese_controller,glossary_path=settings["glossary"] if _item_target_lang(item) == core.DEFAULT_TARGET_LANG else _existing_language_glossary(settings["glossary"], _item_target_lang(item)),preset=settings["preset"],auto_qa=settings["autoqa"],provider=settings["provider"],api_key=settings["api_key"],qa_backup_root=BACKUP_ROOT/"QA自動修復",normalize_spacing=settings["normalize_spacing"])
                     self.events.put(("chinese_log", i18n.t("u2.spaces_removed", count=result.get('spaces_removed',0))))
                     qa_errors += int(result.get("qa_errors",0) or 0)
                     qa_warnings += int(result.get("qa_warnings",0) or 0)
@@ -2238,7 +2281,8 @@ class App(BaseTk):
         except Exception:
             return str(value)
 
-    def _collect_qa_diff_pairs(self, source_root, target_root, source_langs=("english", "simp_chinese")):
+    def _collect_qa_diff_pairs(self, source_root, target_root, source_langs=("english", "simp_chinese"),
+                               target_lang=core.DEFAULT_TARGET_LANG):
         """Return source/Japanese YAML pairs for QA/diff import buttons."""
         source_root = Path(source_root)
         target_root = Path(target_root)
@@ -2253,7 +2297,7 @@ class App(BaseTk):
                 lang, entries, _ = core.parse_localization_file(f)
             except Exception:
                 continue
-            if lang == "japanese":
+            if lang == target_lang:
                 targets.append((f, entries))
         if not targets:
             return []
@@ -2274,7 +2318,7 @@ class App(BaseTk):
             if target_root.is_dir():
                 try:
                     rel = sf.parent.relative_to(source_base) if source_root.is_dir() else Path(".")
-                    expected = target_root / core.remap_rel_dir(rel, "japanese") / core.rename_for_target(sf, "japanese", lang)
+                    expected = target_root / core.remap_rel_dir(rel, target_lang) / core.rename_for_target(sf, target_lang, lang)
                     if expected.exists():
                         chosen = expected
                 except Exception:
@@ -2286,7 +2330,7 @@ class App(BaseTk):
                     src_id = core._logical_localization_id(sf, source_root, lang)
                     for tf, _ in targets:
                         try:
-                            if core._logical_localization_id(tf, target_root, "japanese") == src_id:
+                            if core._logical_localization_id(tf, target_root, target_lang) == src_id:
                                 chosen = tf
                                 break
                         except Exception:
@@ -2314,7 +2358,10 @@ class App(BaseTk):
             if key in seen:
                 continue
             seen.add(key)
-            pairs.append({"source": sf, "target": chosen, "lang": lang})
+            pair = {"source": sf, "target": chosen, "lang": lang}
+            if target_lang != core.DEFAULT_TARGET_LANG:
+                pair["target_language"] = target_lang
+            pairs.append(pair)
         return pairs
 
     def _choose_qa_diff_pairs(self, pairs, title):
@@ -2403,13 +2450,16 @@ class App(BaseTk):
         else:
             return
 
-        pairs = self._collect_qa_diff_pairs(source_root, target_root, source_langs)
+        target_lang = _item_target_lang(item) if origin in ("normal", "chinese") else core.DEFAULT_TARGET_LANG
+        pairs = self._collect_qa_diff_pairs(source_root, target_root, source_langs, target_lang=target_lang)
         if not pairs:
             messagebox.showinfo(APP_NAME, i18n.t('u3.pair_not_found', label=label))
             return
         selected_pairs = self._choose_qa_diff_pairs(pairs, i18n.t('u3.choose_pair_from', label=label))
         if not selected_pairs:
             return
+        if origin == "chinese" and target_lang == "korean":
+            self._set_target_lang(target_lang, save=False)
         if destination == "review":
             self.notebook.select(self.tab_review)
             self.load_review_pairs(selected_pairs)
@@ -6778,8 +6828,8 @@ class App(BaseTk):
                 new_item, msg = self._append_chinese_queue(input_path, mod_name + ("（不足分）" if missing_only else ""))
             else:
                 before = len(self.queue_items)
-                # 中国語基準翻訳キュー（日本語専用）から移す項目は日本語に固定する。
-                self._append_queue(input_path, target_lang=core.DEFAULT_TARGET_LANG)
+                # Preserve the Chinese-basis item's target language when transferring.
+                self._append_queue(input_path, target_lang=_item_target_lang(item))
                 new_item = self.queue_items[-1] if len(self.queue_items) > before else None
                 msg = ""
             if not new_item:
@@ -7794,7 +7844,7 @@ class App(BaseTk):
         else:
             raw = self.normal_output_var.get().strip() if hasattr(self, "normal_output_var") else ""
             root = Path(raw) if raw else OUTPUT_ROOT
-        target_lang = core.DEFAULT_TARGET_LANG if mode == "chinese" else _item_target_lang(item)
+        target_lang = _item_target_lang(item)
         expected = self._isolated_output_path(inp, root, item.get("mod_name", ""), target_lang=target_lang)
         # v0.12.0 で日本語以外を訳した項目（出力先が日本語と共有の「…_japanese」）も、ここで「…_<言語>」へ向け直す。
         # 古い出力のファイルは動かさない（「…_japanese」の中に残る）。キャッシュは CACHE_ROOT にあるので訳し直しにはならない。
@@ -7969,7 +8019,7 @@ class App(BaseTk):
             rel_dir = source_file.parent.relative_to(base_dir) if p.is_dir() else Path('.')
             details.append({
                 "source_file": str(source_file),
-                "target_file": str(Path(item.get("output", "")) / core.remap_rel_dir(rel_dir, core.DEFAULT_TARGET_LANG) / core.rename_for_target(source_file, core.DEFAULT_TARGET_LANG, source_language)),
+                "target_file": str(Path(item.get("output", "")) / core.remap_rel_dir(rel_dir, _item_target_lang(item)) / core.rename_for_target(source_file, _item_target_lang(item), source_language)),
                 "keys": keys,
             })
         opposite_origin = "english_only" if source_language == "simp_chinese" else "chinese_only"
@@ -9183,6 +9233,7 @@ class App(BaseTk):
                 "queue_index":self.current_queue_index,
             },
             "chinese_translation":{
+                "target_lang":self._workspace_scalar(self.chinese_target_lang_var,core.DEFAULT_TARGET_LANG),
                 "input":self._workspace_scalar(self.chinese_input_var,""),
                 "output":self._workspace_scalar(self.chinese_output_var,str(OUTPUT_ROOT/"中国語基準翻訳")),
                 "queue":self.chinese_queue_items,
@@ -9302,6 +9353,11 @@ class App(BaseTk):
             self._refresh_queue_tree()
 
             z=data.get("chinese_translation") or {}
+            chinese_target = z.get("target_lang", core.DEFAULT_TARGET_LANG)
+            if chinese_target not in core.CHINESE_BASIS_TARGETS:
+                chinese_target = core.DEFAULT_TARGET_LANG
+            self.chinese_target_display_var.set(i18n.t("lang." + chinese_target))
+            self._select_chinese_target_language()
             self.chinese_input_var.set(remap(z.get("input","")) or "")
             self.chinese_output_var.set(remap(z.get("output",str(OUTPUT_ROOT/"中国語基準翻訳"))) or str(OUTPUT_ROOT/"中国語基準翻訳"))
             self.chinese_queue_items=list(z.get("queue") or [])
@@ -9915,7 +9971,7 @@ class App(BaseTk):
                         try:
                             translated=core.translate_single_text(diff_settings["url"], diff_settings["model"], source_text, source_lang,
                                                                   glossary, diff_settings["preset"], diff_settings["provider"], diff_settings["api_key"], self.diff_controller,
-                                                                  chinese_basis=(source_lang == "simp_chinese" and target_lang == core.DEFAULT_TARGET_LANG),
+                                                                  chinese_basis=(source_lang == "simp_chinese" and target_lang in core.CHINESE_BASIS_TARGETS),
                                                                   target_lang=target_lang)
                         except core.StopRequested:
                             raise
@@ -10591,11 +10647,14 @@ class App(BaseTk):
             for iid in sels:
                 try: item=self.chinese_queue_items[int(str(iid).replace("zh_",""))]
                 except Exception: continue
-                pairs.extend(self._collect_qa_diff_pairs(Path(item.get("input","")), Path(item.get("output","")), source_langs=("simp_chinese",)))
+                pairs.extend(self._collect_qa_diff_pairs(Path(item.get("input","")), Path(item.get("output","")), source_langs=("simp_chinese",), target_lang=_item_target_lang(item)))
             return pairs
         return []
 
     def start_auto_glossary_generation(self, origin):
+        if origin == "chinese" and any(_item_target_lang(item) != core.DEFAULT_TARGET_LANG
+                                       for _index, item in self._selected_chinese_queue_entries()):
+            messagebox.showinfo(APP_NAME, i18n.t("u2.korean_auto_glossary_unavailable")); return
         if not _japanese_glossary_only(self): return
         if self._closing:
             return
