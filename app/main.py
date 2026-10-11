@@ -2583,37 +2583,37 @@ class App(BaseTk):
     def _build_glossary_tab(self):
         t=self.tab_glossary
         language_bar=ttk.Frame(t); language_bar.pack(fill="x",pady=(0,6))
-        ttk.Label(language_bar,text="言語").pack(side="left")
+        ttk.Label(language_bar,text=i18n.t('u4.language')).pack(side="left")
         language_choice=ttk.Combobox(language_bar,textvariable=self.glossary_lang_var,
                                     values=[_target_lang_choice(lang) for lang in core.TARGET_LANGUAGES],state="readonly")
         language_choice.pack(side="left",padx=6)
         language_choice.bind("<<ComboboxSelected>>",lambda event:self.load_glossary_ui(silent=True))
         ttk.Label(t,textvariable=self.glossary_actual_path_var).pack(fill="x",pady=(0,6))
         self.glossary_path_var.trace_add("write",lambda *args:self.glossary_actual_path_var.set(
-            f"この言語のファイル: {_selected_glossary_path(self)}"))
-        top=ttk.LabelFrame(t,text="用語集設定",padding=8); top.pack(fill="x",pady=(0,6))
-        ttk.Label(top,text="用語集ファイル").pack(side="left")
+            i18n.t('u4.language_file', path=_selected_glossary_path(self))))
+        top=ttk.LabelFrame(t,text=i18n.t('u4.settings'),padding=8); top.pack(fill="x",pady=(0,6))
+        ttk.Label(top,text=i18n.t('u4.file')).pack(side="left")
         ttk.Entry(top,textvariable=self.glossary_path_var).pack(side="left",fill="x",expand=True,padx=6)
-        ttk.Button(top,text="読込",command=lambda:self._run_glossary_action(self.load_glossary_ui)).pack(side="left")
-        ttk.Button(top,text="保存",command=lambda:self._run_glossary_action(self.save_glossary_ui)).pack(side="left",padx=(6,0))
+        ttk.Button(top,text=i18n.t('u4.load'),command=lambda:self._run_glossary_action(self.load_glossary_ui)).pack(side="left")
+        ttk.Button(top,text=i18n.t('u4.save'),command=lambda:self._run_glossary_action(self.save_glossary_ui)).pack(side="left",padx=(6,0))
         ttk.Label(top,textvariable=self.auto_glossary_status_var,foreground="#555").pack(side="right",padx=(8,0))
 
         import_bar=ttk.Frame(t); import_bar.pack(fill="x",pady=(0,6))
-        ttk.Button(import_bar,text="ParaTranz の用語集（JSON）を取り込む",
+        ttk.Button(import_bar,text=i18n.t('u4.paratranz_import'),
                    command=lambda:self._run_glossary_action(self.import_paratranz_glossary)).pack(side="left")
-        ttk.Button(import_bar,text="表記ルールを見る",command=self.show_glossary_notation_rules).pack(side="left",padx=6)
+        ttk.Button(import_bar,text=i18n.t('u4.view_rules'),command=self.show_glossary_notation_rules).pack(side="left",padx=6)
         panes=ttk.Panedwindow(t,orient="horizontal"); panes.pack(fill="both",expand=True)
-        manual=ttk.LabelFrame(panes,text="自分で作った用語",padding=8)
-        generated=ttk.LabelFrame(panes,text="自動生成 / 取り込み用語",padding=8)
+        manual=ttk.LabelFrame(panes,text=i18n.t('u4.manual_terms'),padding=8)
+        generated=ttk.LabelFrame(panes,text=i18n.t('u4.generated_terms'),padding=8)
         panes.add(manual,weight=1); panes.add(generated,weight=1)
 
         mbar=ttk.Frame(manual); mbar.pack(fill="x",pady=(0,6))
-        ttk.Button(mbar,text="用語追加",command=lambda:self._run_glossary_action(self.add_glossary_term)).pack(side="left")
-        ttk.Button(mbar,text="選択編集",command=lambda:self._run_glossary_action(self.edit_glossary_term)).pack(side="left",padx=(6,0))
-        ttk.Button(mbar,text="選択削除",command=lambda:self._run_glossary_action(self.delete_glossary_term)).pack(side="left",padx=(6,0))
-        ttk.Label(manual,text="手動で固定した原語 → 日本語訳です。手動用語は自動生成で上書きされません。",foreground="#666",wraplength=520,justify="left").pack(fill="x",anchor="w",pady=(0,6))
+        ttk.Button(mbar,text=i18n.t('u4.add_term'),command=lambda:self._run_glossary_action(self.add_glossary_term)).pack(side="left")
+        ttk.Button(mbar,text=i18n.t('u4.edit_selected'),command=lambda:self._run_glossary_action(self.edit_glossary_term)).pack(side="left",padx=(6,0))
+        ttk.Button(mbar,text=i18n.t('u4.delete_selected'),command=lambda:self._run_glossary_action(self.delete_glossary_term)).pack(side="left",padx=(6,0))
+        ttk.Label(manual,text=i18n.t('u4.manual_help', target_name=i18n.t("lang." + _glossary_language(self))),foreground="#666",wraplength=520,justify="left").pack(fill="x",anchor="w",pady=(0,6))
         self.glossary_tree=ttk.Treeview(manual,columns=("src","dst"),show="headings")
-        self.glossary_tree.heading("src",text="原語"); self.glossary_tree.heading("dst",text="日本語")
+        self.glossary_tree.heading("src",text=i18n.t('u4.source')); self.glossary_tree.heading("dst",text=i18n.t('u4.target_heading', target_name=i18n.t("lang." + _glossary_language(self))))
         self.glossary_tree.column("src",width=260,stretch=True); self.glossary_tree.column("dst",width=300,stretch=True)
         self._enable_tree_sort(self.glossary_tree)
         my=ttk.Scrollbar(manual,orient="vertical",command=self.glossary_tree.yview); mx=ttk.Scrollbar(manual,orient="horizontal",command=self.glossary_tree.xview)
@@ -2622,34 +2622,34 @@ class App(BaseTk):
         self.glossary_tree.bind("<Double-1>",lambda e:self.edit_glossary_term())
 
         gbar=ttk.Frame(generated); gbar.pack(fill="x",pady=(0,6))
-        self.glossary_base_import_btn=ttk.Button(gbar,text="ゲーム本体から取り込む",command=self.import_glossary_from_base_game)
+        self.glossary_base_import_btn=ttk.Button(gbar,text=i18n.t('u4.import_base'),command=self.import_glossary_from_base_game)
         self.glossary_base_import_btn.pack(side="left")
         self.glossary_import_menu=tk.Menu(gbar,tearoff=False)
-        self.glossary_import_menu.add_command(label="日本語YAMLファイルから取り込む",command=lambda:self.import_glossary_from_japanese_source("file"))
-        self.glossary_import_menu.add_command(label="日本語化Mod / localizationフォルダから取り込む",command=lambda:self.import_glossary_from_japanese_source("folder"))
-        self.glossary_jp_import_btn=ttk.Menubutton(gbar,text="日本語化ファイル / Modから取り込む",menu=self.glossary_import_menu)
+        self.glossary_import_menu.add_command(label=i18n.t('u4.import_japanese_yaml'),command=lambda:self.import_glossary_from_japanese_source("file"))
+        self.glossary_import_menu.add_command(label=i18n.t('u4.import_japanese_mod'),command=lambda:self.import_glossary_from_japanese_source("folder"))
+        self.glossary_jp_import_btn=ttk.Menubutton(gbar,text=i18n.t('u4.import_japanese_files'),menu=self.glossary_import_menu)
         self.glossary_jp_import_btn.pack(side="left",padx=(6,0))
-        ttk.Label(generated,text="※ ゲーム本体の日本語訳は［ゲーム本体から取り込む］を使うと、英語 / 簡体字中国語の対応原文を自動照合して用語集を作成できます。",foreground="#8a5a00",wraplength=560,justify="left").pack(fill="x",anchor="w",pady=(0,4))
-        ttk.Label(generated,text="通常翻訳・中国語基準翻訳・QA・差分調査で作成した用語と、ゲーム本体や既存日本語化から取り込んだ用語を表示します。自動生成は各作業タブから実行します。",foreground="#666",wraplength=560,justify="left").pack(fill="x",anchor="w",pady=(0,4))
-        self.auto_glossary_drop_hint=ttk.Label(generated,text=("ドラッグ＆ドロップ対応 — 日本語YAML / 日本語化Mod / localizationフォルダ" if DND_AVAILABLE else "ドラッグ＆ドロップはこのビルドでは利用できません"),foreground="#555")
+        ttk.Label(generated,text=i18n.t('u4.base_help'),foreground="#8a5a00",wraplength=560,justify="left").pack(fill="x",anchor="w",pady=(0,4))
+        ttk.Label(generated,text=i18n.t('u4.generated_help'),foreground="#666",wraplength=560,justify="left").pack(fill="x",anchor="w",pady=(0,4))
+        self.auto_glossary_drop_hint=ttk.Label(generated,text=(i18n.t('u4.drop_help') if DND_AVAILABLE else i18n.t('u4.drop_unavailable')),foreground="#555")
         self.auto_glossary_drop_hint.pack(fill="x",anchor="w",pady=(0,6))
         self.auto_glossary_include_phrases_var=tk.BooleanVar(value=False)
-        ttk.Checkbutton(generated,text="定型句も用語集に入れる",variable=self.auto_glossary_include_phrases_var).pack(anchor="w",pady=(0,4))
+        ttk.Checkbutton(generated,text=i18n.t('u4.include_phrases'),variable=self.auto_glossary_include_phrases_var).pack(anchor="w",pady=(0,4))
         filters=ttk.Frame(generated); filters.pack(fill="x",pady=(0,6))
         self.auto_glossary_kind_filter_vars={}
-        for term_kind,label in (("proper","固有名詞"),("term","単語"),("phrase","定型句")):
+        for term_kind,label in (("proper",i18n.t('u4.proper')),("term",i18n.t('u4.term')),("phrase",i18n.t('u4.phrase'))):
             variable=tk.BooleanVar(value=True)
             self.auto_glossary_kind_filter_vars[term_kind]=variable
             ttk.Checkbutton(filters,text=label,variable=variable,command=self._refresh_auto_glossary_tree).pack(side="left",padx=(0,8))
         self.auto_glossary_tree=ttk.Treeview(generated,columns=("src","dst","kind","term_kind"),show="headings")
-        for c,label,w in (("src","原語",250),("dst","日本語",280),("kind","由来",140),("term_kind","種類",90)):
+        for c,label,w in (("src",i18n.t('u4.source'),250),("dst",i18n.t('u4.target_heading', target_name=i18n.t("lang." + _glossary_language(self))),280),("kind",i18n.t('u4.origin'),140),("term_kind",i18n.t('u4.kind'),90)):
             self.auto_glossary_tree.heading(c,text=label); self.auto_glossary_tree.column(c,width=w,stretch=True)
         self._enable_tree_sort(self.auto_glossary_tree)
         gy=ttk.Scrollbar(generated,orient="vertical",command=self.auto_glossary_tree.yview); gx=ttk.Scrollbar(generated,orient="horizontal",command=self.auto_glossary_tree.xview)
         self.auto_glossary_tree.configure(yscrollcommand=gy.set,xscrollcommand=gx.set)
         self.auto_glossary_tree.pack(fill="both",expand=True); gx.pack(fill="x")
         self.auto_glossary_tree.bind("<Map>",lambda event:self.after_idle(self._refresh_auto_glossary_tree))
-        self.glossary_note_var=tk.StringVar(value="note: 用語を選択すると表示します")
+        self.glossary_note_var=tk.StringVar(value=i18n.t('u4.note_hint'))
         ttk.Label(t,textvariable=self.glossary_note_var,wraplength=1000,justify="left").pack(fill="x",pady=6)
         for tree in (self.glossary_tree,self.auto_glossary_tree):
             tree.bind("<<TreeviewSelect>>",lambda event:self.show_selected_glossary_note(event.widget))
@@ -2657,8 +2657,8 @@ class App(BaseTk):
             try:
                 self._register_dnd_widgets([generated,self.auto_glossary_drop_hint,self.auto_glossary_tree],self.on_glossary_import_drop_paths)
             except Exception as exc:
-                self.auto_glossary_drop_hint.configure(text=f"ドラッグ＆ドロップ初期化失敗: {exc}")
-                record_error("用語集DnD初期化",exc)
+                self.auto_glossary_drop_hint.configure(text=i18n.t('u4.dnd_failed', error=exc))
+                record_error(i18n.t('u4.dnd_context'),exc)
         self.load_glossary_ui(silent=True)
         self._refresh_auto_glossary_tree()
 
@@ -10560,15 +10560,15 @@ class App(BaseTk):
         target_lang=_current_target_lang(self)
         key=self._selected_review_key()
         if not key:
-            messagebox.showinfo(APP_NAME, "用語集へ保存する項目をQA / 比較編集の一覧から選択してください。")
+            messagebox.showinfo(APP_NAME, i18n.t('u4.review_selection'))
             return
         src=(self.review_source_entries.get(key,"") or "").strip()
         dst=self.dst_text.get("1.0","end-1c").strip()
         if not src:
-            messagebox.showinfo(APP_NAME, "選択した項目に原文がありません。")
+            messagebox.showinfo(APP_NAME, i18n.t('u4.missing_source'))
             return
         if not dst:
-            messagebox.showinfo(APP_NAME, f"{core.target_language_label(target_lang)}訳を入力してから用語集へ保存してください。")
+            messagebox.showinfo(APP_NAME, i18n.t('u4.enter_translation', target_name=i18n.t("lang." + target_lang)))
             return
         p=core.glossary_path_for_language(self.glossary_path_var.get() or DEFAULT_GLOSSARY,target_lang)
         gl=core.load_glossary(p)
@@ -10576,7 +10576,7 @@ class App(BaseTk):
         if old is not None and old != dst:
             if not messagebox.askyesno(
                 APP_NAME,
-                f"この原文はすでに用語集に登録されています。\n\n原文: {src}\n現在: {old}\n新規: {dst}\n\n手動用語として上書きしますか？",
+                i18n.t('u4.overwrite_manual', source=src, old=old, target=dst),
             ):
                 return
         gl[src]=dst
@@ -10588,8 +10588,8 @@ class App(BaseTk):
         variants.pop(src,None)
         core.save_json(core.glossary_variants_path(p),variants)
         self.load_glossary_ui(silent=True)
-        self.progress_text.set(f"手動用語を保存: {src} → {dst}")
-        messagebox.showinfo(APP_NAME, f"手動用語として用語集へ保存しました。\n\n{src} → {dst}")
+        self.progress_text.set(i18n.t('u4.manual_saved_status', source=src, target=dst))
+        messagebox.showinfo(APP_NAME, i18n.t('u4.manual_saved', source=src, target=dst))
 
     def restore_source_to_target(self):
         key=self._selected_review_key()
@@ -10691,22 +10691,22 @@ class App(BaseTk):
         if self._closing:
             return
         if self.glossary_import_busy:
-            messagebox.showinfo(APP_NAME, "用語取り込み中です。完了してから自動用語作成を実行してください。")
+            messagebox.showinfo(APP_NAME, i18n.t('u4.import_busy_generate'))
             return
         if self.auto_glossary_controller is not None:
-            messagebox.showinfo(APP_NAME, "自動用語作成はすでに実行中です。")
+            messagebox.showinfo(APP_NAME, i18n.t('u4.generation_busy'))
             return
         pairs=self._auto_glossary_pairs_from_origin(origin)
         if not pairs:
             if origin == "review":
-                msg="QA / 比較編集で原文と日本語訳を読み込んでください。"
+                msg=i18n.t('u4.review_load', target_name=i18n.t("lang." + _current_target_lang(self)))
             elif origin == "diff":
-                msg="差分調査で原文と日本語訳を読み込んでください。"
+                msg=i18n.t('u4.diff_load', target_name=i18n.t("lang." + _current_target_lang(self)))
             else:
-                msg="対象キューから翻訳済み項目を選択してください。"
+                msg=i18n.t('u4.queue_selection')
             messagebox.showinfo(APP_NAME,msg); return
-        self.auto_glossary_status_var.set(f"自動用語作成中: {len(pairs)}ファイル組")
-        self.llm_operation="自動用語作成"
+        self.auto_glossary_status_var.set(i18n.t('u4.generating', count=len(pairs)))
+        self.llm_operation=i18n.t('u4.generation')
         self.auto_glossary_controller=core.TranslationController(progress_callback=lambda p:self.events.put(("auto_glossary_progress",p)))
         settings={"provider":self.provider_var.get(),"url":self.url_var.get().strip(),"model":self.model_var.get().strip(),"preset":self.preset_var.get(),"api_key":self.api_key_var.get().strip()}
         glossary_path=Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY)
@@ -10742,7 +10742,7 @@ class App(BaseTk):
                     rows[source]=(meta["preferred"],meta)
         for row_id in self.auto_glossary_tree.get_children():
             self.auto_glossary_tree.delete(row_id)
-        labels={"proper":"固有名詞","term":"単語","phrase":"定型句"}
+        labels={"proper":i18n.t('u4.proper'),"term":i18n.t('u4.term'),"phrase":i18n.t('u4.phrase')}
         filters=getattr(self,"auto_glossary_kind_filter_vars",{})
         for source,(target,meta) in sorted(rows.items()):
             term_kind=meta.get("term_kind","")
@@ -10761,8 +10761,8 @@ class App(BaseTk):
     @staticmethod
     def _auto_glossary_kind_summary(result):
         counts=result.get("term_kind_counts",{})
-        phrase_note="" if result.get("include_phrases") else "（用語集には入れていません）"
-        return f"固有名詞 {counts.get('proper',0)}／単語 {counts.get('term',0)}／定型句 {counts.get('phrase',0)}{phrase_note}"
+        return i18n.t("u4.kind_summary" if result.get("include_phrases") else "u4.kind_summary_no_phrases",
+                      proper=counts.get('proper',0), term_count=counts.get('term',0), phrase=counts.get('phrase',0))
 
     def _glossary_variant_metadata(self):
         p=_selected_glossary_path(self)
@@ -10774,24 +10774,24 @@ class App(BaseTk):
         if kind == "import:paratranz":
             return "ParaTranz"
         if kind.startswith("base:"):
-            return "ゲーム本体: "+kind.split(":",1)[1]
+            return i18n.t('u4.base_origin', game=kind.split(":",1)[1])
         if kind.startswith("import:file"):
-            return "日本語YAML"
+            return i18n.t('u4.japanese_yaml')
         if kind.startswith("import:mod"):
-            return "日本語化Mod"
-        return "自動生成"
+            return i18n.t('u4.japanese_mod')
+        return i18n.t('u4.generated')
 
     def _choose_game_for_glossary_import(self):
         result={"game":None}
-        win=tk.Toplevel(self); win.title("ゲーム本体から用語を取り込む"); win.transient(self); win.grab_set(); win.resizable(False,False)
+        win=tk.Toplevel(self); win.title(i18n.t('u4.choose_game_title')); win.transient(self); win.grab_set(); win.resizable(False,False)
         frm=ttk.Frame(win,padding=12); frm.pack(fill="both",expand=True)
-        ttk.Label(frm,text="用語を取り込むゲームを選択してください。").pack(anchor="w")
+        ttk.Label(frm,text=i18n.t('u4.choose_game')).pack(anchor="w")
         var=tk.StringVar(value=next(iter(core.PARADOX_STEAM_GAMES)))
         combo=ttk.Combobox(frm,textvariable=var,values=list(core.PARADOX_STEAM_GAMES),state="readonly",width=32); combo.pack(fill="x",pady=(8,10))
         row=ttk.Frame(frm); row.pack(fill="x")
         def ok(): result["game"]=var.get(); win.destroy()
-        ttk.Button(row,text="キャンセル",command=win.destroy).pack(side="right")
-        ttk.Button(row,text="選択",command=ok).pack(side="right",padx=(0,6))
+        ttk.Button(row,text=i18n.t('u4.cancel'),command=win.destroy).pack(side="right")
+        ttk.Button(row,text=i18n.t('u4.select'),command=ok).pack(side="right",padx=(0,6))
         win.wait_window()
         return result["game"]
 
@@ -10814,19 +10814,19 @@ class App(BaseTk):
 
     def _choose_glossary_import_mode(self):
         result={"mode":None}
-        win=tk.Toplevel(self); win.title("用語取り込みモード"); win.transient(self); win.grab_set(); win.resizable(False,False)
+        win=tk.Toplevel(self); win.title(i18n.t('u4.import_mode')); win.transient(self); win.grab_set(); win.resizable(False,False)
         frm=ttk.Frame(win,padding=12); frm.pack(fill="both",expand=True)
-        ttk.Label(frm,text="取り込む用語の範囲を選択してください。",font=("TkDefaultFont",10,"bold")).pack(anchor="w")
+        ttk.Label(frm,text=i18n.t('u4.choose_scope'),font=("TkDefaultFont",10,"bold")).pack(anchor="w")
         var=tk.StringVar(value="common")
-        ttk.Radiobutton(frm,text="共通名のみ取り込み",variable=var,value="common").pack(anchor="w",pady=(10,0))
-        ttk.Label(frm,text="制度名・官職名・UI語など再利用しやすい短い用語を取り込み、人物名・地名・王朝名・「〇〇公爵」「〇〇軍管区長官」のような固有名詞付き候補を除外します。",wraplength=560,justify="left",foreground="#555").pack(anchor="w",padx=(22,0),pady=(2,6))
-        ttk.Radiobutton(frm,text="すべて取り込み",variable=var,value="all").pack(anchor="w")
-        ttk.Label(frm,text="英語または簡体字中国語と対応付けできた項目を、長い文や固有名詞を含め原則すべて候補にします。",wraplength=560,justify="left",foreground="#555").pack(anchor="w",padx=(22,0),pady=(2,8))
-        ttk.Label(frm,text="※ ゲーム本体の日本語訳なら、［ゲーム本体から取り込む］で英語 / 簡体字中国語の対応原文を自動照合して用語集を作成できます。\n日本語化Mod単独の場合も、対応原文が近くになければゲーム本体との照合を案内します。",wraplength=560,justify="left",foreground="#8a5a00").pack(anchor="w",pady=(4,8))
+        ttk.Radiobutton(frm,text=i18n.t('u4.common_only'),variable=var,value="common").pack(anchor="w",pady=(10,0))
+        ttk.Label(frm,text=i18n.t('u4.common_help'),wraplength=560,justify="left",foreground="#555").pack(anchor="w",padx=(22,0),pady=(2,6))
+        ttk.Radiobutton(frm,text=i18n.t('u4.import_all'),variable=var,value="all").pack(anchor="w")
+        ttk.Label(frm,text=i18n.t('u4.all_help'),wraplength=560,justify="left",foreground="#555").pack(anchor="w",padx=(22,0),pady=(2,8))
+        ttk.Label(frm,text=i18n.t('u4.import_help'),wraplength=560,justify="left",foreground="#8a5a00").pack(anchor="w",pady=(4,8))
         row=ttk.Frame(frm); row.pack(fill="x",pady=(4,0))
         def ok(): result["mode"]=var.get(); win.destroy()
-        ttk.Button(row,text="キャンセル",command=win.destroy).pack(side="right")
-        ttk.Button(row,text="取り込み",command=ok).pack(side="right",padx=(0,6))
+        ttk.Button(row,text=i18n.t('u4.cancel'),command=win.destroy).pack(side="right")
+        ttk.Button(row,text=i18n.t('u4.import'),command=ok).pack(side="right",padx=(0,6))
         win.wait_window()
         return result["mode"]
 
@@ -10842,21 +10842,21 @@ class App(BaseTk):
         if status:
             self.auto_glossary_status_var.set(status)
 
-    def _start_glossary_import_thread(self, worker, status="用語取り込みをバックグラウンドで開始しました…"):
+    def _start_glossary_import_thread(self, worker, status=None):
         if not _japanese_glossary_only(self): return False
         if self.auto_glossary_controller is not None:
-            messagebox.showinfo(APP_NAME,"自動用語作成中です。完了してから用語取り込みを実行してください。")
+            messagebox.showinfo(APP_NAME,i18n.t('u4.generation_busy_import'))
             return False
         if self.glossary_import_busy or (self.glossary_import_thread and self.glossary_import_thread.is_alive()):
-            messagebox.showinfo(APP_NAME,"用語取り込みはすでにバックグラウンドで実行中です。")
+            messagebox.showinfo(APP_NAME,i18n.t('u4.import_busy'))
             return False
-        self._set_glossary_import_busy(True,status)
+        self._set_glossary_import_busy(True,i18n.t("u4.import_started") if status is None else status)
         self.glossary_import_target_path=str(self.glossary_path_var.get() or DEFAULT_GLOSSARY)
         def run():
             try:
                 worker()
             except Exception as exc:
-                record_error("用語集バックグラウンド取り込み",exc)
+                record_error(i18n.t('u4.background_context'),exc)
                 self.events.put(("glossary_import_error",str(exc)))
         self.glossary_import_thread=threading.Thread(target=run,daemon=True)
         self.glossary_import_thread.start()
@@ -10892,7 +10892,7 @@ class App(BaseTk):
         if not targets:
             return
         def worker():
-            self.events.put(("glossary_import_status","用語取り込み中: 日本語localizationを確認しています…"))
+            self.events.put(("glossary_import_status",i18n.t('u4.checking_japanese')))
             valid=[]
             for target in targets:
                 if target.is_file():
@@ -10909,7 +10909,7 @@ class App(BaseTk):
             all_pairs=[]; seen=set()
             total=len(valid)
             for idx,target in enumerate(valid,1):
-                self.events.put(("glossary_import_status",f"用語取り込み中: {idx}/{total} — {target.name}"))
+                self.events.put(("glossary_import_status",i18n.t('u4.import_progress', index=idx, total=total, name=target.name)))
                 if target.is_file():
                     source_root=target.parent; cur=target.parent
                     for _ in range(8):
@@ -10925,7 +10925,7 @@ class App(BaseTk):
                     if ident not in seen:
                         seen.add(ident); all_pairs.append(pair)
             if all_pairs:
-                self.events.put(("glossary_import_status",f"用語候補を作成中: {len(all_pairs)}ファイル組"))
+                self.events.put(("glossary_import_status",i18n.t('u4.creating_candidates', count=len(all_pairs))))
                 candidates=core.build_import_glossary_candidates(all_pairs,source_kind=source_kind,mode=mode)
                 self._finish_import_candidates_in_worker(candidates,label)
                 return
@@ -11005,31 +11005,32 @@ class App(BaseTk):
     def _save_imported_glossary_candidates(self, candidates, label, stats=None):
         if not _japanese_glossary_only(self): return
         if not candidates:
-            msg="取り込み可能な用語候補が見つかりませんでした。"
+            msg=i18n.t('u4.no_candidates')
             if stats:
-                msg += f"\n\n日本語キー: {stats.get('japanese_keys',0)}件\n英語対応: {stats.get('english',0)}件\n中国語対応: {stats.get('chinese',0)}件\n対応なし: {stats.get('unmatched',0)}件"
+                msg = i18n.t("u4.no_candidates_stats", japanese=stats.get('japanese_keys',0),
+                             english=stats.get('english',0), chinese=stats.get('chinese',0), unmatched=stats.get('unmatched',0))
             messagebox.showinfo(APP_NAME,msg)
             return
         result=core.save_auto_glossary_candidates(Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY),candidates,preserve_existing=True)
         self.load_glossary_ui(silent=True)
         if hasattr(self,"_refresh_auto_glossary_tree"): self._refresh_auto_glossary_tree()
-        self.auto_glossary_status_var.set(f"{label}: {result.get('added',0)}件追加 / 候補 {result.get('total',0)}件")
-        lines=[f"{label}が完了しました。",f"候補: {result.get('total',0)}件",f"新規追加: {result.get('added',0)}件"]
+        self.auto_glossary_status_var.set(i18n.t('u4.import_result', label=label, added=result.get('added',0), total=result.get('total',0)))
+        lines=[i18n.t('u4.import_complete', label=label),i18n.t('u4.candidates', count=result.get('total',0)),i18n.t('u4.added', count=result.get('added',0))]
         if stats:
-            lines += ["",f"日本語キー: {stats.get('japanese_keys',0)}件",f"英語対応: {stats.get('english',0)}件",f"中国語対応: {stats.get('chinese',0)}件",f"対応なし: {stats.get('unmatched',0)}件"]
+            lines += ["",i18n.t('u4.japanese_keys', count=stats.get('japanese_keys',0)),i18n.t('u4.english_matches', count=stats.get('english',0)),i18n.t('u4.chinese_matches', count=stats.get('chinese',0)),i18n.t('u4.unmatched', count=stats.get('unmatched',0))]
             if stats.get('unmatched',0):
-                lines.append(f"ゲーム本体に対応原文がないため {stats.get('unmatched',0)}件をスキップしました。")
+                lines.append(i18n.t('u4.skipped_unmatched', count=stats.get('unmatched',0)))
         messagebox.showinfo(APP_NAME,"\n".join(lines))
 
     def _save_imported_glossary_pairs(self, pairs, source_kind, label, mode="common"):
         if not pairs:
-            messagebox.showinfo(APP_NAME,"原文（英語/簡体字中国語）と日本語を対応付けられるlocalizationが見つかりませんでした。\n\n日本語だけでは原語→日本語の用語集を作れません。英語または簡体字中国語の対応原文が必要です。")
+            messagebox.showinfo(APP_NAME,i18n.t('u4.no_pairs'))
             return
         try:
             candidates=core.build_import_glossary_candidates(pairs,source_kind=source_kind,mode=mode)
             self._save_imported_glossary_candidates(candidates,label)
         except Exception as exc:
-            record_error("用語集取り込み",exc)
+            record_error(i18n.t('u4.import_context'),exc)
             messagebox.showerror(APP_NAME,str(exc))
 
     def _import_japanese_targets_with_fallback(self, targets, source_kind, label):
@@ -11047,7 +11048,7 @@ class App(BaseTk):
     def import_glossary_from_base_game(self):
         if not _japanese_glossary_only(self): return
         if self.glossary_import_busy:
-            messagebox.showinfo(APP_NAME,"用語取り込みはすでにバックグラウンドで実行中です。")
+            messagebox.showinfo(APP_NAME,i18n.t('u4.import_busy'))
             return
         game=self._choose_game_for_glossary_import()
         if not game: return
@@ -11056,27 +11057,27 @@ class App(BaseTk):
         root=self._find_base_game_localization_root(game)
         if not root or not Path(root).exists(): return
         source_kind=f"base:{game}"
-        label=f"{game} 本体からの用語取り込み"
+        label=i18n.t('u4.base_import', game=game)
         def worker():
-            self.events.put(("glossary_import_status",f"{game} 本体localizationを走査中…"))
+            self.events.put(("glossary_import_status",i18n.t('u4.base_scan', game=game)))
             pairs=self._collect_qa_diff_pairs(Path(root),Path(root),source_langs=("english","simp_chinese"))
-            self.events.put(("glossary_import_status",f"用語候補を作成中: {len(pairs)}ファイル組"))
+            self.events.put(("glossary_import_status",i18n.t('u4.creating_candidates', count=len(pairs))))
             candidates=core.build_import_glossary_candidates(pairs,source_kind=source_kind,mode=mode) if pairs else []
             self._finish_import_candidates_in_worker(candidates,label)
-        self._start_glossary_import_thread(worker,status=f"{game} 本体からの用語取り込みを開始しました…")
+        self._start_glossary_import_thread(worker,status=i18n.t('u4.base_started', game=game))
 
     def import_glossary_from_japanese_source(self, kind):
         if not _japanese_glossary_only(self): return
         if self.glossary_import_busy:
-            messagebox.showinfo(APP_NAME,"用語取り込みはすでにバックグラウンドで実行中です。")
+            messagebox.showinfo(APP_NAME,i18n.t('u4.import_busy'))
             return
         if kind=="file":
-            raw=filedialog.askopenfilename(title="日本語localization YAMLを選択",filetypes=[("YAML","*.yml *.yaml"),("All files","*")])
+            raw=filedialog.askopenfilename(title=i18n.t('u4.choose_japanese_yaml'),filetypes=[("YAML","*.yml *.yaml"),("All files","*")])
         else:
-            raw=filedialog.askdirectory(title="日本語化Modまたは localization フォルダを選択")
+            raw=filedialog.askdirectory(title=i18n.t('u4.choose_japanese_mod'))
         if not raw: return
         source_kind="import:file" if kind=="file" else "import:mod"
-        label="日本語YAMLからの用語取り込み" if kind=="file" else "日本語化Modからの用語取り込み"
+        label=i18n.t('u4.japanese_yaml_import') if kind=="file" else i18n.t('u4.japanese_mod_import')
         self._import_japanese_targets_with_fallback([Path(raw)],source_kind,label)
 
     def _collect_glossary_import_pairs_from_path(self, target: Path):
@@ -11100,7 +11101,7 @@ class App(BaseTk):
     def on_glossary_import_drop_paths(self,event):
         if not _japanese_glossary_only(self): return
         if self.glossary_import_busy:
-            self.auto_glossary_status_var.set("用語取り込みはすでにバックグラウンドで実行中です。")
+            self.auto_glossary_status_var.set(i18n.t('u4.import_busy'))
             return event.action if hasattr(event,"action") else None
         raw_paths=self._raw_drop_paths(event)
         targets=[]; ignored=[]
@@ -11113,11 +11114,11 @@ class App(BaseTk):
                 ignored.append(target.name or str(target)); continue
             targets.append(target)
         if targets:
-            self._import_japanese_targets_with_fallback(targets,"import:dnd",f"ドラッグ＆ドロップからの用語取り込み（{len(targets)}項目）")
+            self._import_japanese_targets_with_fallback(targets,"import:dnd",i18n.t('u4.drop_import', count=len(targets)))
         else:
-            messagebox.showinfo(APP_NAME,"取り込み可能な日本語YAML / 日本語化Mod / localizationフォルダを確認できませんでした。")
+            messagebox.showinfo(APP_NAME,i18n.t('u4.drop_no_targets'))
         if ignored and targets:
-            self.auto_glossary_status_var.set(f"DnD: 対象 {len(targets)}件 / 対象外 {len(ignored)}件")
+            self.auto_glossary_status_var.set(i18n.t('u4.drop_result', targets=len(targets), ignored=len(ignored)))
         return event.action if hasattr(event,"action") else None
 
     def pick_glossary(self):
@@ -11127,12 +11128,12 @@ class App(BaseTk):
     def show_selected_glossary_note(self, tree):
         selected=tree.selection()
         if not selected:
-            self.glossary_note_var.set("note: 用語を選択すると表示します")
+            self.glossary_note_var.set(i18n.t('u4.note_hint'))
             return
         source=tree.item(selected[0],"values")[0]
         metadata=self._glossary_variant_metadata().get(source,{})
         note=metadata.get("note","") if isinstance(metadata,dict) else ""
-        self.glossary_note_var.set(f"{source} — note: {note or 'なし'}")
+        self.glossary_note_var.set(i18n.t('u4.selected_note', source=source, note=note or i18n.t('u4.none')))
 
     def _show_glossary_import_text(self, parent, text):
         frame=ttk.Frame(parent); frame.pack(fill="both",expand=True,padx=8,pady=8)
@@ -11149,88 +11150,88 @@ class App(BaseTk):
             view.clipboard_clear(); view.clipboard_append(selected)
             return "break"
         view.bind("<Control-c>",copy_selection); view.bind("<Command-c>",copy_selection)
-        ttk.Button(parent,text="選択部分をコピー",command=copy_selection).pack(anchor="w",padx=8)
+        ttk.Button(parent,text=i18n.t('u4.copy_selection'),command=copy_selection).pack(anchor="w",padx=8)
         return view
 
     def import_paratranz_glossary(self):
-        filename=filedialog.askopenfilename(title="ParaTranz の用語集（JSON）を取り込む",filetypes=[("JSON","*.json")])
+        filename=filedialog.askopenfilename(title=i18n.t('u4.paratranz_import'),filetypes=[("JSON","*.json")])
         if not filename: return
         try:
             text,_encoding=core.decode_text_bytes(Path(filename).read_bytes())
             data=json.loads(text)
             if not core.is_paratranz_glossary(data):
-                raise ValueError("ParaTranz の用語集（term / translation を持つリスト）ではありません。")
+                raise ValueError(i18n.t('u4.invalid_paratranz'))
             classified=core.classify_paratranz_glossary(data)
         except (OSError,UnicodeError,ValueError) as exc:
-            messagebox.showerror("ParaTranz 取り込みエラー",str(exc)); return
+            messagebox.showerror(i18n.t('u4.paratranz_error'),str(exc)); return
         self.confirm_paratranz_import(classified)
 
     def confirm_paratranz_import(self, classified):
-        dialog=tk.Toplevel(self); dialog.title("ParaTranz 用語集の取り込み確認"); dialog.geometry("850x700")
+        dialog=tk.Toplevel(self); dialog.title(i18n.t('u4.paratranz_confirm')); dialog.geometry("850x700")
         dialog.transient(self); dialog.grab_set()
-        labels={"items":"元の項目", "terms":"取り込む用語（variants込み）", "from_variants":"variantsから追加",
-                "rules":"※で始まるルール", "affixes":"接辞", "symbols":"記号のみ", "short_terms":"短い英字の語",
-                "spaces_fixed":"空白を直した数", "duplicates":"重なり（先の語を使用）", "note_rules":"noteにルールがある語"}
+        labels={"items":i18n.t('u4.original_items'), "terms":i18n.t('u4.imported_terms'), "from_variants":i18n.t('u4.from_variants'),
+                "rules":i18n.t('u4.rules_count'), "affixes":i18n.t('u4.affixes'), "symbols":i18n.t('u4.symbols'), "short_terms":i18n.t('u4.short_terms'),
+                "spaces_fixed":i18n.t('u4.spaces_fixed'), "duplicates":i18n.t('u4.duplicates'), "note_rules":i18n.t('u4.note_rules_count')}
         summary="\n".join(f"{label}: {classified['counts'][key]}" for key,label in labels.items())
-        for title,key in (("短い語は、ほかの単語の一部に誤って当たるおそれがあります","short_terms"),
-                          ("表記ルールに回る項目（用語集には入れません）","rules"),
-                          ("note にルールがある語（用語は取り込み、noteはプロンプトに入れません）","note_rules")):
+        for title,key in ((i18n.t('u4.short_warning'),"short_terms"),
+                          (i18n.t('u4.rules_section'),"rules"),
+                          (i18n.t('u4.note_rules_section'),"note_rules")):
             summary+="\n\n"+title+"\n"
-            summary+="\n".join(f"{entry['term']} → {entry['translation']}\n  note: {entry['note']}  {entry.get('reason','')}" for entry in classified[key]) or "なし"
+            summary+="\n".join(f"{entry['term']} → {entry['translation']}\n  note: {entry['note']}  {entry.get('reason','')}" for entry in classified[key]) or i18n.t('u4.none')
         self._show_glossary_import_text(dialog,summary)
         options=ttk.Frame(dialog); options.pack(fill="x",padx=8,pady=8)
         language=tk.StringVar(value=_target_lang_choice(_glossary_language(self)))
         mode=tk.StringVar(value="merge")
-        ttk.Label(options,text="取り込み先の言語").pack(side="left")
+        ttk.Label(options,text=i18n.t('u4.destination_language')).pack(side="left")
         ttk.Combobox(options,textvariable=language,values=[_target_lang_choice(lang) for lang in core.TARGET_LANGUAGES],state="readonly").pack(side="left",padx=6)
-        ttk.Radiobutton(options,text="今の用語集に足す",variable=mode,value="merge").pack(side="left")
-        ttk.Radiobutton(options,text="置き換える",variable=mode,value="replace").pack(side="left")
+        ttk.Radiobutton(options,text=i18n.t('u4.merge'),variable=mode,value="merge").pack(side="left")
+        ttk.Radiobutton(options,text=i18n.t('u4.replace'),variable=mode,value="replace").pack(side="left")
         destination=tk.StringVar()
         def update_destination(*args):
             path=core.glossary_path_for_language(self.glossary_path_var.get() or DEFAULT_GLOSSARY,_target_lang_from_choice(language.get()))
-            destination.set(f"保存先: {path}")
+            destination.set(i18n.t('u4.destination', path=path))
         language.trace_add("write",update_destination); update_destination()
         ttk.Label(dialog,textvariable=destination,wraplength=820).pack(fill="x",padx=8)
-        ttk.Label(dialog,text="置き換える場合は既存の用語と表記ルールを置き換えます。表記ルールはA2へ手でコピーできます。",wraplength=820).pack(fill="x",padx=8)
+        ttk.Label(dialog,text=i18n.t('u4.replace_help'),wraplength=820).pack(fill="x",padx=8)
         def import_selected():
             path=core.glossary_path_for_language(self.glossary_path_var.get() or DEFAULT_GLOSSARY,_target_lang_from_choice(language.get()))
             try:
                 result=core.save_paratranz_import(path,classified,mode.get())
             except (OSError,ValueError) as exc:
-                messagebox.showerror("ParaTranz 取り込みエラー",str(exc),parent=dialog); return
+                messagebox.showerror(i18n.t('u4.paratranz_error'),str(exc),parent=dialog); return
             self.glossary_lang_var.set(language.get())
             self.load_glossary_ui(silent=True)
-            self.progress_text.set(f"ParaTranz: 追加 {result['counts']['added']} / 更新 {result['counts']['updated']} / 訳が違う語 {result['counts']['conflicts']}")
+            self.progress_text.set(i18n.t('u4.paratranz_result', added=result['counts']['added'], updated=result['counts']['updated'], conflicts=result['counts']['conflicts']))
             dialog.destroy()
             if result["conflicts"]:
-                conflicts=tk.Toplevel(self); conflicts.title("訳が違う語（今の訳を残しました）"); conflicts.geometry("750x500")
-                self._show_glossary_import_text(conflicts,"\n\n".join(f"{entry['term']}\n今の訳: {entry['existing']}\n取り込み側の訳: {entry['incoming']}" for entry in result["conflicts"]))
-                ttk.Button(conflicts,text="閉じる",command=conflicts.destroy).pack(pady=8)
+                conflicts=tk.Toplevel(self); conflicts.title(i18n.t('u4.conflicts_title')); conflicts.geometry("750x500")
+                self._show_glossary_import_text(conflicts,"\n\n".join(i18n.t('u4.conflict_entry', term=entry['term'], existing=entry['existing'], incoming=entry['incoming']) for entry in result["conflicts"]))
+                ttk.Button(conflicts,text=i18n.t('u4.close'),command=conflicts.destroy).pack(pady=8)
         buttons=ttk.Frame(dialog); buttons.pack(fill="x",padx=8,pady=8)
-        ttk.Button(buttons,text="取り込む",command=import_selected).pack(side="right")
-        ttk.Button(buttons,text="やめる",command=dialog.destroy).pack(side="right",padx=6)
+        ttk.Button(buttons,text=i18n.t('u4.import_selected'),command=import_selected).pack(side="right")
+        ttk.Button(buttons,text=i18n.t('u4.abort'),command=dialog.destroy).pack(side="right",padx=6)
 
     def show_glossary_notation_rules(self):
         path=core.glossary_notation_rules_path(_selected_glossary_path(self))
         try:
             data=json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"rules":[],"note_rules":[]}
             if not isinstance(data,dict) or any(not isinstance(data.get(key,[]),list) or any(not isinstance(entry,dict) for entry in data.get(key,[])) for key in ("rules","note_rules")):
-                raise ValueError("表記ルールのファイルの形式が不正です。")
+                raise ValueError(i18n.t('u4.invalid_rules'))
         except (OSError,ValueError) as exc:
-            messagebox.showerror("表記ルール",str(exc)); return
-        dialog=tk.Toplevel(self); dialog.title("表記ルール（読み取り専用）"); dialog.geometry("850x600")
-        text=f"{path}\n自動でプロンプトには入りません。必要な内容を選択し、コピーしてA2へ手で写してください。"
-        for title,key in (("表記ルール","rules"),("note にルールがある語","note_rules")):
+            messagebox.showerror(i18n.t('u4.rules'),str(exc)); return
+        dialog=tk.Toplevel(self); dialog.title(i18n.t('u4.rules_read_only')); dialog.geometry("850x600")
+        text=i18n.t('u4.rules_help', path=path)
+        for title,key in ((i18n.t('u4.rules'),"rules"),(i18n.t('u4.note_rules'),"note_rules")):
             text+="\n\n"+title+"\n"
-            text+="\n\n".join(f"原語: {entry.get('term','')}\n訳: {entry.get('translation','')}\nnote: {entry.get('note','')}\n理由: {entry.get('reason','')}" for entry in data.get(key,[])) or "なし"
+            text+="\n\n".join(i18n.t('u4.rule_entry', term=entry.get('term',''), translation=entry.get('translation',''), note=entry.get('note',''), reason=entry.get('reason','')) for entry in data.get(key,[])) or i18n.t('u4.none')
         self._show_glossary_import_text(dialog,text)
-        ttk.Button(dialog,text="閉じる",command=dialog.destroy).pack(pady=8)
+        ttk.Button(dialog,text=i18n.t('u4.close'),command=dialog.destroy).pack(pady=8)
 
     def load_glossary_ui(self,silent=False):
         p=_selected_glossary_path(self)
-        label=core.target_language_label(_glossary_language(self))
+        label=i18n.t("lang." + _glossary_language(self))
         if hasattr(self,"glossary_actual_path_var"):
-            self.glossary_actual_path_var.set(f"この言語のファイル: {p}")
+            self.glossary_actual_path_var.set(i18n.t('u4.language_file', path=p))
         for tree_name in ("glossary_tree","auto_glossary_tree"):
             tree=getattr(self,tree_name,None)
             if tree is not None and hasattr(tree,"heading"): tree.heading("dst",text=label)
@@ -11239,14 +11240,14 @@ class App(BaseTk):
             self._glossary_unsafe_path=p.resolve()
             if silent:
                 self.progress_text.set(problem)
-                record_error("用語集読込",detail=f"{p}: {problem}")
+                record_error(i18n.t('u4.load_context'),detail=f"{p}: {problem}")
             else:
-                messagebox.showerror("用語集読込エラー",problem)
+                messagebox.showerror(i18n.t('u4.load_error'),problem)
             return
         gl=core.load_glossary(p)
         self._glossary_unsafe_path=None
         if hasattr(self,"glossary_note_var"):
-            self.glossary_note_var.set("note: 用語を選択すると表示します")
+            self.glossary_note_var.set(i18n.t('u4.note_hint'))
         variants=self._glossary_variant_metadata()
         if hasattr(self,"glossary_tree"):
             for x in self.glossary_tree.get_children(): self.glossary_tree.delete(x)
@@ -11258,12 +11259,12 @@ class App(BaseTk):
                 self.auto_glossary_tree.insert("","end",values=(src,dst,self._glossary_kind_label(meta)))
             elif hasattr(self,"glossary_tree"):
                 self.glossary_tree.insert("","end",values=(src,dst))
-        if not silent: self.progress_text.set(f"用語集 {len(gl)}件を読み込みました")
+        if not silent: self.progress_text.set(i18n.t('u4.loaded', count=len(gl)))
 
     def save_glossary_ui(self):
         p=_selected_glossary_path(self)
         if p.resolve()==getattr(self,"_glossary_unsafe_path",None) or core.glossary_file_problem(p):
-            messagebox.showerror("用語集保存エラー","対応していない形式のファイルなので上書きしません。別の名前で保存してください。")
+            messagebox.showerror(i18n.t('u4.save_error'),i18n.t('u4.unsupported_save'))
             return
         gl={}
         if hasattr(self,"glossary_tree"):
@@ -11276,12 +11277,12 @@ class App(BaseTk):
                 if len(vals)>=2: gl[str(vals[0])]=str(vals[1])
         core.save_glossary(p,gl)
         if _glossary_language(self) == core.DEFAULT_TARGET_LANG: self.glossary_path_var.set(str(p))
-        self.progress_text.set(f"用語集保存: {p}")
+        self.progress_text.set(i18n.t('u4.saved', path=p))
 
     def add_glossary_term(self):
-        src=simpledialog.askstring("用語追加","原語（英語/中国語）")
+        src=simpledialog.askstring(i18n.t('u4.add_term'),i18n.t('u4.source_languages'))
         if not src: return
-        dst=simpledialog.askstring("用語追加",f"「{src}」の固定{core.target_language_label(_glossary_language(self))}訳")
+        dst=simpledialog.askstring(i18n.t('u4.add_term'),i18n.t('u4.fixed_translation', source=src, target_name=i18n.t("lang." + _glossary_language(self))))
         if dst:
             # 手動追加した語は自動分類メタデータから外し、左側へ表示する。
             p=_selected_glossary_path(self)
@@ -11292,9 +11293,9 @@ class App(BaseTk):
         sel=self.glossary_tree.selection()
         if not sel: return
         src,dst=self.glossary_tree.item(sel[0],"values")
-        nsrc=simpledialog.askstring("用語編集","原語",initialvalue=src)
+        nsrc=simpledialog.askstring(i18n.t('u4.edit_term'),i18n.t('u4.source'),initialvalue=src)
         if not nsrc: return
-        ndst=simpledialog.askstring("用語編集",core.target_language_label(_glossary_language(self)),initialvalue=dst)
+        ndst=simpledialog.askstring(i18n.t('u4.edit_term'),i18n.t("lang." + _glossary_language(self)),initialvalue=dst)
         if ndst is not None: self.glossary_tree.item(sel[0],values=(nsrc,ndst)); self.save_glossary_ui()
 
     def delete_glossary_term(self):
