@@ -79,3 +79,149 @@ def test_non_japanese_proofreading_prompt(monkeypatch):
     system, user = sent[0]
     assert "French localization" in system and "日本語" not in system
     assert user == "Source for reference: Hello [VAR]\nFrench: Bonjur @@0@@"
+
+
+def test_japanese_untranslated_checks_are_unchanged_by_default():
+    # 既定（日本語）と明示した日本語は同じ結果
+    cases = [("Declare war", "Declare war", "english"), ("Declare war", "宣戦布告", "english"),
+             ("The council approved", "The council approved the law", "english"),
+             ("这是尚未翻译的完整句子。", "这是尚未翻译的完整句子。", "simp_chinese")]
+    for orig, trans, src in cases:
+        assert core.looks_untranslated(orig, trans, src) == core.looks_untranslated(orig, trans, src, "japanese")
+    assert core.looks_foreign_in_target("Open the gate", "japanese") is True
+
+
+def test_latin_targets_accept_normal_translations_and_flag_only_long_identical_text():
+    # 普通の訳は未翻訳にしない（日本語の「英字12文字以上・かな無し」の判定を使わない）
+    for lang, text in (("french", "Le conseil a approuvé la nouvelle loi"), ("german", "Der Rat hat das Gesetz beschlossen"),
+                       ("spanish", "El consejo aprobó la nueva ley"), ("polish", "Rada zatwierdziła nową ustawę"),
+                       ("braz_por", "O conselho aprovou a nova lei"), ("turkish", "Konsey yeni yasayı onayladı")):
+        assert core.looks_untranslated("The council approved the new law", text, "english", lang) is False, lang
+        assert core.cache_entry_is_valid("The council approved the new law", text, "english", lang)
+    # 原文と同じでも短いもの（固有名詞が多い）は未翻訳にしない。文の長さなら未翻訳
+    assert core.looks_untranslated("Napoleon", "Napoleon", "english", "french") is False
+    assert core.looks_untranslated("Karl Marx", "Karl Marx", "english", "german") is False
+    assert core.looks_untranslated("The council approved the law", "The council approved the law", "english", "french") is True
+    # 中国語の原文が残っていれば未翻訳
+    assert core.looks_untranslated("议会通过了新法律", "议会通过了新法律", "simp_chinese", "english") is True
+    assert core.looks_untranslated("议会通过了新法律", "The council passed the law", "simp_chinese", "english") is False
+    assert core.looks_foreign_in_target("Open the gate", "french") is False
+
+
+def test_non_latin_targets_are_checked_by_script():
+    src = "The council approved the new law"
+    assert core.looks_untranslated(src, "의회가 새 법을 승인했다", "english", "korean") is False
+    assert core.looks_untranslated(src, "Совет одобрил новый закон", "english", "russian") is False
+    assert core.looks_untranslated(src, "议会批准了新法律", "english", "simp_chinese") is False
+    for lang in ("korean", "russian", "simp_chinese"):
+        assert core.looks_untranslated(src, src, "english", lang) is True, lang
+        assert core.looks_foreign_in_target(src, lang) is True, lang
+    # 中国語のまま残った韓国語・ロシア語の訳
+    assert core.looks_untranslated("议会通过了法律", "议会通过了法律", "simp_chinese", "korean") is True
+    # 変数だけ・略語だけは未翻訳にしない
+    assert core.looks_untranslated("$NAME$", "$NAME$", "english", "russian") is False
+    assert core.looks_foreign_in_target("NATO", "korean") is False
+
+
+# ---------------------------------------------------------------- 翻訳の流れ全体（偽の LLM）
+
+import json as _json
+
+import pytest
+
+FAKE_TEXT = {"french": "Texte traduit", "german": "Übersetzter Text", "korean": "번역된 문장",
+             "russian": "Переведённый текст", "english": "Translated text", "simp_chinese": "已翻译的文本",
+             "japanese": "翻訳された文", "turkish": "Çevrilmiş metin"}
+
+
+def _fake_translate(calls):
+    def fake(_url, _model, jobs, source_lang, *args, **kwargs):
+        target = kwargs.get("target_lang", "japanese")
+        calls.append((source_lang, target, [j["key"] for j in jobs]))
+        return [" ".join([FAKE_TEXT[target]] + [f"@@{k}@@" for k in range(len(j["tokens"]))]) for j in jobs]
+    return fake
+
+
+def _mod(root, files):
+    for rel, text in files.items():
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    return root
+
+
+EN = 'l_english:\n greet:0 "Hello there $NAME$"\n title:0 "The council approved the new law"\n'
+ZH = 'l_simp_chinese:\n greet:0 "你好 $NAME$"\n title:0 "议会通过了新法律"\n'
+
+
+@pytest.mark.parametrize("target,files,expected_source", [
+    ("french", {"english/ev_l_english.yml": EN}, "english"),
+    ("korean", {"english/ev_l_english.yml": EN}, "english"),
+    ("russian", {"english/ev_l_english.yml": EN}, "english"),
+    ("turkish", {"english/ev_l_english.yml": EN}, "english"),
+    # 翻訳先が english：english は原文から外し、simp_chinese を原文にする
+    ("english", {"english/ev_l_english.yml": EN, "simp_chinese/ev_l_simp_chinese.yml": ZH}, "simp_chinese"),
+    # 翻訳先が simp_chinese：simp_chinese は原文から外し、english を原文にする
+    ("simp_chinese", {"english/ev_l_english.yml": EN, "simp_chinese/ev_l_simp_chinese.yml": ZH}, "english"),
+])
+def test_run_translation_end_to_end_for_each_target(tmp_path, monkeypatch, target, files, expected_source):
+    calls = []
+    monkeypatch.setattr(core, "translate_batch", _fake_translate(calls))
+    src = _mod(tmp_path / "mod" / "localization", files)
+    out = tmp_path / "out"
+
+    result = core.run_translation(src, out, target_lang=target, verbose=False, dual_source=True,
+                                  qa_backup_root=tmp_path / "bk")
+
+    generated = out / target / f"ev_l_{target}.yml"
+    assert generated.exists(), list(out.rglob("*.yml"))
+    text = generated.read_text(encoding="utf-8-sig")
+    assert text.startswith(f"l_{target}:")
+    lang, entries, _ = core.parse_localization_file(generated)
+    assert lang == target
+    assert entries["greet"] == f"{FAKE_TEXT[target]} $NAME$"
+    assert entries["title"] == FAKE_TEXT[target]
+    assert {c[0] for c in calls} == {expected_source} and {c[1] for c in calls} == {target}
+    assert result["qa_errors"] == 0 and result["failed"] == 0
+    report = _json.loads((out / "translation_qa_repair_report.json").read_text(encoding="utf-8"))
+    assert not any(e.get("action", "").startswith("rollback") for e in report.get("repair_events", []))
+    # キャッシュは翻訳先ごとのキーで保存され、2回目は LLM を呼ばずにそのまま使える
+    calls.clear()
+    core.run_translation(src, out, target_lang=target, verbose=False, dual_source=True)
+    assert calls == []
+    assert core.parse_localization_file(generated)[1] == entries
+
+
+def test_japanese_and_french_runs_do_not_share_cache_entries(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(core, "translate_batch", _fake_translate(calls))
+    src = _mod(tmp_path / "mod" / "localization", {"english/ev_l_english.yml": EN})
+    cache = tmp_path / "cache.json"
+    core.run_translation(src, tmp_path / "ja", cache_path=cache, verbose=False, auto_qa=False)
+    core.run_translation(src, tmp_path / "fr", cache_path=cache, target_lang="french", verbose=False, auto_qa=False)
+
+    assert [c[1] for c in calls] == ["japanese", "french"]
+    assert core.parse_localization_file(tmp_path / "fr" / "french" / "ev_l_french.yml")[1]["title"] == "Texte traduit"
+    assert core.parse_localization_file(tmp_path / "ja" / "japanese" / "ev_l_japanese.yml")[1]["title"] == "翻訳された文"
+
+
+def test_qa_pairs_and_output_qa_use_the_same_source_choice(tmp_path):
+    src = _mod(tmp_path / "mod" / "localization",
+               {"english/ev_l_english.yml": EN, "simp_chinese/ev_l_simp_chinese.yml": ZH,
+                "french/ev_l_french.yml": 'l_french:\n greet:0 "Bonjour $NAME$"\n'})
+    pairs = core.collect_translation_qa_pairs(src, tmp_path / "out", None, target_lang="english")
+    assert [p["source_language"] for p in pairs] == ["simp_chinese"]
+    pairs = core.collect_translation_qa_pairs(src, tmp_path / "out", None, target_lang="german")
+    assert [p["source_language"] for p in pairs] == ["english"]
+    # 日本語の既定（english と simp_chinese だけを見る）は今までどおり
+    pairs = core.collect_translation_qa_pairs(src, tmp_path / "out", ("english", "simp_chinese"))
+    assert [p["source_language"] for p in pairs] == ["english"]
+
+
+def test_qa_on_french_output_reports_no_japanese_specific_errors():
+    issues = core.qa_entries({"a": "Le conseil a approuvé la loi.", "b": "Napoleon"},
+                             {"a": "The council approved the law.", "b": "Napoleon"}, "english",
+                             target_lang="french")
+    assert not [i for i in issues if i["severity"] in {"error", "warning"}]
+    same = [i for i in issues if i["type"] == "same_as_source"]
+    assert len(same) == 1 and same[0]["severity"] == "notice" and same[0]["repairable"] is False
