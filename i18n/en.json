@@ -36,6 +36,7 @@
   "shots": {
     "title": "Screenshots",
     "pending": "Screenshot coming soon",
+    "ui_note": "The app's interface is currently in Japanese; an English UI is planned.",
     "items": {
       "translate": "Translation queue and progress",
       "qa": "Side-by-side QA and editing",

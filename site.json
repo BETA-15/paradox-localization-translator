@@ -52,6 +52,7 @@
     }
   },
 
+  "shots_fallback": "ja",
   "shots": [
     {"file": "translate", "w": 1480, "h": 1008},
     {"file": "qa", "w": 1480, "h": 1008},

@@ -98,11 +98,16 @@ def build_matrix(t, page_game: str) -> str:
     )
 
 
-def shot_src(name: str, code: str) -> str | None:
-    for folder in (f"assets/shots/{code}", "assets/shots"):
+def shot_src(name: str, code: str) -> tuple[str, bool] | None:
+    """Return (path, borrowed). borrowed = the picture shows another language's UI (site.json shots_fallback)."""
+    fallback = SITE.get("shots_fallback")
+    folders = [(f"assets/shots/{code}", False), ("assets/shots", False)]
+    if fallback and fallback != code:
+        folders.append((f"assets/shots/{fallback}", True))
+    for folder, borrowed in folders:
         for ext in ("webp", "png"):
             if (ROOT / folder / f"{name}.{ext}").exists():
-                return f"{folder}/{name}.{ext}"
+                return f"{folder}/{name}.{ext}", borrowed
     return None
 
 
@@ -144,9 +149,12 @@ def build_page(lang: dict, built: list[dict], en: dict) -> str:
     )
 
     shots = []
+    borrowed_any = False
     for shot in SITE["shots"]:
         caption = inline(t(f'shots.items.{shot["file"]}'))
-        src = shot_src(shot["file"], code)
+        found = shot_src(shot["file"], code)
+        src, borrowed = found if found else (None, False)
+        borrowed_any = borrowed_any or borrowed
         if src:
             shots.append(
                 f'<figure class="shot"><button type="button" class="zoom" data-full="{root}{src}">'
@@ -159,6 +167,8 @@ def build_page(lang: dict, built: list[dict], en: dict) -> str:
                 f'<figure class="shot empty"><div class="ph">{inline(t("shots.pending"))}</div><figcaption>{caption}</figcaption></figure>'
             )
     ctx["shots_html"] = "".join(shots)
+    # Shown while a page borrows another language's UI pictures; disappears once its own pictures exist.
+    ctx["shots_note"] = f'<p class="intro">{inline(t("shots.ui_note"))}</p>' if borrowed_any else ""
 
     page_game = lang["game"]
     ctx["matrix"] = build_matrix(t, page_game)
