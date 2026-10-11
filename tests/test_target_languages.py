@@ -247,3 +247,34 @@ def test_without_english_simplified_chinese_is_preferred_over_other_languages(tm
         calls.clear()
         core.run_translation(src, tmp_path / target, target_lang=target, verbose=False, auto_qa=False)
         assert {c[0] for c in calls} == {"simp_chinese"}, target
+
+
+def test_dual_source_cache_hits_on_second_run_when_chinese_is_the_source(tmp_path, monkeypatch):
+    """英中併用で英語が無く中国語が原文のとき、2回目はキャッシュが当たる（v0.12.0 で修正した古い不具合）。"""
+    calls = []
+    monkeypatch.setattr(core, "translate_batch", _fake_translate(calls))
+    src = _mod(tmp_path / "mod" / "localization",
+               {"french/ev_l_french.yml": 'l_french:\n greet:0 "Bonjour $NAME$"\n title:0 "Le conseil a approuvé la loi"\n',
+                "simp_chinese/ev_l_simp_chinese.yml": ZH})
+    for target in ("korean", "japanese"):
+        out = tmp_path / target
+        core.run_translation(src, out, target_lang=target, verbose=False, auto_qa=False, dual_source=True)
+        calls.clear()
+        core.run_translation(src, out, target_lang=target, verbose=False, auto_qa=False, dual_source=True)
+        assert calls == [], target
+
+
+def test_dual_source_with_english_source_keeps_the_same_cache_key(tmp_path, monkeypatch):
+    """英語の原文の英中併用は、キャッシュのキー（参考訳込み）が今までどおりで、2回目も当たる。"""
+    calls = []
+    monkeypatch.setattr(core, "translate_batch", _fake_translate(calls))
+    src = _mod(tmp_path / "mod" / "localization", {"english/ev_l_english.yml": EN, "simp_chinese/ev_l_simp_chinese.yml": ZH})
+    out = tmp_path / "ja"
+    core.run_translation(src, out, verbose=False, auto_qa=False, dual_source=True)
+    cache = core.load_cache(out / core.CACHE_FILE_NAME)
+    expected = core.translation_cache_key("Ollama", core.DEFAULT_MODEL, "General", "english", "Hello there $NAME$",
+                                          dual_source=True, zh_ref="你好 $NAME$")
+    assert expected in cache
+    calls.clear()
+    core.run_translation(src, out, verbose=False, auto_qa=False, dual_source=True)
+    assert calls == []

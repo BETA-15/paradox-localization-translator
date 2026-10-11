@@ -1726,6 +1726,16 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
     repair_target_file = source_lang == target_lang
     # 翻訳先と同じ言語のファイルは「修復」：残った外国語（英語）だけを訳す。日本語は v0.11.80 と同じ。
     translation_source_lang = "english" if repair_target_file else source_lang
+
+    def key_zh_ref(key: str) -> str:
+        """キャッシュのキーと LLM に渡す中国語の参考訳。探すとき・保存するとき・書き出すときで必ず同じ値にする。
+
+        英中併用は英語の原文のときだけ使う（v0.12.0 まで、英語以外の原文では探すキーにだけ参考訳が入り、
+        保存したキーと食い違ってキャッシュが当たらなかった）。
+        """
+        if not dual_source or translation_source_lang != "english":
+            return ""
+        return (zh_refs or {}).get(key, "")
     if repair_target_file and verbose:
         print(f"  原文は既に{target_lang}です。未翻訳の外国語部分だけを修復します")
 
@@ -1747,7 +1757,7 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
             continue
         h = translation_cache_key(provider, model, preset, translation_source_lang, value,
                                   glossary=glossary, dual_source=dual_source,
-                                  zh_ref=(zh_refs or {}).get(m.group("key").strip(), ""),
+                                  zh_ref=key_zh_ref(m.group("key").strip()),
                                   translation_mode="chinese_basis" if chinese_basis else "standard",
                                   target_lang=target_lang)
         if h in cache and cache_entry_is_valid(value, cache[h], translation_source_lang, target_lang):
@@ -1758,7 +1768,7 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
         jobs.append({
             "line_idx": idx, "key": m.group("key").strip(), "value": value,
             "protected": protected, "tokens": tokens, "hash": h,
-            "zh_ref": (zh_refs or {}).get(m.group("key").strip()) if translation_source_lang == "english" and target_lang != "simp_chinese" else None,
+            "zh_ref": key_zh_ref(m.group("key").strip()),
         })
 
     total_keys = sum(1 for k, _ in parsed_lines if k == "line")
@@ -1919,7 +1929,7 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
         if idx in results:
             translated = results[idx]
         elif orig and not looks_untranslatable(orig):
-            zh_ref = (zh_refs or {}).get(m.group("key").strip(), "") if translation_source_lang == "english" else ""
+            zh_ref = key_zh_ref(m.group("key").strip())
             h = translation_cache_key(provider, model, preset, translation_source_lang, orig,
                                       glossary=glossary, dual_source=dual_source, zh_ref=zh_ref,
                                       translation_mode="chinese_basis" if chinese_basis else "standard",
