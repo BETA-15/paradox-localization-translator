@@ -3597,45 +3597,44 @@ class App(BaseTk):
     def _build_diagnostic_tab(self):
         t = self.tab_diagnostic
         head = ttk.Frame(t); head.pack(fill="x")
-        ttk.Label(head, text="総合診断 — localization の混入・欠損・異常を確認", font=("", 14, "bold")).pack(side="left")
+        ttk.Label(head, text=i18n.t('u7.full_diagnostics_check_localization_contamination_missing'), font=("", 14, "bold")).pack(side="left")
         ttk.Label(head, textvariable=self.diagnostic_summary_var).pack(side="right")
         ttk.Label(t, text=(
-            "英語 / 簡体字中国語の原文キーを基準に、日本語localizationへ別Mod由来のファイル・キーが混入していないかを調べます。"
-            " 修復は日本語側だけを変更し、実行直前に対象Modの localization フォルダ全体を丸ごとバックアップします。"
+            i18n.t('u7.using_english_simplified_chinese_source_keys')
         ), foreground="#555", wraplength=1100, justify="left").pack(fill="x", pady=(6,8))
 
         pane = ttk.Panedwindow(t, orient="horizontal"); pane.pack(fill="both", expand=True)
         left = ttk.Frame(pane); right = ttk.Frame(pane)
         pane.add(left, weight=2); pane.add(right, weight=5)
 
-        targets = ttk.LabelFrame(left, text="診断対象Mod（翻訳状況から取得）", padding=6); targets.pack(fill="both", expand=True)
+        targets = ttk.LabelFrame(left, text=i18n.t('u7.diagnostic_targets_from_translation_status'), padding=6); targets.pack(fill="both", expand=True)
         ttk.Label(targets, textvariable=self.diagnostic_target_var, foreground="#555").pack(anchor="w")
         tw = ttk.Frame(targets); tw.pack(fill="both", expand=True, pady=(6,0))
         self.diagnostic_target_tree = ttk.Treeview(tw, columns=("mod","status","path"), show="headings", selectmode="extended", height=18)
         self._enable_ctrl_multiselect(self.diagnostic_target_tree)
-        for c,txt,w in (("mod","Mod",260),("status","現在の状態",150),("path","場所",500)):
+        for c,txt,w in (("mod","Mod",260),("status",i18n.t('u7.current_status'),150),("path",i18n.t('u7.location'),500)):
             self.diagnostic_target_tree.heading(c,text=txt); self.diagnostic_target_tree.column(c,width=w,minwidth=w,stretch=False,anchor="w")
         sy=ttk.Scrollbar(tw,orient="vertical",command=self.diagnostic_target_tree.yview); sx=ttk.Scrollbar(tw,orient="horizontal",command=self.diagnostic_target_tree.xview)
         self.diagnostic_target_tree.configure(yscrollcommand=sy.set,xscrollcommand=sx.set)
         tw.rowconfigure(0,weight=1); tw.columnconfigure(0,weight=1)
         self.diagnostic_target_tree.grid(row=0,column=0,sticky="nsew"); sy.grid(row=0,column=1,sticky="ns"); sx.grid(row=1,column=0,sticky="ew")
         tbtn=ttk.Frame(targets); tbtn.pack(fill="x",pady=(7,0))
-        self.diagnostic_refresh_btn=ttk.Button(tbtn,text="翻訳状況から再取得",command=self._refresh_diagnostic_targets); self.diagnostic_refresh_btn.pack(side="left")
-        self.diagnostic_select_all_btn=ttk.Button(tbtn,text="全体選択",command=self._select_all_diagnostic_targets); self.diagnostic_select_all_btn.pack(side="left",padx=(6,0))
-        self.diagnostic_clear_selection_btn=ttk.Button(tbtn,text="全選択解除",command=self._clear_diagnostic_target_selection); self.diagnostic_clear_selection_btn.pack(side="left",padx=(6,0))
-        self.diagnostic_relation_btn=ttk.Button(tbtn,text="Mod分類・関連付け",command=lambda:self._open_mod_relation_dialog("diagnostic")); self.diagnostic_relation_btn.pack(side="left",padx=(6,0))
+        self.diagnostic_refresh_btn=ttk.Button(tbtn,text=i18n.t('u7.reload_from_translation_status'),command=self._refresh_diagnostic_targets); self.diagnostic_refresh_btn.pack(side="left")
+        self.diagnostic_select_all_btn=ttk.Button(tbtn,text=i18n.t('u7.select_all'),command=self._select_all_diagnostic_targets); self.diagnostic_select_all_btn.pack(side="left",padx=(6,0))
+        self.diagnostic_clear_selection_btn=ttk.Button(tbtn,text=i18n.t('u7.deselect_all'),command=self._clear_diagnostic_target_selection); self.diagnostic_clear_selection_btn.pack(side="left",padx=(6,0))
+        self.diagnostic_relation_btn=ttk.Button(tbtn,text=i18n.t('u7.mod_classification_and_relations'),command=lambda:self._open_mod_relation_dialog("diagnostic")); self.diagnostic_relation_btn.pack(side="left",padx=(6,0))
 
-        actions = ttk.LabelFrame(left, text="操作", padding=6); actions.pack(fill="x", pady=(8,0))
-        self.diagnostic_scan_btn=ttk.Button(actions,text="選択Modを診断",command=lambda:self._start_localization_diagnostic(False)); self.diagnostic_scan_btn.pack(fill="x")
-        self.diagnostic_repair_btn=ttk.Button(actions,text="設定した内容で修復を実行",command=lambda:self._start_localization_diagnostic(True)); self.diagnostic_repair_btn.pack(fill="x",pady=(6,0))
-        ttk.Label(actions,text="修復時のバックアップ先:\nDocuments/Paradox Localization Translator/バックアップ/ゲーム/Mod/総合診断/日時/localization/",foreground="#666",wraplength=340,justify="left").pack(anchor="w",pady=(7,0))
+        actions = ttk.LabelFrame(left, text=i18n.t('u7.actions'), padding=6); actions.pack(fill="x", pady=(8,0))
+        self.diagnostic_scan_btn=ttk.Button(actions,text=i18n.t('u7.diagnose_selected_mods'),command=lambda:self._start_localization_diagnostic(False)); self.diagnostic_scan_btn.pack(fill="x")
+        self.diagnostic_repair_btn=ttk.Button(actions,text=i18n.t('u7.repair_with_configured_choices'),command=lambda:self._start_localization_diagnostic(True)); self.diagnostic_repair_btn.pack(fill="x",pady=(6,0))
+        ttk.Label(actions,text=i18n.t('u7.repair_backup_location_documents_paradox_localization'),foreground="#666",wraplength=340,justify="left").pack(anchor="w",pady=(7,0))
 
-        resultbox=ttk.LabelFrame(right,text="診断結果",padding=6); resultbox.pack(fill="both",expand=True)
+        resultbox=ttk.LabelFrame(right,text=i18n.t('u7.diagnostic_results'),padding=6); resultbox.pack(fill="both",expand=True)
         rw=ttk.Frame(resultbox); rw.pack(fill="both",expand=True)
         cols=("severity","mod","kind","score","location","plan","decision","file","count","detail")
         self.diagnostic_tree=ttk.Treeview(rw,columns=cols,show="headings",height=18,selectmode="extended")
         self._enable_ctrl_multiselect(self.diagnostic_tree)
-        for c,txt,w in (("severity","重要度",80),("mod","Mod",220),("kind","診断項目",190),("score","関連度",80),("location","現在位置",130),("plan","修復予定",190),("decision","採用訳",180),("file","ファイル",250),("count","件数",70),("detail","内容",560)):
+        for c,txt,w in (("severity",i18n.t('u7.severity_2'),80),("mod","Mod",220),("kind",i18n.t('u7.diagnostic_item_2'),190),("score",i18n.t('u7.relevance'),80),("location",i18n.t('u7.current_location'),130),("plan",i18n.t('u7.repair_plan'),190),("decision",i18n.t('u7.translation_choice'),180),("file",i18n.t('u7.file'),250),("count",i18n.t('u7.count_2'),70),("detail",i18n.t('u7.details_2'),560)):
             self.diagnostic_tree.heading(c,text=txt); self.diagnostic_tree.column(c,width=w,minwidth=w,stretch=False,anchor="w")
         sy2=ttk.Scrollbar(rw,orient="vertical",command=self.diagnostic_tree.yview); sx2=ttk.Scrollbar(rw,orient="horizontal",command=self.diagnostic_tree.xview)
         self.diagnostic_tree.configure(yscrollcommand=sy2.set,xscrollcommand=sx2.set)
@@ -3644,25 +3643,25 @@ class App(BaseTk):
         self.diagnostic_tree.bind("<<TreeviewSelect>>", self._on_diagnostic_result_selected)
         self._enable_tree_sort(self.diagnostic_tree)
         conflict_bar=ttk.Frame(resultbox); conflict_bar.pack(fill="x",pady=(7,0))
-        ttk.Label(conflict_bar,text="訳文競合だけ採用する訳を指定:").pack(side="left")
-        self.diagnostic_keep_source_btn=ttk.Button(conflict_bar,text="選択競合は本体Modの訳を採用",command=lambda:self._set_diagnostic_conflict_choice("source")); self.diagnostic_keep_source_btn.pack(side="left",padx=(8,0))
-        self.diagnostic_keep_translation_btn=ttk.Button(conflict_bar,text="選択競合は日本語化Modの訳を採用",command=lambda:self._set_diagnostic_conflict_choice("translation")); self.diagnostic_keep_translation_btn.pack(side="left",padx=(6,0))
-        self.diagnostic_auto_choice_btn=ttk.Button(conflict_bar,text="選択競合は自動整理",command=lambda:self._set_diagnostic_conflict_choice("auto")); self.diagnostic_auto_choice_btn.pack(side="left",padx=(6,0))
-        self.diagnostic_clear_choice_btn=ttk.Button(conflict_bar,text="選択競合の指定を解除",command=lambda:self._set_diagnostic_conflict_choice(None)); self.diagnostic_clear_choice_btn.pack(side="left",padx=(6,0))
+        ttk.Label(conflict_bar,text=i18n.t('u7.choose_translations_only_for_conflicts')).pack(side="left")
+        self.diagnostic_keep_source_btn=ttk.Button(conflict_bar,text=i18n.t('u7.use_source_mod_translation_for_selected'),command=lambda:self._set_diagnostic_conflict_choice("source")); self.diagnostic_keep_source_btn.pack(side="left",padx=(8,0))
+        self.diagnostic_keep_translation_btn=ttk.Button(conflict_bar,text=i18n.t('u7.use_japanese_translation_mod_translation_for'),command=lambda:self._set_diagnostic_conflict_choice("translation")); self.diagnostic_keep_translation_btn.pack(side="left",padx=(6,0))
+        self.diagnostic_auto_choice_btn=ttk.Button(conflict_bar,text=i18n.t('u7.auto_organize_selected_conflicts'),command=lambda:self._set_diagnostic_conflict_choice("auto")); self.diagnostic_auto_choice_btn.pack(side="left",padx=(6,0))
+        self.diagnostic_clear_choice_btn=ttk.Button(conflict_bar,text=i18n.t('u7.clear_selected_conflict_choices'),command=lambda:self._set_diagnostic_conflict_choice(None)); self.diagnostic_clear_choice_btn.pack(side="left",padx=(6,0))
         conflict_bar2=ttk.Frame(resultbox); conflict_bar2.pack(fill="x",pady=(5,0))
-        self.diagnostic_integration_status_var = tk.StringVar(value="統合対象: 未診断")
+        self.diagnostic_integration_status_var = tk.StringVar(value=i18n.t('u7.integration_targets_not_diagnosed'))
         ttk.Label(conflict_bar2,textvariable=self.diagnostic_integration_status_var, foreground="#555").pack(side="left")
-        ttk.Label(conflict_bar2,text="  競合一括:").pack(side="left")
-        self.diagnostic_all_source_btn=ttk.Button(conflict_bar2,text="すべての競合で本体訳を採用",command=lambda:self._set_all_diagnostic_conflict_choices("source")); self.diagnostic_all_source_btn.pack(side="left",padx=(8,0))
-        self.diagnostic_all_translation_btn=ttk.Button(conflict_bar2,text="すべての競合で日本語化Mod訳を採用",command=lambda:self._set_all_diagnostic_conflict_choices("translation")); self.diagnostic_all_translation_btn.pack(side="left",padx=(6,0))
-        self.diagnostic_all_auto_btn=ttk.Button(conflict_bar2,text="すべての競合を自動整理",command=lambda:self._set_all_diagnostic_conflict_choices("auto")); self.diagnostic_all_auto_btn.pack(side="left",padx=(6,0))
+        ttk.Label(conflict_bar2,text=i18n.t('u7.all_conflicts')).pack(side="left")
+        self.diagnostic_all_source_btn=ttk.Button(conflict_bar2,text=i18n.t('u7.use_source_translation_for_all_conflicts'),command=lambda:self._set_all_diagnostic_conflict_choices("source")); self.diagnostic_all_source_btn.pack(side="left",padx=(8,0))
+        self.diagnostic_all_translation_btn=ttk.Button(conflict_bar2,text=i18n.t('u7.use_japanese_translation_mod_translation_for_2'),command=lambda:self._set_all_diagnostic_conflict_choices("translation")); self.diagnostic_all_translation_btn.pack(side="left",padx=(6,0))
+        self.diagnostic_all_auto_btn=ttk.Button(conflict_bar2,text=i18n.t('u7.auto_organize_all_conflicts'),command=lambda:self._set_all_diagnostic_conflict_choices("auto")); self.diagnostic_all_auto_btn.pack(side="left",padx=(6,0))
         conflict_bar3=ttk.Frame(resultbox); conflict_bar3.pack(fill="x",pady=(4,0))
-        self.diagnostic_conflict_help_var = tk.StringVar(value="診断後、修復に必要な操作をここへ表示します。")
+        self.diagnostic_conflict_help_var = tk.StringVar(value=i18n.t('u7.actions_needed_for_repair_will_appear'))
         ttk.Label(conflict_bar3,textvariable=self.diagnostic_conflict_help_var, foreground="#555",wraplength=1000,justify="left").pack(side="left",fill="x",expand=True)
         conflict_bar4=ttk.Frame(resultbox); conflict_bar4.pack(fill="x",pady=(3,0))
-        self.diagnostic_exception_status_var = tk.StringVar(value="自動整理: Mod分類・関連付けの手動指定がある場合はそちらを最優先します。")
+        self.diagnostic_exception_status_var = tk.StringVar(value=i18n.t('u7.auto_organize_manual_settings_in_mod'))
         ttk.Label(conflict_bar4,textvariable=self.diagnostic_exception_status_var, foreground="#555",wraplength=1000,justify="left").pack(side="left",fill="x",expand=True)
-        detail=ttk.LabelFrame(right,text="詳細 / 修復ログ",padding=6); detail.pack(fill="both",expand=True,pady=(8,0))
+        detail=ttk.LabelFrame(right,text=i18n.t('u7.details_repair_log'),padding=6); detail.pack(fill="both",expand=True,pady=(8,0))
         self.diagnostic_detail=tk.Text(detail,height=9,wrap="word",state="disabled")
         dsy=ttk.Scrollbar(detail,orient="vertical",command=self.diagnostic_detail.yview); self.diagnostic_detail.configure(yscrollcommand=dsy.set)
         dsy.pack(side="right",fill="y"); self.diagnostic_detail.pack(side="left",fill="both",expand=True)
@@ -3737,7 +3736,7 @@ class App(BaseTk):
                     row.get('mod_root') or row.get('path') or row.get('root'),
                     row.get('mod') or row.get('name'),
                     row.get('game'),
-                    '翻訳状況Mod',
+                    i18n.t('u7.translation_status_mod'),
                 )]
                 ext_raw=row.get('external_translation_path') or row.get('external_translation_root')
                 if not ext_raw and row.get('external_translation_localization'):
@@ -3747,7 +3746,7 @@ class App(BaseTk):
                         ext_raw,
                         row.get('external_translation_mod') or None,
                         row.get('game'),
-                        '翻訳状況の日本語化Mod',
+                        i18n.t('u7.translation_mod_in_translation_status', target_name=i18n.t("lang." + (row.get("target_lang") or core.DEFAULT_TARGET_LANG))),
                     ))
 
                 for raw, explicit_name, game, inventory_source in candidate_specs:
@@ -3804,7 +3803,7 @@ class App(BaseTk):
         if recorded:
             rp=Path(recorded)
             if rp.exists():
-                return rp, self._backup_game_name_for_root(rp), 'バックアップ記録', 1
+                return rp, self._backup_game_name_for_root(rp), i18n.t('u7.backup_record'), 1
 
         rows=restore_rows if restore_rows is not None else self._translation_status_rows_for_restore()
         candidates=[]
@@ -3831,9 +3830,9 @@ class App(BaseTk):
             if len(hits)==1:
                 root,name,row=hits[0]
                 game=str(row.get('game') or self._backup_game_name_for_root(root))
-                return root, game, '翻訳状況から特定（Workshop ID一致）', 1
+                return root, game, i18n.t('u7.identified_from_translation_status_workshop_id'), 1
             if len(hits)>1:
-                return None, 'ゲーム未特定', '翻訳状況に同一Workshop ID候補が複数', len(hits)
+                return None, 'ゲーム未特定', i18n.t('u7.multiple_matching_workshop_ids_in_translation'), len(hits)
 
         raw_names=[]
         for value in (entry.get('mod'), (entry.get('manifest') or {}).get('target_mod_name') if isinstance(entry.get('manifest'),dict) else None):
@@ -3865,9 +3864,9 @@ class App(BaseTk):
         if len(exact_hits)==1:
             root,name,row=exact_hits[0]
             game=str(row.get('game') or self._backup_game_name_for_root(root))
-            return root, game, '翻訳状況から特定（Mod名完全一致）', 1
+            return root, game, i18n.t('u7.identified_from_translation_status_exact_mod'), 1
         if len(exact_hits)>1:
-            return None, 'ゲーム未特定', '翻訳状況にMod名完全一致候補が複数', len(exact_hits)
+            return None, 'ゲーム未特定', i18n.t('u7.multiple_exact_mod_name_matches_in'), len(exact_hits)
 
         normalized=[]
         for value in raw_names:
@@ -3893,10 +3892,10 @@ class App(BaseTk):
         if len(hits)==1:
             root,name,row=hits[0]
             game=str(row.get('game') or self._backup_game_name_for_root(root))
-            return root, game, '翻訳状況から特定（正規化Mod名一致）', 1
+            return root, game, i18n.t('u7.identified_from_translation_status_normalized_mod'), 1
         if len(hits)>1:
-            return None, 'ゲーム未特定', '翻訳状況に正規化同名Mod候補が複数', len(hits)
-        return None, 'ゲーム未特定', '翻訳状況でも復元先未特定', 0
+            return None, 'ゲーム未特定', i18n.t('u7.multiple_normalized_mod_name_matches_in'), len(hits)
+        return None, 'ゲーム未特定', i18n.t('u7.restore_target_not_identified_in_translation'), 0
 
     def _apply_translation_status_restore_resolution(self, entry, restore_rows=None):
         root,game,source,count=self._resolve_backup_target_from_translation_status(entry, restore_rows=restore_rows)
@@ -3995,7 +3994,7 @@ class App(BaseTk):
             'source_mod_name': source_mod_name or '',
             'snapshot_type': 'full_localization',
             'localization_existed': bool(existed),
-            'state_label': state_label or ('上書き直前の原文（既存localization全体）' if category == '上書き' else '操作直前のlocalization全体'),
+            'state_label': state_label or (i18n.t('u7.source_immediately_before_overwrite_entire_existing') if category == '上書き' else i18n.t('u7.entire_localization_folder_immediately_before_the')),
         }
         (root / 'backup_manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8')
         return root, manifest
@@ -4003,35 +4002,34 @@ class App(BaseTk):
     def _build_backup_restore_tab(self):
         t=self.tab_backup_restore
         head=ttk.Frame(t); head.pack(fill='x')
-        ttk.Label(head,text='バックアップ復元 — ゲーム → Mod → 履歴からロールバック',font=('',14,'bold')).pack(side='left')
+        ttk.Label(head,text=i18n.t('u7.backup_restoration_roll_back_by_game'),font=('',14,'bold')).pack(side='left')
         ttk.Label(head,textvariable=self.backup_restore_summary_var).pack(side='right')
         ttk.Label(t,text=(
-            '左側でゲーム・Modを選び、右側でそのModのバックアップ履歴を確認して復元します。'
-            ' 検索はMod名とバックアップ履歴の両方を絞り込みます。既存バックアップは移動せず、この画面で可能な範囲を自動分類します。'
+            i18n.t('u7.select_a_game_and_mod_on')
         ),foreground='#555',wraplength=1150,justify='left').pack(fill='x',pady=(6,8))
 
         # 2ブロック構成: 左=対象選択、右=履歴/復元
         panes=ttk.Panedwindow(t,orient='horizontal')
         panes.pack(fill='both',expand=True)
 
-        left=ttk.LabelFrame(panes,text='1. ゲーム / Mod を選択',padding=8)
-        right=ttk.LabelFrame(panes,text='2. バックアップ履歴を選択して復元',padding=8)
+        left=ttk.LabelFrame(panes,text=i18n.t('u7.select_a_game_mod'),padding=8)
+        right=ttk.LabelFrame(panes,text=i18n.t('u7.select_backup_history_and_restore'),padding=8)
         panes.add(left,weight=1)
         panes.add(right,weight=3)
 
-        ttk.Label(left,text='ゲーム:').pack(anchor='w')
+        ttk.Label(left,text=i18n.t('u7.game')).pack(anchor='w')
         self.backup_restore_game_combo=ttk.Combobox(left,textvariable=self.backup_restore_game_var,state='readonly')
         self.backup_restore_game_combo.pack(fill='x',pady=(3,8))
         self.backup_restore_game_combo.bind('<<ComboboxSelected>>',self._on_backup_restore_game_changed)
 
-        ttk.Label(left,text='検索:').pack(anchor='w')
+        ttk.Label(left,text=i18n.t('u7.search_2')).pack(anchor='w')
         searchrow=ttk.Frame(left); searchrow.pack(fill='x',pady=(3,8))
         self.backup_restore_search_entry=ttk.Entry(searchrow,textvariable=self.backup_restore_search_var)
         self.backup_restore_search_entry.pack(side='left',fill='x',expand=True)
         self.backup_restore_search_entry.bind('<KeyRelease>',self._on_backup_restore_search_changed)
-        ttk.Button(searchrow,text='クリア',command=self._clear_backup_restore_search).pack(side='left',padx=(6,0))
+        ttk.Button(searchrow,text=i18n.t('u7.clear'),command=self._clear_backup_restore_search).pack(side='left',padx=(6,0))
 
-        ttk.Label(left,text='Mod一覧:').pack(anchor='w')
+        ttk.Label(left,text=i18n.t('u7.mod_list')).pack(anchor='w')
         modbox=ttk.Frame(left); modbox.pack(fill='both',expand=True,pady=(3,8))
         self.backup_restore_mod_list=tk.Listbox(modbox,exportselection=False,activestyle='dotbox')
         mod_sy=ttk.Scrollbar(modbox,orient='vertical',command=self.backup_restore_mod_list.yview)
@@ -4042,21 +4040,21 @@ class App(BaseTk):
         mod_sy.grid(row=0,column=1,sticky='ns')
         mod_sx.grid(row=1,column=0,sticky='ew')
         self.backup_restore_mod_list.bind('<<ListboxSelect>>',self._on_backup_restore_mod_list_selected)
-        self.backup_restore_reload_btn=ttk.Button(left,text='バックアップ一覧を再読込',command=self._refresh_backup_restore_entries)
+        self.backup_restore_reload_btn=ttk.Button(left,text=i18n.t('u7.reload_backups'),command=self._refresh_backup_restore_entries)
         self.backup_restore_reload_btn.pack(fill='x')
 
         action=ttk.Frame(right); action.pack(fill='x')
         self.backup_restore_selected_mod_label=ttk.Label(action,text=i18n.t("p0.filter.selected_mod",mod=i18n.t("p0.filter.all_mods")),font=('',11,'bold'))
         self.backup_restore_selected_mod_label.pack(side='left',fill='x',expand=True)
-        self.backup_restore_btn=ttk.Button(action,text='選択バックアップを復元',command=self._restore_selected_backup,state='disabled')
+        self.backup_restore_btn=ttk.Button(action,text=i18n.t('u7.restore_selected_backup'),command=self._restore_selected_backup,state='disabled')
         self.backup_restore_btn.pack(side='right',padx=(8,0))
 
         treebox=ttk.Frame(right); treebox.pack(fill='both',expand=True,pady=(8,0))
         cols=('generation','time','kind','state','target','format')
         self.backup_restore_tree=ttk.Treeview(treebox,columns=cols,show='headings',selectmode='browse',height=18)
         for c,txt,w in (
-            ('generation','作成回数',90),('time','作成日時',165),('kind','バックアップ種別',155),
-            ('state','保存されている状態 / 原文',330),('target','復元先',390),('format','形式',110)):
+            ('generation',i18n.t('u7.generation_3'),90),('time',i18n.t('u7.created_at'),165),('kind',i18n.t('u7.backup_type'),155),
+            ('state',i18n.t('u7.saved_state_source'),330),('target',i18n.t('u7.restore_target'),390),('format',i18n.t('u7.format'),110)):
             self.backup_restore_tree.heading(c,text=txt)
             self.backup_restore_tree.column(c,width=w,minwidth=80,stretch=False,anchor='w')
         sy=ttk.Scrollbar(treebox,orient='vertical',command=self.backup_restore_tree.yview)
@@ -4072,12 +4070,12 @@ class App(BaseTk):
         self.backup_restore_tree.bind('<Shift-Button-5>',lambda _e:self.backup_restore_tree.xview_scroll(3,'units'))
         self._enable_tree_sort(self.backup_restore_tree)
 
-        detail=ttk.LabelFrame(right,text='選択バックアップの詳細',padding=6)
+        detail=ttk.LabelFrame(right,text=i18n.t('u7.selected_backup_details'),padding=6)
         detail.pack(fill='x',pady=(8,0))
         self.backup_restore_detail_label=ttk.Label(detail,textvariable=self.backup_restore_detail_var,foreground='#555',wraplength=760,justify='left')
         self.backup_restore_detail_label.pack(anchor='w',fill='x')
         right.bind('<Configure>',self._on_backup_restore_right_resize)
-        self.backup_restore_summary_var.set('バックアップをバックグラウンドで読込待機中…')
+        self.backup_restore_summary_var.set(i18n.t('u7.waiting_to_load_backups_in_the'))
 
     def _on_backup_restore_right_resize(self, event=None):
         if hasattr(self,'backup_restore_detail_label') and event is not None:
@@ -4127,11 +4125,11 @@ class App(BaseTk):
             # Coalesce repeated startup/status-change requests. Never launch several heavy
             # backup scans in parallel when hundreds of backup generations exist.
             self.backup_restore_refresh_pending=True
-            self.backup_restore_summary_var.set('バックアップ読込中…（更新予約あり）')
+            self.backup_restore_summary_var.set(i18n.t('u7.loading_backups_refresh_queued'))
             return
         self.backup_restore_refresh_generation += 1
         generation=self.backup_restore_refresh_generation
-        self.backup_restore_summary_var.set('バックアップをバックグラウンドで読込中…')
+        self.backup_restore_summary_var.set(i18n.t('u7.loading_backups_in_the_background'))
         try:
             if hasattr(self,'backup_restore_reload_btn'):
                 self.backup_restore_reload_btn.config(state='disabled')
@@ -4165,8 +4163,8 @@ class App(BaseTk):
                 'generation':rec.get('generation'),'created_at':rec.get('created_at') or rec.get('timestamp',''),
                 'game':game,'mod':rec.get('target_mod_name') or (target.name if target else root.name),
                 'kind':rec.get('backup_kind') or rec.get('category') or 'バックアップ',
-                'state':rec.get('state_label') or 'localizationバックアップ',
-                'target_root':target,'format':'完全スナップショット','exact':True,
+                'state':rec.get('state_label') or i18n.t('u7.localization_backup'),
+                'target_root':target,'format':i18n.t('u7.full_snapshot'),'exact':True,
             })
         diag=BACKUP_ROOT/'総合診断'
         if diag.exists():
@@ -4186,8 +4184,8 @@ class App(BaseTk):
                 stamp=entry_root.parent.name
                 game=self._backup_game_name_for_root(target) if target else 'ゲーム未特定'
                 entries.append({'entry_root':entry_root,'snapshot':loc,'manifest':None,'generation':None,'created_at':stamp,
-                    'game':game,'mod':target_name or mod_guess,'kind':'総合診断修復','state':'総合診断の修復直前localization全体',
-                    'target_root':target,'format':'旧形式・完全','exact':True})
+                    'game':game,'mod':target_name or mod_guess,'kind':'総合診断修復','state':i18n.t('u7.entire_localization_folder_immediately_before_diagnostic'),
+                    'target_root':target,'format':i18n.t('u7.legacy_full'),'exact':True})
                 seen.add(key)
         try:
             top_dirs=list(BACKUP_ROOT.iterdir()) if BACKUP_ROOT.exists() else []
@@ -4204,8 +4202,8 @@ class App(BaseTk):
             legacy_by_mod.setdefault(key,[]).append(d)
             game=self._backup_game_name_for_root(target) if target else 'ゲーム未特定'
             entries.append({'entry_root':d,'snapshot':d,'manifest':None,'generation':None,'created_at':d.name[:22],
-                'game':game,'mod':target_name or key,'kind':kind,'state':'上書き直前に保存された既存ファイル（旧形式・部分バックアップ）',
-                'target_root':target,'format':'旧形式・部分','exact':False})
+                'game':game,'mod':target_name or key,'kind':kind,'state':i18n.t('u7.existing_files_saved_before_overwrite_legacy'),
+                'target_root':target,'format':i18n.t('u7.legacy_partial'),'exact':False})
         for mod, dirs in legacy_by_mod.items():
             order={str(d):i+1 for i,d in enumerate(sorted(dirs,key=lambda x:x.name))}
             for e in entries:
@@ -4242,7 +4240,7 @@ class App(BaseTk):
         if not query:
             return True
         generation=entry.get('generation')
-        generation_text=(f"第{int(generation)}回 {int(generation)}" if generation else '')
+        generation_text=(i18n.t('u7.generation', value=int(generation)) if generation else '')
         haystack=' '.join(str(v or '') for v in (
             entry.get('game'), entry.get('mod'), entry.get('kind'), entry.get('state'),
             entry.get('created_at'), generation_text, entry.get('target_root'), entry.get('format'),
@@ -4308,19 +4306,19 @@ class App(BaseTk):
         for idx,e in enumerate(visible):
             iid=f'b{idx}'
             self.backup_restore_entry_map[iid]=e
-            gen=(f"第{int(e['generation'])}回" if e.get('generation') else '—')
+            gen=(i18n.t('u7.generation_2', value=int(e['generation'])) if e.get('generation') else '—')
             created=str(e.get('created_at') or '')
-            target=str(e.get('target_root') or '復元先未特定')
+            target=str(e.get('target_root') or i18n.t('u7.restore_target_not_identified'))
             self.backup_restore_tree.insert('', 'end', iid=iid, values=(gen,created,e['kind'],e['state'],target,e['format']))
         scope=[]
         if game != i18n.t("p0.filter.all_games"): scope.append(game)
         if mod != i18n.t("p0.filter.all_mods"): scope.append(mod)
         suffix=(' / ' + ' → '.join(scope)) if scope else ''
-        search_suffix=(f" / 検索: {query}" if query else '')
-        self.backup_restore_summary_var.set(f'バックアップ: {len(visible)}件（全{len(self.backup_restore_entries)}件）{suffix}{search_suffix}')
+        search_suffix=(i18n.t('u7.search', query=query) if query else '')
+        self.backup_restore_summary_var.set(i18n.t('u7.backups_of', count=len(visible), count_2=len(self.backup_restore_entries), suffix=suffix, search_suffix=search_suffix))
         if hasattr(self,'backup_restore_selected_mod_label'):
-            self.backup_restore_selected_mod_label.config(text=f'選択Mod: {mod}')
-        self.backup_restore_detail_var.set('一覧からバックアップを選択してください。')
+            self.backup_restore_selected_mod_label.config(text=i18n.t('u7.selected_mod', mod=mod))
+        self.backup_restore_detail_var.set(i18n.t('u7.select_a_backup_from_the_list'))
         self.backup_restore_btn.config(state='disabled')
 
     def _on_backup_restore_selected(self, _event=None):
@@ -4328,37 +4326,37 @@ class App(BaseTk):
         e=self.backup_restore_entry_map.get(sel[0]) if sel else None
         if not e:
             self.backup_restore_btn.config(state='disabled'); return
-        gen=f"第{int(e['generation'])}回" if e.get('generation') else '回数記録なし'
+        gen=i18n.t('u7.generation_2', value=int(e['generation'])) if e.get('generation') else i18n.t('u7.generation_not_recorded')
         target=e.get('target_root')
-        exact='localization全体をその時点へ戻せます。' if e.get('exact') else '旧形式の部分バックアップです。保存済みファイルだけを戻し、新規作成ファイルは自動削除しません。'
-        target_source=e.get('target_source') or ('バックアップ記録' if target else '未特定')
+        exact=i18n.t('u7.the_entire_localization_folder_can_be') if e.get('exact') else i18n.t('u7.this_is_a_legacy_partial_backup')
+        target_source=e.get('target_source') or (i18n.t('u7.backup_record') if target else i18n.t('u7.not_identified'))
         ambiguity=''
         if not target and int(e.get('target_candidate_count') or 0) > 1:
-            ambiguity=f"\n候補数: {int(e.get('target_candidate_count') or 0)}件（同名候補が複数あるため自動復元しません）"
+            ambiguity=i18n.t('u7.candidates_multiple_mods_share_this_name', value=int(e.get('target_candidate_count') or 0))
         self.backup_restore_detail_var.set(
-            f"ゲーム: {e.get('game','ゲーム未特定')}\nMod: {e['mod']} / {gen} / {e['kind']}\n保存状態: {e['state']}\nバックアップ: {e['entry_root']}\n復元先: {target or '未特定'}\n復元先の判断: {target_source}{ambiguity}\n{exact}"
+            i18n.t('u7.game_mod_saved_state_backup_restore', game=e.get('game','ゲーム未特定'), mod=e['mod'], gen=gen, kind=e['kind'], state=e['state'], entry_root=e['entry_root'], value=target or i18n.t('u7.not_identified'), target_source=target_source, ambiguity=ambiguity, exact=exact)
         )
         self.backup_restore_btn.config(state='normal' if target and Path(target).exists() else 'disabled')
 
     def _restore_selected_backup(self):
         if self.backup_restore_operation_thread is not None:
-            messagebox.showinfo(APP_NAME,'バックアップ復元はすでにバックグラウンドで実行中です。'); return
+            messagebox.showinfo(APP_NAME,i18n.t('u7.a_backup_restore_is_already_running')); return
         sel=self.backup_restore_tree.selection() if hasattr(self,'backup_restore_tree') else ()
         e=self.backup_restore_entry_map.get(sel[0]) if sel else None
         if not e: return
         target=Path(e.get('target_root') or '')
         if not target.exists():
-            messagebox.showerror(APP_NAME,'復元先Modを特定できません。翻訳状況タブの現在情報／保存済み情報でも一意に対応するModが見つかりませんでした。Mod調査を実行してから一覧を再読込してください。'); return
-        gen=f"第{int(e['generation'])}回" if e.get('generation') else '回数記録なし'
-        warning=(f"バックアップを復元します。\n\nゲーム: {e.get('game','ゲーム未特定')}\n対象Mod: {e['mod']}\nバックアップ: {gen} / {e['kind']}\n保存状態: {e['state']}\n復元先: {target}\n\n復元前に現在のlocalization全体を『復元前退避』へ保存します。\n")
+            messagebox.showerror(APP_NAME,i18n.t('u7.cannot_identify_the_target_mod_no')); return
+        gen=i18n.t('u7.generation_2', value=int(e['generation'])) if e.get('generation') else i18n.t('u7.generation_not_recorded')
+        warning=(i18n.t('u7.restore_this_backup_game_target_mod', game=e.get('game','ゲーム未特定'), mod=e['mod'], gen=gen, kind=e['kind'], state=e['state'], target=target))
         if not e.get('exact'):
-            warning+='\n⚠ 旧形式の部分バックアップなので、当時存在していた保存済みファイルだけを戻します。後から新規作成されたファイルは削除しません。\n'
-        if not messagebox.askyesno('バックアップ復元の確認',warning+'\n続行しますか？',icon='warning'): return
+            warning=i18n.t('u7.this_legacy_partial_backup_restores_only', warning=warning)
+        if not messagebox.askyesno(i18n.t('u7.confirm_backup_restoration'),i18n.t('u7.continue', warning=warning),icon='warning'): return
         self.backup_restore_btn.config(state='disabled')
-        self.backup_restore_summary_var.set(f"復元をバックグラウンドで実行中… {e['mod']}")
+        self.backup_restore_summary_var.set(i18n.t('u7.restoring_in_the_background', mod=e['mod']))
         def work():
             try:
-                safety_root,_=self._create_full_localization_snapshot(target,'復元前退避',category='復元前退避',state_label='バックアップ復元を実行する直前のlocalization全体')
+                safety_root,_=self._create_full_localization_snapshot(target,'復元前退避',category='復元前退避',state_label=i18n.t('u7.entire_localization_folder_immediately_before_backup'))
                 target_loc=core.localization_dir_path(target)
                 if e.get('exact'):
                     snapshot=Path(e['snapshot'])
@@ -4376,7 +4374,7 @@ class App(BaseTk):
                 self._invalidate_mod_status_cache_paths([str(target)])
                 self.events.put(('backup_restore_done',(str(target),str(safety_root))))
             except Exception as exc:
-                record_error('バックアップ復元',exc,str(target)); self.events.put(('backup_restore_error',str(exc)))
+                record_error(i18n.t('u7.backup_restoration'),exc,str(target)); self.events.put(('backup_restore_error',str(exc)))
         self.backup_restore_operation_thread=threading.Thread(target=work,daemon=True,name='backup-restore-operation'); self.backup_restore_operation_thread.start()
         self._refresh_operation_states()
 
@@ -4421,7 +4419,7 @@ class App(BaseTk):
             seen.add(path); iid=f"diagmod_{count}"; count+=1
             self.diagnostic_target_tree.insert("","end",iid=iid,values=(r.get("mod") or Path(path).name,display_status(r.get("status") or ""),path))
             if path in selected_paths: self.diagnostic_target_tree.selection_add(iid)
-        self.diagnostic_target_var.set(f"対象Mod: {count}件" if count else "対象Mod: 翻訳状況タブでMod調査を実行してください")
+        self.diagnostic_target_var.set(i18n.t('u7.target_mods', count=count) if count else i18n.t('u7.target_mods_scan_mods_in_the'))
 
     def _select_all_diagnostic_targets(self):
         if not hasattr(self, "diagnostic_target_tree"):
@@ -4502,7 +4500,7 @@ class App(BaseTk):
             try:
                 ranked=core.rank_external_japanese_translations(Path(source_root), translation_index)
             except Exception as exc:
-                record_error("総合診断 日本語化Mod比重判定", exc, str(source_root)); continue
+                record_error(i18n.t('u7.full_diagnostics_japanese_translation_mod_weight'), exc, str(source_root)); continue
             source_name=core.detect_mod_name(Path(source_root))
             try: source_id=str(Path(source_root).resolve())
             except Exception: source_id=str(source_root)
@@ -4603,13 +4601,13 @@ class App(BaseTk):
                 if manual_translation:
                     target="translation"
                     if manual_relation:
-                        target_reason="例外指定あり: Mod分類・関連付けで日本語化Mod→対応元Modが手動指定されているため日本語化Mod側を最優先"
+                        target_reason=i18n.t('u7.override_the_japanese_translation_mod_source')
                     else:
-                        target_reason="例外指定あり: Mod分類・関連付けでこのModが日本語化Modに手動分類されているため日本語化Mod側を最優先"
+                        target_reason=i18n.t('u7.override_this_mod_is_manually_classified')
                 else:
                     sc=len(source_vals); tc=len(trans_vals)
                     target="source" if sc>tc else "translation"
-                    target_reason=f"自動整理（現在の有効翻訳数: 本体 {sc}件 / 日本語化Mod {tc}件）"
+                    target_reason=i18n.t('u7.auto_organize_current_valid_translations_source', sc=sc, tc=tc)
                 pairs.append({"id":rid,"source_root":source_id,"translation_root":trans_id,
                     "source_mod":core.detect_mod_name(Path(source_id)) if Path(source_id).exists() else Path(source_id).name,
                     "translation_mod":core.detect_mod_name(Path(trans_id)) if Path(trans_id).exists() else Path(trans_id).name,
@@ -4632,26 +4630,26 @@ class App(BaseTk):
             if not host: continue
             host.setdefault("integrations",[]).append({"id":pair["id"],"source_root":pair["source_root"],"translation_root":pair["translation_root"],"target":pair["target"],"manual_priority":pair.get("manual_priority",False),"target_reason":pair.get("target_reason","")})
             host.setdefault("issues",[]).append({"severity":"INFO","kind":"本体/日本語化Mod統合","file":"","count":len(set(pair["source_vals"])|set(pair["translation_vals"])),
-                "location":"本体 + 日本語化Mod",
-                "plan":f"{'本体Mod' if pair['target']=='source' else '日本語化Mod'}へ自動統合",
-                "decision":"自動整理",
+                "location":i18n.t('u7.source_japanese_translation_mod_2'),
+                "plan":i18n.t('u7.automatically_integrate_into', value=i18n.t('u7.source_mod') if pair['target']=='source' else i18n.t('u7.japanese_translation_mod')),
+                "decision":i18n.t('u7.source_japanese_translation_mod'),
                 "manual_priority":bool(pair.get("manual_priority")),
-                "detail":f"{pair['source_mod']} ↔ {pair['translation_mod']} / 修復予定: {'本体Mod' if pair['target']=='source' else '日本語化Mod'}へ統合（{pair['target_reason']}） / 本体のみ {len(pair['source_only'])} / 日本語化Modのみ {len(pair['translation_only'])} / 完全重複 {len(pair['identical'])} / 訳文競合 {len(pair['conflict_keys'])}"})
+                "detail":i18n.t('u7.repair_plan_integrate_into_source_only', source_mod=pair['source_mod'], translation_mod=pair['translation_mod'], value=i18n.t('u7.source_mod') if pair['target']=='source' else i18n.t('u7.japanese_translation_mod'), target_reason=pair['target_reason'], count=len(pair['source_only']), count_2=len(pair['translation_only']), count_3=len(pair['identical']), count_4=len(pair['conflict_keys']))})
             existing={x.get("conflict_id") for x in host.get("issues",[]) if x.get("conflict_id")}
             for key in sorted(pair["conflict_keys"]):
                 cid=self._diagnostic_conflict_id(pair["source_root"],pair["translation_root"],key)
                 if cid in existing: continue
                 choice=self.diagnostic_conflict_choices.get(cid)
                 auto_side=pair.get("target")
-                if choice=="source": decision="本体Modの訳"
-                elif choice=="translation": decision="日本語化Modの訳"
-                elif choice=="auto": decision=f"自動整理→{'本体Mod' if auto_side=='source' else '日本語化Mod'}の訳"
-                else: decision="未選択"
+                if choice=="source": decision=i18n.t('u7.source_mod_translation')
+                elif choice=="translation": decision=i18n.t('u7.japanese_translation_mod_translation')
+                elif choice=="auto": decision=i18n.t('u7.auto_organize_translation_from', value=i18n.t('u7.source_mod') if auto_side=='source' else i18n.t('u7.japanese_translation_mod'))
+                else: decision=i18n.t('u7.not_selected')
                 host.setdefault("conflicts",[]).append({"id":cid,"key":key,"source_root":pair["source_root"],"translation_root":pair["translation_root"],"source_mod":pair["source_mod"],"translation_mod":pair["translation_mod"],"choice":choice})
                 host.setdefault("issues",[]).append({"severity":"WARN","kind":"本体/日本語化Mod重複","file":"","count":1,"conflict_id":cid,
-                    "location":"両方", "plan":"訳文競合を解消", "decision":decision,
+                    "location":i18n.t('u7.both'), "plan":i18n.t('u7.resolve_translation_conflicts'), "decision":decision,
                     "manual_priority":bool(pair.get("manual_priority")),
-                    "detail":f"{key}: 本体『{pair['source_mod']}』と日本語化Mod『{pair['translation_mod']}』で訳文が異なります。どちらへキーを移すかではなく、採用する訳文だけを指定します。{(' 例外指定あり: Mod分類・関連付けの手動指定を自動整理で最優先します。' if pair.get('manual_priority') else '')}"})
+                    "detail":i18n.t('u7.source_and_japanese_translation_mod_have', localization_key=key, source_mod=pair['source_mod'], translation_mod=pair['translation_mod'], value=i18n.t('u7.override_auto_organize_prioritizes_manual_settings') if pair.get('manual_priority') else '')})
         return {"total":total,"auto":auto,"conflicts":conflicts,"unresolved":unresolved}
 
     def _diagnostic_conflict_id(self, source_id, translation_id, key):
@@ -4663,7 +4661,7 @@ class App(BaseTk):
         name=core.detect_mod_name(mod_root)
         result={"mod":name,"path":str(mod_root),"localization":str(loc or ""),"issues":[],"remove_by_file":{},"stats":{},"conflicts":[]}
         if not loc or not loc.exists():
-            result["issues"].append({"severity":"ERROR","kind":"localization欠落","file":"","count":1,"detail":"localizationフォルダが見つかりません。"})
+            result["issues"].append({"severity":"ERROR","kind":"localization欠落","file":"","count":1,"detail":i18n.t('u7.localization_folder_not_found_2')})
             return result
         try: self_id=str(mod_root.resolve())
         except Exception: self_id=str(mod_root)
@@ -4697,27 +4695,27 @@ class App(BaseTk):
             names=[]
             for rel in auto_rels:
                 reason_text="; ".join(str(x) for x in (rel.get("reasons") or []))
-                item=f"{rel.get('source_mod','')} {float(rel.get('score',0) or 0):.1f}点 / 元Mod一致 {float(rel.get('coverage',0) or 0)*100:.1f}%"
+                item=i18n.t('u7.points_source_mod_coverage', source_mod=rel.get('source_mod',''), value=float(rel.get('score',0) or 0), value_2=float(rel.get('coverage',0) or 0)*100)
                 if reason_text:
-                    item += f" / 判定理由: {reason_text}"
+                    item = i18n.t('u7.reason', item=item, reason_text=reason_text)
                 names.append(item)
-            result["issues"].append({"severity":"INFO","kind":"日本語化Mod（複数対応可）","score":f"{max(float(r.get('score',0) or 0) for r in auto_rels):.1f}","file":"","count":len(auto_rels),"detail":"対応元: "+"\n".join(names)})
+            result["issues"].append({"severity":"INFO","kind":"日本語化Mod（複数対応可）","score":f"{max(float(r.get('score',0) or 0) for r in auto_rels):.1f}","file":"","count":len(auto_rels),"detail":i18n.t('u7.linked_sources', value="\n".join(names))})
         if candidate_rels:
             names=[]
             for rel in candidate_rels[:6]:
                 reason_text="; ".join(str(x) for x in (rel.get("reasons") or []))
-                item=f"{rel.get('source_mod','')} {float(rel.get('score',0) or 0):.1f}点 / 元Mod一致 {float(rel.get('coverage',0) or 0)*100:.1f}%"
+                item=i18n.t('u7.points_source_mod_coverage', source_mod=rel.get('source_mod',''), value=float(rel.get('score',0) or 0), value_2=float(rel.get('coverage',0) or 0)*100)
                 if reason_text:
-                    item += f" / 判定理由: {reason_text}"
+                    item = i18n.t('u7.reason', item=item, reason_text=reason_text)
                 names.append(item)
-            result["issues"].append({"severity":"WARN","kind":"日本語化Mod候補（未確定）","file":"","count":len(candidate_rels),"detail":"自動修復の正当キー集合には含めません: "+"\n".join(names)})
+            result["issues"].append({"severity":"WARN","kind":"日本語化Mod候補（未確定）","file":"","count":len(candidate_rels),"detail":i18n.t('u7.not_included_in_the_valid_key', value="\n".join(names))})
 
         if not english_files:
-            result["issues"].append({"severity":"WARN","kind":"英語原文なし","file":"","count":0,"detail":"英語localizationを確認できません。日本語化Modや中国語のみのModなら正常な場合があります。"})
+            result["issues"].append({"severity":"WARN","kind":"英語原文なし","file":"","count":0,"detail":i18n.t('u7.no_english_localization_found_this_may')})
         if not chinese_files:
-            result["issues"].append({"severity":"INFO","kind":"簡体字中国語なし","file":"","count":0,"detail":"簡体字中国語localizationはありません。対応していないModでは正常です。"})
+            result["issues"].append({"severity":"INFO","kind":"簡体字中国語なし","file":"","count":0,"detail":i18n.t('u7.no_simplified_chinese_localization_this_is')})
         if not jp_files:
-            result["issues"].append({"severity":"INFO","kind":"日本語なし","file":"","count":0,"detail":"日本語localizationはまだありません。"})
+            result["issues"].append({"severity":"INFO","kind":"日本語なし","file":"","count":0,"detail":i18n.t('u7.no_japanese_localization_yet')})
 
         duplicate={k:v for k,v in jp_key_files.items() if len(v)>1}
         identical_dup=0; conflicting_dup=0
@@ -4726,9 +4724,9 @@ class App(BaseTk):
             if len(vals)<=1: identical_dup+=1
             else: conflicting_dup+=1
         if identical_dup:
-            result["issues"].append({"severity":"WARN","kind":"同一Mod内の完全重複","file":"","count":identical_dup,"detail":"同じ日本語訳のキーが複数YAMLにあります。修復時は先頭1件を残して余分な定義を整理します。"})
+            result["issues"].append({"severity":"WARN","kind":"同一Mod内の完全重複","file":"","count":identical_dup,"detail":i18n.t('u7.the_same_japanese_translation_key_appears')})
         if conflicting_dup:
-            result["issues"].append({"severity":"WARN","kind":"同一Mod内の訳競合","file":"","count":conflicting_dup,"detail":"同じキーに異なる日本語訳があります。自動修復では勝手に片方を選びません。"})
+            result["issues"].append({"severity":"WARN","kind":"同一Mod内の訳競合","file":"","count":conflicting_dup,"detail":i18n.t('u7.the_same_key_has_different_japanese')})
 
         total_extras=0
         # v0.11.36: once a reliable basis exists, every Japanese key outside
@@ -4740,11 +4738,11 @@ class App(BaseTk):
                 if unnecessary:
                     total_extras += len(unnecessary)
                     result["remove_by_file"].setdefault(str(f),set()).update(unnecessary)
-                    result["issues"].append({"severity":"ERROR","kind":"不要日本語キー","file":str(f),"count":len(unnecessary),"detail":"本体の英語/中国語原文、またはこの日本語化Modが対応する全元Modの原文のいずれにも存在しません。修復対象です。"})
+                    result["issues"].append({"severity":"ERROR","kind":"不要日本語キー","file":str(f),"count":len(unnecessary),"detail":i18n.t('u7.absent_from_the_source_mod_s')})
                     if len(unnecessary)==len(entries):
-                        result["issues"].append({"severity":"ERROR","kind":"不要日本語ファイル","file":str(f),"count":len(entries),"detail":"このYAMLの全localization keyが正当キー集合外です。修復時にファイルごと削除します。"})
+                        result["issues"].append({"severity":"ERROR","kind":"不要日本語ファイル","file":str(f),"count":len(entries),"detail":i18n.t('u7.all_localization_keys_in_this_yaml')})
         elif jp_files:
-            result["issues"].append({"severity":"WARN","kind":"修復基準なし","file":"","count":len(jp_key_files),"detail":"本体の英語/中国語原文も、高信頼の対応元Modも確認できないため、日本語キーを自動削除しません。"})
+            result["issues"].append({"severity":"WARN","kind":"修復基準なし","file":"","count":len(jp_key_files),"detail":i18n.t('u7.no_english_chinese_source_or_high')})
 
         # Same-root identical duplicates: keep one deterministic file, remove the rest.
         for key,occ in jp_values.items():
@@ -4778,31 +4776,31 @@ class App(BaseTk):
                         continue
                     cid=self._diagnostic_conflict_id(self_id,cand_id,key)
                     choice=self.diagnostic_conflict_choices.get(cid)
-                    choice_text="本体Modの訳" if choice=="source" else "日本語化Modの訳" if choice=="translation" else "自動整理" if choice=="auto" else "未選択"
+                    choice_text=i18n.t('u7.source_mod_translation') if choice=="source" else i18n.t('u7.japanese_translation_mod_translation') if choice=="translation" else i18n.t('u7.source_japanese_translation_mod') if choice=="auto" else i18n.t('u7.not_selected')
                     conflict={"id":cid,"key":key,"source_root":self_id,"translation_root":cand_id,"source_mod":name,"translation_mod":cand_name,"choice":choice}
                     result["conflicts"].append(conflict)
                     result["issues"].append({
                         "severity":"WARN","kind":"本体/日本語化Mod重複","file":"","count":1,"conflict_id":cid,
-                        "location":"両方", "plan":"訳文競合を解消", "decision":choice_text,
-                        "detail":f"{key}: 本体『{name}』と日本語化Mod『{cand_name}』の両方にあり、訳文が異なります。修復前に採用する訳だけを指定できます。"
+                        "location":i18n.t('u7.both'), "plan":i18n.t('u7.resolve_translation_conflicts'), "decision":choice_text,
+                        "detail":i18n.t('u7.present_in_both_source_and_japanese', localization_key=key, name=name, cand_name=cand_name)
                     })
 
         if source_keys and len(jp_files) > max(4, (len(english_files)+len(chinese_files))*2):
-            result["issues"].append({"severity":"WARN","kind":"日本語ファイル異常増加","file":"","count":len(jp_files),"detail":f"日本語YAML {len(jp_files)}件に対し、英語+中国語YAMLは {len(english_files)+len(chinese_files)}件です。"})
+            result["issues"].append({"severity":"WARN","kind":"日本語ファイル異常増加","file":"","count":len(jp_files),"detail":i18n.t('u7.there_are_japanese_yaml_files_versus', count=len(jp_files), value=len(english_files)+len(chinese_files))})
         result["stats"].update({"extra_keys":total_extras,"conflicts":len(result["conflicts"])})
         if not result["issues"]:
-            result["issues"].append({"severity":"OK","kind":"異常なし","file":"","count":0,"detail":"現在の判定範囲では明らかな混入を確認できませんでした。"})
+            result["issues"].append({"severity":"OK","kind":"異常なし","file":"","count":0,"detail":i18n.t('u7.no_obvious_contamination_found_within_the')})
         return result
 
     def _backup_localization_for_repair(self, mod_root, stamp):
         mod_root=Path(mod_root); loc=core.mod_localization_root(mod_root)
-        if not loc or not loc.exists(): raise FileNotFoundError("localizationフォルダがありません")
+        if not loc or not loc.exists(): raise FileNotFoundError(i18n.t('u7.localization_folder_not_found'))
         root,_=self._create_full_localization_snapshot(
             mod_root, "総合診断修復", category="総合診断", stamp=stamp,
-            state_label="総合診断の修復直前localization全体"
+            state_label=i18n.t('u7.entire_localization_folder_immediately_before_diagnostic')
         )
         dst=root / "localization"
-        if not dst.exists(): raise OSError("バックアップの作成確認に失敗しました")
+        if not dst.exists(): raise OSError(i18n.t('u7.could_not_verify_backup_creation'))
         return dst
 
     def _apply_localization_removal_plan(self, removals_by_file):
@@ -4861,9 +4859,9 @@ class App(BaseTk):
         if not changed:
             has_conflict=any(issue.get("conflict_id") for a in self.diagnostic_last_analyses for issue in (a.get("issues") or []))
             if has_conflict:
-                messagebox.showinfo(APP_NAME,"訳文が異なる『本体/日本語化Mod重複』の行を選択してください。複数選択できます。")
+                messagebox.showinfo(APP_NAME,i18n.t('u7.select_source_japanese_translation_mod_duplicates'))
             else:
-                messagebox.showinfo(APP_NAME,"本体Mod / 日本語化Mod間で、手動指定が必要な訳文競合はありません。自動統合できる項目は左側の修復実行で処理されます。")
+                messagebox.showinfo(APP_NAME,i18n.t('u7.no_translation_conflicts_between_source_and'))
             return
         # Re-render the last diagnostic result so each key keeps an independent choice.
         for analysis in self.diagnostic_last_analyses:
@@ -4871,9 +4869,9 @@ class App(BaseTk):
                 cid=issue.get("conflict_id")
                 if not cid: continue
                 c=self.diagnostic_conflict_choices.get(cid)
-                issue["decision"]="本体Modの訳" if c=="source" else "日本語化Modの訳" if c=="translation" else "自動整理" if c=="auto" else "未選択"
+                issue["decision"]=i18n.t('u7.source_mod_translation') if c=="source" else i18n.t('u7.japanese_translation_mod_translation') if c=="translation" else i18n.t('u7.source_japanese_translation_mod') if c=="auto" else i18n.t('u7.not_selected')
         self._populate_diagnostic_results(self.diagnostic_last_analyses)
-        self.diagnostic_summary_var.set(f"競合優先を {changed}件 更新しました")
+        self.diagnostic_summary_var.set(i18n.t('u7.updated_conflict_preferences', changed=changed))
         self._save_diagnostic_state("conflict_choice_changed")
 
     def _set_all_diagnostic_conflict_choices(self, choice):
@@ -4884,13 +4882,11 @@ class App(BaseTk):
                 if cid and cid not in conflict_ids:
                     conflict_ids.append(cid)
         if not conflict_ids:
-            messagebox.showinfo(APP_NAME,"一括指定が必要な訳文競合はありません。診断済みの自動統合対象は、左側の『設定した内容で修復を実行』で処理されます。")
+            messagebox.showinfo(APP_NAME,i18n.t('u7.no_translation_conflicts_need_bulk_choices'))
             return
-        label="本体Modの訳" if choice=="source" else "日本語化Modの訳" if choice=="translation" else "自動整理"
+        label=i18n.t('u7.source_mod_translation') if choice=="source" else i18n.t('u7.japanese_translation_mod_translation') if choice=="translation" else i18n.t('u7.source_japanese_translation_mod')
         confirm_text=(
-            f"診断結果にある訳文競合 {len(conflict_ids)}件を、"
-            f"すべて『{label}』に設定します。\n\n"
-            "これはキーの配置先指定ではなく、競合した訳文の採用方法です。あとから個別変更できます。続行しますか？"
+            i18n.t('u7.set_all_translation_conflicts_in_the', count=len(conflict_ids), label=label)
         )
         if not messagebox.askyesno(APP_NAME, confirm_text):
             return
@@ -4900,30 +4896,23 @@ class App(BaseTk):
             for issue in analysis.get("issues") or []:
                 cid=issue.get("conflict_id")
                 if cid:
-                    issue["decision"]="本体Modの訳" if choice=="source" else "日本語化Modの訳" if choice=="translation" else "自動整理"
+                    issue["decision"]=i18n.t('u7.source_mod_translation') if choice=="source" else i18n.t('u7.japanese_translation_mod_translation') if choice=="translation" else i18n.t('u7.source_japanese_translation_mod')
         self._populate_diagnostic_results(self.diagnostic_last_analyses)
-        self.diagnostic_summary_var.set(f"競合優先を全{len(conflict_ids)}件『{label}』に設定しました")
+        self.diagnostic_summary_var.set(i18n.t('u7.set_all_conflict_preferences_to', count=len(conflict_ids), label=label))
         self._save_diagnostic_state("all_conflict_choices_changed")
 
     def _start_localization_diagnostic(self, repair=False):
         if self.diagnostic_thread is not None:
-            messagebox.showinfo(APP_NAME,"総合診断はすでにバックグラウンドで実行中です。")
+            messagebox.showinfo(APP_NAME,i18n.t('u7.full_diagnostics_are_already_running_in'))
             return
         roots=self._selected_diagnostic_roots()
         self._save_diagnostic_state("diagnostic_start")
         if not roots:
-            messagebox.showinfo(APP_NAME,"総合診断タブで対象Modを1件以上選択してください。")
+            messagebox.showinfo(APP_NAME,i18n.t('u7.select_at_least_one_target_mod'))
             return
         if repair:
             if not messagebox.askyesno(APP_NAME,
-                "選択Modの localization フォルダを丸ごとバックアップしてから、日本語localizationを原文キー集合に合わせて整理します。\n\n"
-                "・通常Mod: 自身の英語 / 簡体字中国語原文にない日本語キーを削除\n"
-                "・日本語化Mod: 対応する全元Modの原文集合にない日本語キーを削除\n"
-                "・本体 / 日本語化Modに分散した有効な日本語キーは、自動整理ルールで統合します\n"
-                "・Mod分類・関連付けの手動指定がある場合は、その指定側を最優先します\n"
-                "・訳文が異なる重複だけ、右側で指定した採用訳（本体 / 日本語化Mod / 自動整理）に従います\n"
-                "・統合で両方を変更する場合は、本体 / 日本語化Modの localization を両方バックアップします\n"
-                "・英語 / 簡体字中国語は変更しません\n\n設定した内容で修復を実行しますか？"):
+                i18n.t('u7.back_up_the_entire_localization_folder')):
                 return
         self.diagnostic_generation += 1; generation=self.diagnostic_generation
         self.diagnostic_running_repair=bool(repair)
@@ -4931,8 +4920,8 @@ class App(BaseTk):
             self._set_diagnostic_repair_busy(True)
         else:
             self.diagnostic_scan_btn.config(state="disabled"); self.diagnostic_repair_btn.config(state="disabled")
-        self.diagnostic_summary_var.set(("設定した内容で修復実行中" if repair else "バックグラウンド診断中")+f" — {len(roots)} Mod")
-        self._set_diagnostic_detail("既知Modの原文キー・日本語化Mod関係・重複キー索引を作成しています…")
+        self.diagnostic_summary_var.set(i18n.t('u7.repairing_with_configured_choices', count=len(roots)) if repair else i18n.t('u7.diagnosing_in_the_background', count=len(roots)))
+        self._set_diagnostic_detail(i18n.t('u7.indexing_source_keys_japanese_translation_mod'))
         def work():
             try:
                 all_roots=self._all_known_mod_roots_for_diagnostic()
@@ -4963,7 +4952,7 @@ class App(BaseTk):
                             if not self.diagnostic_conflict_choices.get(cid):
                                 unresolved.append((pair,key))
                     if unresolved:
-                        self.events.put(("diagnostic_choices_required",{"generation":generation,"before":before,"message":f"保持先が未指定の訳文競合: {len(unresolved)}件"}))
+                        self.events.put(("diagnostic_choices_required",{"generation":generation,"before":before,"message":i18n.t('u7.translation_conflicts_with_no_retention_choice', count=len(unresolved))}))
                         return
 
                     # Any relation consolidation may modify both sides. Back up every touched localization first.
@@ -4974,7 +4963,7 @@ class App(BaseTk):
                         root=Path(raw)
                         self.events.put(("diagnostic_progress",{"generation":generation,"done":i,"total":len(touched),"mod":core.detect_mod_name(root),"phase":"バックアップ"}))
                         backup=self._backup_localization_for_repair(root,stamp)
-                        logs.append(f"{core.detect_mod_name(root)}: localizationを丸ごとバックアップ → {backup}")
+                        logs.append(i18n.t('u7.backed_up_the_entire_localization_folder', value=core.detect_mod_name(root), backup=backup))
 
                     # Base unnecessary-key + identical-duplicate plan.
                     plan={}
@@ -5022,15 +5011,15 @@ class App(BaseTk):
                         loc_root=core.localization_dir_path(Path(target_root))
                         out=Path(loc_root)/"japanese"/"zzz_paradox_localization_translator_consolidated_l_japanese.yml"
                         moved += core.upsert_localization_values(out,values,"japanese")
-                    if moved: logs.append(f"本体/日本語化Mod統合: {moved}キーを選択側へ統合")
-                    logs.append(f"統合修復: 日本語キー {changed['removed_keys']}件除去 / 更新 {changed['changed_files']}ファイル / 削除 {changed['deleted_files']}ファイル")
+                    if moved: logs.append(i18n.t('u7.source_japanese_translation_mod_integration_integrated', moved=moved))
+                    logs.append(i18n.t('u7.integration_repair_removed_japanese_keys_updated', removed_keys=changed['removed_keys'], changed_files=changed['changed_files'], deleted_files=changed['deleted_files']))
 
                 after=[]
                 if repair:
                     # Rebuild occurrence/source state after modifications before re-check.
                     occurrences_after=self._diagnostic_japanese_occurrence_index(all_roots)
                     for i,root in enumerate(roots,1):
-                        self.events.put(("diagnostic_progress",{"generation":generation,"done":i,"total":len(roots),"mod":core.detect_mod_name(root),"phase":"再診断"}))
+                        self.events.put(("diagnostic_progress",{"generation":generation,"done":i,"total":len(roots),"mod":core.detect_mod_name(root),"phase":i18n.t('u7.re_diagnose')}))
                         try: relation_key=str(Path(root).resolve())
                         except Exception: relation_key=str(root)
                         after.append(self._analyze_localization_health(root,source_index,source_meta,relation_map.get(relation_key),allowed_context,occurrences_after))
@@ -5054,17 +5043,17 @@ class App(BaseTk):
             integrations=int(integration_summary.get("total",integrations) or 0)
             unresolved=int(integration_summary.get("unresolved",unresolved) or 0)
         if hasattr(self,"diagnostic_integration_status_var"):
-            self.diagnostic_integration_status_var.set(f"統合対象: {integrations}キー / 訳文競合: {unique_conflicts} / 未指定: {unresolved}")
+            self.diagnostic_integration_status_var.set(i18n.t('u7.integration_targets_keys_translation_conflicts_unspecified', integrations=integrations, unique_conflicts=unique_conflicts, unresolved=unresolved))
         repairable=bool(extras or integrations)
         if hasattr(self,"diagnostic_conflict_help_var"):
             if analyses and unique_conflicts == 0 and repairable:
-                self.diagnostic_conflict_help_var.set("訳文競合なし — 右側の設定は不要です。左側の「設定した内容で修復を実行」を押してください。")
+                self.diagnostic_conflict_help_var.set(i18n.t('u7.no_translation_conflicts_no_settings_are'))
             elif unique_conflicts > 0:
-                self.diagnostic_conflict_help_var.set(f"訳文競合が {unique_conflicts}件あります。右側で採用訳を指定するか、自動整理を選んでください。")
+                self.diagnostic_conflict_help_var.set(i18n.t('u7.there_are_translation_conflicts_choose_translations', unique_conflicts=unique_conflicts))
             elif analyses:
-                self.diagnostic_conflict_help_var.set("訳文競合はありません。現在の診断結果には本体/日本語化Mod統合の手動設定は不要です。")
+                self.diagnostic_conflict_help_var.set(i18n.t('u7.no_translation_conflicts_the_current_diagnostic'))
             else:
-                self.diagnostic_conflict_help_var.set("診断後、修復に必要な操作をここへ表示します。")
+                self.diagnostic_conflict_help_var.set(i18n.t('u7.actions_needed_for_repair_will_appear'))
         conflict_state="normal" if unique_conflicts else "disabled"
         for name in ("diagnostic_keep_source_btn","diagnostic_keep_translation_btn","diagnostic_auto_choice_btn","diagnostic_clear_choice_btn","diagnostic_all_source_btn","diagnostic_all_translation_btn","diagnostic_all_auto_btn"):
             w=getattr(self,name,None)
@@ -5097,15 +5086,15 @@ class App(BaseTk):
         if not sel: return
         row=self.diagnostic_result_map.get(sel[0],{})
         stats=row.get("stats") or {}
-        lines=[f"Mod: {row.get('mod','')}",f"Mod場所: {row.get('path','')}",f"重要度: {row.get('severity','')}",f"診断項目: {row.get('kind','')}"]
-        if row.get("score") not in (None, ""): lines.append(f"関連度スコア: {row.get('score')}/100")
-        if row.get("location"): lines.append(f"現在位置: {row.get('location')}")
-        if row.get("plan"): lines.append(f"修復予定: {row.get('plan')}")
-        if row.get("decision"): lines.append(f"採用訳: {row.get('decision')}")
+        lines=[f"Mod: {row.get('mod','')}",i18n.t('u7.mod_location', path=row.get('path','')),i18n.t('u7.severity', severity=row.get('severity','')),i18n.t('u7.diagnostic_item', kind=row.get('kind',''))]
+        if row.get("score") not in (None, ""): lines.append(i18n.t('u7.relevance_score', score=row.get('score')))
+        if row.get("location"): lines.append(i18n.t('u7.current_location_2', location=row.get('location')))
+        if row.get("plan"): lines.append(i18n.t('u7.repair_plan_2', plan=row.get('plan')))
+        if row.get("decision"): lines.append(i18n.t('u7.translation_choice_2', decision=row.get('decision')))
         if row.get("manual_priority"):
-            lines.append("例外指定あり: Mod分類・関連付けで手動指定されています。自動整理ではその指定側を最優先します。")
-        if row.get("file"): lines.append(f"ファイル: {row.get('file')}")
-        lines += [f"件数: {row.get('count',0)}",f"内容: {row.get('detail','')}","",f"英語YAML: {stats.get('english_files',0)} / 中国語YAML: {stats.get('chinese_files',0)} / 日本語YAML: {stats.get('japanese_files',0)}",f"自身の原文キー: {stats.get('source_keys',0)} / 修復で許可するキー: {stats.get('allowed_keys',0)} / 日本語キー: {stats.get('japanese_keys',0)}",f"対応元Mod: {stats.get('translation_sources',0)} / 不要キー: {stats.get('extra_keys',0)} / 本体-日本語化Mod重複: {stats.get('conflicts',0)}"]
+            lines.append(i18n.t('u7.override_manually_configured_in_mod_classification'))
+        if row.get("file"): lines.append(i18n.t('u7.file_2', file=row.get('file')))
+        lines += [i18n.t('u7.count', count=row.get('count',0)),i18n.t('u7.details', detail=row.get('detail','')),"",i18n.t('u7.english_yaml_chinese_yaml_japanese_yaml', english_files=stats.get('english_files',0), chinese_files=stats.get('chinese_files',0), japanese_files=stats.get('japanese_files',0)),i18n.t('u7.own_source_keys_keys_allowed_for', source_keys=stats.get('source_keys',0), allowed_keys=stats.get('allowed_keys',0), japanese_keys=stats.get('japanese_keys',0)),i18n.t('u7.linked_source_mods_unnecessary_keys_source', translation_sources=stats.get('translation_sources',0), extra_keys=stats.get('extra_keys',0), conflicts=stats.get('conflicts',0))]
         self._set_diagnostic_detail("\n".join(lines))
 
     def _mod_status_matches_query(self, result, query):
@@ -5837,10 +5826,10 @@ class App(BaseTk):
                         zf.writestr("resume_state_sanitized.json",json.dumps(resume_state,ensure_ascii=False,indent=2))
                     except Exception:
                         pass
-            messagebox.showinfo(APP_NAME, f"診断ログを収集しました。\n\n{target}\n\nAPIキーや翻訳本文は収集しません。")
+            messagebox.showinfo(APP_NAME, i18n.t('u7.diagnostic_logs_collected_api_keys_and', target=target))
         except Exception as e:
-            record_error("診断ログ収集", e)
-            messagebox.showerror(APP_NAME, f"診断ログの収集に失敗しました。\n{e}")
+            record_error(i18n.t('u7.diagnostic_log_collection'), e)
+            messagebox.showerror(APP_NAME, i18n.t('u7.failed_to_collect_diagnostic_logs', e=e))
 
     def _mod_source_signature(self, mod_root: Path) -> str:
         """Cheap signature used to decide whether a cached status result is still current."""
@@ -5898,10 +5887,10 @@ class App(BaseTk):
         """Restore potentially large Translation Status caches off the Tk thread."""
         if self.status_restore_thread and self.status_restore_thread.is_alive():
             return
-        self.mod_status_summary_var.set('前回の翻訳状況をバックグラウンドで復元中…')
+        self.mod_status_summary_var.set(i18n.t('u7.restoring_previous_translation_status_in_the'))
         def work():
             try:
-                data = load_persistent_json(MOD_STATUS_CACHE_PATH, {"version": MOD_STATUS_CACHE_VERSION, "items": {}}, "翻訳状況キャッシュ")
+                data = load_persistent_json(MOD_STATUS_CACHE_PATH, {"version": MOD_STATUS_CACHE_VERSION, "items": {}}, i18n.t('u7.translation_status_cache'))
                 cache_is_current = isinstance(data, dict) and data.get("version") == MOD_STATUS_CACHE_VERSION
                 if not cache_is_current:
                     data = {"version": MOD_STATUS_CACHE_VERSION, "items": {}}
@@ -5952,8 +5941,8 @@ class App(BaseTk):
                     continue
         counts={}
         for r in self.mod_research_results: counts[r.get('status','')]=counts.get(r.get('status',''),0)+1
-        summary=' / '.join(f'{k}: {v}' for k,v in counts.items())
-        self.mod_status_summary_var.set(f'キャッシュ復元: {len(self.mod_research_results)}件'+(f'　{summary}' if summary else ''))
+        summary=' / '.join(f'{display_status(k)}: {v}' for k,v in counts.items())
+        self.mod_status_summary_var.set(i18n.t('u7.cache_restored_entries', count=len(self.mod_research_results), value=f'　{summary}' if summary else ''))
         # Rewrite legacy/markerless snapshots from the validated generation cache.
         self._save_translation_status_state("cache_restored")
         self._refresh_diagnostic_targets()
@@ -8989,7 +8978,7 @@ class App(BaseTk):
     def _restore_shared_mod_state_cache(self):
         """Use the shared cache as a safety fallback if the primary cache files are missing/incomplete."""
         try:
-            data = load_persistent_json(SHARED_MOD_STATE_CACHE_PATH, {}, "Mod共通状態")
+            data = load_persistent_json(SHARED_MOD_STATE_CACHE_PATH, {}, i18n.t('u7.shared_mod_state'))
             if not isinstance(data, dict):
                 return
             cached_cls = data.get("classification") if isinstance(data.get("classification"), dict) else {}
@@ -9021,7 +9010,7 @@ class App(BaseTk):
             if changed or rel_changed:
                 self._save_shared_mod_state_cache("fallback_restore")
         except Exception as exc:
-            record_error("共通Mod状態キャッシュ復元", exc)
+            record_error(i18n.t('u7.shared_mod_state_cache_restoration'), exc)
 
     def _save_translation_status_state(self, reason="update"):
         """Persist the visible Translation Status state independently from scan-signature cache."""
@@ -9096,12 +9085,12 @@ class App(BaseTk):
         if not force_disk and self._restore_status_snapshot_cache is not None:
             return self._restore_status_snapshot_cache
         try:
-            data = load_persistent_json(TRANSLATION_STATUS_STATE_PATH, {}, "翻訳状況状態")
+            data = load_persistent_json(TRANSLATION_STATUS_STATE_PATH, {}, i18n.t('u7.translation_status_state'))
             data = data if isinstance(data, dict) else {}
             self._restore_status_snapshot_cache = data
             return data
         except Exception as exc:
-            record_error("翻訳状況状態キャッシュ読込", exc)
+            record_error(i18n.t('u7.loading_translation_status_state_cache'), exc)
             self._restore_status_snapshot_cache = {}
             return {}
 
@@ -9128,15 +9117,15 @@ class App(BaseTk):
             core.save_json(DIAGNOSTIC_STATE_PATH, payload)
             self._save_shared_mod_state_cache("diagnostic:" + str(reason))
         except Exception as exc:
-            record_error("総合診断状態キャッシュ保存", exc)
+            record_error(i18n.t('u7.saving_diagnostic_state_cache'), exc)
 
     def _restore_diagnostic_state(self):
         if self.diagnostic_restore_thread and self.diagnostic_restore_thread.is_alive():
             return
-        self.diagnostic_summary_var.set('前回診断をバックグラウンドで復元中…')
+        self.diagnostic_summary_var.set(i18n.t('u7.restoring_previous_diagnostics_in_the_background'))
         def work():
             try:
-                data=load_persistent_json(DIAGNOSTIC_STATE_PATH,{},"総合診断状態")
+                data=load_persistent_json(DIAGNOSTIC_STATE_PATH,{},i18n.t('u7.diagnostic_state'))
                 self.events.put(('diagnostic_state_restored',data if isinstance(data,dict) else {}))
             except Exception as exc:
                 self.events.put(('diagnostic_state_restore_error',str(exc)))
@@ -9172,12 +9161,12 @@ class App(BaseTk):
                     if len(vals)>=3 and str(vals[2]) in wanted: self.diagnostic_target_tree.selection_add(iid)
             if valid:
                 issues=sum(1 for a in valid for x in (a.get('issues') or []) if x.get('severity') in {'ERROR','WARN'})
-                self.diagnostic_summary_var.set(f'前回診断を復元: {len(valid)} Mod / 要確認 {issues}件')
-                self._set_diagnostic_detail('前回終了時の総合診断結果をキャッシュから復元しました。必要なら再診断してください。')
+                self.diagnostic_summary_var.set(i18n.t('u7.previous_diagnostics_restored_mods_items_to', count=len(valid), issues=issues))
+                self._set_diagnostic_detail(i18n.t('u7.diagnostic_results_from_the_previous_session'))
             elif not analyses:
-                self.diagnostic_summary_var.set('診断待機中')
+                self.diagnostic_summary_var.set(i18n.t('u7.waiting_for_diagnostics'))
         except Exception as exc:
-            record_error('総合診断状態キャッシュ復元',exc)
+            record_error(i18n.t('u7.diagnostic_state_cache_restoration'),exc)
 
 
     def _workspace_scalar(self, var, default=None):
@@ -9322,7 +9311,7 @@ class App(BaseTk):
             item.pop(key, None)
 
     def _restore_workspace_state(self):
-        data=load_persistent_json(WORKSPACE_STATE_PATH,{},"ワークスペース状態")
+        data=load_persistent_json(WORKSPACE_STATE_PATH,{},i18n.t('u7.workspace_state'))
         if not isinstance(data,dict) or not data:
             return
         self._workspace_restore_data=data
@@ -9378,7 +9367,7 @@ class App(BaseTk):
             self.monitor_path_var.set(self.monitor_target_paths[0] if self.monitor_target_paths else "")
             self.monitor_interval_var.set(max(3,int(mon.get("interval",self.monitor_interval_var.get()) or 15))); self.monitor_use_llm_var.set(bool(mon.get("use_llm",self.monitor_use_llm_var.get())))
             self.monitor_check_translation_mods_var.set(bool(mon.get("check_translation_mods",self.monitor_check_translation_mods_var.get()))); self.monitor_provider_var.set(mon.get("provider",self.monitor_provider_var.get())); self.monitor_url_var.set(mon.get("url",self.monitor_url_var.get())); self.monitor_model_var.set(mon.get("model",self.monitor_model_var.get()))
-            if self.monitor_target_paths: self.monitor_target_summary_var.set(f"監視対象: {len(self.monitor_target_paths)}か所（前回状態を復元）")
+            if self.monitor_target_paths: self.monitor_target_summary_var.set(i18n.t('u7.monitored_locations_previous_state_restored', count=len(self.monitor_target_paths)))
 
             st=data.get("translation_status") or {}
             self._workspace_selected_location_paths=[str(x) for x in (st.get("selected_location_paths") or []) if x]
@@ -9402,7 +9391,7 @@ class App(BaseTk):
                     if 0 <= idx < self.notebook.index("end"): self.notebook.select(idx)
             except Exception: pass
         except Exception as e:
-            record_error("ワークスペース状態復元",e)
+            record_error(i18n.t('u7.workspace_state_restoration'),e)
 
     def _workspace_saved_at_ns(self):
         try:
@@ -9524,7 +9513,7 @@ class App(BaseTk):
         if data is None:
             data,_=self._load_resume_candidate()
         if not data:
-            messagebox.showinfo(APP_NAME,"保存された再開可能な作業はありません。"); return
+            messagebox.showinfo(APP_NAME,i18n.t('u7.no_saved_work')); return
         self.queue_items=data.get("queue",[])
         self.current_queue_index=max(0,int(data.get("queue_index",0) or 0))
         s=data.get("settings",{})
@@ -9539,7 +9528,7 @@ class App(BaseTk):
         self._write_session_file(active=False,restore_on_launch=False)
         self._refresh_queue_tree()
         self._save_workspace_state("session_restored")
-        self.progress_text.set(f"作業を復元しました（保存元 v{previous_version}）。翻訳開始で続きから再開します。")
+        self.progress_text.set(i18n.t('u7.work_restored_saved_by_v_start', previous_version=previous_version))
 
     def _offer_restore_session(self):
         data,path=self._load_resume_candidate()
@@ -9548,8 +9537,8 @@ class App(BaseTk):
         previous_version=data.get("app_version") or data.get("version") or "不明"
         source_note=""
         if path==RESUME_STATE_PATH:
-            source_note="\n\nバージョン共通の再開ログから復元します。"
-        if messagebox.askyesno(APP_NAME,f"前回の未完了作業が残っています（保存元 v{previous_version}）。\n続きから復元しますか？{source_note}"):
+            source_note=i18n.t('u7.restoring_from_the_resume_log_shared')
+        if messagebox.askyesno(APP_NAME,i18n.t('u7.unfinished_work_remains_from_your_last', previous_version=previous_version, source_note=source_note)):
             self.restore_session(data)
         else:
             self._disable_resume_offer()
