@@ -42,7 +42,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.12.0"
+APP_VERSION = "0.12.1"
 MOD_STATUS_CACHE_VERSION = 16
 TRANSLATION_STATUS_SNAPSHOT_SCHEMA = 2
 MOD_STATUS_EMPTY_IID = "__mod_status_empty__"
@@ -7746,7 +7746,8 @@ class App(BaseTk):
             return p
         return p
 
-    def _isolated_output_path(self, p: Path, root: Path, mod_name: str = "") -> Path:
+    def _isolated_output_path(self, p: Path, root: Path, mod_name: str = "",
+                              target_lang: str = core.DEFAULT_TARGET_LANG) -> Path:
         """Return a stable Mod/job-specific output directory.
 
         ``localization`` is the basename of almost every Mod localization folder,
@@ -7764,12 +7765,15 @@ class App(BaseTk):
         digest = hashlib.sha256(source_id.encode("utf-8", "ignore")).hexdigest()[:10]
         root = Path(root)
         root.mkdir(parents=True, exist_ok=True)
-        return root / f"{safe}_{digest}_japanese"
+        # 末尾は翻訳先の言語。日本語は v0.12.0 までと同じ「_japanese」なので、今までの出力をそのまま引き継ぐ。
+        # （v0.12.0 は言語によらず _japanese にしていたため、同じ Mod の日本語とほかの言語が出力先を共有していた）
+        lang = target_lang if target_lang in core.TARGET_LANGUAGES else core.DEFAULT_TARGET_LANG
+        return root / f"{safe}_{digest}_{lang}"
 
-    def _default_output(self,p:Path):
+    def _default_output(self,p:Path,target_lang:str|None=None):
         raw = self.normal_output_var.get().strip() if hasattr(self, "normal_output_var") else ""
         root = Path(raw) if raw else _automatic_output_root()
-        return self._isolated_output_path(Path(p), root)
+        return self._isolated_output_path(Path(p), root, target_lang=target_lang or core.DEFAULT_TARGET_LANG)
 
     def _set_target_lang(self, lang, save=True):
         lang=_target_lang_from_choice(lang)
@@ -7790,7 +7794,10 @@ class App(BaseTk):
         else:
             raw = self.normal_output_var.get().strip() if hasattr(self, "normal_output_var") else ""
             root = Path(raw) if raw else OUTPUT_ROOT
-        expected = self._isolated_output_path(inp, root, item.get("mod_name", ""))
+        target_lang = core.DEFAULT_TARGET_LANG if mode == "chinese" else _item_target_lang(item)
+        expected = self._isolated_output_path(inp, root, item.get("mod_name", ""), target_lang=target_lang)
+        # v0.12.0 で日本語以外を訳した項目（出力先が日本語と共有の「…_japanese」）も、ここで「…_<言語>」へ向け直す。
+        # 古い出力のファイルは動かさない（「…_japanese」の中に残る）。キャッシュは CACHE_ROOT にあるので訳し直しにはならない。
         if item.get("output") != str(expected) or not item.get("output_isolated_v2"):
             item["output"] = str(expected)
             item["output_isolated_v2"] = True
@@ -8097,10 +8104,11 @@ class App(BaseTk):
         p = Path(p)
         if not p.exists():
             return
-        out=out or self._default_output(p)
+        target_lang=target_lang or self.target_lang_var.get()
+        out=out or self._default_output(p, target_lang)
         cache_path = cache or self._new_cache_path(p)
         item={"input":str(p),"output":str(out),"status":status or status_value("waiting"),"cache":str(cache_path),"output_isolated_v2":True,
-              "target_lang":target_lang or self.target_lang_var.get()}
+              "target_lang":target_lang}
         app_state.ensure_queue_item_id(item)
         self.queue_items.append(item)
         self._refresh_queue_tree(); self._save_workspace_state("normal_queue_changed")
