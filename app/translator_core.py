@@ -70,8 +70,86 @@ DUAL_SEP = " ⟪ZH_REF⟫ "
 
 KNOWN_SOURCE_LANGS = [
     "english", "simp_chinese", "german", "french", "spanish",
-    "russian", "polish", "braz_por", "japanese", "korean",
+    "russian", "polish", "braz_por", "japanese", "korean", "turkish",
 ]
+
+# 翻訳先に選べる言語（Paradox の公式11言語）。言語の情報はここだけに置く。
+# script: 文字の種類。品質チェックの分け方に使う
+#   japanese＝かな・漢字、han＝漢字（簡体字）、hangul＝ハングル、cyrillic＝キリル文字、latin＝ラテン文字
+TARGET_LANGUAGES = {
+    "english": {"label": "英語", "name": "English", "script": "latin"},
+    "french": {"label": "フランス語", "name": "French", "script": "latin"},
+    "german": {"label": "ドイツ語", "name": "German", "script": "latin"},
+    "spanish": {"label": "スペイン語", "name": "Spanish", "script": "latin"},
+    "japanese": {"label": "日本語", "name": "Japanese", "script": "japanese"},
+    "korean": {"label": "韓国語", "name": "Korean", "script": "hangul"},
+    "polish": {"label": "ポーランド語", "name": "Polish", "script": "latin"},
+    "braz_por": {"label": "ポルトガル語（ブラジル）", "name": "Brazilian Portuguese", "script": "latin"},
+    "russian": {"label": "ロシア語", "name": "Russian", "script": "cyrillic"},
+    "simp_chinese": {"label": "簡体字中国語", "name": "Simplified Chinese", "script": "han"},
+    "turkish": {"label": "トルコ語", "name": "Turkish", "script": "latin"},
+}
+
+# ゲームが読める言語（2026-10-11、この Mac のゲーム本体の localization フォルダで確認。
+# EU5 は未導入のため Steam の対応言語）。CK3 は clausewitz/jomini に braz_por・turkish があるが、
+# ゲーム本文（game/localization）には無いので 9 言語とする。
+GAME_LANGUAGES = {
+    "Crusader Kings III": ("english", "french", "german", "spanish", "japanese", "korean",
+                           "polish", "russian", "simp_chinese"),
+    "Hearts of Iron IV": ("english", "french", "german", "spanish", "japanese", "korean",
+                          "polish", "braz_por", "russian", "simp_chinese"),
+    "Stellaris": ("english", "french", "german", "spanish", "japanese", "korean",
+                  "polish", "braz_por", "russian", "simp_chinese"),
+    "Victoria 3": tuple(TARGET_LANGUAGES),
+    "Europa Universalis V": tuple(TARGET_LANGUAGES),
+    "Europa Universalis IV": ("english", "french", "german", "spanish"),
+    "Imperator: Rome": ("english", "french", "german", "spanish", "russian", "simp_chinese"),
+}
+# 対応言語を調べるときだけ使う。Mod の自動探索の対象（PARADOX_STEAM_GAMES）は増やさない。
+_GAME_LANGUAGE_PATH_HINTS = {
+    "Crusader Kings III": ("1158310", "Crusader Kings III"),
+    "Hearts of Iron IV": ("394360", "Hearts of Iron IV"),
+    "Stellaris": ("281990", "Stellaris"),
+    "Victoria 3": ("529340", "Victoria 3"),
+    "Europa Universalis V": ("3450310", "Europa Universalis V"),
+    "Europa Universalis IV": ("236850", "Europa Universalis IV"),
+    "Imperator: Rome": ("859580", "Imperator"),
+}
+_PRESET_GAMES = {"CK3": "Crusader Kings III", "HOI4": "Hearts of Iron IV", "Stellaris": "Stellaris",
+                 "Victoria 3": "Victoria 3", "EU5": "Europa Universalis V"}
+
+
+def target_language_label(lang: str) -> str:
+    return TARGET_LANGUAGES.get(lang, {}).get("label", lang)
+
+
+def target_language_name(lang: str) -> str:
+    """指示文（英語のテンプレート）に書く言語名。"""
+    return TARGET_LANGUAGES.get(lang, {}).get("name", lang)
+
+
+def target_language_script(lang: str) -> str:
+    return TARGET_LANGUAGES.get(lang, {}).get("script", "latin")
+
+
+def game_for_translation(path=None, preset: str = "") -> str:
+    """Mod の場所（Workshop の appid か Documents の Mod フォルダ）から、分からなければプリセットからゲームを推定する。"""
+    raw = str(path or "").replace("\\", "/").lower()
+    for game, (appid, docs_name) in _GAME_LANGUAGE_PATH_HINTS.items():
+        if f"/workshop/content/{appid}/" in raw or f"/{docs_name.lower()}/mod/" in raw:
+            return game
+    return _PRESET_GAMES.get(preset, "")
+
+
+def game_language_warning(target_lang: str, path=None, preset: str = "") -> str:
+    """ゲームが読めない言語へ翻訳しようとしているなら説明を返す。問題なし・ゲーム不明なら空文字。"""
+    game = game_for_translation(path, preset)
+    supported = GAME_LANGUAGES.get(game)
+    if not supported or target_lang in supported:
+        return ""
+    names = "・".join(target_language_label(x) for x in supported)
+    return (f"{game} は{target_language_label(target_lang)}（l_{target_lang}）を読めません。"
+            f"翻訳しても、ゲームの中には表示されません。{game} が読める言語: {names}")
 
 LINE_PATTERN = re.compile(
     r'^(?P<indent>\s*)(?P<key>[A-Za-z0-9_.\-\'&][A-Za-z0-9_.\-\'& ]*)\s*:\s*'
