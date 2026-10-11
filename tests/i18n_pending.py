@@ -263,7 +263,6 @@ PENDING = {
     'app/main.py::App._translation_status_rows_for_restore': ('U7_diag_backup', 2),
     'app/main.py::App.collect_error_logs': ('U7_diag_backup', 3),
     'app/main.py::App.restore_session': ('U7_diag_backup', 3),
-    'app/main.py::App._build_help_tab': ('U8_help', 2),
     'app/translator_core.py::<module>': ('U9_core', 24),
     'app/translator_core.py::_external_gap_candidates': ('U9_core', 3),
     'app/translator_core.py::_normalize_mod_name_for_match': ('U9_core', 2),

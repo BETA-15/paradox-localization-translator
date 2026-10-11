@@ -5,8 +5,6 @@
 """
 from __future__ import annotations
 
-import hashlib
-import importlib
 import re
 import sys
 from pathlib import Path
@@ -17,16 +15,7 @@ sys.path.insert(0, str(ROOT / "app"))
 import i18n  # noqa: E402
 
 
-def section_hash(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
-
-
-def source_hashes() -> dict:
-    return {sid: section_hash(body) for sid, body in i18n.japanese.help_doc.HELP_SECTIONS}
-
-
-def help_module(lang: str):
-    return importlib.import_module(f"i18n.{lang}.help_doc")
+from i18n.help import help_module, section_hash, source_hashes  # noqa: E402,F401  アプリと同じ計算を使う
 
 
 def language_status(lang: str) -> dict:

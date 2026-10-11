@@ -45,3 +45,30 @@ def test_stale_sections_are_detected(monkeypatch):
     assert hs.language_status("english")["stale"] == ["s10_glossary"]
     monkeypatch.setattr(english, "HELP_SECTIONS", sections[:-1])
     assert hs.language_status("english")["missing"] == [list(src)[-1]]
+
+
+def test_help_text_in_japanese_is_the_original():
+    import i18n.help as help_
+    assert help_.help_text("japanese") == "".join(body for _sid, body in i18n.japanese.help_doc.HELP_SECTIONS)
+    assert help_.help_title("japanese") == i18n.japanese.help_doc.HELP_TITLE
+
+
+def test_help_text_falls_back_and_marks_stale_sections(monkeypatch):
+    import i18n.help as help_
+    src = hs.source_hashes()
+    ids = list(src)
+    japanese = dict(i18n.japanese.help_doc.HELP_SECTIONS)
+    # 英語の訳が無い間は、どの言語でも日本語の原本
+    monkeypatch.setattr(i18n.english.help_doc, "HELP_SECTIONS", [])
+    monkeypatch.setattr(i18n.french.help_doc, "HELP_SECTIONS", [])
+    assert help_.help_text("french") == "".join(japanese.values())
+    # 英語は全部、フランス語は1節だけ訳がある。フランス語の節は原本が変わった後（ハッシュが古い）
+    monkeypatch.setattr(i18n.english.help_doc, "HELP_SECTIONS", [(sid, f"[en {sid}]") for sid in ids])
+    monkeypatch.setattr(i18n.english.help_doc, "SOURCE_HASHES", dict(src))
+    monkeypatch.setattr(i18n.french.help_doc, "HELP_SECTIONS", [("s10_glossary", "[fr glossaire]")])
+    monkeypatch.setattr(i18n.french.help_doc, "SOURCE_HASHES", {"s10_glossary": "000000000000"})
+    monkeypatch.setattr(i18n.french.help_doc, "STALE_NOTICE", "[fr pas à jour]", raising=False)
+    text = help_.help_text("french")
+    assert "[fr pas à jour]\n[fr glossaire]" in text
+    assert "[en s10_glossary]" not in text and "[en intro]" in text
+    assert help_.help_title("french") == i18n.japanese.help_doc.HELP_TITLE  # 題も英語・日本語の順に戻る

@@ -26,6 +26,8 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 import translator_core as core
 import i18n
+import i18n.help as i18n_help
+import i18n.rule_ids as i18n_rule_ids
 import ui_status
 from ui_status import status_value, display_status
 import app_state
@@ -293,8 +295,10 @@ def _is_llm_connection_alert_error(error):
     ))
 
 
-def _build_qa_log_payload(contexts, failures, generated_at=None, app_version=None, repair_result=None):
-    """Create a text-free but actionable snapshot of the latest inspected QA run."""
+def _build_qa_log_payload(contexts, failures, generated_at=None, app_version=None, repair_result=None, ui_language=None):
+    """Create a text-free but actionable snapshot of the latest inspected QA run.
+
+    ui_language: 文（reason・message など）を書いた画面の言語。古いログに無いときは日本語とみなす。"""
     files=[]; issue_total=0; error_total=0; warning_total=0; notice_total=0; languages=[]
     for context in contexts or []:
         lang=str(context.get("lang") or "")
@@ -342,6 +346,7 @@ def _build_qa_log_payload(contexts, failures, generated_at=None, app_version=Non
         "schema":2,
         "generated_at":generated_at or datetime.now().isoformat(timespec="seconds"),
         "app_version":str(app_version or APP_VERSION),
+        "ui_language":str(ui_language or i18n.get_ui_language()),
         "mode":mode,
         "source_languages":languages,
         "summary":{"files":len(files)+len(safe_failures),"completed_files":len(files),"failed_files":len(safe_failures),
@@ -3007,352 +3012,11 @@ class App(BaseTk):
 
     def _build_help_tab(self):
         t = self.tab_help
-        title = ttk.Label(t, text="Paradox Localization Translator 使い方", font=("", 18, "bold"))
+        title = ttk.Label(t, text=i18n_help.help_title(self.ui_language), font=("", 18, "bold"))
         title.pack(anchor="w", pady=(0, 10))
         box = tk.Text(t, wrap="word", padx=12, pady=12)
         box.pack(fill="both", expand=True)
-        guide = """Paradox Localization Translator 詳細ガイド
-
-【0. このアプリでできること】
-Paradox Interactive系ゲームのlocalization YAMLを、ローカルLLMまたはクラウドAPIで日本語化するための統合ツールです。
-単純な一括翻訳だけでなく、未翻訳修復、差分更新、QA、検索修正、Mod翻訳状況調査、既存日本語化Modへの差分反映、キャッシュ管理まで行えます。
-
-主な対応タイトル:
-・Crusader Kings III
-・Victoria 3
-・Hearts of Iron IV
-・Stellaris
-・Europa Universalis V
-
-【1. 最初に必要なもの】
-ローカルLLMを使う場合:
-・Ollama または LM Studio
-・翻訳に使うLLMモデル
-
-クラウドAPIを使う場合:
-・OpenAI / Anthropic / Gemini / OpenAI互換APIのAPIキー
-
-配布版アプリにはPython、Tk/Tcl、必要なGUI部品が内蔵されるため、利用者がPythonを別途入れる必要はありません。
-
-【2. 起動したら最初に確認する場所】
-画面上部にはLLM状態が2系統あります。
-
-翻訳用LLM:
-通常翻訳、差分翻訳、QAのAI校正、モデル速度テストなどに使います。
-
-探索用LLM:
-未翻訳Mod探索や、翻訳状況の曖昧候補判定に使います。
-探索用には3B～8B程度の軽量モデルを推奨します。
-
-それぞれ「最新応答」欄には、実際にLLMから返ってきた応答を読み取り専用で表示します。
-「全文を開く」で完全な応答を確認できます。
-
-【3. 翻訳 / キュー タブ】
-ここが通常翻訳の中心です。
-
-［追加］:
-YAMLファイルまたはlocalization/Modフォルダを追加します。ドラッグ＆ドロップも利用できます。
-
-［選択削除］:
-選択中のキュー項目だけを削除します。原本ファイルは削除しません。
-
-［全消去］:
-翻訳キューを空にします。原本やキャッシュは削除しません。
-
-［翻訳開始］:
-上から順番に翻訳します。
-
-［一時停止］:
-現在のAPI/LLM応答が終わった安全な地点で一時停止します。
-
-［セーブして中断］:
-現在までのキャッシュとセッションを保存して停止します。次回起動時に再開できます。
-
-［現在の翻訳へ設定を適用］:
-翻訳途中でモデル、プロバイダ、URL、バッチ、並列、用語集、英中併用設定などを変更した後、このボタンを押すと次のバッチから新設定を使います。
-
-［上書き］:
-完成した翻訳を元Modまたは検出済み日本語化Modへ反映します。
-既存日本語化Modがある場合は、押した時に「日本語化Modへ差分上書き / 元Modへ上書き / キャンセル」を選べます。上書き前に対象を明示し、バックアップを作成します。
-
-【4. バッチ / 並列のおすすめ設定】
-おすすめ設定から3種類を選べます。
-
-安定重視: バッチ20 / 並列1
-・長文が多いMod
-・初回利用
-・メモリ余裕が少ない環境
-・動作確認を優先したい場合
-
-標準: バッチ40 / 並列1
-・通常はこちらを推奨
-・速度と安定性のバランス重視
-
-高速: バッチ60 / 並列2
-・Ollama / LM Studio側が同時2リクエストを処理できる場合
-・十分なRAM/VRAMがある場合
-
-目安:
-・バッチ1～60: 通常範囲
-・バッチ80超: 長文で欠落、タイムアウトが増えやすい
-・バッチ120超: 非推奨
-・並列1: 最も安定
-・並列2: サーバー側並列処理を有効にしている場合に推奨
-・並列3以上: ローカルLLMではメモリ圧迫、待ち行列、タイムアウトが増えやすい
-
-クラウドAPIではサービス側のレート制限を優先してください。
-
-【5. LLM / 翻訳設定】
-プロバイダ:
-Ollama / LM Studio / OpenAI / Anthropic / Gemini / OpenAI Compatible から選択できます。
-
-URL:
-Ollama既定: http://localhost:11434
-LM Studio既定: http://localhost:1234/v1
-クラウドは通常自動設定されます。
-
-モデル:
-接続確認後、利用可能なモデル一覧から選択します。
-
-APIキー:
-クラウドAPI用です。アプリの設定ファイルには保存しません。
-
-プリセット:
-CK3などゲームごとの翻訳プロンプト方針に使います。
-
-中国語基準翻訳:
-専用タブへ簡体字中国語YAMLを入れると、中国語の漢字語彙・制度語・固有語を第一基準として日本語化します。英語ファイルは不要です。
-
-既存日本語の未翻訳を修復:
-l_japanese内に英語などが残っている場合、その部分だけ修復対象にします。
-
-翻訳後に自動QA:
-翻訳後、未翻訳やParadox構文破損を検査します。
-
-【6. キャッシュ】
-翻訳ごとに独立したキャッシュを持ちます。
-同じMod更新時も過去キャッシュを特定し、変更のない文章を再翻訳しません。
-
-［キャッシュを見る］:
-選択キューのキャッシュ内容、件数、保存場所を確認します。
-
-［キャッシュを追加］:
-別のtranslate_cache.jsonを現在の翻訳へ統合します。
-
-差分更新:
-前回原文のsource_manifest.jsonと現在の原文を比較し、新規・変更箇所だけ再翻訳します。
-
-【7. QA / 比較編集 タブ】
-原文と日本語を比較し、問題を階層表示します。
-YAMLをドラッグ＆ドロップして読み込めます。
-
-主な検査:
-・未翻訳
-・キー欠落
-・プレースホルダ不一致
-・[Character...] / $VALUE$ / §色コード等の破損
-・誤字脱字候補
-・括弧や句読点の不整合
-
-問題行を選ぶと原文と日本語を並べて確認できます。
-日本語欄を直接編集して保存できます。
-AI校正は現在の翻訳用LLM設定を使用します。設定変更後は［現在の翻訳設定を適用］を押してください。
-
-【8. 差分調査 タブ】
-英語/原文と日本語をキー単位で向かい合わせに比較します。
-ドラッグ＆ドロップにも対応します。
-
-判定例:
-・欠落: 原文にはあるが日本語にない
-・未翻訳: 日本語値が英語原文のまま
-・日本語のみ: 日本語側だけにキーがある
-・対応あり: 正常に対応している
-
-［選択項目を翻訳］:
-選択した1キーだけ翻訳します。
-
-［欠落・未翻訳をまとめて翻訳］:
-問題箇所だけまとめてLLMへ送ります。
-
-差分翻訳も現在の翻訳用LLM設定を使用します。
-
-【9. 翻訳検索 タブ】
-日本語YAML/フォルダを横断検索し、検索結果から直接翻訳を訂正できます。
-
-検索対象:
-・ファイル名
-・localizationキー
-・日本語本文
-
-結果を選ぶと現在の訳文を編集でき、［この日本語訳を保存］で元YAMLへ反映します。
-
-【10. 用語集 タブ】
-固定訳を登録できます。
-例: Grand Campaign → 開辺
-
-該当する原文が翻訳バッチに含まれる場合、その用語だけLLMプロンプトへ提示します。
-用語集を途中変更した場合も、現在の翻訳へ設定を適用すれば次のバッチから反映できます。
-
-【11. モデル / 接続 タブ】
-接続確認、モデル一覧、速度テスト、プロファイル管理を行います。
-
-現在モデルを速度テスト:
-現在選択中の1モデルを測定します。
-
-選択モデルを比較テスト:
-最大5モデルまで選び、平均処理時間、tokens/s、失敗率を比較します。
-
-モデルプロファイル:
-プロバイダ、URL、モデル、バッチ、並列、ゲームプリセットなどをまとめて保存できます。
-追加だけでなく削除もできます。
-
-前回使用した翻訳用/探索用のプロバイダ・URL・モデルは次回起動時に自動復元します。APIキーは保存しません。
-
-【12. 未翻訳監視 タブ】
-翻訳状況タブで登録したMod場所を読み取り専用で常時監視します。自動翻訳はしません。
-
-監視対象:
-［翻訳状況］タブでゲーム/Mod場所を選択し、［選択した場所のModを調査］を実行すると、その場所が監視対象にも登録されます。
-
-探索専用LLM:
-通常翻訳とは別モデルを指定できます。3B～8B程度の軽量モデルを推奨します。
-
-［常時監視を開始］:
-監視開始後は同じボタンが［常時監視を停止］に変わり、状態欄に「● 常時監視中」と表示します。
-
-［再調査］:
-登録済みの監視対象について、Mod翻訳状況をもう一度調査します。
-
-監視中はYAMLの更新時刻・サイズを確認し、変更があった対象だけ解析します。曖昧な候補だけ軽量LLMへ送ります。
-
-【13. 翻訳状況 タブ】
-ゲーム/Mod場所の自動検出、調査対象の選択、Mod翻訳状況の調査をここへ集約しています。
-複数の場所を選択して［選択した場所のModを調査］を実行できます。結果はキャッシュされ、変更があったModだけ再調査します。
-
-表示例:
-・翻訳なし
-・欠損あり
-・別Mod翻訳・欠損
-・別Modで完全翻訳
-・翻訳あり
-
-日本語化Mod検出:
-元Modに日本語がなくても、同じゲーム内の別Modが原文キーに対応する日本語キーを持っていれば、日本語化Mod候補として判定します。
-完全か欠損ありかも表示します。
-
-検索:
-Mod名や状態を入力して、判定済み一覧を絞り込めます。
-
-キューへ追加:
-複数選択したModは、選択した全件を通常翻訳キューへ追加できます。中国語基準キューでは、中国語localizationがある選択Modを全件追加します。
-
-選択Modを除外してキューへ追加:
-選択したModだけ除外し、残りを通常翻訳キュー、または中国語localizationがあるModだけ中国語基準キューへまとめて追加できます。
-
-日本語化Modへの上書き:
-既存日本語化Modがある場合は元Modではなく日本語化Mod側へ不足分を差分反映します。
-既存訳を維持し、欠落キーや未翻訳キーだけ追加・更新します。
-実行前には上書き先Mod名とパスを表示し、バックアップ＋二重確認を行います。
-
-【14. 自動生成ファイルと保存場所】
-自動生成物はすべて1つのフォルダにまとめます。
-
-既定:
-書類/Documents/Paradox Localization Translator/
-
-構成:
-Paradox Localization Translator/
-├── 翻訳結果/
-├── キャッシュ/
-├── バックアップ/
-├── ログ/
-├── 作業データ/
-└── 設定/
-
-旧バージョンの実行ファイル横にある ParadoxLocalizationTranslator_Data は起動時に検出し、必要なデータをこの保存先へ非破壊で引き継ぎます。再開セッション内の旧絶対パスも現在の保存先へ読み替えます。
-
-［設定］タブの［保存場所を変更］から別SSDや任意フォルダへ変更できます。既存データをコピーして移行することもできます。
-
-【15. エラーログ / 診断】
-アプリ例外、LLM接続失敗、YAML解析失敗、書込失敗などを日別ログへ保存します。
-
-［エラーログを開く］:
-ログフォルダを開きます。
-
-［診断ログを収集］:
-OS、アプリバージョン、モデル情報、エラーログなどを診断ZIPへまとめます。APIキーや翻訳本文は含めません。
-
-【16. ×ボタンを押したとき】
-右上/左上の×ボタンを押すと、既定では次の確認が出ます。
-
-「最小化しますか？ それともアプリを終了しますか？」
-
-最小化:
-・ウィンドウだけ最小化します
-・翻訳、探索、LLM処理は止まりません
-
-終了:
-・未完了の翻訳キューがあればセッションを保存します
-・正常完了済みのキューは復元セッションとして残しません
-・次回起動時に復元を拒否したセッションは破棄され、再表示されません
-・LLM/翻訳処理へ安全停止要求を出してからアプリを終了します
-
-後から変更したい場合:
-［設定］→［ウィンドウの×ボタンを押したときの動作］で、
-・毎回確認
-・最小化
-・終了
-を選択できます。
-
-【17. 安全に使うための注意】
-・元Modへ直接上書きする前に必ず警告内容を確認してください。
-・Steam Workshop更新で手動変更が上書きされる場合があります。
-・直接上書き時は自動バックアップを作ります。
-・大規模翻訳ではまず標準設定（40 / 1）を推奨します。
-・探索用LLMは小型モデルを使うと負荷を抑えられます。
-・クラウドAPIキーは保存されません。
-・不具合時は診断ログZIPを作成すると原因調査が容易です。
-
-【18. よくある使い方】
-新規Modを日本語化:
-1. Modをドラッグ
-2. 翻訳モデル確認
-3. 翻訳開始
-4. QA
-5. 必要なら検索修正
-6. 完成版をModへ差分上書き
-
-既存日本語化Modの欠損を直す:
-1. 全Mod調査
-2. 翻訳状況で「別Mod翻訳・欠損」を確認
-3. 対象Modを翻訳
-4. 翻訳中は［一時停止］または［セーブして中断］を利用可能
-5. ［出力を開く］で完成ファイルを確認
-6. ［上書き］を押し、日本語化Modが見つかっている場合は確認画面から上書き先を選択
-
-Mod更新後だけ追加翻訳:
-1. 更新済みModを再度追加
-2. 過去キャッシュ/原文スナップショットを自動特定
-3. 差分更新を確認
-4. 新規・変更キーだけ翻訳
-
-手動で訳語を直す:
-1. 翻訳検索タブ
-2. キーまたは日本語本文を検索
-3. 結果を選択
-4. 訳文を編集して保存
-
-この使い方タブはアプリ内蔵説明書です。配布版だけを受け取った利用者でも、外部READMEを開かず基本操作から高度機能まで確認できます。
-
-【非公式のツールです】
-このツールは個人が開発している非公式のツールで、Paradox Interactive 社とは関係ありません。各ゲームの名称は、それぞれの権利者の商標です。
-ツールは無料で、すべての機能を誰でも使えます（MIT ライセンス）。
-
-【翻訳した Mod を公開するときのお願い】
-・元の Mod の作者の許可を取ってください。他の人の Mod の翻訳を Steam Workshop などで公開するときは、原作者に連絡して許可をもらうのが慣習です。
-・無料で公開してください。Paradox Interactive の利用規約では、Mod などのユーザー作成コンテンツを有料の壁の向こうに置くことはできません（かけた時間への寄付を受けることは認められています）。
-・機械翻訳を含む場合は、その旨を説明に書いておくと、利用者が判断しやすくなります。
-"""
+        guide = i18n_help.help_text(self.ui_language)
         box.insert("1.0", guide)
         box.config(state="disabled")
 
@@ -6187,6 +5851,7 @@ Mod更新後だけ追加翻訳:
             target = DIAGNOSTIC_LOG_ROOT / f"ParadoxLocalizationTranslator_diagnostics_{stamp}.zip"
             info = {
                 "app": APP_NAME, "version": APP_VERSION,
+                "ui_language": self.ui_language,
                 "created_at": datetime.now().isoformat(timespec="seconds"),
                 "platform": platform.platform(), "python": sys.version,
                 "data_root": str(DATA_ROOT),
@@ -6195,6 +5860,7 @@ Mod更新後だけ追加翻訳:
             }
             with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as zf:
                 zf.writestr("diagnostics.json", json.dumps(info, ensure_ascii=False, indent=2))
+                zf.writestr("rule_ids_ja.txt", i18n_rule_ids.rule_ids_ja_text())
                 for lp in _diagnostic_log_files(LOG_ROOT):
                     try: rel=lp.relative_to(LOG_ROOT)
                     except Exception: rel=Path(lp.parent.name)/lp.name
