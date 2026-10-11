@@ -2238,7 +2238,7 @@ class App(BaseTk):
         except Exception:
             return str(value)
 
-    def _collect_qa_diff_pairs(self, source_root, target_root, source_langs=("english", "simp_chinese")):
+    def _collect_qa_diff_pairs(self, source_root, target_root, source_langs=("english", "simp_chinese"), target_lang="japanese"):
         """Return source/Japanese YAML pairs for QA/diff import buttons."""
         source_root = Path(source_root)
         target_root = Path(target_root)
@@ -2253,7 +2253,7 @@ class App(BaseTk):
                 lang, entries, _ = core.parse_localization_file(f)
             except Exception:
                 continue
-            if lang == "japanese":
+            if lang == target_lang:
                 targets.append((f, entries))
         if not targets:
             return []
@@ -2266,7 +2266,7 @@ class App(BaseTk):
                 lang, entries, _ = core.parse_localization_file(sf)
             except Exception:
                 continue
-            if lang not in source_langs:
+            if lang not in source_langs or lang == target_lang:
                 continue
 
             chosen = None
@@ -2274,7 +2274,7 @@ class App(BaseTk):
             if target_root.is_dir():
                 try:
                     rel = sf.parent.relative_to(source_base) if source_root.is_dir() else Path(".")
-                    expected = target_root / core.remap_rel_dir(rel, "japanese") / core.rename_for_target(sf, "japanese", lang)
+                    expected = target_root / core.remap_rel_dir(rel, target_lang) / core.rename_for_target(sf, target_lang, lang)
                     if expected.exists():
                         chosen = expected
                 except Exception:
@@ -2286,7 +2286,7 @@ class App(BaseTk):
                     src_id = core._logical_localization_id(sf, source_root, lang)
                     for tf, _ in targets:
                         try:
-                            if core._logical_localization_id(tf, target_root, "japanese") == src_id:
+                            if core._logical_localization_id(tf, target_root, target_lang) == src_id:
                                 chosen = tf
                                 break
                         except Exception:
@@ -2623,13 +2623,15 @@ class App(BaseTk):
         self.glossary_base_import_btn=ttk.Button(gbar,text=i18n.t('u4.import_base'),command=self.import_glossary_from_base_game)
         self.glossary_base_import_btn.pack(side="left")
         self.glossary_import_menu=tk.Menu(gbar,tearoff=False)
-        self.glossary_import_menu.add_command(label=i18n.t('u4.import_japanese_yaml'),command=lambda:self.import_glossary_from_japanese_source("file"))
-        self.glossary_import_menu.add_command(label=i18n.t('u4.import_japanese_mod'),command=lambda:self.import_glossary_from_japanese_source("folder"))
-        self.glossary_jp_import_btn=ttk.Menubutton(gbar,text=i18n.t('u4.import_japanese_files'),menu=self.glossary_import_menu)
+        self.glossary_import_menu.add_command(label=i18n.t('u4.target_import_yaml', target_name=i18n.t("lang." + _current_target_lang(self))),command=lambda:self.import_glossary_from_japanese_source("file"))
+        self.glossary_import_menu.add_command(label=i18n.t('u4.target_import_mod', target_name=i18n.t("lang." + _current_target_lang(self))),command=lambda:self.import_glossary_from_japanese_source("folder"))
+        self.glossary_jp_import_btn=ttk.Menubutton(gbar,text=i18n.t('u4.target_import_files', target_name=i18n.t("lang." + _current_target_lang(self))),menu=self.glossary_import_menu)
         self.glossary_jp_import_btn.pack(side="left",padx=(6,0))
-        ttk.Label(generated,text=i18n.t('u4.base_help'),foreground="#8a5a00",wraplength=560,justify="left").pack(fill="x",anchor="w",pady=(0,4))
-        ttk.Label(generated,text=i18n.t('u4.generated_help'),foreground="#666",wraplength=560,justify="left").pack(fill="x",anchor="w",pady=(0,4))
-        self.auto_glossary_drop_hint=ttk.Label(generated,text=(i18n.t('u4.drop_help') if DND_AVAILABLE else i18n.t('u4.drop_unavailable')),foreground="#555")
+        self.glossary_base_help_label=ttk.Label(generated,text=i18n.t('u4.target_base_help', target_name=i18n.t("lang." + _current_target_lang(self))),foreground="#8a5a00",wraplength=560,justify="left")
+        self.glossary_base_help_label.pack(fill="x",anchor="w",pady=(0,4))
+        self.glossary_generated_help_label=ttk.Label(generated,text=i18n.t('u4.target_generated_help', target_name=i18n.t("lang." + _current_target_lang(self))),foreground="#666",wraplength=560,justify="left")
+        self.glossary_generated_help_label.pack(fill="x",anchor="w",pady=(0,4))
+        self.auto_glossary_drop_hint=ttk.Label(generated,text=(i18n.t('u4.target_drop_help', target_name=i18n.t("lang." + _current_target_lang(self))) if DND_AVAILABLE else i18n.t('u4.drop_unavailable')),foreground="#555")
         self.auto_glossary_drop_hint.pack(fill="x",anchor="w",pady=(0,6))
         self.auto_glossary_include_phrases_var=tk.BooleanVar(value=False)
         ttk.Checkbutton(generated,text=i18n.t('u4.include_phrases'),variable=self.auto_glossary_include_phrases_var).pack(anchor="w",pady=(0,4))
@@ -7779,8 +7781,25 @@ class App(BaseTk):
         lang=_target_lang_from_choice(lang)
         self.target_lang_var.set(lang)
         self.target_lang_choice_var.set(_target_lang_choice(lang))
+        self._refresh_glossary_import_language_labels()
         if save:
             self._save_llm_preferences()
+
+    def _refresh_glossary_import_language_labels(self):
+        target_name=i18n.t("lang." + _current_target_lang(self))
+        menu=getattr(self,"glossary_import_menu",None)
+        if menu is not None:
+            menu.entryconfigure(0,label=i18n.t('u4.target_import_yaml',target_name=target_name))
+            menu.entryconfigure(1,label=i18n.t('u4.target_import_mod',target_name=target_name))
+        for name,key in (("glossary_jp_import_btn","u4.target_import_files"),
+                         ("glossary_base_help_label","u4.target_base_help"),
+                         ("glossary_generated_help_label","u4.target_generated_help")):
+            widget=getattr(self,name,None)
+            if widget is not None:
+                widget.config(text=i18n.t(key,target_name=target_name))
+        hint=getattr(self,"auto_glossary_drop_hint",None)
+        if hint is not None:
+            hint.config(text=i18n.t('u4.target_drop_help',target_name=target_name) if DND_AVAILABLE else i18n.t('u4.drop_unavailable'))
 
     def _ensure_isolated_item_output(self, item: dict, mode: str = "normal"):
         if item.get("custom_output"):
@@ -10554,6 +10573,7 @@ class App(BaseTk):
             messagebox.showerror(APP_NAME, str(exc))
 
     def _auto_glossary_pairs_from_origin(self, origin):
+        target_lang=_current_target_lang(self)
         pairs=[]
         if origin == "review":
             src=Path(self.review_src_var.get()) if self.review_src_var.get() else None
@@ -10582,7 +10602,7 @@ class App(BaseTk):
             for iid in sels:
                 try: item=self.queue_items[int(iid)]
                 except Exception: continue
-                pairs.extend(self._collect_qa_diff_pairs(Path(item.get("input","")), Path(item.get("output",""))))
+                pairs.extend(self._collect_qa_diff_pairs(Path(item.get("input","")), Path(item.get("output","")),source_langs=core.glossary_source_languages(target_lang),target_lang=target_lang))
             return pairs
         if origin == "chinese":
             sels=list(self.chinese_queue_tree.selection()) if hasattr(self,"chinese_queue_tree") else []
@@ -10591,12 +10611,12 @@ class App(BaseTk):
             for iid in sels:
                 try: item=self.chinese_queue_items[int(str(iid).replace("zh_",""))]
                 except Exception: continue
-                pairs.extend(self._collect_qa_diff_pairs(Path(item.get("input","")), Path(item.get("output","")), source_langs=("simp_chinese",)))
+                pairs.extend(self._collect_qa_diff_pairs(Path(item.get("input","")), Path(item.get("output","")), source_langs=("simp_chinese",),target_lang=target_lang))
             return pairs
         return []
 
-    def start_auto_glossary_generation(self, origin):
-        if not _japanese_glossary_only(self): return
+    def start_auto_glossary_generation(self, origin, target_lang=None):
+        target_lang=target_lang or _current_target_lang(self)
         if self._closing:
             return
         if self.glossary_import_busy:
@@ -10618,13 +10638,13 @@ class App(BaseTk):
         self.llm_operation=i18n.t('u4.generation')
         self.auto_glossary_controller=core.TranslationController(progress_callback=lambda p:self.events.put(("auto_glossary_progress",p)))
         settings={"provider":self.provider_var.get(),"url":self.url_var.get().strip(),"model":self.model_var.get().strip(),"preset":self.preset_var.get(),"api_key":self.api_key_var.get().strip()}
-        glossary_path=Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY)
+        glossary_path=core.glossary_path_for_language(self.glossary_path_var.get() or DEFAULT_GLOSSARY,target_lang)
         include_phrases_var=getattr(self,"auto_glossary_include_phrases_var",None)
         include_phrases=bool(include_phrases_var.get()) if include_phrases_var is not None else False
         def work():
             try:
-                candidates=core.build_auto_glossary_candidates(pairs)
-                if candidates:
+                candidates=core.build_auto_glossary_candidates(pairs,target_lang=target_lang)
+                if candidates and target_lang == "japanese":
                     candidates=core.resolve_auto_glossary_conflicts(settings["provider"],settings["url"],settings["model"],candidates,settings["preset"],settings["api_key"],self.auto_glossary_controller)
                 result=core.save_auto_glossary_candidates(glossary_path,candidates,preserve_existing=True,include_phrases=include_phrases)
                 self.events.put(("auto_glossary_done",result))
@@ -10685,9 +10705,9 @@ class App(BaseTk):
         if kind.startswith("base:"):
             return i18n.t('u4.base_origin', game=kind.split(":",1)[1])
         if kind.startswith("import:file"):
-            return i18n.t('u4.japanese_yaml')
+            return i18n.t('u4.target_yaml', target_name=i18n.t("lang." + _glossary_language(self)))
         if kind.startswith("import:mod"):
-            return i18n.t('u4.japanese_mod')
+            return i18n.t('u4.target_mod', target_name=i18n.t("lang." + _glossary_language(self)))
         return i18n.t('u4.generated')
 
     def _choose_game_for_glossary_import(self):
@@ -10731,7 +10751,7 @@ class App(BaseTk):
         ttk.Label(frm,text=i18n.t('u4.common_help'),wraplength=560,justify="left",foreground="#555").pack(anchor="w",padx=(22,0),pady=(2,6))
         ttk.Radiobutton(frm,text=i18n.t('u4.import_all'),variable=var,value="all").pack(anchor="w")
         ttk.Label(frm,text=i18n.t('u4.all_help'),wraplength=560,justify="left",foreground="#555").pack(anchor="w",padx=(22,0),pady=(2,8))
-        ttk.Label(frm,text=i18n.t('u4.import_help'),wraplength=560,justify="left",foreground="#8a5a00").pack(anchor="w",pady=(4,8))
+        ttk.Label(frm,text=i18n.t('u4.target_import_help', target_name=i18n.t("lang." + _current_target_lang(self))),wraplength=560,justify="left",foreground="#8a5a00").pack(anchor="w",pady=(4,8))
         row=ttk.Frame(frm); row.pack(fill="x",pady=(4,0))
         def ok(): result["mode"]=var.get(); win.destroy()
         ttk.Button(row,text=i18n.t('u4.cancel'),command=win.destroy).pack(side="right")
@@ -10751,8 +10771,8 @@ class App(BaseTk):
         if status:
             self.auto_glossary_status_var.set(status)
 
-    def _start_glossary_import_thread(self, worker, status=None):
-        if not _japanese_glossary_only(self): return False
+    def _start_glossary_import_thread(self, worker, status=None, target_lang=None):
+        target_lang=target_lang or _current_target_lang(self)
         if self.auto_glossary_controller is not None:
             messagebox.showinfo(APP_NAME,i18n.t('u4.generation_busy_import'))
             return False
@@ -10760,7 +10780,8 @@ class App(BaseTk):
             messagebox.showinfo(APP_NAME,i18n.t('u4.import_busy'))
             return False
         self._set_glossary_import_busy(True,i18n.t("u4.import_started") if status is None else status)
-        self.glossary_import_target_path=str(self.glossary_path_var.get() or DEFAULT_GLOSSARY)
+        self.glossary_import_target_lang=target_lang
+        self.glossary_import_target_path=str(core.glossary_path_for_language(self.glossary_path_var.get() or DEFAULT_GLOSSARY,target_lang))
         def run():
             try:
                 worker()
@@ -10779,82 +10800,75 @@ class App(BaseTk):
         result=core.save_auto_glossary_candidates(glossary_path,candidates,preserve_existing=True)
         self.events.put(("glossary_import_done",{"label":label,"result":result,"stats":stats or {}}))
 
-    def _align_japanese_with_base_root(self, japanese_targets, root: Path):
-        source_maps, source_files=self._collect_base_source_maps(Path(root))
+    def _align_japanese_with_base_root(self, japanese_targets, root: Path, target_lang="japanese"):
+        source_maps, source_files=self._collect_base_source_maps(Path(root),target_lang=target_lang)
         jp_entries={}; jp_files=0
         for target in japanese_targets:
-            data,count=self._collect_japanese_entries_from_target(Path(target))
+            data,count=self._collect_japanese_entries_from_target(Path(target),target_lang=target_lang)
             jp_entries.update(data); jp_files += count
-        records=[]; english_count=0; chinese_count=0; unmatched=0
+        records=[]; counts={lang:0 for lang in source_maps}; unmatched=0
         for key,dst in jp_entries.items():
-            if key in source_maps["english"]:
-                records.append({"key":key,"source_text":source_maps["english"][key],"target_text":dst,"source_lang":"english"}); english_count += 1
-            elif key in source_maps["simp_chinese"]:
-                records.append({"key":key,"source_text":source_maps["simp_chinese"][key],"target_text":dst,"source_lang":"simp_chinese"}); chinese_count += 1
+            for source_lang,entries in source_maps.items():
+                if key in entries:
+                    records.append({"key":key,"source_text":entries[key],"target_text":dst,"source_lang":source_lang})
+                    counts[source_lang] += 1
+                    break
             else:
                 unmatched += 1
-        return {"records":records,"japanese_keys":len(jp_entries),"japanese_files":jp_files,"english":english_count,"chinese":chinese_count,"unmatched":unmatched,"source_files":source_files,"root":Path(root)}
+        return {"records":records,"japanese_keys":len(jp_entries),"japanese_files":jp_files,"english":counts.get("english",0),"chinese":counts.get("simp_chinese",0),"unmatched":unmatched,"source_files":source_files,"root":Path(root)}
 
-    def _start_japanese_glossary_import(self, targets, source_kind, label, mode):
-        if not _japanese_glossary_only(self): return
+    def _start_japanese_glossary_import(self, targets, source_kind, label, mode, target_lang=None):
+        target_lang=target_lang or _current_target_lang(self)
         targets=[Path(x) for x in targets if Path(x).exists()]
         if not targets:
             return
         def worker():
-            self.events.put(("glossary_import_status",i18n.t('u4.checking_japanese')))
+            self.events.put(("glossary_import_status",i18n.t('u4.target_checking', target_name=i18n.t("lang." + target_lang))))
             valid=[]
             for target in targets:
                 if target.is_file():
                     if target.suffix.lower() not in {".yml",".yaml"}: continue
                     try: lang,_,_=core.parse_localization_file(target)
                     except Exception: continue
-                    if lang != "japanese": continue
+                    if lang != target_lang: continue
                 elif not target.is_dir():
                     continue
                 valid.append(target)
             if not valid:
-                self.events.put(("glossary_import_done",{"label":label,"invalid":True}))
+                self.events.put(("glossary_import_done",{"label":label,"invalid":True,"target_lang":target_lang}))
                 return
             all_pairs=[]; seen=set()
             total=len(valid)
             for idx,target in enumerate(valid,1):
                 self.events.put(("glossary_import_status",i18n.t('u4.import_progress', index=idx, total=total, name=target.name)))
-                if target.is_file():
-                    source_root=target.parent; cur=target.parent
-                    for _ in range(8):
-                        if cur.name.lower()=="japanese": source_root=cur.parent; break
-                        if cur.parent==cur: break
-                        cur=cur.parent
-                    pairs=self._collect_qa_diff_pairs(source_root,target,source_langs=("english","simp_chinese"))
-                else:
-                    loc=core.mod_localization_root(target) or target
-                    pairs=self._collect_qa_diff_pairs(loc,loc,source_langs=("english","simp_chinese"))
+                pairs=self._collect_glossary_import_pairs_from_path(target,target_lang=target_lang)
                 for pair in pairs:
                     ident=(str(pair.get("source","")),str(pair.get("target","")))
                     if ident not in seen:
                         seen.add(ident); all_pairs.append(pair)
             if all_pairs:
                 self.events.put(("glossary_import_status",i18n.t('u4.creating_candidates', count=len(all_pairs))))
-                candidates=core.build_import_glossary_candidates(all_pairs,source_kind=source_kind,mode=mode)
+                candidates=core.build_import_glossary_candidates(all_pairs,source_kind=source_kind,mode=mode,target_lang=target_lang)
                 self._finish_import_candidates_in_worker(candidates,label)
                 return
-            self.events.put(("glossary_import_needs_fallback",{"targets":[str(x) for x in valid],"source_kind":source_kind,"label":label,"mode":mode}))
-        self._start_glossary_import_thread(worker)
+            self.events.put(("glossary_import_needs_fallback",{"targets":[str(x) for x in valid],"source_kind":source_kind,"label":label,"mode":mode,"target_lang":target_lang}))
+        self._start_glossary_import_thread(worker,target_lang=target_lang)
 
-    def _start_japanese_base_fallback(self, targets, root, game, source_kind, label, mode):
+    def _start_japanese_base_fallback(self, targets, root, game, source_kind, label, mode, target_lang=None):
+        target_lang=target_lang or _current_target_lang(self)
         def worker():
-            self.events.put(("glossary_import_status",i18n.t('u1.japanese_key_alignment', game=game)))
-            aligned=self._align_japanese_with_base_root(targets,Path(root))
+            self.events.put(("glossary_import_status",i18n.t('u4.target_key_alignment', game=game, target_name=i18n.t("lang." + target_lang))))
+            aligned=self._align_japanese_with_base_root(targets,Path(root),target_lang=target_lang)
             stats={k:aligned[k] for k in ("japanese_keys","english","chinese","unmatched")}
             if not aligned["records"]:
                 self.events.put(("glossary_import_done",{"label":label,"empty":True,"stats":stats,"all_unmatched":True}))
                 return
-            candidates=core.build_import_glossary_candidates_from_records(aligned["records"],source_kind=source_kind,mode=mode)
+            candidates=core.build_import_glossary_candidates_from_records(aligned["records"],source_kind=source_kind,mode=mode,target_lang=target_lang)
             suffix=i18n.t('u1.common_names') if mode=="common" else i18n.t('u1.all_names')
             self._finish_import_candidates_in_worker(candidates,f"{label}（{game} / {suffix}）",stats=stats)
-        self._start_glossary_import_thread(worker,status=i18n.t('u1.base_glossary_started', game=game))
+        self._start_glossary_import_thread(worker,target_lang=target_lang,status=i18n.t('u1.base_glossary_started', game=game))
 
-    def _collect_japanese_entries_from_target(self, target: Path):
+    def _collect_japanese_entries_from_target(self, target: Path, target_lang="japanese"):
         target=Path(target)
         files=[target] if target.is_file() else core.gather_yml_files(target)
         entries={}
@@ -10864,15 +10878,15 @@ class App(BaseTk):
                 lang, data, _ = core.parse_localization_file(f)
             except Exception:
                 continue
-            if lang != "japanese":
+            if lang != target_lang:
                 continue
             used_files += 1
             entries.update(data)
         return entries, used_files
 
-    def _collect_base_source_maps(self, root: Path):
-        maps={"english":{},"simp_chinese":{}}
-        files={"english":0,"simp_chinese":0}
+    def _collect_base_source_maps(self, root: Path, target_lang="japanese"):
+        maps={lang:{} for lang in core.glossary_source_languages(target_lang)}
+        files={lang:0 for lang in maps}
         for f in core.gather_yml_files(Path(root)):
             try:
                 lang, data, _ = core.parse_localization_file(f)
@@ -10883,66 +10897,44 @@ class App(BaseTk):
                 files[lang] += 1
         return maps, files
 
-    def _align_japanese_with_base_game(self, japanese_targets, game):
+    def _align_japanese_with_base_game(self, japanese_targets, game, target_lang="japanese"):
         root=self._find_base_game_localization_root(game)
         if not root or not Path(root).exists():
             return None
-        source_maps, source_files=self._collect_base_source_maps(Path(root))
-        jp_entries={}
-        jp_files=0
-        for target in japanese_targets:
-            data, count=self._collect_japanese_entries_from_target(Path(target))
-            jp_entries.update(data); jp_files += count
-
-        records=[]; english_count=0; chinese_count=0; unmatched=0
-        # Prefer English when both exist, then fall back to Simplified Chinese.
-        for key, dst in jp_entries.items():
-            if key in source_maps["english"]:
-                records.append({"key":key,"source_text":source_maps["english"][key],"target_text":dst,"source_lang":"english"})
-                english_count += 1
-            elif key in source_maps["simp_chinese"]:
-                records.append({"key":key,"source_text":source_maps["simp_chinese"][key],"target_text":dst,"source_lang":"simp_chinese"})
-                chinese_count += 1
-            else:
-                unmatched += 1
-        return {
-            "records":records,"japanese_keys":len(jp_entries),"japanese_files":jp_files,
-            "english":english_count,"chinese":chinese_count,"unmatched":unmatched,
-            "source_files":source_files,"root":Path(root),
-        }
+        return self._align_japanese_with_base_root(japanese_targets,Path(root),target_lang=target_lang)
 
     def _save_imported_glossary_candidates(self, candidates, label, stats=None):
-        if not _japanese_glossary_only(self): return
         if not candidates:
             msg=i18n.t('u4.no_candidates')
             if stats:
-                msg = i18n.t("u4.no_candidates_stats", japanese=stats.get('japanese_keys',0),
+                msg = i18n.t("u4.target_no_candidates_stats", target_name=i18n.t("lang." + _current_target_lang(self)), japanese=stats.get('japanese_keys',0),
                              english=stats.get('english',0), chinese=stats.get('chinese',0), unmatched=stats.get('unmatched',0))
             messagebox.showinfo(APP_NAME,msg)
             return
-        result=core.save_auto_glossary_candidates(Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY),candidates,preserve_existing=True)
+        result=core.save_auto_glossary_candidates(core.glossary_path_for_language(self.glossary_path_var.get() or DEFAULT_GLOSSARY,_current_target_lang(self)),candidates,preserve_existing=True)
         self.load_glossary_ui(silent=True)
         if hasattr(self,"_refresh_auto_glossary_tree"): self._refresh_auto_glossary_tree()
         self.auto_glossary_status_var.set(i18n.t('u4.import_result', label=label, added=result.get('added',0), total=result.get('total',0)))
         lines=[i18n.t('u4.import_complete', label=label),i18n.t('u4.candidates', count=result.get('total',0)),i18n.t('u4.added', count=result.get('added',0))]
         if stats:
-            lines += ["",i18n.t('u4.japanese_keys', count=stats.get('japanese_keys',0)),i18n.t('u4.english_matches', count=stats.get('english',0)),i18n.t('u4.chinese_matches', count=stats.get('chinese',0)),i18n.t('u4.unmatched', count=stats.get('unmatched',0))]
+            lines += ["",i18n.t('u4.target_keys', target_name=i18n.t("lang." + _current_target_lang(self)), count=stats.get('japanese_keys',0)),i18n.t('u4.english_matches', count=stats.get('english',0)),i18n.t('u4.chinese_matches', count=stats.get('chinese',0)),i18n.t('u4.unmatched', count=stats.get('unmatched',0))]
             if stats.get('unmatched',0):
                 lines.append(i18n.t('u4.skipped_unmatched', count=stats.get('unmatched',0)))
         messagebox.showinfo(APP_NAME,"\n".join(lines))
 
     def _save_imported_glossary_pairs(self, pairs, source_kind, label, mode="common"):
         if not pairs:
-            messagebox.showinfo(APP_NAME,i18n.t('u4.no_pairs'))
+            messagebox.showinfo(APP_NAME,i18n.t('u4.target_no_pairs', target_name=i18n.t("lang." + _current_target_lang(self))))
             return
         try:
-            candidates=core.build_import_glossary_candidates(pairs,source_kind=source_kind,mode=mode)
+            candidates=core.build_import_glossary_candidates(pairs,source_kind=source_kind,mode=mode,target_lang=_current_target_lang(self))
             self._save_imported_glossary_candidates(candidates,label)
         except Exception as exc:
             record_error(i18n.t('u4.import_context'),exc)
             messagebox.showerror(APP_NAME,str(exc))
 
-    def _import_japanese_targets_with_fallback(self, targets, source_kind, label):
+    def _import_japanese_targets_with_fallback(self, targets, source_kind, label, target_lang=None):
+        target_lang=target_lang or _current_target_lang(self)
         targets=[Path(x) for x in targets if Path(x).exists()]
         if not targets:
             return
@@ -10952,10 +10944,10 @@ class App(BaseTk):
         mode=self._choose_glossary_import_mode()
         if not mode:
             return
-        self._start_japanese_glossary_import(targets,source_kind,label,mode)
+        self._start_japanese_glossary_import(targets,source_kind,label,mode,target_lang=target_lang)
 
-    def import_glossary_from_base_game(self):
-        if not _japanese_glossary_only(self): return
+    def import_glossary_from_base_game(self, target_lang=None):
+        target_lang=target_lang or _current_target_lang(self)
         if self.glossary_import_busy:
             messagebox.showinfo(APP_NAME,i18n.t('u4.import_busy'))
             return
@@ -10969,27 +10961,31 @@ class App(BaseTk):
         label=i18n.t('u4.base_import', game=game)
         def worker():
             self.events.put(("glossary_import_status",i18n.t('u4.base_scan', game=game)))
-            pairs=self._collect_qa_diff_pairs(Path(root),Path(root),source_langs=("english","simp_chinese"))
-            self.events.put(("glossary_import_status",i18n.t('u4.creating_candidates', count=len(pairs))))
-            candidates=core.build_import_glossary_candidates(pairs,source_kind=source_kind,mode=mode) if pairs else []
+            if target_lang == "japanese":
+                pairs=self._collect_qa_diff_pairs(Path(root),Path(root),source_langs=("english","simp_chinese"))
+                self.events.put(("glossary_import_status",i18n.t('u4.creating_candidates', count=len(pairs))))
+                candidates=core.build_import_glossary_candidates(pairs,source_kind=source_kind,mode=mode) if pairs else []
+            else:
+                aligned=self._align_japanese_with_base_root([Path(root)/target_lang],Path(root),target_lang=target_lang)
+                candidates=core.build_import_glossary_candidates_from_records(aligned["records"],source_kind=source_kind,mode=mode,target_lang=target_lang)
             self._finish_import_candidates_in_worker(candidates,label)
-        self._start_glossary_import_thread(worker,status=i18n.t('u4.base_started', game=game))
+        self._start_glossary_import_thread(worker,target_lang=target_lang,status=i18n.t('u4.base_started', game=game))
 
-    def import_glossary_from_japanese_source(self, kind):
-        if not _japanese_glossary_only(self): return
+    def import_glossary_from_japanese_source(self, kind, target_lang=None):
+        target_lang=target_lang or _current_target_lang(self)
         if self.glossary_import_busy:
             messagebox.showinfo(APP_NAME,i18n.t('u4.import_busy'))
             return
         if kind=="file":
-            raw=filedialog.askopenfilename(title=i18n.t('u4.choose_japanese_yaml'),filetypes=[("YAML","*.yml *.yaml"),("All files","*")])
+            raw=filedialog.askopenfilename(title=i18n.t('u4.target_choose_yaml', target_name=i18n.t("lang." + target_lang)),filetypes=[("YAML","*.yml *.yaml"),("All files","*")])
         else:
-            raw=filedialog.askdirectory(title=i18n.t('u4.choose_japanese_mod'))
+            raw=filedialog.askdirectory(title=i18n.t('u4.target_choose_mod', target_name=i18n.t("lang." + target_lang)))
         if not raw: return
         source_kind="import:file" if kind=="file" else "import:mod"
-        label=i18n.t('u4.japanese_yaml_import') if kind=="file" else i18n.t('u4.japanese_mod_import')
-        self._import_japanese_targets_with_fallback([Path(raw)],source_kind,label)
+        label=i18n.t('u4.target_yaml_import', target_name=i18n.t("lang." + target_lang)) if kind=="file" else i18n.t('u4.target_mod_import', target_name=i18n.t("lang." + target_lang))
+        self._import_japanese_targets_with_fallback([Path(raw)],source_kind,label,target_lang=target_lang)
 
-    def _collect_glossary_import_pairs_from_path(self, target: Path):
+    def _collect_glossary_import_pairs_from_path(self, target: Path, target_lang="japanese"):
         """Backward-compatible local pairing helper used by older workflows."""
         target=Path(target)
         if not target.exists(): return []
@@ -10997,18 +10993,17 @@ class App(BaseTk):
             if target.suffix.lower() not in {".yml",".yaml"}: return []
             try: lang,_,_=core.parse_localization_file(target)
             except Exception: return []
-            if lang != "japanese": return []
+            if lang != target_lang: return []
             source_root=target.parent; cur=target.parent
             for _ in range(8):
-                if cur.name.lower()=="japanese": source_root=cur.parent; break
+                if cur.name.lower()==target_lang: source_root=cur.parent; break
                 if cur.parent==cur: break
                 cur=cur.parent
-            return self._collect_qa_diff_pairs(source_root,target,source_langs=("english","simp_chinese"))
+            return self._collect_qa_diff_pairs(source_root,target,source_langs=core.glossary_source_languages(target_lang),target_lang=target_lang)
         loc=core.mod_localization_root(target) or target
-        return self._collect_qa_diff_pairs(loc,loc,source_langs=("english","simp_chinese"))
+        return self._collect_qa_diff_pairs(loc,loc,source_langs=core.glossary_source_languages(target_lang),target_lang=target_lang)
 
     def on_glossary_import_drop_paths(self,event):
-        if not _japanese_glossary_only(self): return
         if self.glossary_import_busy:
             self.auto_glossary_status_var.set(i18n.t('u4.import_busy'))
             return event.action if hasattr(event,"action") else None
@@ -11025,7 +11020,7 @@ class App(BaseTk):
         if targets:
             self._import_japanese_targets_with_fallback(targets,"import:dnd",i18n.t('u4.drop_import', count=len(targets)))
         else:
-            messagebox.showinfo(APP_NAME,i18n.t('u4.drop_no_targets'))
+            messagebox.showinfo(APP_NAME,i18n.t('u4.target_drop_no_targets', target_name=i18n.t("lang." + _current_target_lang(self))))
         if ignored and targets:
             self.auto_glossary_status_var.set(i18n.t('u4.drop_result', targets=len(targets), ignored=len(ignored)))
         return event.action if hasattr(event,"action") else None
@@ -11993,19 +11988,19 @@ class App(BaseTk):
                     if self._closing:
                         continue
                     messagebox.showinfo(APP_NAME,
-                        i18n.t('p0.no_matching_english_simplified_chinese'))
+                        i18n.t('u4.target_fallback_help', target_name=i18n.t("lang." + payload.get("target_lang","japanese"))))
                     game=self._choose_game_for_glossary_import()
                     if game:
                         root=self._find_base_game_localization_root(game)
                         if root and Path(root).exists():
                             self._start_japanese_base_fallback(
                                 [Path(x) for x in payload.get("targets",[])],root,game,
-                                payload.get("source_kind","import:mod"),payload.get("label",i18n.t('p0.import_glossary_from_japanese_localization')),payload.get("mode","common"))
+                                payload.get("source_kind","import:mod"),payload.get("label",i18n.t('u4.target_localization_import', target_name=i18n.t("lang." + payload.get("target_lang","japanese")))),payload.get("mode","common"),target_lang=payload.get("target_lang","japanese"))
                 elif kind=="glossary_import_done":
                     self.glossary_import_thread=None
                     self._set_glossary_import_busy(False,i18n.t('p0.glossary_import_complete'))
                     if payload.get("invalid"):
-                        if not self._closing: messagebox.showinfo(APP_NAME,i18n.t('p0.no_importable_japanese_localization_was'))
+                        if not self._closing: messagebox.showinfo(APP_NAME,i18n.t('u4.target_invalid', target_name=i18n.t("lang." + payload.get("target_lang","japanese"))))
                     else:
                         label=payload.get("label",i18n.t('p0.import_glossary'))
                         result=payload.get("result") or {}
@@ -12018,7 +12013,7 @@ class App(BaseTk):
                             self.auto_glossary_status_var.set(i18n.t('p0.added_candidates', label=label, added=result.get('added',0), total=result.get('total',0)))
                             lines=[i18n.t('p0.completed_2', label=label),i18n.t('p0.candidates', total=result.get('total',0)),i18n.t('p0.new_entries', added=result.get('added',0))]
                         if stats:
-                            lines += ["",i18n.t('p0.japanese_keys', japanese_keys=stats.get('japanese_keys',0)),i18n.t('p0.english_matches', english=stats.get('english',0)),i18n.t('p0.chinese_matches', chinese=stats.get('chinese',0)),i18n.t('p0.unmatched', unmatched=stats.get('unmatched',0))]
+                            lines += ["",i18n.t('u4.target_keys', target_name=i18n.t("lang." + getattr(self,"glossary_import_target_lang","japanese")), count=stats.get('japanese_keys',0)),i18n.t('p0.english_matches', english=stats.get('english',0)),i18n.t('p0.chinese_matches', chinese=stats.get('chinese',0)),i18n.t('p0.unmatched', unmatched=stats.get('unmatched',0))]
                             if stats.get("unmatched",0): lines.append(i18n.t('p0.skipped_entries_with_no_matching', unmatched=stats.get('unmatched',0)))
                         if not self._closing: messagebox.showinfo(APP_NAME,"\n".join(lines))
                 elif kind=="glossary_import_error":

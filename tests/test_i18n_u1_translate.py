@@ -233,7 +233,9 @@ def test_dictionary_fields_match_call_sites():
         assert key in JAPANESE
         used.add(key)
         assert {field.arg for field in node.keywords} == set(re.findall(r"\{(\w+)\}", JAPANESE[key]))
-    assert used == set(JAPANESE)
+    assert used == set(JAPANESE) - {"u1.japanese_key_alignment"}
+    assert any(isinstance(node, ast.Constant) and node.value == "u4.target_key_alignment"
+               for node in ast.walk(tree))
 
 
 @pytest.mark.parametrize("ui_language", ["japanese", "english"])
