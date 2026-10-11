@@ -77,17 +77,17 @@ KNOWN_SOURCE_LANGS = [
 # script: 文字の種類。品質チェックの分け方に使う
 #   japanese＝かな・漢字、han＝漢字（簡体字）、hangul＝ハングル、cyrillic＝キリル文字、latin＝ラテン文字
 TARGET_LANGUAGES = {
-    "english": {"label": "英語", "name": "English", "script": "latin"},
-    "french": {"label": "フランス語", "name": "French", "script": "latin"},
-    "german": {"label": "ドイツ語", "name": "German", "script": "latin"},
-    "spanish": {"label": "スペイン語", "name": "Spanish", "script": "latin"},
-    "japanese": {"label": "日本語", "name": "Japanese", "script": "japanese"},
-    "korean": {"label": "韓国語", "name": "Korean", "script": "hangul"},
-    "polish": {"label": "ポーランド語", "name": "Polish", "script": "latin"},
-    "braz_por": {"label": "ポルトガル語（ブラジル）", "name": "Brazilian Portuguese", "script": "latin"},
-    "russian": {"label": "ロシア語", "name": "Russian", "script": "cyrillic"},
-    "simp_chinese": {"label": "簡体字中国語", "name": "Simplified Chinese", "script": "han"},
-    "turkish": {"label": "トルコ語", "name": "Turkish", "script": "latin"},
+    "english": {"label": "英語", "name": "English", "script": "latin", "remove_cjk_spaces": False},
+    "french": {"label": "フランス語", "name": "French", "script": "latin", "remove_cjk_spaces": False},
+    "german": {"label": "ドイツ語", "name": "German", "script": "latin", "remove_cjk_spaces": False},
+    "spanish": {"label": "スペイン語", "name": "Spanish", "script": "latin", "remove_cjk_spaces": False},
+    "japanese": {"label": "日本語", "name": "Japanese", "script": "japanese", "remove_cjk_spaces": True},
+    "korean": {"label": "韓国語", "name": "Korean", "script": "hangul", "remove_cjk_spaces": False},
+    "polish": {"label": "ポーランド語", "name": "Polish", "script": "latin", "remove_cjk_spaces": False},
+    "braz_por": {"label": "ポルトガル語（ブラジル）", "name": "Brazilian Portuguese", "script": "latin", "remove_cjk_spaces": False},
+    "russian": {"label": "ロシア語", "name": "Russian", "script": "cyrillic", "remove_cjk_spaces": False},
+    "simp_chinese": {"label": "簡体字中国語", "name": "Simplified Chinese", "script": "han", "remove_cjk_spaces": True},
+    "turkish": {"label": "トルコ語", "name": "Turkish", "script": "latin", "remove_cjk_spaces": False},
 }
 
 # ゲームが読める言語（2026-10-11、この Mac のゲーム本体の localization フォルダで確認。
@@ -170,11 +170,64 @@ PROTECT_PATTERNS = [
     r'§[A-Za-z!]', r'#[A-Za-z_]+(?:;[^#]*)?', r'#!', r'\\n', r'\\"',
 ]
 PROTECT_RE = re.compile('(' + '|'.join(PROTECT_PATTERNS) + ')')
+
+
+# HOI4 のアイコンは「£名前£」のほか、閉じの £ を書かずに後ろの半角スペースで名前を終える書き方（「£trigger_no 文」）がある。
+# その空白を取るとアイコン名が後ろの文字とつながって表示が壊れるので、閉じの無いアイコンは書式の記号として扱い、前後の空白を残す。
+_SPACING_TOKEN_RE = None
+
+
+def normalize_cjk_spacing(text: str, target_lang: str) -> tuple[str, int]:
+    """Remove ASCII spaces at CJK boundaries without altering protected tokens."""
+    if not TARGET_LANGUAGES.get(target_lang, {}).get("remove_cjk_spaces", False):
+        return text, 0
+
+    def character_kind(character):
+        codepoint = ord(character)
+        if any(start <= codepoint <= end for start, end in (
+            (0x3001, 0x303F), (0x3040, 0x30FF), (0x31F0, 0x31FF),
+            (0x3400, 0x4DBF), (0x4E00, 0x9FFF), (0xF900, 0xFAFF),
+            (0xFE10, 0xFE19), (0xFE30, 0xFE6F), (0xFF01, 0xFF60),
+            (0xFFE0, 0xFFE6), (0x20000, 0x323AF),
+        )):
+            return "cjk"
+        if character.isascii() and character.isalnum():
+            return "alnum"
+        return "other"
+
+    atoms = []
+    cursor = 0
+    for match in _SPACING_TOKEN_RE.finditer(text):
+        atoms.extend(("space" if piece.startswith(" ") else character_kind(piece), piece)
+                     for piece in re.findall(r" +|.", text[cursor:match.start()], re.DOTALL))
+        token = match.group()
+        kind = ("protected" if token.startswith("£") and not token.endswith("£") else
+                "variable" if token.startswith(("[", "$", "£")) else
+                "color_end" if token == "§!" else
+                "color_start" if token.startswith("§") else "protected")
+        atoms.append((kind, token))
+        cursor = match.end()
+    atoms.extend(("space" if piece.startswith(" ") else character_kind(piece), piece)
+                 for piece in re.findall(r" +|.", text[cursor:], re.DOTALL))
+    output = []
+    removed = 0
+    for index, (kind, piece) in enumerate(atoms):
+        if kind == "space" and 0 < index < len(atoms) - 1:
+            left, right = atoms[index - 1][0], atoms[index + 1][0]
+            if ((left == "cjk" and right in {"cjk", "alnum", "variable", "color_end"})
+                    or (right == "cjk" and left in {"cjk", "alnum", "variable", "color_start"})):
+                removed += len(piece)
+                continue
+        output.append(piece)
+    return "".join(output), removed
+
+
 PLACEHOLDER_PREFIX = "@@"
 PLACEHOLDER_SUFFIX = "@@"
 PLACEHOLDER_RE = re.compile(re.escape(PLACEHOLDER_PREFIX) + r'(\d+)' + re.escape(PLACEHOLDER_SUFFIX))
 # 閉じ記号が崩れたプレースホルダ（@@0@・@@0）。消してよいのは閉じ記号の残りの @ だけで、後ろの訳文は残す。
 PLACEHOLDER_FALLBACK_RE = re.compile(re.escape(PLACEHOLDER_PREFIX) + r'(\d+)@?')
+_SPACING_TOKEN_RE = re.compile(r"£[A-Za-z0-9_\-]+£|£[A-Za-z0-9_\-]+|" + PROTECT_RE.pattern)
 
 GAME_PRESETS = {
     "General": "Paradox Interactiveゲーム全般。簡潔で自然なUI日本語を優先する。",
@@ -1816,7 +1869,8 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
                  glossary: Optional[dict] = None, preset: str = "General",
                  zh_refs: Optional[dict] = None, dual_source: bool = False,
                  cache_file: Optional[Path] = None, file_no: int = 0, file_total: int = 0,
-                 provider: str = "Ollama", api_key: str = "", chinese_basis: bool = False):
+                 provider: str = "Ollama", api_key: str = "", chinese_basis: bool = False,
+                 normalize_spacing: bool = True):
     if target_lang in {"english", "simp_chinese"}:
         dual_source = False  # 翻訳先そのものを原文・参考訳にしない
     raw = read_localization_text(in_path)
@@ -2020,6 +2074,7 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
                 save_cache(cache_file, cache)
 
     out_lines = []
+    spaces_removed = 0
     for idx, (kind, data) in enumerate(parsed_lines):
         if kind == "header": out_lines.append(data); continue
         if kind == "raw": out_lines.append(data); continue
@@ -2036,6 +2091,9 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
             translated = cache.get(h, orig)
         else:
             translated = orig
+        if normalize_spacing and (not repair_target_file or foreign_in_output(orig, target_lang)):
+            translated, removed = normalize_cjk_spacing(translated, target_lang)
+            spaces_removed += removed
         escaped_translated = escape_localization_value(translated)
         out_lines.append(f'{m.group("indent")}{m.group("key")}: {m.group("version") or ""}"{escaped_translated}"{m.group("trailing") or ""}')
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2048,7 +2106,7 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
         for j in jobs if j["line_idx"] in failed
     ]
     return {"jobs": len(jobs), "failed": len(failed), "keys": total_keys,
-            "failed_jobs": failed_jobs}
+            "failed_jobs": failed_jobs, "spaces_removed": spaces_removed}
 
 
 def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OLLAMA_URL,
@@ -2057,7 +2115,7 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
                     include_target_files=True, controller: Optional[TranslationController] = None,
                     glossary_path=None, preset="General", dual_source=False,
                     auto_qa=True, provider="Ollama", api_key="",
-                    qa_backup_root=None, qa_repair_max_passes=2):
+                    qa_backup_root=None, qa_repair_max_passes=2, normalize_spacing: bool = True):
     input_path = Path(input_path)
     output_path = Path(output_path)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -2170,7 +2228,7 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
     base_dir = input_path if input_path.is_dir() else input_path.parent
     planned = {}
     processed = 0
-    total_jobs = total_failed = 0
+    total_jobs = total_failed = spaces_removed = 0
     try:
         for i, (f, source_lang) in enumerate(file_info, 1):
             if controller:
@@ -2186,7 +2244,8 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
                 print(f"[{i}/{len(file_info)}] {f.relative_to(base_dir) if input_path.is_dir() else f.name} -> {out}")
                 stats = process_file(f, out, url, model, target_lang, cache, workers, verbose,
                                      batch_size, controller, glossary, preset, zh_refs, dual_source,
-                                     cache_file, i, len(file_info), provider, api_key, False)
+                                     cache_file, i, len(file_info), provider, api_key, False,
+                                     normalize_spacing=normalize_spacing)
             except StopRequested:
                 raise
             except Exception as exc:
@@ -2197,6 +2256,7 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
                                            "timestamp": time.time()})
                 continue
             processed += 1; total_jobs += stats["jobs"]; total_failed += stats["failed"]
+            spaces_removed += stats.get("spaces_removed", 0)
             for failed_job in stats.get("failed_jobs", []):
                 llm_failures.append({"file": str(f), **failed_job})
             save_cache(cache_file, cache)
@@ -2210,7 +2270,8 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
                             controller=controller,
                             chinese_basis=(source_lang == "simp_chinese" and target_lang == DEFAULT_TARGET_LANG),
                             max_passes=qa_repair_max_passes, backup_dir=qa_backup_dir,
-                            backup_relative_root=output_path, target_lang=target_lang)
+                            backup_relative_root=output_path, target_lang=target_lang,
+                            normalize_spacing=normalize_spacing)
                     else:
                         qa_result = qa_file_with_syntax_repair(out, source_ref, source_lang=source_lang, glossary=glossary,
                                                                target_lang=target_lang)
@@ -2219,6 +2280,7 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
                                           "repaired":qa_result.get("syntax_repaired",0), "repair_attempts":0,
                                           "backup":"", "rolled_back":False, "events":[]})
                     issues = qa_result["issues"]
+                    spaces_removed += qa_result.get("spaces_removed", 0)
                     severe = sum(1 for x in issues if x["severity"] == "error")
                     warn = sum(1 for x in issues if x["severity"] == "warning")
                     notice = sum(1 for x in issues if x["severity"] == "notice")
@@ -2243,6 +2305,7 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
         report_path = save_error_report(interrupted=True)
         print("保存して中断しました。次回はキャッシュから再開できます。")
         return {"processed": processed, "interrupted": True, "jobs": total_jobs, "failed": total_failed,
+                "spaces_removed": spaces_removed,
                 "skipped": sum(1 for row in file_errors if row.get("skipped")), "file_errors": file_errors,
                 "warnings": sum(1 for row in file_errors if not row.get("skipped")),
                 "encoding_recoveries": encoding_recoveries, "error_report": str(report_path),
@@ -2262,7 +2325,9 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
         print(f"警告付きで完了しました。スキップ {sum(1 for row in file_errors if row.get('skipped'))}ファイル / 翻訳失敗 {total_failed}件")
     else:
         print("完了しました。")
+    print(f"半角スペース除去: {spaces_removed}個")
     return {"processed": processed, "interrupted": False, "jobs": total_jobs, "failed": total_failed,
+            "spaces_removed": spaces_removed,
             "skipped": sum(1 for row in file_errors if row.get("skipped")), "file_errors": file_errors,
             "warnings": sum(1 for row in file_errors if not row.get("skipped")),
             "encoding_recoveries": encoding_recoveries, "error_report": str(report_path),
@@ -2348,6 +2413,12 @@ def qa_entries(target_entries: Dict[str,str], source_entries: Optional[Dict[str,
     issues = []
     glossary = glossary or {}
     for key, value in target_entries.items():
+        _, removable_spaces = normalize_cjk_spacing(value, target_lang)
+        if removable_spaces:
+            issues.append(_qa_issue(key, "notice", "cjk_space",
+                                    f"文字の間に余分な半角スペースが{removable_spaces}個あります", value,
+                                    rule_id="QA-SPACE-001", repairable=False,
+                                    recommended_action="内容を確認"))
         # English residues can be detected without a source file.  When a source
         # entry is present, looks_untranslated() below performs the source-aware
         # check so the same issue is not reported twice.
@@ -2576,7 +2647,8 @@ def qa_file_with_auto_repair(target_path: Path, source_path: Path, *,
                              backup_dir: Optional[Path] = None,
                              backup_relative_root: Optional[Path] = None,
                              progress_context: Optional[dict] = None,
-                             target_lang: str = DEFAULT_TARGET_LANG) -> dict:
+                             target_lang: str = DEFAULT_TARGET_LANG,
+                             normalize_spacing: bool = True) -> dict:
     """Back up a translated file, repair QA errors, and re-run QA.
 
     Warnings and notices are deliberately never changed. Safe edge-token repair is attempted
@@ -2598,12 +2670,14 @@ def qa_file_with_auto_repair(target_path: Path, source_path: Path, *,
     backup_path = None
     if not initial_errors:
         return {"issues": initial, "initial_errors": 0, "final_errors": 0, "repaired": 0,
-                "repair_attempts": 0, "backup": "", "rolled_back": False, "events": events}
+                "repair_attempts": 0, "backup": "", "rolled_back": False, "events": events,
+                "spaces_removed": 0}
     if backup_dir:
         notify("backup",initial_errors=len(initial_errors))
         backup_path = _backup_qa_repair_target(target_path, Path(backup_dir), backup_relative_root)
 
     repaired_keys = set()
+    spaces_removed = 0
     attempts = 0
     for pass_no in range(1, max(1, int(max_passes)) + 1):
         if controller:
@@ -2672,6 +2746,9 @@ def qa_file_with_auto_repair(target_path: Path, source_path: Path, *,
                      and extract_protected_tokens(restored) == extract_protected_tokens(job["value"])
                      and "@@" not in restored)
             if valid:
+                if normalize_spacing:
+                    restored, removed = normalize_cjk_spacing(restored, target_lang)
+                    spaces_removed += removed
                 updates[job["key"]] = restored
                 repaired_keys.add(job["key"])
             events.append({"pass": pass_no, "key": job["key"], "issue_type": job["issue_type"],
@@ -2698,6 +2775,7 @@ def qa_file_with_auto_repair(target_path: Path, source_path: Path, *,
         "issues": final, "initial_errors": len(initial_errors), "final_errors": len(final_errors),
         "repaired": len(repaired_keys), "repair_attempts": attempts,
         "backup": str(backup_path or ""), "rolled_back": rolled_back, "events": events,
+        "spaces_removed": 0 if rolled_back else spaces_removed,
     }
 
 
@@ -2750,11 +2828,13 @@ def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
                          provider: str = "Ollama", api_key: str = "", preset: str = "General",
                          glossary_path=None, controller: Optional[TranslationController] = None,
                          max_passes: int = 2, label: str = "manual_qa",
-                         target_lang: str = DEFAULT_TARGET_LANG) -> dict:
+                         target_lang: str = DEFAULT_TARGET_LANG,
+                         normalize_spacing: bool = True) -> dict:
     """Repair every error in QA pairs while isolating file failures."""
     glossary = load_glossary(Path(glossary_path)) if glossary_path else {}
     backup_dir = create_qa_repair_backup_dir(Path(backup_root), label)
     results, failures = [], []
+    spaces_removed = 0
     total_initial = total_final = total_warnings = total_notices = total_repaired = 0
     pair_list = list(pairs or [])
     interrupted = False
@@ -2783,10 +2863,11 @@ def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
                 max_passes=max_passes, backup_dir=backup_dir,
                 backup_relative_root=None,
                 progress_context={"file_no":file_index,"file_total":len(pair_list)},
-                target_lang=pair_target)
+                target_lang=pair_target, normalize_spacing=normalize_spacing)
             if created_target and result.get("final_errors", 0) >= result.get("initial_errors", 0):
                 target.unlink(missing_ok=True)
                 result["rolled_back"] = True
+                result["spaces_removed"] = 0
                 result.setdefault("events", []).append({
                     "pass":result.get("repair_attempts",0), "key":"", "issue_type":"file",
                     "action":"rollback_created_output", "result":"removed",
@@ -2803,6 +2884,7 @@ def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
             total_warnings += warnings
             total_notices += notices
             total_repaired += int(result.get("repaired",0) or 0)
+            spaces_removed += result.get("spaces_removed", 0)
             if controller:
                 controller.notify(kind="qa_repair_progress",stage="file_done",file_no=file_index,
                                   file_total=len(pair_list),source_file=str(source),target_file=str(target),
@@ -2825,7 +2907,9 @@ def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
         "summary":{"files":len(results)+len(failures), "completed_files":len(results),
                    "failed_files":len(failures), "initial_errors":total_initial,
                    "final_errors":total_final, "resolved_errors":max(0,total_initial-total_final),
-                   "warnings":total_warnings, "notices":total_notices, "repaired_keys":total_repaired},
+                   "warnings":total_warnings, "notices":total_notices, "repaired_keys":total_repaired,
+                   "spaces_removed":spaces_removed},
+        "spaces_removed":spaces_removed,
         "files":results, "failures":failures,
     }
 
@@ -3417,7 +3501,7 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
                                   cache_path=None, controller: Optional[TranslationController] = None,
                                   glossary_path=None, preset="General", auto_qa=True,
                                   provider="Ollama", api_key="", qa_backup_root=None,
-                                  qa_repair_max_passes=2):
+                                  qa_repair_max_passes=2, normalize_spacing: bool = True):
     """Translate only Simplified Chinese localization using Chinese wording as the terminology basis."""
     input_path = Path(input_path)
     output_path = Path(output_path)
@@ -3445,7 +3529,7 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
     if not chinese_files:
         raise RuntimeError("簡体字中国語（l_simp_chinese）のYAMLファイルが見つかりませんでした。")
 
-    total_jobs = total_failed = processed = 0
+    total_jobs = total_failed = processed = spaces_removed = 0
     qa_errors = qa_warnings = qa_notices = 0
     qa_report = []
     qa_repaired = 0
@@ -3467,18 +3551,22 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
                 f, out, url, model, target_lang, cache, workers, True,
                 batch_size, controller, glossary, preset, None, False,
                 cache_file, i, len(chinese_files), provider, api_key, True,
+                normalize_spacing=normalize_spacing,
             )
             processed += 1
             total_jobs += stats["jobs"]
             total_failed += stats["failed"]
+            spaces_removed += stats.get("spaces_removed", 0)
             save_cache(cache_file, cache)
             if auto_qa and out.exists():
                 qa_result = qa_file_with_auto_repair(
                     out, f, source_lang="simp_chinese", glossary=glossary,
                     model=model, url=url, provider=provider, api_key=api_key, preset=preset,
                     controller=controller, chinese_basis=True, max_passes=qa_repair_max_passes,
-                    backup_dir=qa_backup_dir, backup_relative_root=output_path)
+                    backup_dir=qa_backup_dir, backup_relative_root=output_path,
+                    normalize_spacing=normalize_spacing)
                 issues = qa_result["issues"]
+                spaces_removed += qa_result.get("spaces_removed", 0)
                 severe = sum(1 for x in issues if x["severity"] == "error")
                 warn = sum(1 for x in issues if x["severity"] == "warning")
                 notice = sum(1 for x in issues if x["severity"] == "notice")
@@ -3499,6 +3587,7 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
         save_cache(cache_file, cache)
         save_source_manifest(cache_file, current_manifest)
         return {"interrupted": True, "processed_files": processed, "jobs": total_jobs, "failed": total_failed, "cache": str(cache_file),
+        "spaces_removed": spaces_removed,
                 "qa_errors": qa_errors, "qa_warnings": qa_warnings, "qa_notices": qa_notices}
     save_source_manifest(cache_file, current_manifest)
     qa_report_path = output_path / "chinese_basis_qa_report.json"
@@ -3511,7 +3600,9 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
                        "repair_events":len(qa_repair_events)},
             "issues":qa_report, "repair_events":qa_repair_events,
         })
+    print(f"半角スペース除去: {spaces_removed}個")
     return {"interrupted": False, "processed_files": processed, "jobs": total_jobs, "failed": total_failed, "cache": str(cache_file), "output": str(output_path),
+    "spaces_removed": spaces_removed,
             "qa_errors": qa_errors, "qa_warnings": qa_warnings, "qa_notices":qa_notices, "qa_repaired":qa_repaired,
             "qa_report": str(qa_report_path) if auto_qa else "", "qa_backup":str(qa_backup_dir or "")}
 

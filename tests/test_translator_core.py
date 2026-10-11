@@ -205,7 +205,7 @@ def test_auto_qa_repair_backs_up_retranslates_and_adds_missing_key(tmp_path, mon
     assert result["repaired"] == 2
     assert Path(result["backup"]).exists()
     _, entries, _ = core.parse_localization_file(target)
-    assert entries == {"event_text": "こんにちは $NAME$", "missing_text": "不足内容"}
+    assert entries == {"event_text": "こんにちは$NAME$", "missing_text": "不足内容"}  # 文字と変数の間の空白は取り除く（要望A1）
     manifest = json.loads((backup_dir / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["files"][0]["original"] == str(target)
 

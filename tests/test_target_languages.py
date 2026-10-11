@@ -188,7 +188,9 @@ def test_run_translation_end_to_end_for_each_target(tmp_path, monkeypatch, targe
     assert text.startswith(f"l_{target}:")
     lang, entries, _ = core.parse_localization_file(generated)
     assert lang == target
-    assert entries["greet"] == f"{FAKE_TEXT[target]} $NAME$"
+    # 日本語・簡体字中国語は、文字と変数の間の半角スペースを取り除く（要望A1）
+    space = "" if core.TARGET_LANGUAGES[target].get("remove_cjk_spaces") else " "
+    assert entries["greet"] == f"{FAKE_TEXT[target]}{space}$NAME$"
     assert entries["title"] == FAKE_TEXT[target]
     assert {c[0] for c in calls} == {expected_source} and {c[1] for c in calls} == {target}
     assert result["qa_errors"] == 0 and result["failed"] == 0
