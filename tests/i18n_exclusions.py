@@ -121,11 +121,29 @@ U8_VALUES = set()
 U8_COMPARISONS = set()
 
 # ---- U9_core
-U9_OWNERS = set()
+U9_OWNERS = {
+    ("app/translator_core.py", "<module>"),  # LLM の言語ラベル・プリセット指示文・エラー分類マーカー・翻訳 Mod 判定語を固定する。
+    ("app/translator_core.py", "game_language_warning"),  # 言語名の区切り「・」は日本語表示を固定する記号。表示文は辞書化済み。
+    ("app/translator_core.py", "normalize_cjk_spacing"),  # CJK 文字間スペース判定の字集合（中黒）。
+    ("app/translator_core.py", "normalize_provider"),  # 保存設定の旧プロバイダ名を認識する互換用別名。
+    ("app/translator_core.py", "scan_translation_gaps"),  # kind / confidence は保存して判断する識別値。翻訳対象にしない。
+    ("app/translator_core.py", "run_translation"),  # ファイルエラーの stage は保存記録の識別値。表示文は辞書化済み。
+    ("app/translator_core.py", "classify_paratranz_glossary"),  # note のルール判定語だけを保持する。利用者向けの理由は辞書化済み。
+    ("app/translator_core.py", "translation_localization_format_profile"),  # 日本語化名の検出・かな判定用の正規表現。
+    ("app/translator_core.py", "_normalize_mod_name_for_match"),  # 日本語化名から削除する一致判定語。
+    ("app/translator_core.py", "_external_gap_candidates"),  # confidence は保存して判断する識別値。
+    ("app/translator_core.py", "discover_paradox_mod_locations"),  # 「ローカルMod」は探索結果 kind の固定識別値。
+    ("app/translator_core.py", "build_relation_report"),  # 残る文字列は報告 dict の固定列キー。表示文は辞書化済み。
+    ("app/translator_core.py", "relation_report_csv"),  # 固定列キーと状態列キーの参照。出力時のみ列名と状態を訳す。
+    ("app/translator_core.py", "relation_report_markdown"),  # 固定列キーの参照。見出し・説明・表示状態は辞書化済み。
+}
 # ---- U9_core（値）
 U9_VALUES = set()
 # ---- U9_core（比較）
-U9_COMPARISONS = set()
+U9_COMPARISONS = {
+    ("app/translator_core.py", "relation_report_csv", 'field == "状態"'),  # 固定の報告列キー。
+    ("app/translator_core.py", "relation_report_markdown", 'k == "状態"'),  # 固定の報告列キー。
+}
 
 _UNITS = ((U1_OWNERS, U1_VALUES, U1_COMPARISONS), (U2_OWNERS, U2_VALUES, U2_COMPARISONS), (U3_OWNERS, U3_VALUES, U3_COMPARISONS), (U4_OWNERS, U4_VALUES, U4_COMPARISONS), (U5_OWNERS, U5_VALUES, U5_COMPARISONS), (U6_OWNERS, U6_VALUES, U6_COMPARISONS), (U7_OWNERS, U7_VALUES, U7_COMPARISONS), (U8_OWNERS, U8_VALUES, U8_COMPARISONS), (U9_OWNERS, U9_VALUES, U9_COMPARISONS))
 for _owners, _values, _comparisons in _UNITS:
