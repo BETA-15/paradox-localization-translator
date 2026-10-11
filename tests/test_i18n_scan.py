@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import re
+import ast
 import sys
 from collections import Counter
 from pathlib import Path
@@ -23,6 +24,37 @@ import i18n_pending as pending  # noqa: E402
 import i18n_scan as scan  # noqa: E402
 
 FILES = ("app/main.py", "app/translator_core.py")
+
+
+def _direct_display_literals(source):
+    found = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        method = node.func.attr
+        if method in {"set", "showinfo", "showerror", "showwarning", "askyesno"}:
+            arguments = list(node.args) + [keyword.value for keyword in node.keywords]
+        elif method in {"insert", "heading"}:
+            arguments = [keyword.value for keyword in node.keywords if keyword.arg == "text"]
+        else:
+            continue
+        for argument in arguments:
+            if isinstance(argument, ast.Constant) and isinstance(argument.value, str) and re.search(r"[぀-ヿ一-鿿]", argument.value):
+                found.append((argument.lineno, argument.value))
+    return found
+
+
+def test_display_calls_do_not_bypass_dictionary_exclusions():
+    assert not _direct_display_literals((ROOT / "app/main.py").read_text(encoding="utf-8"))
+
+
+def test_display_literal_scan_covers_all_requested_sinks():
+    for call in ("var.set('エラー')", "messagebox.showinfo('エラー', '失敗')",
+                 "messagebox.showerror(message='エラー')", "messagebox.showwarning('エラー')",
+                 "messagebox.askyesno('エラー')", "tree.insert('', 'end', text='エラー')",
+                 "tree.heading('error', text='エラー')"):
+        assert _direct_display_literals(call), call
+    assert not _direct_display_literals("var.set(i18n.t('u3.error'))")
 
 
 def _current_counts() -> Counter:

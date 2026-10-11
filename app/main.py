@@ -3688,7 +3688,7 @@ class App(BaseTk):
         ttk.Label(head, text=i18n.t('u7.full_diagnostics_check_localization_contamination_missing'), font=("", 14, "bold")).pack(side="left")
         ttk.Label(head, textvariable=self.diagnostic_summary_var).pack(side="right")
         ttk.Label(t, text=(
-            i18n.t('u7.using_english_simplified_chinese_source_keys')
+            i18n.t('u7.using_english_simplified_chinese_source_keys' if _current_target_lang(self) == 'japanese' else 'u7.using_english_simplified_chinese_source_keys.target', target_name=i18n.t('lang.' + _current_target_lang(self)))
         ), foreground="#555", wraplength=1100, justify="left").pack(fill="x", pady=(6,8))
 
         pane = ttk.Panedwindow(t, orient="horizontal"); pane.pack(fill="both", expand=True)
@@ -3733,7 +3733,7 @@ class App(BaseTk):
         conflict_bar=ttk.Frame(resultbox); conflict_bar.pack(fill="x",pady=(7,0))
         ttk.Label(conflict_bar,text=i18n.t('u7.choose_translations_only_for_conflicts')).pack(side="left")
         self.diagnostic_keep_source_btn=ttk.Button(conflict_bar,text=i18n.t('u7.use_source_mod_translation_for_selected'),command=lambda:self._set_diagnostic_conflict_choice("source")); self.diagnostic_keep_source_btn.pack(side="left",padx=(8,0))
-        self.diagnostic_keep_translation_btn=ttk.Button(conflict_bar,text=i18n.t('u7.use_japanese_translation_mod_translation_for'),command=lambda:self._set_diagnostic_conflict_choice("translation")); self.diagnostic_keep_translation_btn.pack(side="left",padx=(6,0))
+        self.diagnostic_keep_translation_btn=ttk.Button(conflict_bar,text=i18n.t('u7.use_japanese_translation_mod_translation_for' if _current_target_lang(self) == 'japanese' else 'u7.use_japanese_translation_mod_translation_for.target', target_name=i18n.t('lang.' + _current_target_lang(self))),command=lambda:self._set_diagnostic_conflict_choice("translation")); self.diagnostic_keep_translation_btn.pack(side="left",padx=(6,0))
         self.diagnostic_auto_choice_btn=ttk.Button(conflict_bar,text=i18n.t('u7.auto_organize_selected_conflicts'),command=lambda:self._set_diagnostic_conflict_choice("auto")); self.diagnostic_auto_choice_btn.pack(side="left",padx=(6,0))
         self.diagnostic_clear_choice_btn=ttk.Button(conflict_bar,text=i18n.t('u7.clear_selected_conflict_choices'),command=lambda:self._set_diagnostic_conflict_choice(None)); self.diagnostic_clear_choice_btn.pack(side="left",padx=(6,0))
         conflict_bar2=ttk.Frame(resultbox); conflict_bar2.pack(fill="x",pady=(5,0))
@@ -3741,7 +3741,7 @@ class App(BaseTk):
         ttk.Label(conflict_bar2,textvariable=self.diagnostic_integration_status_var, foreground="#555").pack(side="left")
         ttk.Label(conflict_bar2,text=i18n.t('u7.all_conflicts')).pack(side="left")
         self.diagnostic_all_source_btn=ttk.Button(conflict_bar2,text=i18n.t('u7.use_source_translation_for_all_conflicts'),command=lambda:self._set_all_diagnostic_conflict_choices("source")); self.diagnostic_all_source_btn.pack(side="left",padx=(8,0))
-        self.diagnostic_all_translation_btn=ttk.Button(conflict_bar2,text=i18n.t('u7.use_japanese_translation_mod_translation_for_2'),command=lambda:self._set_all_diagnostic_conflict_choices("translation")); self.diagnostic_all_translation_btn.pack(side="left",padx=(6,0))
+        self.diagnostic_all_translation_btn=ttk.Button(conflict_bar2,text=i18n.t('u7.use_japanese_translation_mod_translation_for_2' if _current_target_lang(self) == 'japanese' else 'u7.use_japanese_translation_mod_translation_for_2.target', target_name=i18n.t('lang.' + _current_target_lang(self))),command=lambda:self._set_all_diagnostic_conflict_choices("translation")); self.diagnostic_all_translation_btn.pack(side="left",padx=(6,0))
         self.diagnostic_all_auto_btn=ttk.Button(conflict_bar2,text=i18n.t('u7.auto_organize_all_conflicts'),command=lambda:self._set_all_diagnostic_conflict_choices("auto")); self.diagnostic_all_auto_btn.pack(side="left",padx=(6,0))
         conflict_bar3=ttk.Frame(resultbox); conflict_bar3.pack(fill="x",pady=(4,0))
         self.diagnostic_conflict_help_var = tk.StringVar(value=i18n.t('u7.actions_needed_for_repair_will_appear'))
@@ -4422,7 +4422,7 @@ class App(BaseTk):
         if not target and int(e.get('target_candidate_count') or 0) > 1:
             ambiguity=i18n.t('u7.candidates_multiple_mods_share_this_name', value=int(e.get('target_candidate_count') or 0))
         self.backup_restore_detail_var.set(
-            i18n.t('u7.game_mod_saved_state_backup_restore', game=e.get('game','ゲーム未特定'), mod=e['mod'], gen=gen, kind=e['kind'], state=e['state'], entry_root=e['entry_root'], value=target or i18n.t('u7.not_identified'), target_source=target_source, ambiguity=ambiguity, exact=exact)
+            i18n.t('u7.game_mod_saved_state_backup_restore', game=e.get('game',i18n.t('u7.unknown_game')), mod=e['mod'], gen=gen, kind=e['kind'], state=e['state'], entry_root=e['entry_root'], value=target or i18n.t('u7.not_identified'), target_source=target_source, ambiguity=ambiguity, exact=exact)
         )
         self.backup_restore_btn.config(state='normal' if target and Path(target).exists() else 'disabled')
 
@@ -4436,7 +4436,7 @@ class App(BaseTk):
         if not target.exists():
             messagebox.showerror(APP_NAME,i18n.t('u7.cannot_identify_the_target_mod_no')); return
         gen=i18n.t('u7.generation_2', value=int(e['generation'])) if e.get('generation') else i18n.t('u7.generation_not_recorded')
-        warning=(i18n.t('u7.restore_this_backup_game_target_mod', game=e.get('game','ゲーム未特定'), mod=e['mod'], gen=gen, kind=e['kind'], state=e['state'], target=target))
+        warning=(i18n.t('u7.restore_this_backup_game_target_mod', game=e.get('game',i18n.t('u7.unknown_game')), mod=e['mod'], gen=gen, kind=e['kind'], state=e['state'], target=target))
         if not e.get('exact'):
             warning=i18n.t('u7.this_legacy_partial_backup_restores_only', warning=warning)
         if not messagebox.askyesno(i18n.t('u7.confirm_backup_restoration'),i18n.t('u7.continue', warning=warning),icon='warning'): return
@@ -4554,7 +4554,8 @@ class App(BaseTk):
                 continue
         return roots
 
-    def _diagnostic_source_key_index(self, roots):
+    def _diagnostic_source_key_index(self, roots, *, target_lang=None):
+        target_lang = target_lang or _current_target_lang(self)
         index={}; meta={}
         for root in roots:
             loc=core.mod_localization_root(root)
@@ -4569,26 +4570,28 @@ class App(BaseTk):
                     lang,entries,_=core.parse_localization_file(f)
                 except Exception:
                     continue
-                if lang in {"english","simp_chinese"}:
+                if lang and lang != target_lang and (target_lang != "japanese" or lang in {"english","simp_chinese"}):
                     keys.update(entries)
             meta[rid]["keys"] = set(keys)
             for key in keys: index.setdefault(key,set()).add(rid)
         return index,meta
 
-    def _diagnostic_translation_relation_map(self, roots):
+    def _diagnostic_translation_relation_map(self, roots, *, target_lang=None):
         """Map one Japanese candidate root to every weighted source relation.
 
         v0.11.36 deliberately keeps *all* relations.  Comprehensive Japanese
         packs can legitimately translate several independent Mods, so a
         candidate must not be collapsed to one strongest source.
         """
-        translation_index=self._build_stable_translation_mod_index(roots)
+        target_lang = target_lang or _current_target_lang(self)
+        if target_lang == "english": return {}
+        translation_index=self._build_stable_translation_mod_index(roots, target_lang=target_lang)
         relations={}
         for source_root in roots:
             try:
-                ranked=core.rank_external_japanese_translations(Path(source_root), translation_index)
+                ranked=core.rank_external_japanese_translations(Path(source_root), translation_index, target_lang=target_lang)
             except Exception as exc:
-                record_error(i18n.t('u7.full_diagnostics_japanese_translation_mod_weight'), exc, str(source_root)); continue
+                record_error(i18n.t('u7.full_diagnostics_japanese_translation_mod_weight' if target_lang == 'japanese' else 'u7.full_diagnostics_japanese_translation_mod_weight.target', target_name=i18n.t('lang.' + target_lang)), exc, str(source_root)); continue
             source_name=core.detect_mod_name(Path(source_root))
             try: source_id=str(Path(source_root).resolve())
             except Exception: source_id=str(source_root)
@@ -4612,8 +4615,9 @@ class App(BaseTk):
             rows.sort(key=lambda x:(float(x.get("score",0.0)),float(x.get("coverage",0.0))),reverse=True)
         return relations
 
-    def _diagnostic_japanese_occurrence_index(self, roots):
+    def _diagnostic_japanese_occurrence_index(self, roots, *, target_lang=None):
         """Return key -> Japanese occurrences across known Mod roots."""
+        target_lang = target_lang or _current_target_lang(self)
         index={}
         for root in roots:
             loc=core.mod_localization_root(root)
@@ -4625,7 +4629,7 @@ class App(BaseTk):
                     lang,entries,_=core.parse_localization_file(f)
                 except Exception:
                     continue
-                if lang!="japanese": continue
+                if lang!=target_lang: continue
                 for key,value in entries.items():
                     index.setdefault(key,[]).append({"root":rid,"file":str(f),"value":value})
         return index
@@ -4651,11 +4655,15 @@ class App(BaseTk):
             }
         return ctx
 
-    def _diagnostic_relation_id(self, source_id, translation_id):
+    def _diagnostic_relation_id(self, source_id, translation_id, *, target_lang=None):
         raw=f"{source_id}\0{translation_id}".encode("utf-8","ignore")
+        target_lang = target_lang or _current_target_lang(self)
+        if target_lang != "japanese": raw += f"\0{target_lang}".encode("utf-8")
         return hashlib.sha1(raw).hexdigest()
 
-    def _build_diagnostic_integrations(self, selected_roots, source_meta, allowed_context, occurrences):
+    def _build_diagnostic_integrations(self, selected_roots, source_meta, allowed_context, occurrences, *, target_lang=None):
+        target_lang = target_lang or _current_target_lang(self)
+        if target_lang == "english": return []
         selected_ids=set()
         for r in selected_roots:
             try: selected_ids.add(str(Path(r).resolve()))
@@ -4666,7 +4674,7 @@ class App(BaseTk):
                 source_id=str(rel.get("source_path") or "")
                 if not source_id or (source_id not in selected_ids and trans_id not in selected_ids):
                     continue
-                rid=self._diagnostic_relation_id(source_id,trans_id)
+                rid=self._diagnostic_relation_id(source_id,trans_id, target_lang=target_lang)
                 if rid in seen: continue
                 seen.add(rid)
                 keys=set((source_meta.get(source_id) or {}).get("keys") or set())
@@ -4682,20 +4690,20 @@ class App(BaseTk):
                     sv={o.get("value") for o in source_vals[key]}; tv={o.get("value") for o in trans_vals[key]}
                     if len(sv)==1 and sv==tv: identical.add(key)
                     else: conflicts.add(key)
-                trans_override=self._mod_relation_override(Path(trans_id))
+                trans_override=self._mod_relation_override(Path(trans_id), target_lang=target_lang)
                 manual_sources=set(trans_override.get("source_paths") or [])
                 manual_translation=(trans_override.get("role")=="translation")
                 manual_relation=(manual_translation and source_id in manual_sources)
                 if manual_translation:
                     target="translation"
                     if manual_relation:
-                        target_reason=i18n.t('u7.override_the_japanese_translation_mod_source')
+                        target_reason=i18n.t('u7.override_the_japanese_translation_mod_source' if target_lang == 'japanese' else 'u7.override_the_japanese_translation_mod_source.target', target_name=i18n.t('lang.' + target_lang))
                     else:
-                        target_reason=i18n.t('u7.override_this_mod_is_manually_classified')
+                        target_reason=i18n.t('u7.override_this_mod_is_manually_classified' if target_lang == 'japanese' else 'u7.override_this_mod_is_manually_classified.target', target_name=i18n.t('lang.' + target_lang))
                 else:
                     sc=len(source_vals); tc=len(trans_vals)
                     target="source" if sc>tc else "translation"
-                    target_reason=i18n.t('u7.auto_organize_current_valid_translations_source', sc=sc, tc=tc)
+                    target_reason=i18n.t('u7.auto_organize_current_valid_translations_source' if target_lang == 'japanese' else 'u7.auto_organize_current_valid_translations_source.target', target_name=i18n.t('lang.' + target_lang), sc=sc, tc=tc)
                 pairs.append({"id":rid,"source_root":source_id,"translation_root":trans_id,
                     "source_mod":core.detect_mod_name(Path(source_id)) if Path(source_id).exists() else Path(source_id).name,
                     "translation_mod":core.detect_mod_name(Path(trans_id)) if Path(trans_id).exists() else Path(trans_id).name,
@@ -4704,7 +4712,8 @@ class App(BaseTk):
                     "target":target,"target_reason":target_reason,"manual_priority":manual_translation})
         return pairs
 
-    def _attach_diagnostic_integration_issues(self, analyses, integrations):
+    def _attach_diagnostic_integration_issues(self, analyses, integrations, *, target_lang=None):
+        target_lang = target_lang or _current_target_lang(self)
         by_path={str(a.get("path") or ""):a for a in analyses}
         total=auto=conflicts=unresolved=0
         for pair in integrations:
@@ -4712,42 +4721,45 @@ class App(BaseTk):
             auto += len(pair["source_only"])+len(pair["translation_only"])+len(pair["identical"])
             conflicts += len(pair["conflict_keys"])
             for key in pair["conflict_keys"]:
-                cid=self._diagnostic_conflict_id(pair["source_root"],pair["translation_root"],key)
+                cid=self._diagnostic_conflict_id(pair["source_root"],pair["translation_root"],key, target_lang=target_lang)
                 if not self.diagnostic_conflict_choices.get(cid): unresolved += 1
             host=by_path.get(pair["source_root"]) or by_path.get(pair["translation_root"])
             if not host: continue
             host.setdefault("integrations",[]).append({"id":pair["id"],"source_root":pair["source_root"],"translation_root":pair["translation_root"],"target":pair["target"],"manual_priority":pair.get("manual_priority",False),"target_reason":pair.get("target_reason","")})
             host.setdefault("issues",[]).append({"severity":"INFO","kind":"本体/日本語化Mod統合","file":"","count":len(set(pair["source_vals"])|set(pair["translation_vals"])),
-                "location":i18n.t('u7.source_japanese_translation_mod_2'),
-                "plan":i18n.t('u7.automatically_integrate_into', value=i18n.t('u7.source_mod') if pair['target']=='source' else i18n.t('u7.japanese_translation_mod')),
+                "location":i18n.t('u7.source_japanese_translation_mod_2' if target_lang == 'japanese' else 'u7.source_japanese_translation_mod_2.target', target_name=i18n.t('lang.' + target_lang)),
+                "plan":i18n.t('u7.automatically_integrate_into', value=i18n.t('u7.source_mod') if pair['target']=='source' else i18n.t('u7.japanese_translation_mod' if target_lang == 'japanese' else 'u7.japanese_translation_mod.target', target_name=i18n.t('lang.' + target_lang))),
                 "decision":i18n.t('u7.source_japanese_translation_mod'),
                 "manual_priority":bool(pair.get("manual_priority")),
-                "detail":i18n.t('u7.repair_plan_integrate_into_source_only', source_mod=pair['source_mod'], translation_mod=pair['translation_mod'], value=i18n.t('u7.source_mod') if pair['target']=='source' else i18n.t('u7.japanese_translation_mod'), target_reason=pair['target_reason'], count=len(pair['source_only']), count_2=len(pair['translation_only']), count_3=len(pair['identical']), count_4=len(pair['conflict_keys']))})
+                "detail":i18n.t('u7.repair_plan_integrate_into_source_only' if target_lang == 'japanese' else 'u7.repair_plan_integrate_into_source_only.target', target_name=i18n.t('lang.' + target_lang), source_mod=pair['source_mod'], translation_mod=pair['translation_mod'], value=i18n.t('u7.source_mod') if pair['target']=='source' else i18n.t('u7.japanese_translation_mod' if target_lang == 'japanese' else 'u7.japanese_translation_mod.target', target_name=i18n.t('lang.' + target_lang)), target_reason=pair['target_reason'], count=len(pair['source_only']), count_2=len(pair['translation_only']), count_3=len(pair['identical']), count_4=len(pair['conflict_keys']))})
             existing={x.get("conflict_id") for x in host.get("issues",[]) if x.get("conflict_id")}
             for key in sorted(pair["conflict_keys"]):
-                cid=self._diagnostic_conflict_id(pair["source_root"],pair["translation_root"],key)
+                cid=self._diagnostic_conflict_id(pair["source_root"],pair["translation_root"],key, target_lang=target_lang)
                 if cid in existing: continue
                 choice=self.diagnostic_conflict_choices.get(cid)
                 auto_side=pair.get("target")
                 if choice=="source": decision=i18n.t('u7.source_mod_translation')
-                elif choice=="translation": decision=i18n.t('u7.japanese_translation_mod_translation')
-                elif choice=="auto": decision=i18n.t('u7.auto_organize_translation_from', value=i18n.t('u7.source_mod') if auto_side=='source' else i18n.t('u7.japanese_translation_mod'))
+                elif choice=="translation": decision=i18n.t('u7.japanese_translation_mod_translation' if target_lang == 'japanese' else 'u7.japanese_translation_mod_translation.target', target_name=i18n.t('lang.' + target_lang))
+                elif choice=="auto": decision=i18n.t('u7.auto_organize_translation_from', value=i18n.t('u7.source_mod') if auto_side=='source' else i18n.t('u7.japanese_translation_mod' if target_lang == 'japanese' else 'u7.japanese_translation_mod.target', target_name=i18n.t('lang.' + target_lang)))
                 else: decision=i18n.t('u7.not_selected')
                 host.setdefault("conflicts",[]).append({"id":cid,"key":key,"source_root":pair["source_root"],"translation_root":pair["translation_root"],"source_mod":pair["source_mod"],"translation_mod":pair["translation_mod"],"choice":choice})
                 host.setdefault("issues",[]).append({"severity":"WARN","kind":"本体/日本語化Mod重複","file":"","count":1,"conflict_id":cid,
                     "location":i18n.t('u7.both'), "plan":i18n.t('u7.resolve_translation_conflicts'), "decision":decision,
                     "manual_priority":bool(pair.get("manual_priority")),
-                    "detail":i18n.t('u7.source_and_japanese_translation_mod_have', localization_key=key, source_mod=pair['source_mod'], translation_mod=pair['translation_mod'], value=i18n.t('u7.override_auto_organize_prioritizes_manual_settings') if pair.get('manual_priority') else '')})
+                    "detail":i18n.t('u7.source_and_japanese_translation_mod_have' if target_lang == 'japanese' else 'u7.source_and_japanese_translation_mod_have.target', target_name=i18n.t('lang.' + target_lang), localization_key=key, source_mod=pair['source_mod'], translation_mod=pair['translation_mod'], value=i18n.t('u7.override_auto_organize_prioritizes_manual_settings') if pair.get('manual_priority') else '')})
         return {"total":total,"auto":auto,"conflicts":conflicts,"unresolved":unresolved}
 
-    def _diagnostic_conflict_id(self, source_id, translation_id, key):
+    def _diagnostic_conflict_id(self, source_id, translation_id, key, *, target_lang=None):
         raw=f"{source_id}\0{translation_id}\0{key}".encode("utf-8","ignore")
+        target_lang = target_lang or _current_target_lang(self)
+        if target_lang != "japanese": raw += f"\0{target_lang}".encode("utf-8")
         return hashlib.sha1(raw).hexdigest()
 
-    def _analyze_localization_health(self, mod_root, source_index, source_meta, translation_relations=None, allowed_context=None, japanese_occurrences=None):
+    def _analyze_localization_health(self, mod_root, source_index, source_meta, translation_relations=None, allowed_context=None, japanese_occurrences=None, *, target_lang=None):
+        target_lang = target_lang or _current_target_lang(self)
         mod_root=Path(mod_root); loc=core.mod_localization_root(mod_root)
         name=core.detect_mod_name(mod_root)
-        result={"mod":name,"path":str(mod_root),"localization":str(loc or ""),"issues":[],"remove_by_file":{},"stats":{},"conflicts":[]}
+        result={"mod":name,"path":str(mod_root),"localization":str(loc or ""),"issues":[],"remove_by_file":{},"stats":{},"conflicts":[],"target_lang":target_lang}
         if not loc or not loc.exists():
             result["issues"].append({"severity":"ERROR","kind":"localization欠落","file":"","count":1,"detail":i18n.t('u7.localization_folder_not_found_2')})
             return result
@@ -4759,9 +4771,10 @@ class App(BaseTk):
             except Exception as exc:
                 result["issues"].append({"severity":"WARN","kind":"YAML読込エラー","file":str(f),"count":1,"detail":str(exc)})
                 continue
-            if lang=="english": english_files.append((f,entries)); source_keys.update(entries)
-            elif lang=="simp_chinese": chinese_files.append((f,entries)); source_keys.update(entries)
-            elif lang=="japanese":
+            if lang=="english": english_files.append((f,entries))
+            elif lang=="simp_chinese": chinese_files.append((f,entries))
+            if lang and lang != target_lang and (target_lang != "japanese" or lang in {"english", "simp_chinese"}): source_keys.update(entries)
+            if lang==target_lang:
                 jp_files.append((f,entries))
                 for k,v in entries.items():
                     jp_key_files.setdefault(k,[]).append(str(f)); jp_values.setdefault(k,[]).append((str(f),v))
@@ -4799,11 +4812,11 @@ class App(BaseTk):
             result["issues"].append({"severity":"WARN","kind":"日本語化Mod候補（未確定）","file":"","count":len(candidate_rels),"detail":i18n.t('u7.not_included_in_the_valid_key', value="\n".join(names))})
 
         if not english_files:
-            result["issues"].append({"severity":"WARN","kind":"英語原文なし","file":"","count":0,"detail":i18n.t('u7.no_english_localization_found_this_may')})
+            result["issues"].append({"severity":"WARN","kind":"英語原文なし","file":"","count":0,"detail":i18n.t('u7.no_english_localization_found_this_may' if target_lang == 'japanese' else 'u7.no_english_localization_found_this_may.target', target_name=i18n.t('lang.' + target_lang))})
         if not chinese_files:
             result["issues"].append({"severity":"INFO","kind":"簡体字中国語なし","file":"","count":0,"detail":i18n.t('u7.no_simplified_chinese_localization_this_is')})
         if not jp_files:
-            result["issues"].append({"severity":"INFO","kind":"日本語なし","file":"","count":0,"detail":i18n.t('u7.no_japanese_localization_yet')})
+            result["issues"].append({"severity":"INFO","kind":"日本語なし","file":"","count":0,"detail":i18n.t('u7.no_japanese_localization_yet' if target_lang == 'japanese' else 'u7.no_japanese_localization_yet.target', target_name=i18n.t('lang.' + target_lang))})
 
         duplicate={k:v for k,v in jp_key_files.items() if len(v)>1}
         identical_dup=0; conflicting_dup=0
@@ -4812,9 +4825,9 @@ class App(BaseTk):
             if len(vals)<=1: identical_dup+=1
             else: conflicting_dup+=1
         if identical_dup:
-            result["issues"].append({"severity":"WARN","kind":"同一Mod内の完全重複","file":"","count":identical_dup,"detail":i18n.t('u7.the_same_japanese_translation_key_appears')})
+            result["issues"].append({"severity":"WARN","kind":"同一Mod内の完全重複","file":"","count":identical_dup,"detail":i18n.t('u7.the_same_japanese_translation_key_appears' if target_lang == 'japanese' else 'u7.the_same_japanese_translation_key_appears.target', target_name=i18n.t('lang.' + target_lang))})
         if conflicting_dup:
-            result["issues"].append({"severity":"WARN","kind":"同一Mod内の訳競合","file":"","count":conflicting_dup,"detail":i18n.t('u7.the_same_key_has_different_japanese')})
+            result["issues"].append({"severity":"WARN","kind":"同一Mod内の訳競合","file":"","count":conflicting_dup,"detail":i18n.t('u7.the_same_key_has_different_japanese' if target_lang == 'japanese' else 'u7.the_same_key_has_different_japanese.target', target_name=i18n.t('lang.' + target_lang))})
 
         total_extras=0
         # v0.11.36: once a reliable basis exists, every Japanese key outside
@@ -4826,11 +4839,11 @@ class App(BaseTk):
                 if unnecessary:
                     total_extras += len(unnecessary)
                     result["remove_by_file"].setdefault(str(f),set()).update(unnecessary)
-                    result["issues"].append({"severity":"ERROR","kind":"不要日本語キー","file":str(f),"count":len(unnecessary),"detail":i18n.t('u7.absent_from_the_source_mod_s')})
+                    result["issues"].append({"severity":"ERROR","kind":"不要日本語キー","file":str(f),"count":len(unnecessary),"detail":i18n.t('u7.absent_from_the_source_mod_s' if target_lang == 'japanese' else 'u7.absent_from_the_source_mod_s.target', target_name=i18n.t('lang.' + target_lang))})
                     if len(unnecessary)==len(entries):
                         result["issues"].append({"severity":"ERROR","kind":"不要日本語ファイル","file":str(f),"count":len(entries),"detail":i18n.t('u7.all_localization_keys_in_this_yaml')})
         elif jp_files:
-            result["issues"].append({"severity":"WARN","kind":"修復基準なし","file":"","count":len(jp_key_files),"detail":i18n.t('u7.no_english_chinese_source_or_high')})
+            result["issues"].append({"severity":"WARN","kind":"修復基準なし","file":"","count":len(jp_key_files),"detail":i18n.t('u7.no_english_chinese_source_or_high' if target_lang == 'japanese' else 'u7.no_english_chinese_source_or_high.target', target_name=i18n.t('lang.' + target_lang))})
 
         # Same-root identical duplicates: keep one deterministic file, remove the rest.
         for key,occ in jp_values.items():
@@ -4862,19 +4875,19 @@ class App(BaseTk):
                     cand_values={o.get("value") for o in cand_occ}
                     if len(own_values)==1 and own_values==cand_values:
                         continue
-                    cid=self._diagnostic_conflict_id(self_id,cand_id,key)
+                    cid=self._diagnostic_conflict_id(self_id,cand_id,key, target_lang=target_lang)
                     choice=self.diagnostic_conflict_choices.get(cid)
-                    choice_text=i18n.t('u7.source_mod_translation') if choice=="source" else i18n.t('u7.japanese_translation_mod_translation') if choice=="translation" else i18n.t('u7.source_japanese_translation_mod') if choice=="auto" else i18n.t('u7.not_selected')
+                    choice_text=i18n.t('u7.source_mod_translation') if choice=="source" else i18n.t('u7.japanese_translation_mod_translation' if target_lang == 'japanese' else 'u7.japanese_translation_mod_translation.target', target_name=i18n.t('lang.' + target_lang)) if choice=="translation" else i18n.t('u7.source_japanese_translation_mod') if choice=="auto" else i18n.t('u7.not_selected')
                     conflict={"id":cid,"key":key,"source_root":self_id,"translation_root":cand_id,"source_mod":name,"translation_mod":cand_name,"choice":choice}
                     result["conflicts"].append(conflict)
                     result["issues"].append({
                         "severity":"WARN","kind":"本体/日本語化Mod重複","file":"","count":1,"conflict_id":cid,
                         "location":i18n.t('u7.both'), "plan":i18n.t('u7.resolve_translation_conflicts'), "decision":choice_text,
-                        "detail":i18n.t('u7.present_in_both_source_and_japanese', localization_key=key, name=name, cand_name=cand_name)
+                        "detail":i18n.t('u7.present_in_both_source_and_japanese' if target_lang == 'japanese' else 'u7.present_in_both_source_and_japanese.target', target_name=i18n.t('lang.' + target_lang), localization_key=key, name=name, cand_name=cand_name)
                     })
 
         if source_keys and len(jp_files) > max(4, (len(english_files)+len(chinese_files))*2):
-            result["issues"].append({"severity":"WARN","kind":"日本語ファイル異常増加","file":"","count":len(jp_files),"detail":i18n.t('u7.there_are_japanese_yaml_files_versus', count=len(jp_files), value=len(english_files)+len(chinese_files))})
+            result["issues"].append({"severity":"WARN","kind":"日本語ファイル異常増加","file":"","count":len(jp_files),"detail":i18n.t('u7.there_are_japanese_yaml_files_versus' if target_lang == 'japanese' else 'u7.there_are_japanese_yaml_files_versus.target', target_name=i18n.t('lang.' + target_lang), count=len(jp_files), value=len(english_files)+len(chinese_files))})
         result["stats"].update({"extra_keys":total_extras,"conflicts":len(result["conflicts"])})
         if not result["issues"]:
             result["issues"].append({"severity":"OK","kind":"異常なし","file":"","count":0,"detail":i18n.t('u7.no_obvious_contamination_found_within_the')})
@@ -4947,9 +4960,9 @@ class App(BaseTk):
         if not changed:
             has_conflict=any(issue.get("conflict_id") for a in self.diagnostic_last_analyses for issue in (a.get("issues") or []))
             if has_conflict:
-                messagebox.showinfo(APP_NAME,i18n.t('u7.select_source_japanese_translation_mod_duplicates'))
+                messagebox.showinfo(APP_NAME,i18n.t('u7.select_source_japanese_translation_mod_duplicates' if _current_target_lang(self) == 'japanese' else 'u7.select_source_japanese_translation_mod_duplicates.target', target_name=i18n.t('lang.' + _current_target_lang(self))))
             else:
-                messagebox.showinfo(APP_NAME,i18n.t('u7.no_translation_conflicts_between_source_and'))
+                messagebox.showinfo(APP_NAME,i18n.t('u7.no_translation_conflicts_between_source_and' if _current_target_lang(self) == 'japanese' else 'u7.no_translation_conflicts_between_source_and.target', target_name=i18n.t('lang.' + _current_target_lang(self))))
             return
         # Re-render the last diagnostic result so each key keeps an independent choice.
         for analysis in self.diagnostic_last_analyses:
@@ -4957,7 +4970,7 @@ class App(BaseTk):
                 cid=issue.get("conflict_id")
                 if not cid: continue
                 c=self.diagnostic_conflict_choices.get(cid)
-                issue["decision"]=i18n.t('u7.source_mod_translation') if c=="source" else i18n.t('u7.japanese_translation_mod_translation') if c=="translation" else i18n.t('u7.source_japanese_translation_mod') if c=="auto" else i18n.t('u7.not_selected')
+                issue["decision"]=i18n.t('u7.source_mod_translation') if c=="source" else i18n.t('u7.japanese_translation_mod_translation' if _current_target_lang(self) == 'japanese' else 'u7.japanese_translation_mod_translation.target', target_name=i18n.t('lang.' + _current_target_lang(self))) if c=="translation" else i18n.t('u7.source_japanese_translation_mod') if c=="auto" else i18n.t('u7.not_selected')
         self._populate_diagnostic_results(self.diagnostic_last_analyses)
         self.diagnostic_summary_var.set(i18n.t('u7.updated_conflict_preferences', changed=changed))
         self._save_diagnostic_state("conflict_choice_changed")
@@ -4972,7 +4985,7 @@ class App(BaseTk):
         if not conflict_ids:
             messagebox.showinfo(APP_NAME,i18n.t('u7.no_translation_conflicts_need_bulk_choices'))
             return
-        label=i18n.t('u7.source_mod_translation') if choice=="source" else i18n.t('u7.japanese_translation_mod_translation') if choice=="translation" else i18n.t('u7.source_japanese_translation_mod')
+        label=i18n.t('u7.source_mod_translation') if choice=="source" else i18n.t('u7.japanese_translation_mod_translation' if _current_target_lang(self) == 'japanese' else 'u7.japanese_translation_mod_translation.target', target_name=i18n.t('lang.' + _current_target_lang(self))) if choice=="translation" else i18n.t('u7.source_japanese_translation_mod')
         confirm_text=(
             i18n.t('u7.set_all_translation_conflicts_in_the', count=len(conflict_ids), label=label)
         )
@@ -4984,12 +4997,13 @@ class App(BaseTk):
             for issue in analysis.get("issues") or []:
                 cid=issue.get("conflict_id")
                 if cid:
-                    issue["decision"]=i18n.t('u7.source_mod_translation') if choice=="source" else i18n.t('u7.japanese_translation_mod_translation') if choice=="translation" else i18n.t('u7.source_japanese_translation_mod')
+                    issue["decision"]=i18n.t('u7.source_mod_translation') if choice=="source" else i18n.t('u7.japanese_translation_mod_translation' if _current_target_lang(self) == 'japanese' else 'u7.japanese_translation_mod_translation.target', target_name=i18n.t('lang.' + _current_target_lang(self))) if choice=="translation" else i18n.t('u7.source_japanese_translation_mod')
         self._populate_diagnostic_results(self.diagnostic_last_analyses)
         self.diagnostic_summary_var.set(i18n.t('u7.set_all_conflict_preferences_to', count=len(conflict_ids), label=label))
         self._save_diagnostic_state("all_conflict_choices_changed")
 
     def _start_localization_diagnostic(self, repair=False):
+        target_lang = _current_target_lang(self)
         if self.diagnostic_thread is not None:
             messagebox.showinfo(APP_NAME,i18n.t('u7.full_diagnostics_are_already_running_in'))
             return
@@ -5000,7 +5014,7 @@ class App(BaseTk):
             return
         if repair:
             if not messagebox.askyesno(APP_NAME,
-                i18n.t('u7.back_up_the_entire_localization_folder')):
+                i18n.t('u7.back_up_the_entire_localization_folder' if target_lang == 'japanese' else 'u7.back_up_the_entire_localization_folder.target', target_name=i18n.t('lang.' + target_lang))):
                 return
         self.diagnostic_generation += 1; generation=self.diagnostic_generation
         self.diagnostic_running_repair=bool(repair)
@@ -5009,24 +5023,24 @@ class App(BaseTk):
         else:
             self.diagnostic_scan_btn.config(state="disabled"); self.diagnostic_repair_btn.config(state="disabled")
         self.diagnostic_summary_var.set(i18n.t('u7.repairing_with_configured_choices', count=len(roots)) if repair else i18n.t('u7.diagnosing_in_the_background', count=len(roots)))
-        self._set_diagnostic_detail(i18n.t('u7.indexing_source_keys_japanese_translation_mod'))
+        self._set_diagnostic_detail(i18n.t('u7.indexing_source_keys_japanese_translation_mod' if target_lang == 'japanese' else 'u7.indexing_source_keys_japanese_translation_mod.target', target_name=i18n.t('lang.' + target_lang)))
         def work():
             try:
                 all_roots=self._all_known_mod_roots_for_diagnostic()
                 for r in roots:
                     if all(str(r)!=str(x) for x in all_roots): all_roots.append(r)
-                source_index,source_meta=self._diagnostic_source_key_index(all_roots)
-                relation_map=self._diagnostic_translation_relation_map(all_roots)
+                source_index,source_meta=self._diagnostic_source_key_index(all_roots, target_lang=target_lang)
+                relation_map=self._diagnostic_translation_relation_map(all_roots, target_lang=target_lang)
                 allowed_context=self._diagnostic_allowed_context(all_roots,source_meta,relation_map)
-                occurrences=self._diagnostic_japanese_occurrence_index(all_roots)
+                occurrences=self._diagnostic_japanese_occurrence_index(all_roots, target_lang=target_lang)
                 before=[]; logs=[]; stamp=datetime.now().strftime("%Y-%m-%d_%H%M%S")
                 for i,root in enumerate(roots,1):
-                    self.events.put(("diagnostic_progress",{"generation":generation,"done":i,"total":len(roots),"mod":core.detect_mod_name(root),"phase":"診断"}))
+                    self.events.put(("diagnostic_progress",{"generation":generation,"done":i,"total":len(roots),"mod":core.detect_mod_name(root),"phase":i18n.t('u7.diagnostic_phase')}))
                     try: relation_key=str(Path(root).resolve())
                     except Exception: relation_key=str(root)
-                    before.append(self._analyze_localization_health(root,source_index,source_meta,relation_map.get(relation_key),allowed_context,occurrences))
-                integrations=self._build_diagnostic_integrations(roots,source_meta,allowed_context,occurrences)
-                integration_summary=self._attach_diagnostic_integration_issues(before,integrations)
+                    before.append(self._analyze_localization_health(root,source_index,source_meta,relation_map.get(relation_key),allowed_context,occurrences, target_lang=target_lang))
+                integrations=self._build_diagnostic_integrations(roots,source_meta,allowed_context,occurrences, target_lang=target_lang)
+                integration_summary=self._attach_diagnostic_integration_issues(before,integrations, target_lang=target_lang)
 
                 if repair:
                     selected_ids=set()
@@ -5036,7 +5050,7 @@ class App(BaseTk):
                     unresolved=[]
                     for pair in integrations:
                         for key in pair.get("conflict_keys") or set():
-                            cid=self._diagnostic_conflict_id(pair["source_root"],pair["translation_root"],key)
+                            cid=self._diagnostic_conflict_id(pair["source_root"],pair["translation_root"],key, target_lang=target_lang)
                             if not self.diagnostic_conflict_choices.get(cid):
                                 unresolved.append((pair,key))
                     if unresolved:
@@ -5069,7 +5083,7 @@ class App(BaseTk):
                         valid_keys=set(pair["source_vals"])|set(pair["translation_vals"])
                         values={}
                         for key in valid_keys:
-                            cid=self._diagnostic_conflict_id(pair["source_root"],pair["translation_root"],key)
+                            cid=self._diagnostic_conflict_id(pair["source_root"],pair["translation_root"],key, target_lang=target_lang)
                             choice=self.diagnostic_conflict_choices.get(cid)
                             src_occ=pair["source_vals"].get(key) or []
                             tr_occ=pair["translation_vals"].get(key) or []
@@ -5097,20 +5111,20 @@ class App(BaseTk):
                     moved=0
                     for target_root,values in move_values_by_target.items():
                         loc_root=core.localization_dir_path(Path(target_root))
-                        out=Path(loc_root)/"japanese"/"zzz_paradox_localization_translator_consolidated_l_japanese.yml"
-                        moved += core.upsert_localization_values(out,values,"japanese")
-                    if moved: logs.append(i18n.t('u7.source_japanese_translation_mod_integration_integrated', moved=moved))
-                    logs.append(i18n.t('u7.integration_repair_removed_japanese_keys_updated', removed_keys=changed['removed_keys'], changed_files=changed['changed_files'], deleted_files=changed['deleted_files']))
+                        out=Path(loc_root)/target_lang/f"zzz_paradox_localization_translator_consolidated_l_{target_lang}.yml"
+                        moved += core.upsert_localization_values(out,values,target_lang)
+                    if moved: logs.append(i18n.t('u7.source_japanese_translation_mod_integration_integrated' if target_lang == 'japanese' else 'u7.source_japanese_translation_mod_integration_integrated.target', target_name=i18n.t('lang.' + target_lang), moved=moved))
+                    logs.append(i18n.t('u7.integration_repair_removed_japanese_keys_updated' if target_lang == 'japanese' else 'u7.integration_repair_removed_japanese_keys_updated.target', target_name=i18n.t('lang.' + target_lang), removed_keys=changed['removed_keys'], changed_files=changed['changed_files'], deleted_files=changed['deleted_files']))
 
                 after=[]
                 if repair:
                     # Rebuild occurrence/source state after modifications before re-check.
-                    occurrences_after=self._diagnostic_japanese_occurrence_index(all_roots)
+                    occurrences_after=self._diagnostic_japanese_occurrence_index(all_roots, target_lang=target_lang)
                     for i,root in enumerate(roots,1):
                         self.events.put(("diagnostic_progress",{"generation":generation,"done":i,"total":len(roots),"mod":core.detect_mod_name(root),"phase":i18n.t('u7.re_diagnose')}))
                         try: relation_key=str(Path(root).resolve())
                         except Exception: relation_key=str(root)
-                        after.append(self._analyze_localization_health(root,source_index,source_meta,relation_map.get(relation_key),allowed_context,occurrences_after))
+                        after.append(self._analyze_localization_health(root,source_index,source_meta,relation_map.get(relation_key),allowed_context,occurrences_after, target_lang=target_lang))
                 self.events.put(("diagnostic_done",{"generation":generation,"repair":repair,"before":before,"after":after,"logs":logs,"integration_summary":integration_summary}))
             except Exception as exc:
                 self.events.put(("diagnostic_error",{"generation":generation,"error":str(exc)}))
@@ -5139,7 +5153,7 @@ class App(BaseTk):
             elif unique_conflicts > 0:
                 self.diagnostic_conflict_help_var.set(i18n.t('u7.there_are_translation_conflicts_choose_translations', unique_conflicts=unique_conflicts))
             elif analyses:
-                self.diagnostic_conflict_help_var.set(i18n.t('u7.no_translation_conflicts_the_current_diagnostic'))
+                self.diagnostic_conflict_help_var.set(i18n.t('u7.no_translation_conflicts_the_current_diagnostic' if _current_target_lang(self) == 'japanese' else 'u7.no_translation_conflicts_the_current_diagnostic.target', target_name=i18n.t('lang.' + _current_target_lang(self))))
             else:
                 self.diagnostic_conflict_help_var.set(i18n.t('u7.actions_needed_for_repair_will_appear'))
         conflict_state="normal" if unique_conflicts else "disabled"
@@ -5161,11 +5175,11 @@ class App(BaseTk):
         for analysis in analyses:
             for issue in analysis.get("issues") or []:
                 iid=f"diag_{n}"; n+=1
-                row=dict(issue); row["mod"]=analysis.get("mod",""); row["path"]=analysis.get("path",""); row["stats"]=analysis.get("stats",{})
+                row=dict(issue); row["mod"]=analysis.get("mod",""); row["path"]=analysis.get("path",""); row["stats"]=analysis.get("stats",{}); row["target_lang"]=analysis.get("target_lang") or "japanese"
                 self.diagnostic_result_map[iid]=row
                 file_name=Path(issue.get("file","")).name if issue.get("file") else ""
                 decision=issue.get("decision","")
-                self.diagnostic_tree.insert("","end",iid=iid,values=(issue.get("severity",""),analysis.get("mod",""),issue.get("kind",""),issue.get("score",""),issue.get("location",""),issue.get("plan",""),decision,file_name,issue.get("count",0),issue.get("detail","")))
+                self.diagnostic_tree.insert("","end",iid=iid,values=(issue.get("severity",""),analysis.get("mod",""),ui_status.diagnostic_kind_label(issue.get("kind",""), row["target_lang"]),issue.get("score",""),issue.get("location",""),issue.get("plan",""),decision,file_name,issue.get("count",0),issue.get("detail","")))
         self._refresh_diagnostic_action_state(analyses)
         return n
 
@@ -5173,8 +5187,9 @@ class App(BaseTk):
         sel=self.diagnostic_tree.selection() if hasattr(self,"diagnostic_tree") else []
         if not sel: return
         row=self.diagnostic_result_map.get(sel[0],{})
+        target_lang = row.get("target_lang") or "japanese"
         stats=row.get("stats") or {}
-        lines=[f"Mod: {row.get('mod','')}",i18n.t('u7.mod_location', path=row.get('path','')),i18n.t('u7.severity', severity=row.get('severity','')),i18n.t('u7.diagnostic_item', kind=row.get('kind',''))]
+        lines=[f"Mod: {row.get('mod','')}",i18n.t('u7.mod_location', path=row.get('path','')),i18n.t('u7.severity', severity=row.get('severity','')),i18n.t('u7.diagnostic_item', kind=ui_status.diagnostic_kind_label(row.get('kind',''), row.get('target_lang') or target_lang))]
         if row.get("score") not in (None, ""): lines.append(i18n.t('u7.relevance_score', score=row.get('score')))
         if row.get("location"): lines.append(i18n.t('u7.current_location_2', location=row.get('location')))
         if row.get("plan"): lines.append(i18n.t('u7.repair_plan_2', plan=row.get('plan')))
@@ -5182,7 +5197,7 @@ class App(BaseTk):
         if row.get("manual_priority"):
             lines.append(i18n.t('u7.override_manually_configured_in_mod_classification'))
         if row.get("file"): lines.append(i18n.t('u7.file_2', file=row.get('file')))
-        lines += [i18n.t('u7.count', count=row.get('count',0)),i18n.t('u7.details', detail=row.get('detail','')),"",i18n.t('u7.english_yaml_chinese_yaml_japanese_yaml', english_files=stats.get('english_files',0), chinese_files=stats.get('chinese_files',0), japanese_files=stats.get('japanese_files',0)),i18n.t('u7.own_source_keys_keys_allowed_for', source_keys=stats.get('source_keys',0), allowed_keys=stats.get('allowed_keys',0), japanese_keys=stats.get('japanese_keys',0)),i18n.t('u7.linked_source_mods_unnecessary_keys_source', translation_sources=stats.get('translation_sources',0), extra_keys=stats.get('extra_keys',0), conflicts=stats.get('conflicts',0))]
+        lines += [i18n.t('u7.count', count=row.get('count',0)),i18n.t('u7.details', detail=row.get('detail','')),"",i18n.t('u7.english_yaml_chinese_yaml_japanese_yaml' if target_lang == 'japanese' else 'u7.english_yaml_chinese_yaml_japanese_yaml.target', target_name=i18n.t('lang.' + target_lang), english_files=stats.get('english_files',0), chinese_files=stats.get('chinese_files',0), japanese_files=stats.get('japanese_files',0)),i18n.t('u7.own_source_keys_keys_allowed_for' if target_lang == 'japanese' else 'u7.own_source_keys_keys_allowed_for.target', target_name=i18n.t('lang.' + target_lang), source_keys=stats.get('source_keys',0), allowed_keys=stats.get('allowed_keys',0), japanese_keys=stats.get('japanese_keys',0)),i18n.t('u7.linked_source_mods_unnecessary_keys_source' if target_lang == 'japanese' else 'u7.linked_source_mods_unnecessary_keys_source.target', target_name=i18n.t('lang.' + target_lang), translation_sources=stats.get('translation_sources',0), extra_keys=stats.get('extra_keys',0), conflicts=stats.get('conflicts',0))]
         self._set_diagnostic_detail("\n".join(lines))
 
     def _mod_status_matches_query(self, result, query):
@@ -10644,7 +10659,7 @@ class App(BaseTk):
                 types=sorted(set(i['type'] for i in issues)) or ['']
                 for typ in types:
                     if group not in parents:
-                        parents[group]=self.review_tree.insert('', 'end', iid=f'qa_batch_group_{group}', text={'error':'エラー','warning':i18n.t('u3.warning'),'notice':i18n.t('u3.notice'),'ok':i18n.t('u3.no_issues')}[group], open=group!='ok', values=('','',''))
+                        parents[group]=self.review_tree.insert('', 'end', iid=f'qa_batch_group_{group}', text={'error':i18n.t('u3.error'),'warning':i18n.t('u3.warning'),'notice':i18n.t('u3.notice'),'ok':i18n.t('u3.no_issues')}[group], open=group!='ok', values=('','',''))
                     parent=parents[group]
                     if group!='ok':
                         token=(group,typ)
@@ -10687,7 +10702,7 @@ class App(BaseTk):
         def ensure_type(group,typ):
             k=(group,typ)
             if k not in type_parents:
-                parent=ensure_parent(group,{'error':'エラー','warning':i18n.t('u3.warning'),'notice':i18n.t('u3.notice'),'ok':i18n.t('u3.no_issues')}[group])
+                parent=ensure_parent(group,{'error':i18n.t('u3.error'),'warning':i18n.t('u3.warning'),'notice':i18n.t('u3.notice'),'ok':i18n.t('u3.no_issues')}[group])
                 type_parents[k]=self.review_tree.insert(parent,'end',text=typ,open=True,values=(typ,'',''))
             return type_parents[k]
         end=min(len(rows),start+chunk)
@@ -11914,7 +11929,7 @@ class App(BaseTk):
                 elif kind=="chinese_error":
                     record_error("中国語基準翻訳", detail=str(payload)); self.chinese_worker=None; self.chinese_controller=None
                     self.chinese_start_btn.config(state="normal"); self.chinese_pause_btn.config(state="disabled", text=i18n.t('p0.pause')); self.chinese_stop_btn.config(state="disabled")
-                    self.chinese_progress_var.set("エラー")
+                    self.chinese_progress_var.set(i18n.t('u3.error'))
                     self._append_chinese_log(i18n.t('p0.error', value=str(payload))); self._set_llm_idle(i18n.t('p0.llm_idle'),i18n.t('p0.an_error_occurred_in_chinese'))
                     if not self._closing: messagebox.showerror(APP_NAME,i18n.t('p0.chinese_based_translation_error', value=str(payload)))
                 elif kind=="benchmark_progress":
@@ -12062,7 +12077,7 @@ class App(BaseTk):
                     messagebox.showerror(APP_NAME,i18n.t('p0.mod_translation_status_scan_error', payload=payload))
                 elif kind=="diagnostic_progress":
                     if int(payload.get("generation",-1))==self.diagnostic_generation:
-                        self.diagnostic_summary_var.set(i18n.t('p0.diagnostic_progress', phase=payload.get('phase','診断'), done=payload.get('done',0), total=payload.get('total',0), mod=payload.get('mod','')))
+                        self.diagnostic_summary_var.set(i18n.t('p0.diagnostic_progress', phase=payload.get('phase',i18n.t('u7.diagnostic_phase')), done=payload.get('done',0), total=payload.get('total',0), mod=payload.get('mod','')))
                 elif kind=="diagnostic_choices_required":
                     if int(payload.get("generation",-1))==self.diagnostic_generation:
                         self.diagnostic_thread=None
