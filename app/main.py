@@ -2034,26 +2034,26 @@ class App(BaseTk):
         if not added and paths: messagebox.showinfo(APP_NAME,"ドロップした項目に l_simp_chinese のYAMLが見つかりませんでした。")
         return event.action if hasattr(event,"action") else None
 
-    def _ask_translation_mode(self, title="翻訳方法を選択"):
+    def _ask_translation_mode(self, title=None):
         """Return 'diff', 'full', or None using an explicit three-button dialog."""
         result = {"value": None}
         win = tk.Toplevel(self)
-        win.title(title)
+        win.title(title if title is not None else i18n.t("u6.choose_translation_mode"))
         win.transient(self)
         win.grab_set()
         win.resizable(False, False)
         body = ttk.Frame(win, padding=16)
         body.pack(fill="both", expand=True)
-        ttk.Label(body, text="どの方法で翻訳しますか？", font=("", 12, "bold")).pack(anchor="w")
-        ttk.Label(body, text="選択中のキュー項目だけを処理します。", foreground="#555").pack(anchor="w", pady=(4, 12))
+        ttk.Label(body, text=i18n.t('u6.how_would_you_like_to_translate'), font=("", 12, "bold")).pack(anchor="w")
+        ttk.Label(body, text=i18n.t('u6.only_the_selected_queue_items_will'), foreground="#555").pack(anchor="w", pady=(4, 12))
         buttons = ttk.Frame(body)
         buttons.pack(fill="x")
         def choose(value):
             result["value"] = value
             win.destroy()
-        ttk.Button(buttons, text="差分だけ翻訳", command=lambda: choose("diff")).pack(side="left")
-        ttk.Button(buttons, text="一からすべて翻訳", command=lambda: choose("full")).pack(side="left", padx=(8,0))
-        ttk.Button(buttons, text="キャンセル", command=lambda: choose(None)).pack(side="left", padx=(8,0))
+        ttk.Button(buttons, text=i18n.t('u6.translate_differences_only'), command=lambda: choose("diff")).pack(side="left")
+        ttk.Button(buttons, text=i18n.t('u6.translate_everything_from_scratch'), command=lambda: choose("full")).pack(side="left", padx=(8,0))
+        ttk.Button(buttons, text=i18n.t('u6.cancel'), command=lambda: choose(None)).pack(side="left", padx=(8,0))
         win.protocol("WM_DELETE_WINDOW", lambda: choose(None))
         win.update_idletasks()
         try:
@@ -3062,60 +3062,60 @@ class App(BaseTk):
         body.bind("<Configure>", _balance_monitor_panes, add="+")
         self.after_idle(_balance_monitor_panes)
 
-        target = ttk.LabelFrame(left, text="監視対象", padding=8)
+        target = ttk.LabelFrame(left, text=i18n.t('u6.monitor_targets'), padding=8)
         target.pack(fill="x", pady=(0,8))
         ttk.Label(target, textvariable=self.monitor_target_summary_var, wraplength=470, justify="left").pack(anchor="w")
-        ttk.Label(target, text="対象の追加・変更とMod調査は［翻訳状況］タブで行います。", foreground="#666", wraplength=470, justify="left").pack(anchor="w", pady=(5,0))
-        ttk.Button(target, text="翻訳状況を開く", command=lambda:self.notebook.select(self.tab_status)).pack(anchor="w", pady=(7,0))
+        ttk.Label(target, text=i18n.t('u6.add_or_change_targets_and_research'), foreground="#666", wraplength=470, justify="left").pack(anchor="w", pady=(5,0))
+        ttk.Button(target, text=i18n.t('u6.open_translation_status'), command=lambda:self.notebook.select(self.tab_status)).pack(anchor="w", pady=(7,0))
 
-        cfg = ttk.LabelFrame(left, text="未翻訳監視設定", padding=8)
+        cfg = ttk.LabelFrame(left, text=i18n.t('u6.untranslated_monitor_settings'), padding=8)
         cfg.pack(fill="x", pady=(0,8))
         cfg.columnconfigure(1, weight=1)
-        ttk.Label(cfg, text="間隔(秒)").grid(row=0, column=0, sticky="w")
+        ttk.Label(cfg, text=i18n.t('u6.interval_seconds')).grid(row=0, column=0, sticky="w")
         ttk.Spinbox(cfg, from_=3, to=600, textvariable=self.monitor_interval_var, width=7).grid(row=0, column=1, sticky="w", padx=6)
 
         ttk.Separator(cfg, orient="horizontal").grid(row=1, column=0, columnspan=3, sticky="ew", pady=7)
-        ttk.Label(cfg, text="監視専用LLM", font=("", 10, "bold")).grid(row=2, column=0, columnspan=3, sticky="w")
-        ttk.Label(cfg, text="プロバイダ").grid(row=3, column=0, sticky="w", pady=(5,0))
+        ttk.Label(cfg, text=i18n.t('u6.monitor_llm'), font=("", 10, "bold")).grid(row=2, column=0, columnspan=3, sticky="w")
+        ttk.Label(cfg, text=i18n.t('u6.provider')).grid(row=3, column=0, sticky="w", pady=(5,0))
         self.monitor_provider_combo = ttk.Combobox(
             cfg, textvariable=self.monitor_provider_var,
             values=["Ollama","LM Studio","OpenAI","Anthropic","Gemini","OpenAI Compatible"],
             state="readonly", width=15)
         self.monitor_provider_combo.grid(row=3, column=1, sticky="ew", padx=6, pady=(5,0))
         self.monitor_provider_combo.bind("<<ComboboxSelected>>", lambda e:self.on_monitor_provider_change())
-        ttk.Button(cfg, text="モデル再読込", command=self.refresh_monitor_models).grid(row=3, column=2, pady=(5,0))
+        ttk.Button(cfg, text=i18n.t('u6.reload_models'), command=self.refresh_monitor_models).grid(row=3, column=2, pady=(5,0))
         ttk.Label(cfg, text="URL").grid(row=4, column=0, sticky="w", pady=(5,0))
         ttk.Entry(cfg, textvariable=self.monitor_url_var).grid(row=4, column=1, columnspan=2, sticky="ew", padx=6, pady=(5,0))
-        ttk.Label(cfg, text="モデル").grid(row=5, column=0, sticky="w", pady=(5,0))
+        ttk.Label(cfg, text=i18n.t('u6.model')).grid(row=5, column=0, sticky="w", pady=(5,0))
         self.monitor_model_combo = ttk.Combobox(cfg, textvariable=self.monitor_model_var, state="normal")
         self.monitor_model_combo.grid(row=5, column=1, columnspan=2, sticky="ew", padx=6, pady=(5,0))
-        ttk.Label(cfg, text="APIキー").grid(row=6, column=0, sticky="w", pady=(5,0))
+        ttk.Label(cfg, text=i18n.t('u6.api_key')).grid(row=6, column=0, sticky="w", pady=(5,0))
         ttk.Entry(cfg, textvariable=self.monitor_api_key_var, show="•").grid(row=6, column=1, columnspan=2, sticky="ew", padx=6, pady=(5,0))
         ttk.Label(cfg, textvariable=self.monitor_connection_var, foreground="#555", wraplength=460, justify="left").grid(row=7, column=0, columnspan=3, sticky="w", pady=(5,0))
-        ttk.Checkbutton(cfg, text="軽量LLMで曖昧候補だけ精査", variable=self.monitor_use_llm_var).grid(row=8, column=0, columnspan=3, sticky="w", pady=(5,0))
-        ttk.Checkbutton(cfg, text="別Modの日本語化も検索する", variable=self.monitor_check_translation_mods_var).grid(row=9, column=0, columnspan=3, sticky="w", pady=(3,0))
-        ttk.Label(cfg, text="判定専用なので3B〜8B級など小さなモデルを推奨します。自動翻訳は行いません。", foreground="#8a4b00", wraplength=460, justify="left").grid(row=10, column=0, columnspan=3, sticky="w", pady=(5,0))
+        ttk.Checkbutton(cfg, text=i18n.t('u6.review_ambiguous_candidates_with_a_lightweight'), variable=self.monitor_use_llm_var).grid(row=8, column=0, columnspan=3, sticky="w", pady=(5,0))
+        ttk.Checkbutton(cfg, text=i18n.t('u6.also_search_other_mods_for_japanese', target_name=i18n.t("lang." + 'japanese')), variable=self.monitor_check_translation_mods_var).grid(row=9, column=0, columnspan=3, sticky="w", pady=(3,0))
+        ttk.Label(cfg, text=i18n.t('u6.use_a_small_model_3b_8b'), foreground="#8a4b00", wraplength=460, justify="left").grid(row=10, column=0, columnspan=3, sticky="w", pady=(5,0))
 
-        controls = ttk.LabelFrame(left, text="監視操作", padding=8)
+        controls = ttk.LabelFrame(left, text=i18n.t('u6.monitor_controls'), padding=8)
         controls.pack(fill="x")
         r1=ttk.Frame(controls); r1.pack(fill="x")
-        self.monitor_toggle_btn = ttk.Button(r1, text="常時監視を開始", command=self.toggle_monitor)
+        self.monitor_toggle_btn = ttk.Button(r1, text=i18n.t('u6.start_continuous_monitoring'), command=self.toggle_monitor)
         self.monitor_toggle_btn.pack(side="left")
-        ttk.Button(r1, text="再調査", command=self.research_monitor_targets).pack(side="left", padx=(6,0))
-        self.mod_research_stop_btn = ttk.Button(r1, text="調査停止", command=self.stop_mod_research, state="disabled")
+        ttk.Button(r1, text=i18n.t('u6.research_again'), command=self.research_monitor_targets).pack(side="left", padx=(6,0))
+        self.mod_research_stop_btn = ttk.Button(r1, text=i18n.t('u6.stop_research'), command=self.stop_mod_research, state="disabled")
         self.mod_research_stop_btn.pack(side="left", padx=(6,0))
         ttk.Label(controls, textvariable=self.monitor_status_var, wraplength=460, justify="left").pack(anchor="w", pady=(6,0))
 
         result_top = ttk.Frame(right); result_top.pack(fill="x", pady=(0,6))
-        ttk.Label(result_top, text="未翻訳候補", font=("", 12, "bold")).pack(side="left")
+        ttk.Label(result_top, text=i18n.t('u6.untranslated_candidates'), font=("", 12, "bold")).pack(side="left")
         ttk.Label(result_top, textvariable=self.monitor_summary_var, font=("", 11, "bold")).pack(side="left", padx=(12,0))
-        ttk.Button(result_top, text="候補一覧を消去", command=self.clear_monitor_results).pack(side="right")
-        ttk.Button(result_top, text="CSV保存", command=self.export_monitor_csv).pack(side="right", padx=(0,6))
+        ttk.Button(result_top, text=i18n.t('u6.clear_candidates'), command=self.clear_monitor_results).pack(side="right")
+        ttk.Button(result_top, text=i18n.t('u6.save_csv'), command=self.export_monitor_csv).pack(side="right", padx=(0,6))
 
         result_frame = ttk.Frame(right); result_frame.pack(fill="both", expand=True)
         cols=("kind","confidence","file","key","text")
         self.monitor_tree=ttk.Treeview(result_frame, columns=cols, show="headings", height=18)
-        for c,txt,w in (("kind","種類",130),("confidence","判定",75),("file","ファイル",280),("key","キー",280),("text","内容",450)):
+        for c,txt,w in (("kind",i18n.t('u6.type'),130),("confidence",i18n.t('u6.assessment'),75),("file",i18n.t('u6.file'),280),("key",i18n.t('u6.key'),280),("text",i18n.t('u6.content'),450)):
             self.monitor_tree.heading(c,text=txt); self.monitor_tree.column(c,width=w,anchor="w")
         sy=ttk.Scrollbar(result_frame,orient="vertical",command=self.monitor_tree.yview)
         sx=ttk.Scrollbar(result_frame,orient="horizontal",command=self.monitor_tree.xview)
@@ -3126,14 +3126,14 @@ class App(BaseTk):
         sx.grid(row=1,column=0,sticky="ew")
         result_frame.rowconfigure(0,weight=1); result_frame.columnconfigure(0,weight=1)
 
-        note = ttk.LabelFrame(right, text="仕組み", padding=6); note.pack(fill="x", pady=(6,0))
-        ttk.Label(note, text="待機中は監視対象のYAML更新時刻とサイズだけを確認します。変更があった対象だけ解析し、曖昧候補だけ監視専用LLMへ送ります。自動翻訳・ファイル書換えは行いません。", wraplength=650, justify="left").pack(anchor="w")
+        note = ttk.LabelFrame(right, text=i18n.t('u6.how_it_works'), padding=6); note.pack(fill="x", pady=(6,0))
+        ttk.Label(note, text=i18n.t('u6.while_idle_only_yaml_modification_times'), wraplength=650, justify="left").pack(anchor="w")
 
     def _build_status_tab(self):
         t = self.tab_status
         top = ttk.Frame(t); top.pack(fill="x", pady=(0,6))
-        ttk.Label(top, text="Modごとの日本語翻訳状況", font=("", 13, "bold")).pack(side="left")
-        ttk.Label(top, text="（Mod調査・日本語化Modの判定と紐付けは日本語のみ）", foreground="#8a5a00").pack(side="left", padx=(8,0))
+        ttk.Label(top, text=i18n.t('u6.japanese_translation_status_by_mod'), font=("", 13, "bold")).pack(side="left")
+        ttk.Label(top, text=i18n.t('u6.mod_research_translation_mod_assessment_and', target_name=i18n.t("lang.japanese")), foreground="#8a5a00").pack(side="left", padx=(8,0))
         ttk.Label(top, textvariable=self.mod_status_summary_var).pack(side="right")
 
         # フルHDでも縦方向が苦しくなりにくいよう、左に設定系、右に結果系を置く。
@@ -3144,22 +3144,22 @@ class App(BaseTk):
         body.add(left_outer, weight=2)
         body.add(right_outer, weight=5)
 
-        discovery = ttk.LabelFrame(left, text="ゲーム / Mod場所", padding=6); discovery.pack(fill="x", pady=(0,6))
+        discovery = ttk.LabelFrame(left, text=i18n.t('u6.game_mod_location'), padding=6); discovery.pack(fill="x", pady=(0,6))
         dbar1 = ttk.Frame(discovery); dbar1.pack(fill="x", pady=(0,5))
-        ttk.Button(dbar1, text="ゲーム/Mod場所を自動検出", command=self.discover_mod_locations).pack(side="left")
-        ttk.Button(dbar1, text="選択した場所のModを調査", command=self.research_selected_discovered_location).pack(side="left", padx=(6,0))
+        ttk.Button(dbar1, text=i18n.t('u6.detect_game_mod_locations'), command=self.discover_mod_locations).pack(side="left")
+        ttk.Button(dbar1, text=i18n.t('u6.research_mods_in_selected_locations'), command=self.research_selected_discovered_location).pack(side="left", padx=(6,0))
         ttk.Label(dbar1, textvariable=self.mod_discovery_status_var).pack(side="right")
         dbar2 = ttk.Frame(discovery); dbar2.pack(fill="x", pady=(0,5))
-        ttk.Checkbutton(dbar2, text="複数選択モード", variable=self.discovery_multi_select_var).pack(side="left")
-        ttk.Button(dbar2, text="すべて選択", command=self.select_all_discovered_locations).pack(side="left", padx=(6,0))
-        ttk.Button(dbar2, text="選択解除", command=lambda:self.discovered_mod_tree.selection_remove(self.discovered_mod_tree.selection())).pack(side="left", padx=(6,0))
+        ttk.Checkbutton(dbar2, text=i18n.t('u6.multi_select_mode'), variable=self.discovery_multi_select_var).pack(side="left")
+        ttk.Button(dbar2, text=i18n.t('u6.select_all'), command=self.select_all_discovered_locations).pack(side="left", padx=(6,0))
+        ttk.Button(dbar2, text=i18n.t('u6.deselect_all'), command=lambda:self.discovered_mod_tree.selection_remove(self.discovered_mod_tree.selection())).pack(side="left", padx=(6,0))
         cols=("game","kind","mods","path")
         treewrap = ttk.Frame(discovery); treewrap.pack(fill="both", expand=True)
         self.discovered_mod_tree=ttk.Treeview(treewrap, columns=cols, show="headings", height=6, selectmode="extended")
         self._enable_ctrl_multiselect(self.discovered_mod_tree)
         self.discovered_mod_tree.bind("<Button-1>", self._on_discovery_tree_click, add="+")
         self.discovered_mod_tree.bind("<<TreeviewSelect>>", lambda e:self._sync_monitor_targets_from_discovery_selection(), add="+")
-        for c,txt,w in (("game","ゲーム",180),("kind","種類",125),("mods","Mod数",70),("path","検出場所",650)):
+        for c,txt,w in (("game",i18n.t('u6.game'),180),("kind",i18n.t('u6.type'),125),("mods",i18n.t('u6.mods'),70),("path",i18n.t('u6.detected_location'),650)):
             self.discovered_mod_tree.heading(c,text=txt)
             self.discovered_mod_tree.column(c,width=w,minwidth=w,stretch=False,anchor="w")
         self._enable_tree_sort(self.discovered_mod_tree)
@@ -3170,44 +3170,44 @@ class App(BaseTk):
         dsy.grid(row=0,column=1,sticky="ns")
         dsx.grid(row=1,column=0,sticky="ew")
         treewrap.rowconfigure(0,weight=1); treewrap.columnconfigure(0,weight=1)
-        ttk.Label(discovery, text="Ctrl+クリックで複数場所を選択できます。［選択した場所のModを調査］を実行すると、その場所が未翻訳監視の対象にも登録されます。", foreground="#666", wraplength=330, justify="left").pack(anchor="w", pady=(4,0))
+        ttk.Label(discovery, text=i18n.t('u6.ctrl_click_to_select_multiple_locations'), foreground="#666", wraplength=330, justify="left").pack(anchor="w", pady=(4,0))
 
-        search = ttk.LabelFrame(left, text="判定済みModを検索", padding=6); search.pack(fill="x", pady=(0,6))
-        ttk.Label(search, text="Mod名").grid(row=0, column=0, sticky="w")
+        search = ttk.LabelFrame(left, text=i18n.t('u6.search_assessed_mods'), padding=6); search.pack(fill="x", pady=(0,6))
+        ttk.Label(search, text=i18n.t('u6.mod_name')).grid(row=0, column=0, sticky="w")
         search_entry = ttk.Entry(search, textvariable=self.mod_status_search_var, width=28)
         search_entry.grid(row=0, column=1, sticky="ew", padx=(6,6))
         search_entry.bind("<Return>", lambda e:self.search_mod_status())
         search_entry.bind("<KeyRelease>", self._schedule_mod_status_search)
-        ttk.Button(search, text="検索", command=self.search_mod_status).grid(row=0, column=2)
-        ttk.Button(search, text="解除", command=self.clear_mod_status_search).grid(row=0, column=3, padx=(6,0))
+        ttk.Button(search, text=i18n.t('u6.search'), command=self.search_mod_status).grid(row=0, column=2)
+        ttk.Button(search, text=i18n.t('u6.clear'), command=self.clear_mod_status_search).grid(row=0, column=3, padx=(6,0))
         ttk.Label(search, textvariable=self.mod_status_search_result_var, foreground="#555", wraplength=300, justify="left").grid(row=1, column=0, columnspan=4, sticky="w", pady=(6,0))
         search.columnconfigure(1, weight=1)
 
-        relation = ttk.LabelFrame(left, text="Mod分類・関連付け", padding=6); relation.pack(fill="x", pady=(0,6))
-        ttk.Label(relation, text="日本語化Mod / 通常Modの例外指定と、対応元Modの手動関連付けを設定します。総合診断と共通設定です。", foreground="#555", wraplength=320, justify="left").pack(anchor="w")
-        ttk.Button(relation, text="Mod分類・関連付けを開く", command=lambda:self._open_mod_relation_dialog("status")).pack(anchor="w", pady=(6,0))
+        relation = ttk.LabelFrame(left, text=i18n.t('u6.mod_classification_and_linking'), padding=6); relation.pack(fill="x", pady=(0,6))
+        ttk.Label(relation, text=i18n.t('u6.set_translation_mod_source_mod_exceptions', target_name=i18n.t("lang.japanese")), foreground="#555", wraplength=320, justify="left").pack(anchor="w")
+        ttk.Button(relation, text=i18n.t('u6.open_mod_classification_and_linking'), command=lambda:self._open_mod_relation_dialog("status")).pack(anchor="w", pady=(6,0))
 
         # 翻訳状況タブから探索専用LLMをそのまま変更・適用できる。
-        moncfg = ttk.LabelFrame(left, text="探索用LLM設定", padding=6); moncfg.pack(fill="x", pady=(0,6))
-        ttk.Label(moncfg, text="プロバイダ").grid(row=0,column=0,sticky="w")
+        moncfg = ttk.LabelFrame(left, text=i18n.t('u6.research_llm_settings'), padding=6); moncfg.pack(fill="x", pady=(0,6))
+        ttk.Label(moncfg, text=i18n.t('u6.provider')).grid(row=0,column=0,sticky="w")
         cmb=ttk.Combobox(moncfg,textvariable=self.monitor_provider_var,values=["Ollama","LM Studio","OpenAI","Anthropic","Gemini","OpenAI Compatible"],state="readonly",width=12)
         cmb.grid(row=0,column=1,padx=(5,8),sticky="ew"); cmb.bind("<<ComboboxSelected>>",lambda e:self.on_monitor_provider_change())
         ttk.Label(moncfg,text="URL").grid(row=1,column=0,sticky="w", pady=(6,0))
         ttk.Entry(moncfg,textvariable=self.monitor_url_var,width=26).grid(row=1,column=1,columnspan=2,sticky="ew",padx=(5,8), pady=(6,0))
-        ttk.Label(moncfg,text="モデル").grid(row=2,column=0,sticky="w", pady=(6,0))
+        ttk.Label(moncfg,text=i18n.t('u6.model')).grid(row=2,column=0,sticky="w", pady=(6,0))
         self.status_monitor_model_combo=ttk.Combobox(moncfg,textvariable=self.monitor_model_var,state="normal",width=24)
         self.status_monitor_model_combo.grid(row=2,column=1,columnspan=2,sticky="ew",padx=(5,8), pady=(6,0))
         btnrow = ttk.Frame(moncfg); btnrow.grid(row=3,column=0,columnspan=3,sticky="ew", pady=(8,0))
-        ttk.Button(btnrow,text="モデル一覧を再読込",command=self.refresh_monitor_models).pack(side="left")
-        ttk.Button(btnrow,text="探索設定を適用",command=self.apply_monitor_settings).pack(side="left", padx=(6,0))
+        ttk.Button(btnrow,text=i18n.t('u6.reload_model_list'),command=self.refresh_monitor_models).pack(side="left")
+        ttk.Button(btnrow,text=i18n.t('u6.apply_research_settings'),command=self.apply_monitor_settings).pack(side="left", padx=(6,0))
         moncfg.columnconfigure(1,weight=1); moncfg.columnconfigure(2,weight=1)
-        ttk.Label(moncfg,text="再読込はモデル一覧の取得だけです。変更を確定するには［探索設定を適用］を押してください。小型3B〜8B級を推奨。",foreground="#a35a00",wraplength=320,justify="left").grid(row=4,column=0,columnspan=3,sticky="w",pady=(6,0))
+        ttk.Label(moncfg,text=i18n.t('u6.reloading_only_retrieves_the_model_list'),foreground="#a35a00",wraplength=320,justify="left").grid(row=4,column=0,columnspan=3,sticky="w",pady=(6,0))
 
-        info = ttk.LabelFrame(left, text="判定内容", padding=6); info.pack(fill="x", pady=(0,6))
-        ttk.Label(info,text="元Modと別日本語化Modを確認し、完全翻訳・欠落を判定します。調査だけでは自動翻訳しません。行を選ぶと右下に詳細を表示します。",justify="left",wraplength=320).pack(anchor="w")
+        info = ttk.LabelFrame(left, text=i18n.t('u6.assessment_details'), padding=6); info.pack(fill="x", pady=(0,6))
+        ttk.Label(info,text=i18n.t('u6.check_source_mods_and_separate_translation', target_name=i18n.t("lang.japanese")),justify="left",wraplength=320).pack(anchor="w")
 
-        guide = ttk.LabelFrame(left, text="選択と操作", padding=6); guide.pack(fill="both", expand=True)
-        ttk.Label(guide, text="小さく：Ctrlキーを押しながら複数選択できます。\n\n一覧では、選択したModだけの再調査、翻訳、除外翻訳、翻訳キュー追加、中国語基準キュー追加、上書きができます。", foreground="#666", justify="left", wraplength=320).pack(anchor="w")
+        guide = ttk.LabelFrame(left, text=i18n.t('u6.selection_and_actions'), padding=6); guide.pack(fill="both", expand=True)
+        ttk.Label(guide, text=i18n.t('u6.tip_hold_ctrl_to_select_multiple'), foreground="#666", justify="left", wraplength=320).pack(anchor="w")
 
         ttk.Label(right, textvariable=self.mod_status_game_filter_var, foreground="#315b8a").pack(fill="x", pady=(0,4))
         content = ttk.Panedwindow(right, orient="vertical"); content.pack(fill="x", expand=False)
@@ -3218,7 +3218,7 @@ class App(BaseTk):
         self._enable_ctrl_multiselect(self.mod_status_tree)
         # v0.11.2: 翻訳状況一覧は列幅を固定し、表示領域に合わせて潰さない。
         # 長いMod名・日本語化Mod名は下部の横スクロールバーで確認する。
-        for c,txt,w in (("status","状態",165),("mod","Mod",430),("gaps","欠損",80),("chinese","中国語",90),("jpmod","日本語化Mod",430),("jpmod_gaps","日本語化Mod欠損",150)):
+        for c,txt,w in (("status",i18n.t('u6.status'),165),("mod","Mod",430),("gaps",i18n.t('u6.gaps'),80),("chinese",i18n.t('u6.chinese'),90),("jpmod",i18n.t('u6.translation_mod', target_name=i18n.t("lang.japanese")),430),("jpmod_gaps",i18n.t('u6.translation_mod_gaps', target_name=i18n.t("lang.japanese")),150)):
             self.mod_status_tree.heading(c,text=txt)
             self.mod_status_tree.column(c,width=w,minwidth=w,stretch=False,anchor="w")
         sy=ttk.Scrollbar(tree_frame,orient="vertical",command=self.mod_status_tree.yview)
@@ -3234,47 +3234,47 @@ class App(BaseTk):
         self.mod_status_tree.tag_configure("empty", foreground="#777777")
         self._enable_tree_sort(self.mod_status_tree)
 
-        detail = ttk.LabelFrame(detail_frame, text="選択項目の詳細", padding=6); detail.pack(fill="both",expand=True,pady=(4,0))
+        detail = ttk.LabelFrame(detail_frame, text=i18n.t('u6.selected_mod_details'), padding=6); detail.pack(fill="both",expand=True,pady=(4,0))
         self.mod_status_detail = tk.Text(detail, height=7, wrap="word", relief="flat", background=self.cget("background"))
         self.mod_status_detail.pack(fill="both", expand=True)
-        self.mod_status_detail.insert("1.0", "一覧からModを選択すると、ここに調査結果・日本語化Mod・上書き先・場所を段落で表示します。")
+        self.mod_status_detail.insert("1.0", i18n.t('u6.select_a_mod_to_see_research', target_name=i18n.t("lang.japanese")))
         self.mod_status_detail.configure(state="disabled")
 
         bottom=ttk.Frame(right); bottom.pack(fill="x", pady=(4,0))
         bottom1=ttk.Frame(bottom); bottom1.pack(fill="x")
         bottom2=ttk.Frame(bottom); bottom2.pack(fill="x", pady=(4,0))
         self.status_selection_action_buttons=[]
-        self.status_research_selected_btn=ttk.Button(bottom1,text="選択Modだけ再調査",command=self.research_selected_status_mods,state="disabled")
+        self.status_research_selected_btn=ttk.Button(bottom1,text=i18n.t('u6.research_selected_mods_only'),command=self.research_selected_status_mods,state="disabled")
         self.status_research_selected_btn.pack(side="left"); self.status_selection_action_buttons.append(self.status_research_selected_btn)
-        self.status_normal_queue_btn=ttk.Button(bottom1,text="通常翻訳キューへ追加",command=lambda:self.queue_selected_mod_from_status(start_now=False),state="disabled")
+        self.status_normal_queue_btn=ttk.Button(bottom1,text=i18n.t('u6.add_to_translation_queue'),command=lambda:self.queue_selected_mod_from_status(start_now=False),state="disabled")
         self.status_normal_queue_btn.pack(side="left",padx=(6,0)); self.status_selection_action_buttons.append(self.status_normal_queue_btn)
-        self.status_chinese_queue_btn = ttk.Button(bottom1,text="中国語基準キューへ追加",command=self.queue_selected_mods_to_chinese_basis,state="disabled")
+        self.status_chinese_queue_btn = ttk.Button(bottom1,text=i18n.t('u6.add_to_chinese_based_queue'),command=self.queue_selected_mods_to_chinese_basis,state="disabled")
         self.status_chinese_queue_btn.pack(side="left",padx=(6,0)); self.status_selection_action_buttons.append(self.status_chinese_queue_btn)
-        self.status_except_normal_btn=ttk.Button(bottom1,text="選択Modを除外して通常翻訳キューへ追加",command=self.queue_all_except_selected_mods,state="disabled")
+        self.status_except_normal_btn=ttk.Button(bottom1,text=i18n.t('u6.add_to_translation_queue_excluding_selected'),command=self.queue_all_except_selected_mods,state="disabled")
         self.status_except_normal_btn.pack(side="left",padx=(6,0)); self.status_selection_action_buttons.append(self.status_except_normal_btn)
-        self.status_except_chinese_btn=ttk.Button(bottom1,text="選択Modを除外して中国語基準キューへ追加",command=self.queue_all_except_selected_mods_chinese,state="disabled")
+        self.status_except_chinese_btn=ttk.Button(bottom1,text=i18n.t('u6.add_to_chinese_based_queue_excluding'),command=self.queue_all_except_selected_mods_chinese,state="disabled")
         self.status_except_chinese_btn.pack(side="left",padx=(6,0)); self.status_selection_action_buttons.append(self.status_except_chinese_btn)
 
-        self.status_qa_btn=ttk.Button(bottom2,text="QA / 比較編集へ",command=lambda:self._send_pair_to_qa_or_diff("status","review"),state="disabled")
+        self.status_qa_btn=ttk.Button(bottom2,text=i18n.t('u6.open_qa_comparison_editor'),command=lambda:self._send_pair_to_qa_or_diff("status","review"),state="disabled")
         self.status_qa_btn.pack(side="left"); self.status_selection_action_buttons.append(self.status_qa_btn)
-        self.status_diff_btn=ttk.Button(bottom2,text="差分調査へ",command=lambda:self._send_pair_to_qa_or_diff("status","diff"),state="disabled")
+        self.status_diff_btn=ttk.Button(bottom2,text=i18n.t('u6.open_difference_research'),command=lambda:self._send_pair_to_qa_or_diff("status","diff"),state="disabled")
         self.status_diff_btn.pack(side="left",padx=(6,0)); self.status_selection_action_buttons.append(self.status_diff_btn)
-        self.status_overwrite_btn = ttk.Button(bottom2,text="完成した日本語化をModへ上書き",command=self.overwrite_selected_status_mod,state="disabled")
+        self.status_overwrite_btn = ttk.Button(bottom2,text=i18n.t('u6.overwrite_mod_with_completed_translation', target_name=i18n.t("lang." + _current_target_lang(self))),command=self.overwrite_selected_status_mod,state="disabled")
         self.status_overwrite_btn.pack(side="left",padx=(6,0)); self.status_selection_action_buttons.append(self.status_overwrite_btn)
         ttk.Separator(bottom2,orient="vertical").pack(side="left",fill="y",padx=8)
-        ttk.Button(bottom2,text="判定ログを表示",command=self.show_translation_judgement_log).pack(side="left")
-        ttk.Button(bottom2,text="判定ログを書き出す",command=self.export_translation_judgement_log).pack(side="left",padx=(6,0))
-        ttk.Button(bottom2,text="紐付けレポートを書き出す",command=self.export_relation_report).pack(side="left",padx=(6,0))
+        ttk.Button(bottom2,text=i18n.t('u6.show_assessment_log'),command=self.show_translation_judgement_log).pack(side="left")
+        ttk.Button(bottom2,text=i18n.t('u6.export_assessment_log'),command=self.export_translation_judgement_log).pack(side="left",padx=(6,0))
+        ttk.Button(bottom2,text=i18n.t('u6.export_link_report'),command=self.export_relation_report).pack(side="left",padx=(6,0))
         ttk.Separator(bottom2,orient="vertical").pack(side="left",fill="y",padx=8)
-        ttk.Button(bottom2,text="結果を消去",command=self.clear_mod_status_results).pack(side="left")
-        ttk.Button(bottom2,text="キャッシュ再読込",command=self._restore_cached_mod_status).pack(side="left",padx=(6,0))
-        ttk.Button(bottom2,text="CSV保存",command=self.export_mod_status_csv).pack(side="left",padx=(6,0))
+        ttk.Button(bottom2,text=i18n.t('u6.clear_results'),command=self.clear_mod_status_results).pack(side="left")
+        ttk.Button(bottom2,text=i18n.t('u6.reload_cache'),command=self._restore_cached_mod_status).pack(side="left",padx=(6,0))
+        ttk.Button(bottom2,text=i18n.t('u6.save_csv'),command=self.export_mod_status_csv).pack(side="left",padx=(6,0))
 
     def _translation_judgement_log_text(self):
         """Build a human-readable audit snapshot of Japanese-Mod judgement state."""
         rows = [dict(r) for r in (self.mod_research_results or []) if r.get("path")]
         if not rows:
-            return "現在の翻訳状況調査結果がありません。先にMod調査を実行してください。\n"
+            return i18n.t('u6.no_translation_status_results_research_mods')
 
         roots=[]; seen=set()
         for r in rows:
@@ -3312,38 +3312,38 @@ class App(BaseTk):
 
         generated=datetime.now().isoformat(timespec="seconds")
         out=[
-            f"{APP_NAME} v{APP_VERSION} — 日本語化Mod判定ログ",
-            f"生成日時: {generated}",
-            f"翻訳状況Mod数: {len(rows)} / 現在参照可能: {len(roots)} / 現在日本語を持つ監査候補: {len(audit_index)}",
+            i18n.t('u6.v_translation_mod_assessment_log', app_name=APP_NAME, app_version=APP_VERSION, target_name=i18n.t("lang." + 'japanese')),
+            i18n.t('u6.generated', generated=generated),
+            i18n.t('u6.mods_researched_currently_accessible_audit_candidates', rows_count=len(rows), roots_count=len(roots), audit_index_count=len(audit_index)),
             "",
-            "判定基準:",
-            "  ・本体とキー・元Mod原文が同一のバニラ持ち込みキーは、Mod間関連キーから除外",
-            "  ・有効キー100個以上: 有効共通キー200件以上、かつ元Mod側または候補側の有効一致率40%以上",
-            "  ・有効キー100個未満: 元Mod側の有効一致率20%以上",
-            "  ・候補に同一言語の原文があるキーは元Mod原文と照合し、不一致キーを除外",
-            "  ・候補の原文同梱率80%以上は独立Mod型、20%以下は外部日本語化Mod型",
-            "  ・候補キー50件以上かつ本体キー80%以上は本体日本語化・修正型。70%以上は本体キー優勢",
-            "  ・総合和訳は2つ以上の元Modで各200件以上、候補有効キー和集合率70%以上を別ゲートとして使用",
-            "  ・構成点・名前・dependenciesは実データ関係ゲート通過後の順位付けだけに使用",
-            "  ・手動の日本語化Mod / 通常Mod / 対応元指定は自動判定より優先",
-            "  ・l_english内に日本語文を収録する旧式日本語化と、対応元未特定の日本語化Mod形式は警告のみ表示",
-            "  ・有効な後順位Modに同一localization相対パスがある場合、ファイル単位の上書き競合として別途記録",
-            "  ・同一パス、Translation系名前・タグ、1件以上の共通キーが揃う場合は旧版日本語化候補として提示",
-            "  ・監査ログでは、初回分類で候補外になった現在の日本語Modも比較対象として表示",
+            i18n.t('u6.assessment_criteria'),
+            i18n.t('u6.vanilla_carryover_keys_identical_to_the'),
+            i18n.t('u6.100_effective_keys_at_least_200'),
+            i18n.t('u6.fewer_than_100_effective_keys_at'),
+            i18n.t('u6.candidate_keys_with_source_text_in'),
+            i18n.t('u6.80_bundled_source_text_indicates_a', target_name=i18n.t("lang." + 'japanese')),
+            i18n.t('u6.50_candidate_keys_and_80_base', target_name=i18n.t("lang." + 'japanese')),
+            i18n.t('u6.multi_mod_translations_use_a_separate'),
+            i18n.t('u6.structure_scores_names_and_dependencies_are'),
+            i18n.t('u6.manual_translation_mod_source_mod_source', target_name=i18n.t("lang." + 'japanese')),
+            i18n.t('u6.legacy_japanese_translations_in_l_english', target_name=i18n.t("lang." + 'japanese')),
+            i18n.t('u6.identical_relative_localization_paths_in_effective'),
+            i18n.t('u6.the_same_path_translation_related_names', target_name=i18n.t("lang." + 'japanese')),
+            i18n.t('u6.the_audit_also_compares_current_japanese'),
             "",
         ]
-        class_label={"auto":"日本語化Mod","candidate":"候補","rejected":"除外"}
+        class_label={"auto":i18n.t('u6.translation_mod', target_name=i18n.t("lang." + 'japanese')),"candidate":i18n.t('u6.candidate'),"rejected":i18n.t('u6.excluded')}
         for num,r in enumerate(rows,1):
             root=Path(r.get("path","")); name=r.get("mod") or root.name
             try: source_id=self._mod_classification_key(root)
             except Exception: source_id=str(root)
-            out += ["="*78, f"[{num}] 元Mod: {name}", f"場所: {root}", f"現在の翻訳状況: {r.get('status','')}"]
+            out += ["="*78, i18n.t('u6.source_mod', num=num, name=name), i18n.t('u6.location', root=root), i18n.t('u6.current_translation_status', status=display_status(r))]
             if r.get("external_translation_mod"):
-                out.append(f"現在の関連付け: 日本語化Mod『{r.get('external_translation_mod')}』")
+                out.append(i18n.t('u6.current_link_translation_mod', external_translation_mod=r.get('external_translation_mod'), target_name=i18n.t("lang." + 'japanese')))
             elif r.get("translation_candidate_mod"):
-                out.append(f"現在の関連付け: 候補『{r.get('translation_candidate_mod')}』（自動関連付けなし）")
+                out.append(i18n.t('u6.current_link_candidate_not_linked_automatically', translation_candidate_mod=r.get('translation_candidate_mod')))
             else:
-                out.append("現在の関連付け: なし")
+                out.append(i18n.t('u6.current_link_none'))
             try:
                 source_loc=core.mod_localization_root(root)
                 japanese_rels=[]
@@ -3365,53 +3365,43 @@ class App(BaseTk):
                 path_conflicts=core.find_later_localization_path_conflicts(root,japanese_rels)
             except Exception as exc:
                 path_conflicts=[]
-                out.append(f"同名ファイル競合確認失敗: {exc}")
+                out.append(i18n.t('u6.same_name_file_conflict_check_failed', exc=exc))
             if path_conflicts:
-                out.append("後順位Modとのlocalization同名ファイル競合:")
+                out.append(i18n.t('u6.same_name_localization_conflicts_with_later'))
                 for conflict in path_conflicts:
                     out += [
-                        (f"  ・{conflict.get('mod')} / ロード順 "
-                         f"{int(conflict.get('source_position',0))+1}→{int(conflict.get('position',0))+1} / "
-                         f"{'実際に優先' if conflict.get('effective') else '後順位'}"),
-                        (f"    同一パス {int(conflict.get('path_match_count',0))}件 / "
-                         f"共通キー {int(conflict.get('shared_keys',0))} / "
-                         f"元Mod側だけ {int(conflict.get('source_only_keys',0))} / "
-                         f"候補側だけ {int(conflict.get('candidate_only_keys',0))}"),
-                        (f"    Translation系名前・タグ: {'あり' if conflict.get('translation_hint') else 'なし'} / "
-                         f"旧版日本語化候補: {'PASS' if conflict.get('stale_translation_candidate') else 'FAIL'}"),
+                        (i18n.t('u6.load_order', mod=conflict.get('mod'), value=int(conflict.get('source_position', 0)) + 1, value_2=int(conflict.get('position', 0)) + 1, value_3=i18n.t('u6.effective') if conflict.get('effective') else i18n.t('u6.later'))),
+                        (i18n.t('u6.same_paths_shared_keys_source_only', value=int(conflict.get('path_match_count', 0)), value_2=int(conflict.get('shared_keys', 0)), value_3=int(conflict.get('source_only_keys', 0)), value_4=int(conflict.get('candidate_only_keys', 0)))),
+                        (i18n.t('u6.translation_related_names_tags_legacy_translation', value=i18n.t('u6.yes') if conflict.get('translation_hint') else i18n.t('u6.no'), value_2='PASS' if conflict.get('stale_translation_candidate') else 'FAIL', target_name=i18n.t("lang." + 'japanese'))),
                     ]
-                    out.extend(f"    パス: {path}" for path in conflict.get("relative_paths",[]))
+                    out.extend(i18n.t('u6.path', path=path) for path in conflict.get("relative_paths",[]))
             else:
-                out.append("後順位Modとのlocalization同名ファイル競合: なし")
+                out.append(i18n.t('u6.same_name_localization_conflicts_with_later_2'))
             warnings=list(r.get("translation_warnings") or [])
             if warnings:
-                out.append("警告:")
-                out.extend([f"  ・{warning}" for warning in warnings])
+                out.append(i18n.t('u6.warnings'))
+                out.extend([i18n.t('u6.detail', warning=warning) for warning in warnings])
                 profile=dict(r.get("translation_format_profile") or {})
                 out.append(
-                    "警告根拠: l_english内の日本語文 "
-                    f"{int(profile.get('english_japanese_text_keys',0) or 0)}/"
-                    f"{int(profile.get('english_key_count',0) or 0)} = "
-                    f"{float(profile.get('english_japanese_text_rate',0) or 0)*100:.1f}% / "
-                    f"Translation系名前・タグ {'あり' if profile.get('translation_hint') else 'なし'}"
+                    i18n.t('u6.warning_evidence_japanese_text_in_l', value=int(profile.get('english_japanese_text_keys', 0) or 0), value_2=int(profile.get('english_key_count', 0) or 0), value_3=format(float(profile.get('english_japanese_text_rate', 0) or 0) * 100, '.1f'), value_4=i18n.t('u6.yes') if profile.get('translation_hint') else i18n.t('u6.no'))
                 )
             source_override=self._mod_relation_override(root)
             if source_override.get("role","auto") != "auto":
-                out.append(f"このMod自身の手動分類: {source_override.get('role')}")
+                out.append(i18n.t('u6.manual_classification_of_this_mod', role=source_override.get('role')))
             try:
                 initial_candidate=self._first_seen_japanese_candidate(root)
-                out.append(f"このMod自身の初回分類: {'日本語候補' if initial_candidate else '通常/原文Mod'}")
+                out.append(i18n.t('u6.initial_classification_of_this_mod', value=i18n.t('u6.japanese_candidate') if initial_candidate else i18n.t('u6.source_mod_2')))
             except Exception:
                 pass
             try:
                 src_data=core._collect_mod_language_entries(root)
                 source_keys=set((src_data.get("source") or {}).keys())
             except Exception as exc:
-                out += [f"原文キー取得失敗: {exc}", ""]
+                out += [i18n.t('u6.could_not_retrieve_source_keys', exc=exc), ""]
                 continue
-            out += [f"原文キー数（バニラ除外前）: {len(source_keys)}", "適用ゲート: 候補ごとにバニラ持ち込み除外後の有効キー数で判定"]
+            out += [i18n.t('u6.source_keys_before_vanilla_exclusion', source_keys_count=len(source_keys)), i18n.t('u6.applied_gate_assessed_per_candidate_using')]
             if not source_keys:
-                out += ["原文キーがないため、このModを元Modとした関連判定は行いません。", ""]
+                out += [i18n.t('u6.no_source_keys_this_mod_will'), ""]
                 continue
 
             candidates=[]
@@ -3454,38 +3444,38 @@ class App(BaseTk):
                 candidates.append((auto,cand,role,manual_sources,manual_relation,stable_candidate))
             candidates.sort(key=lambda item:(float(item[0].get("score",0) or 0),float(item[0].get("coverage",0) or 0)),reverse=True)
             if not candidates:
-                out += ["一致キーを持つ日本語化Mod候補: なし", ""]
+                out += [i18n.t('u6.translation_mod_candidates_with_matching_keys', target_name=i18n.t("lang." + 'japanese')), ""]
                 continue
 
             for ci,(auto,cand,role,manual_sources,manual_relation,stable_candidate) in enumerate(candidates,1):
                 cand_path=Path(cand.get("path",""))
                 auto_class=auto.get("classification","rejected")
                 if role=="source":
-                    final_text="除外（手動で通常Mod指定）"
+                    final_text=i18n.t('u6.excluded_manually_marked_as_source_mod')
                 elif role=="translation" and manual_sources and source_id not in manual_sources:
-                    final_text="除外（手動対応元の対象外）"
+                    final_text=i18n.t('u6.excluded_not_a_manually_selected_source')
                 elif manual_relation:
-                    final_text="日本語化Mod（手動対応元指定を最優先）"
+                    final_text=i18n.t('u6.translation_mod_manual_source_link_takes', target_name=i18n.t("lang." + 'japanese'))
                 elif role=="translation":
-                    final_text=class_label.get(auto_class,auto_class)+"（日本語化Mod手動固定・対応元は自動判定）"
+                    final_text=i18n.t('u6.manually_fixed_as_translation_mod_source', value=class_label.get(auto_class, auto_class), target_name=i18n.t("lang." + 'japanese'))
                 elif not stable_candidate:
-                    final_text="現行自動候補外（初回分類では日本語化Mod候補ではない）"
+                    final_text=i18n.t('u6.not_a_current_automatic_candidate_not', target_name=i18n.t("lang." + 'japanese'))
                 else:
                     final_text=class_label.get(auto_class,auto_class)
                 if auto.get("candidate_base_translation"):
-                    candidate_role_text="本体日本語化Mod"
+                    candidate_role_text=i18n.t('u6.base_game_translation_mod', target_name=i18n.t("lang." + 'japanese'))
                 elif auto.get("candidate_base_dominant"):
-                    candidate_role_text="大型Mod上書き候補"
+                    candidate_role_text=i18n.t('u6.large_mod_overwrite_candidate')
                 elif auto.get("candidate_localization_shape")=="self_localized":
-                    candidate_role_text="日本語同梱の独立Mod"
+                    candidate_role_text=i18n.t('u6.standalone_mod_with_bundled_japanese')
                 elif auto.get("multi_translation_gate"):
-                    candidate_role_text="複数Mod総合日本語化Mod"
+                    candidate_role_text=i18n.t('u6.multi_mod_translation_mod', target_name=i18n.t("lang." + 'japanese'))
                 else:
-                    candidate_role_text="通常の日本語化Mod候補"
+                    candidate_role_text=i18n.t('u6.standard_translation_mod_candidate', target_name=i18n.t("lang." + 'japanese'))
                 pair_classification = (
-                    "複数Mod総合日本語化候補" if auto.get("multi_translation_gate") else
-                    "特定Mod日本語化候補" if auto_class in {"auto","candidate"} else
-                    "関連なし"
+                    i18n.t('u6.multi_mod_translation_candidate', target_name=i18n.t("lang." + 'japanese')) if auto.get("multi_translation_gate") else
+                    i18n.t('u6.specific_mod_translation_candidate', target_name=i18n.t("lang." + 'japanese')) if auto_class in {"auto","candidate"} else
+                    i18n.t('u6.unrelated')
                 )
                 raw_overlap=int(auto.get("raw_overlap_keys",auto.get("overlap_keys",0)) or 0)
                 candidate_total=int(auto.get("candidate_total_keys",auto.get("japanese_keys",0)) or 0)
@@ -3494,62 +3484,55 @@ class App(BaseTk):
                 paired_count=int(auto.get("candidate_paired_source_keys",0) or 0)
                 out += [
                     "-"*72,
-                    f"候補 {ci}: {cand.get('mod') or cand_path.name}",
-                    f"  場所: {cand_path}",
-                    f"  候補の総キー数: {candidate_total}",
-                    (f"  本体キー一致: {base_count}/{candidate_total} = "
-                     f"{float(auto.get('candidate_base_rate',0) or 0)*100:.1f}%"),
-                    (f"  非本体キー: {non_base_count}/{candidate_total} = "
-                     f"{float(auto.get('candidate_non_base_rate',0) or 0)*100:.1f}%"),
-                    f"  生の共通キー数: {raw_overlap}",
-                    "  共通キー内訳:",
-                    f"    - 本体とキー・英語原文まで同一: {int(auto.get('vanilla_carryover_keys',0) or 0)}",
-                    f"    - 本体キーだが元Mod側で原文変更あり: {int(auto.get('changed_base_overlap_keys',0) or 0)}",
-                    f"    - 非本体キー: {int(auto.get('non_base_overlap_keys',0) or 0)}",
-                    f"  バニラ持ち込みとして除外: {int(auto.get('vanilla_carryover_keys',0) or 0)}",
-                    f"  最終的な有効共通キー数: {int(auto.get('effective_overlap_keys',0) or 0)}",
-                    (f"  有効一致率: 元Mod側 {float(auto.get('effective_source_rate',0) or 0)*100:.1f}% / "
-                     f"候補側 {float(auto.get('effective_candidate_rate',0) or 0)*100:.1f}%"),
-                    f"  候補英語・中国語localization: {'あり' if paired_count else 'なし'} ({paired_count}/{candidate_total})",
-                    (f"  候補原文照合: 一致 {int(auto.get('source_text_match_keys',0) or 0)} / "
-                     f"不一致 {int(auto.get('source_text_mismatch_keys',0) or 0)}"),
-                    f"  本体和訳70%判定: {'PASS' if float(auto.get('candidate_base_rate',0) or 0)>=0.70 else 'FAIL'}",
-                    f"  非本体20%判定: {'PASS' if float(auto.get('candidate_non_base_rate',0) or 0)<=0.20 else 'FAIL'}",
-                    (f"  40%関連ゲート: 元Mod側 {'PASS' if auto.get('effective_source_rate_pass') else 'FAIL'} / "
-                     f"候補側 {'PASS' if auto.get('effective_candidate_rate_pass') else 'FAIL'} / "
-                     f"有効一致{int(auto.get('required_match_count',0) or 0)}キー "
-                     f"{'PASS' if auto.get('effective_count_pass') else 'FAIL'}"),
-                    f"  候補の性質: {candidate_role_text}",
-                    f"  ペア最終分類: {pair_classification}",
-                    f"  構成: {auto.get('structure_label','')} / {float(auto.get('translation_only_points',0) or 0):.1f}点",
-                    f"  他言語減点: {float(auto.get('other_language_penalty',0) or 0):.1f}点",
-                    f"  自動スコア: {float(auto.get('score',0) or 0):.1f}/100",
-                    f"  純粋な自動判定: {class_label.get(auto_class,auto_class)}",
-                    f"  初回日本語候補: {'はい' if stable_candidate else 'いいえ'}",
+                    i18n.t('u6.candidate_2', ci=ci, value=cand.get('mod') or cand_path.name),
+                    i18n.t('u6.location_2', cand_path=cand_path),
+                    i18n.t('u6.total_candidate_keys', candidate_total=candidate_total),
+                    (i18n.t('u6.base_game_key_matches', base_count=base_count, candidate_total=candidate_total, value=format(float(auto.get('candidate_base_rate', 0) or 0) * 100, '.1f'))),
+                    (i18n.t('u6.non_base_game_keys', non_base_count=non_base_count, candidate_total=candidate_total, value=format(float(auto.get('candidate_non_base_rate', 0) or 0) * 100, '.1f'))),
+                    i18n.t('u6.raw_shared_keys', raw_overlap=raw_overlap),
+                    i18n.t('u6.shared_key_breakdown'),
+                    i18n.t('u6.same_key_and_english_source_as', value=int(auto.get('vanilla_carryover_keys', 0) or 0)),
+                    i18n.t('u6.base_game_key_with_source_text', value=int(auto.get('changed_base_overlap_keys', 0) or 0)),
+                    i18n.t('u6.non_base_game_keys_2', value=int(auto.get('non_base_overlap_keys', 0) or 0)),
+                    i18n.t('u6.excluded_as_vanilla_carryover', value=int(auto.get('vanilla_carryover_keys', 0) or 0)),
+                    i18n.t('u6.final_effective_shared_keys', value=int(auto.get('effective_overlap_keys', 0) or 0)),
+                    (i18n.t('u6.effective_matching_source_mod_candidate', value=format(float(auto.get('effective_source_rate', 0) or 0) * 100, '.1f'), value_2=format(float(auto.get('effective_candidate_rate', 0) or 0) * 100, '.1f'))),
+                    i18n.t('u6.candidate_english_chinese_localization', value=i18n.t('u6.yes') if paired_count else i18n.t('u6.no'), paired_count=paired_count, candidate_total=candidate_total),
+                    (i18n.t('u6.candidate_source_text_comparison_matches_mismatches', value=int(auto.get('source_text_match_keys', 0) or 0), value_2=int(auto.get('source_text_mismatch_keys', 0) or 0))),
+                    i18n.t('u6.base_game_translation_70_gate', value='PASS' if float(auto.get('candidate_base_rate', 0) or 0) >= 0.7 else 'FAIL'),
+                    i18n.t('u6.non_base_game_20_gate', value='PASS' if float(auto.get('candidate_non_base_rate', 0) or 0) <= 0.2 else 'FAIL'),
+                    (i18n.t('u6.40_relationship_gate_source_candidate_effective', value='PASS' if auto.get('effective_source_rate_pass') else 'FAIL', value_2='PASS' if auto.get('effective_candidate_rate_pass') else 'FAIL', value_3=int(auto.get('required_match_count', 0) or 0), value_4='PASS' if auto.get('effective_count_pass') else 'FAIL')),
+                    i18n.t('u6.candidate_type', candidate_role_text=candidate_role_text),
+                    i18n.t('u6.final_pair_classification', pair_classification=pair_classification),
+                    i18n.t('u6.structure_points', structure_label=auto.get('structure_label', ''), value=format(float(auto.get('translation_only_points', 0) or 0), '.1f')),
+                    i18n.t('u6.other_language_penalty_points', value=format(float(auto.get('other_language_penalty', 0) or 0), '.1f')),
+                    i18n.t('u6.automatic_score_100', value=format(float(auto.get('score', 0) or 0), '.1f')),
+                    i18n.t('u6.pure_automatic_assessment', value=class_label.get(auto_class, auto_class)),
+                    i18n.t('u6.initial_japanese_candidate', value=i18n.t('u6.yes_2') if stable_candidate else i18n.t('u6.no_2')),
                 ]
                 if role != "auto":
-                    out.append(f"  手動分類: {'日本語化Mod' if role=='translation' else '通常Mod' if role=='source' else role}")
+                    out.append(i18n.t('u6.manual_classification', value=i18n.t('u6.translation_mod', target_name=i18n.t('lang.' + 'japanese')) if role == 'translation' else i18n.t('u6.source_mod_3') if role == 'source' else role))
                 if manual_sources:
-                    out.append(f"  手動対応元数: {len(manual_sources)} / この元Mod: {'対象' if source_id in manual_sources else '対象外'}")
-                out.append(f"  現行最終判定: {final_text}")
+                    out.append(i18n.t('u6.manually_linked_sources_this_source_mod', manual_sources_count=len(manual_sources), value=i18n.t('u6.included') if source_id in manual_sources else i18n.t('u6.excluded_2')))
+                out.append(i18n.t('u6.current_final_assessment', final_text=final_text))
                 rels=list(auto.get("other_language_relations") or [])
                 if rels:
                     for x in rels:
-                        out.append(f"  他言語 {x.get('language')}: {float(x.get('coverage',0) or 0)*100:.1f}% ({x.get('overlap_keys',0)}/{len(source_keys)}) / {x.get('files',0)} files")
+                        out.append(i18n.t('u6.other_language_files', language=x.get('language'), value=format(float(x.get('coverage', 0) or 0) * 100, '.1f'), overlap_keys=x.get('overlap_keys', 0), source_keys_count=len(source_keys), files=x.get('files', 0)))
                 reasons=list(auto.get("reasons") or [])
                 if reasons:
-                    out.append("  自動判定理由:")
-                    out.extend([f"    ・{reason}" for reason in reasons])
+                    out.append(i18n.t('u6.automatic_assessment_reasons'))
+                    out.extend([i18n.t('u6.detail_2', reason=reason) for reason in reasons])
             out.append("")
         return "\n".join(out).rstrip()+"\n"
 
     def show_translation_judgement_log(self):
         if self.judgement_log_thread and self.judgement_log_thread.is_alive():
-            messagebox.showinfo(APP_NAME,'日本語化Mod判定ログをバックグラウンドで作成中です。')
+            messagebox.showinfo(APP_NAME,i18n.t('u6.generating_the_translation_mod_assessment_log', target_name=i18n.t("lang." + 'japanese')))
             return
-        win=tk.Toplevel(self); win.title('日本語化Mod 判定ログ'); win.geometry('1100x760'); win.transient(self)
+        win=tk.Toplevel(self); win.title(i18n.t('u6.translation_mod_assessment_log', target_name=i18n.t("lang." + 'japanese'))); win.geometry('1100x760'); win.transient(self)
         outer=ttk.Frame(win,padding=8); outer.pack(fill='both',expand=True)
-        status=tk.StringVar(value='判定ログをバックグラウンドで再計算中… GUIはそのまま操作できます。')
+        status=tk.StringVar(value=i18n.t('u6.recalculating_the_assessment_log_in_the'))
         ttk.Label(outer,textvariable=status,foreground='#555').pack(fill='x',pady=(0,6))
         frame=ttk.Frame(outer); frame.pack(fill='both',expand=True)
         box=tk.Text(frame,wrap='none')
@@ -3557,10 +3540,10 @@ class App(BaseTk):
         box.configure(yscrollcommand=sy.set,xscrollcommand=sx.set)
         frame.rowconfigure(0,weight=1); frame.columnconfigure(0,weight=1)
         box.grid(row=0,column=0,sticky='nsew'); sy.grid(row=0,column=1,sticky='ns'); sx.grid(row=1,column=0,sticky='ew')
-        box.insert('1.0','判定ログを生成しています…')
+        box.insert('1.0',i18n.t('u6.generating_assessment_log'))
         bar=ttk.Frame(outer); bar.pack(fill='x',pady=(7,0))
-        export_btn=ttk.Button(bar,text='ログを書き出す',state='disabled'); export_btn.pack(side='left')
-        ttk.Button(bar,text='閉じる',command=win.destroy).pack(side='right')
+        export_btn=ttk.Button(bar,text=i18n.t('u6.export_log'),state='disabled'); export_btn.pack(side='left')
+        ttk.Button(bar,text=i18n.t('u6.close'),command=win.destroy).pack(side='right')
         token=id(win); self._judgement_log_window=(token,win,box,status,export_btn)
         def work():
             try: self.events.put(('judgement_log_ready',(token,self._translation_judgement_log_text())))
@@ -3574,7 +3557,7 @@ class App(BaseTk):
         _,win,box,status,export_btn=state
         if not win.winfo_exists(): return
         box.delete('1.0','end'); box.insert('1.0',text); box.configure(state='disabled')
-        status.set('判定ログ生成完了。大量Modでも生成処理はGUIとは別スレッドで実行されます。')
+        status.set(i18n.t('u6.assessment_log_ready_generation_runs_on'))
         export_btn.config(state='normal',command=lambda t=text:self._write_translation_judgement_log_text(t))
 
     def _write_translation_judgement_log_text(self, text):
@@ -3582,17 +3565,17 @@ class App(BaseTk):
             JUDGEMENT_LOG_ROOT.mkdir(parents=True,exist_ok=True)
             target=JUDGEMENT_LOG_ROOT / f"translation_mod_judgement_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
             target.write_text(text,encoding='utf-8')
-            messagebox.showinfo(APP_NAME,f'日本語化Mod判定ログを書き出しました。\n\n{target}')
+            messagebox.showinfo(APP_NAME,i18n.t('u6.exported_translation_mod_assessment_log', target=target, target_name=i18n.t("lang." + 'japanese')))
             return target
         except Exception as exc:
-            record_error('日本語化Mod判定ログ書き出し',exc); messagebox.showerror(APP_NAME,f'判定ログの書き出しに失敗しました。\n{exc}')
+            record_error(i18n.t('u6.translation_mod_assessment_log_export', target_name=i18n.t("lang." + 'japanese')),exc); messagebox.showerror(APP_NAME,i18n.t('u6.could_not_export_assessment_log', exc=exc))
             return None
 
     def export_relation_report(self):
         """元Modと日本語化Modの紐付けを一覧表（CSV と Markdown）に書き出し、ズレていそうなものに印を付ける。"""
         results=[dict(r) for r in (self.mod_research_results or []) if r.get("path")]
         if not results:
-            messagebox.showinfo(APP_NAME,"翻訳状況の調査結果がありません。先にMod調査を実行してください。")
+            messagebox.showinfo(APP_NAME,i18n.t('u6.no_translation_status_results_research_mods_2'))
             return None
         for r in results:
             if not r.get("game"):
@@ -3606,19 +3589,19 @@ class App(BaseTk):
             # Excel で文字化けしないよう BOM 付き UTF-8 で書く。
             csv_path.write_text(core.relation_report_csv(report),encoding="utf-8-sig")
             md_path.write_text(core.relation_report_markdown(
-                report,title=f"{APP_NAME} v{APP_VERSION} 紐付けレポート（{datetime.now().strftime('%Y-%m-%d %H:%M')}）"),encoding="utf-8")
+                report,title=i18n.t('u6.v_link_report', app_name=APP_NAME, app_version=APP_VERSION, value=datetime.now().strftime('%Y-%m-%d %H:%M'))),encoding="utf-8")
         except Exception as exc:
-            record_error("紐付けレポート", exc)
-            messagebox.showerror(APP_NAME,f"紐付けレポートを書き出せませんでした: {exc}")
+            record_error(i18n.t('u6.link_report'), exc)
+            messagebox.showerror(APP_NAME,i18n.t('u6.could_not_export_link_report', exc=exc))
             return None
         flagged=sum(1 for r in report["rows"] if r.get("要確認"))
-        self.mod_status_summary_var.set(f"紐付けレポートを書き出しました（{len(report['rows'])}件、要確認 {flagged}件）")
+        self.mod_status_summary_var.set(i18n.t('u6.link_report_exported_entries_need_review', report__rows___count=len(report['rows']), flagged=flagged))
         self._open_path(JUDGEMENT_LOG_ROOT)
         return md_path
 
     def export_translation_judgement_log(self):
         if self.judgement_log_thread and self.judgement_log_thread.is_alive():
-            messagebox.showinfo(APP_NAME,'判定ログをバックグラウンドで作成中です。完了後に書き出せます。')
+            messagebox.showinfo(APP_NAME,i18n.t('u6.generating_the_assessment_log_in_the'))
             return None
         def work():
             try:
@@ -3630,7 +3613,7 @@ class App(BaseTk):
             except Exception as exc:
                 self.events.put(('judgement_log_export_error',str(exc)))
         self.judgement_log_thread=threading.Thread(target=work,daemon=True,name='judgement-log-export'); self.judgement_log_thread.start()
-        self.mod_status_summary_var.set('判定ログをバックグラウンドで生成中…')
+        self.mod_status_summary_var.set(i18n.t('u6.generating_assessment_log_in_the_background'))
         return None
 
     # ---------------- Comprehensive localization diagnostics / repair ----------------
@@ -5226,34 +5209,34 @@ class App(BaseTk):
                     continue
             self.mod_status_tree.insert("", "end", iid=f"mod_{i}", values=(
                 display_status(r.get("status", "")), r.get("mod", ""), r.get("gap_count", 0),
-                "あり" if r.get("simp_chinese_files", 0) else "なし",
-                r.get("external_translation_mod", "") or (("候補: " + r.get("translation_candidate_mod", "")) if r.get("translation_candidate_mod") else ""),
-                r.get("external_translation_gap_count", 0) if r.get("external_translation_mod") else ((f"{float(r.get('translation_candidate_score',0.0) or 0.0):.1f}点") if r.get("translation_candidate_mod") else "")
+                i18n.t('u6.yes') if r.get("simp_chinese_files", 0) else i18n.t('u6.no'),
+                r.get("external_translation_mod", "") or ((i18n.t('u6.candidate_3', translation_candidate_mod=r.get('translation_candidate_mod', ''))) if r.get("translation_candidate_mod") else ""),
+                r.get("external_translation_gap_count", 0) if r.get("external_translation_mod") else ((i18n.t('u6.points', value=format(float(r.get('translation_candidate_score', 0.0) or 0.0), '.1f'))) if r.get("translation_candidate_mod") else "")
             ))
         if not visible:
             empty_values=_mod_status_empty_row(query, len(source))
             if not query and selected_games and self.mod_research_results:
-                empty_values=("表示対象なし",f"選択ゲーム（{'、'.join(selected_games)}）の調査結果はありません","","","","")
+                empty_values=(i18n.t('u6.nothing_to_display'),i18n.t('u6.no_research_results_for_selected_games', value='、'.join(selected_games)),"","","","")
             self.mod_status_tree.insert("", "end", iid=MOD_STATUS_EMPTY_IID,
                                         values=empty_values, tags=("empty",))
         self._set_mod_status_selection_actions_enabled(False)
         total_all=len(self.mod_research_results)
-        game_label="、".join(selected_games) if selected_games else "すべて"
+        game_label="、".join(selected_games) if selected_games else i18n.t('u6.all')
         if hasattr(self,"mod_status_game_filter_var"):
-            self.mod_status_game_filter_var.set(f"表示ゲーム: {game_label}　{len(source)}件 / 全{total_all}件")
+            self.mod_status_game_filter_var.set(i18n.t('u6.displayed_games_entries_total', game_label=game_label, source_count=len(source), total_all=total_all))
         if query:
-            scope_label="表示対象" if selected_games else "全"
-            self.mod_status_search_result_var.set(f"{len(visible)}件 / {scope_label}{len(source)}件")
+            scope_label=i18n.t('u6.displayed') if selected_games else i18n.t('u6.all_2')
+            self.mod_status_search_result_var.set(i18n.t('u6.entries_entries', visible_count=len(visible), scope_label=scope_label, source_count=len(source)))
         else:
             self.mod_status_search_result_var.set("")
         if not visible:
             if query:
-                self._set_mod_status_detail_text(f"検索結果なし\n\n『{query}』に一致する判定済みModはありません。\n左側の［解除］を押すと全{len(source)}件を再表示します。")
+                self._set_mod_status_detail_text(i18n.t('u6.no_search_results_no_assessed_mods', query=query, source_count=len(source)))
             else:
                 if selected_games and self.mod_research_results:
-                    self._set_mod_status_detail_text(f"選択中のゲーム（{game_label}）には調査結果がありません。")
+                    self._set_mod_status_detail_text(i18n.t('u6.no_research_results_for_selected_games_2', game_label=game_label))
                 else:
-                    self._set_mod_status_detail_text("調査結果がありません。左側でゲーム／Mod場所を選び、［選択した場所のModを調査］を実行してください。")
+                    self._set_mod_status_detail_text(i18n.t('u6.no_research_results_select_a_game'))
 
     def _schedule_mod_status_search(self, _event=None):
         if self._status_search_after_id is not None:
@@ -5286,13 +5269,13 @@ class App(BaseTk):
             except Exception:
                 pass
         elif not matches and not live:
-            self.mod_status_search_result_var.set(f"『{query}』は見つかりませんでした")
+            self.mod_status_search_result_var.set(i18n.t('u6.was_not_found', query=query))
 
     def clear_mod_status_search(self):
         self.mod_status_search_var.set("")
         self.mod_status_search_result_var.set("")
         self._populate_mod_status_tree()
-        self._set_mod_status_detail_text("一覧からModを選択すると、ここに調査結果・日本語化Mod・上書き先・場所を段落で表示します。")
+        self._set_mod_status_detail_text(i18n.t('u6.select_a_mod_to_see_research', target_name=i18n.t("lang.japanese")))
 
     def _set_mod_status_detail_text(self, text):
         if not hasattr(self, "mod_status_detail"):
@@ -5308,18 +5291,18 @@ class App(BaseTk):
             query=self.mod_status_search_var.get().strip() if hasattr(self,"mod_status_search_var") else ""
             children=self.mod_status_tree.get_children() if hasattr(self,"mod_status_tree") else []
             if MOD_STATUS_EMPTY_IID in children and query:
-                self._set_mod_status_detail_text(f"検索結果なし\n\n『{query}』に一致する判定済みModはありません。\n左側の［解除］を押すと全{len(self.mod_research_results)}件を再表示します。")
+                self._set_mod_status_detail_text(i18n.t('u6.no_search_results_no_assessed_mods_2', query=query, mod_research_results_count=len(self.mod_research_results)))
             elif MOD_STATUS_EMPTY_IID in children:
                 games=App._selected_mod_status_games(self)
                 if games and self.mod_research_results:
-                    self._set_mod_status_detail_text(f"選択中のゲーム（{'、'.join(games)}）には調査結果がありません。")
+                    self._set_mod_status_detail_text(i18n.t('u6.no_research_results_for_selected_games_3', value='、'.join(games)))
                 else:
-                    self._set_mod_status_detail_text("調査結果がありません。左側でゲーム／Mod場所を選び、［選択した場所のModを調査］を実行してください。")
+                    self._set_mod_status_detail_text(i18n.t('u6.no_research_results_select_a_game'))
             else:
-                self._set_mod_status_detail_text("一覧からModを選択すると、ここに調査結果・日本語化Mod・上書き先・場所を段落で表示します。")
+                self._set_mod_status_detail_text(i18n.t('u6.select_a_mod_to_see_research', target_name=i18n.t("lang.japanese")))
             self._set_mod_status_selection_actions_enabled(False)
             if hasattr(self, "status_overwrite_btn"):
-                self.status_overwrite_btn.config(text="完成した日本語化をModへ上書き")
+                self.status_overwrite_btn.config(text=i18n.t('u6.overwrite_mod_with_completed_translation', target_name=i18n.t("lang." + _current_target_lang(self))))
             if hasattr(self, "status_chinese_queue_btn"):
                 self.status_chinese_queue_btn.config(state="disabled")
             return
@@ -5329,16 +5312,13 @@ class App(BaseTk):
         jpmod = r.get("external_translation_mod", "")
         jp_path = r.get("external_translation_path", "")
         zh_count = r.get("simp_chinese_files", 0)
-        lines = [f"Mod: {mod_name}", f"状態: {r.get('status','')}　欠損: {r.get('gap_count',0)}件", f"英語キー: {r.get('english_keys',0)}　簡体字中国語キー: {r.get('simp_chinese_keys',0)}　日本語キー: {r.get('japanese_keys',0)}", f"言語固有キー: 英語のみ {r.get('english_only_keys',0)} / 中国語のみ {r.get('chinese_only_keys',0)}", f"簡体字中国語: {'あり（' + str(zh_count) + 'ファイル）' if zh_count else 'なし'}", "", r.get("message", "")]
+        lines = [f"Mod: {mod_name}", i18n.t('u6.status_gaps', status=display_status(r), gap_count=r.get('gap_count', 0)), i18n.t('u6.english_keys_simplified_chinese_keys_japanese', english_keys=r.get('english_keys', 0), simp_chinese_keys=r.get('simp_chinese_keys', 0), japanese_keys=r.get('japanese_keys', 0)), i18n.t('u6.language_specific_keys_english_only_chinese', english_only_keys=r.get('english_only_keys', 0), chinese_only_keys=r.get('chinese_only_keys', 0)), i18n.t('u6.simplified_chinese', value=i18n.t('u6.yes_files', value=str(zh_count)) if zh_count else i18n.t('u6.no')), "", ui_status.display_message(r)]
         warnings=list(r.get("translation_warnings") or [])
         if warnings:
             profile=dict(r.get("translation_format_profile") or {})
-            lines += ["", "警告:"] + [f"・{warning}" for warning in warnings]
+            lines += ["", i18n.t('u6.warnings')] + [i18n.t('u6.detail_3', warning=warning) for warning in warnings]
             lines.append(
-                "判定根拠: l_english内の日本語文 "
-                f"{int(profile.get('english_japanese_text_keys',0) or 0)}/"
-                f"{int(profile.get('english_key_count',0) or 0)} "
-                f"({float(profile.get('english_japanese_text_rate',0) or 0)*100:.1f}%)"
+                i18n.t('u6.assessment_evidence_japanese_text_in_l', value=int(profile.get('english_japanese_text_keys', 0) or 0), value_2=int(profile.get('english_key_count', 0) or 0), value_3=format(float(profile.get('english_japanese_text_rate', 0) or 0) * 100, '.1f'))
             )
         if hasattr(self, "status_chinese_queue_btn"):
             # 複数選択時は、中国語localizationを持つModが1件でもあれば利用可。
@@ -5347,31 +5327,31 @@ class App(BaseTk):
         if jpmod:
             score=float(r.get("external_translation_score",0.0) or 0.0)
             precision=float(r.get("external_translation_coverage",0.0) or 0.0)
-            lines += ["", f"日本語化Mod: {jpmod}", f"関連度スコア: {score:.1f}/100　元Modキー完全一致率: {precision*100:.1f}%", f"日本語化Mod側の欠損: {r.get('external_translation_gap_count',0)}件", f"上書き先: 日本語化Mod『{jpmod}』", f"日本語化Mod場所: {jp_path}"]
+            lines += ["", i18n.t('u6.translation_mod_2', jpmod=jpmod, target_name=i18n.t("lang.japanese")), i18n.t('u6.relationship_score_100_source_mod_exact', score=format(score, '.1f'), value=format(precision * 100, '.1f')), i18n.t('u6.translation_mod_gaps_2', external_translation_gap_count=r.get('external_translation_gap_count', 0), target_name=i18n.t("lang.japanese")), i18n.t('u6.overwrite_destination_translation_mod', jpmod=jpmod, target_name=i18n.t("lang.japanese")), i18n.t('u6.translation_mod_location', jp_path=jp_path, target_name=i18n.t("lang.japanese"))]
             reasons=list(r.get("external_translation_reasons") or [])
             if reasons:
-                lines += ["判定理由:"] + [f"・{x}" for x in reasons]
+                lines += [i18n.t('u6.assessment_reasons')] + [i18n.t('u6.detail_4', value=x) for x in reasons]
             if hasattr(self, "status_overwrite_btn"):
-                label = f"日本語化Mod『{jpmod}』へ差分上書き"
+                label = i18n.t('u6.overwrite_differences_to_translation_mod', jpmod=jpmod, target_name=i18n.t("lang.japanese"))
                 if len(label) > 34:
-                    label = "日本語化Modへ差分上書き"
+                    label = i18n.t('u6.overwrite_differences_to_translation_mod_2', target_name=i18n.t("lang.japanese"))
                 self.status_overwrite_btn.config(text=label)
         else:
             cand=r.get("translation_candidate_mod", "")
             if cand:
                 cscore=float(r.get("translation_candidate_score",0.0) or 0.0)
                 cprec=float(r.get("translation_candidate_coverage",0.0) or 0.0)
-                lines += ["", f"日本語化Mod候補（自動関連付けなし）: {cand}", f"関連度スコア: {cscore:.1f}/100　元Modキー完全一致率: {cprec*100:.1f}%", f"候補場所: {r.get('translation_candidate_path','')}"]
+                lines += ["", i18n.t('u6.translation_mod_candidate_not_linked_automatically', cand=cand, target_name=i18n.t("lang.japanese")), i18n.t('u6.relationship_score_100_source_mod_exact_2', cscore=format(cscore, '.1f'), value=format(cprec * 100, '.1f')), i18n.t('u6.candidate_location', translation_candidate_path=r.get('translation_candidate_path', ''))]
                 creasons=list(r.get("translation_candidate_reasons") or [])
-                if creasons: lines += ["判定理由:"] + [f"・{x}" for x in creasons]
-            lines += ["", "上書き先: 元Mod内の日本語localization"]
+                if creasons: lines += [i18n.t('u6.assessment_reasons')] + [i18n.t('u6.detail_4', value=x) for x in creasons]
+            lines += ["", i18n.t('u6.overwrite_destination_japanese_localization_in_source')]
             if hasattr(self, "status_overwrite_btn"):
-                self.status_overwrite_btn.config(text="完成した日本語化を元Modへ上書き")
-        lines += ["", f"元Mod場所: {r.get('path','')}"]
+                self.status_overwrite_btn.config(text=i18n.t('u6.overwrite_source_mod_with_completed_translation', target_name=i18n.t("lang." + _current_target_lang(self))))
+        lines += ["", i18n.t('u6.source_mod_location', path=r.get('path', ''))]
         self._set_mod_status_detail_text("\n".join(lines))
 
     def pick_monitor_path(self):
-        p=filedialog.askdirectory(title="調査するMod、localization、またはMod親フォルダを選択")
+        p=filedialog.askdirectory(title=i18n.t('u6.select_a_mod_localization_folder_or'))
         if p: self.monitor_path_var.set(p)
 
     def discover_mod_locations(self):
@@ -5422,7 +5402,7 @@ class App(BaseTk):
         if items:
             self.discovered_mod_tree.selection_set(items)
             self._sync_monitor_targets_from_discovery_selection()
-            self.mod_discovery_status_var.set(f"{len(items)}か所を選択中 / 監視対象へ反映済み")
+            self.mod_discovery_status_var.set(i18n.t('u6.locations_selected_applied_to_monitor_targets', items_count=len(items)))
 
     def _sync_monitor_targets_from_discovery_selection(self):
         """翻訳状況の場所一覧で現在選択中の行を、そのまま未翻訳監視対象へ同期する。"""
@@ -5439,7 +5419,7 @@ class App(BaseTk):
         self._set_monitor_targets(rows)
         self._populate_mod_status_tree()
         if rows:
-            self.mod_discovery_status_var.set(f"{len(rows)}か所を選択中 / 監視対象へ反映済み")
+            self.mod_discovery_status_var.set(i18n.t('u6.locations_selected_applied_to_monitor_targets_2', rows_count=len(rows)))
         return rows
 
     def _selected_discovered_locations(self):
@@ -5447,7 +5427,7 @@ class App(BaseTk):
             return []
         sel = self.discovered_mod_tree.selection()
         if not sel:
-            messagebox.showinfo(APP_NAME, "自動検出されたゲーム/Mod場所を選択してください。Ctrlキーを押しながらクリックすると複数選択できます。")
+            messagebox.showinfo(APP_NAME, i18n.t('u6.select_detected_game_mod_locations_hold'))
             return []
         rows = []
         for iid in sel:
@@ -5481,10 +5461,10 @@ class App(BaseTk):
         if paths:
             label = "、".join(labels[:3])
             if len(labels)>3:
-                label += f" ほか{len(labels)-3}か所"
-            self.monitor_target_summary_var.set(f"監視対象: {len(paths)}か所 — {label}")
+                label += i18n.t('u6.and_more_locations', value=len(labels) - 3)
+            self.monitor_target_summary_var.set(i18n.t('u6.monitor_targets_locations', paths_count=len(paths), label=label))
         else:
-            self.monitor_target_summary_var.set("監視対象: 翻訳状況タブでゲーム / Mod場所を選択してください")
+            self.monitor_target_summary_var.set(i18n.t('u6.monitor_targets_select_game_mod_locations'))
 
     def use_selected_discovered_location(self):
         # 旧UI/内部呼び出しとの互換。選択場所を監視対象として登録する。
@@ -5492,7 +5472,7 @@ class App(BaseTk):
         if not rows:
             return
         self._set_monitor_targets(rows)
-        self.mod_discovery_status_var.set(f"監視対象に{len(self.monitor_target_paths)}か所登録")
+        self.mod_discovery_status_var.set(i18n.t('u6.registered_monitor_target_locations', monitor_target_paths_count=len(self.monitor_target_paths)))
 
     def _collect_mod_roots_from_location_rows(self, rows):
         all_roots=[]
@@ -5555,19 +5535,19 @@ class App(BaseTk):
         all_roots, missing = self._collect_mod_roots_from_location_rows(rows)
         if not all_roots:
             counts = ", ".join(f"{r.get('game','')} {r.get('kind','')}: {r.get('mod_count',0)}" for r in rows)
-            messagebox.showinfo(APP_NAME, "選択した場所からlocalizationを持つModを確認できませんでした。\n\n" + counts)
-            self.mod_discovery_status_var.set("調査対象のlocalizationを確認できませんでした")
+            messagebox.showinfo(APP_NAME, i18n.t('u6.no_mods_with_localization_found_in', counts=counts))
+            self.mod_discovery_status_var.set(i18n.t('u6.no_localization_found_to_research'))
             return
         pool=self._game_wide_translation_pool(rows, all_roots)
-        self.mod_discovery_status_var.set(f"{len(rows)}か所 / {len(all_roots)} Modを調査中（日本語化Modは同じゲームの{len(pool)} Modと照合）")
+        self.mod_discovery_status_var.set(i18n.t('u6.researching_locations_mods_checking_translation_mods', rows_count=len(rows), all_roots_count=len(all_roots), pool_count=len(pool), target_name=i18n.t("lang." + 'japanese')))
         self._start_mod_research(all_roots, replace=True, translation_pool=pool)
         if missing:
-            record_error("Mod場所一括調査", detail="存在しない検出場所: " + " | ".join(missing))
+            record_error(i18n.t('u6.bulk_mod_location_research'), detail=i18n.t('u6.missing_detected_locations', value=' | '.join(missing)))
 
     def research_monitor_targets(self):
         paths=[Path(p) for p in self.monitor_target_paths if Path(p).exists()]
         if not paths:
-            messagebox.showinfo(APP_NAME, "監視対象がありません。［翻訳状況］タブでゲーム / Mod場所を1件以上選択してください。")
+            messagebox.showinfo(APP_NAME, i18n.t('u6.no_monitor_targets_select_at_least'))
             return
         rows=[]
         for p in paths:
@@ -5575,10 +5555,10 @@ class App(BaseTk):
             rows.append(matched or {"path":str(p),"game":"","kind":""})
         roots,_=self._collect_mod_roots_from_location_rows(rows)
         if not roots:
-            messagebox.showinfo(APP_NAME, "監視対象からlocalizationを持つModを確認できませんでした。")
+            messagebox.showinfo(APP_NAME, i18n.t('u6.no_mods_with_localization_found_in_2'))
             return
         self._start_mod_research(roots, replace=True, translation_pool=self._game_wide_translation_pool(rows, roots))
-        self.monitor_status_var.set(f"再調査中 — {len(roots)} Mod")
+        self.monitor_status_var.set(i18n.t('u6.researching_again_mods', roots_count=len(roots)))
 
     def on_monitor_provider_change(self):
         provider=self.monitor_provider_var.get()
@@ -5591,7 +5571,7 @@ class App(BaseTk):
             self._monitor_api_key_provider=provider
         self.monitor_url_var.set(core.default_url_for_provider(provider))
         self.monitor_model_var.set("")
-        self.monitor_connection_var.set("監視用LLM: 未確認")
+        self.monitor_connection_var.set(i18n.t('u6.monitor_llm_not_checked'))
         self._save_llm_preferences()
         self.refresh_monitor_models()
 
@@ -5599,7 +5579,7 @@ class App(BaseTk):
         provider=self.monitor_provider_var.get()
         url=self.monitor_url_var.get().strip() or core.default_url_for_provider(provider)
         api_key=self.monitor_api_key_var.get().strip()
-        self.monitor_connection_var.set(f"{provider}: 接続確認中…")
+        self.monitor_connection_var.set(i18n.t('u6.checking_connection', provider=provider))
         def work():
             try:
                 models=core.list_models(provider,url,api_key=api_key)
@@ -5658,13 +5638,13 @@ class App(BaseTk):
         self.monitor_url_var.set(url)
         if not model:
             if not silent:
-                messagebox.showinfo(APP_NAME,"探索用LLMのモデルを選択してください。")
+                messagebox.showinfo(APP_NAME,i18n.t('u6.select_a_research_llm_model'))
             return False
         self._save_llm_preferences()
-        self.monitor_connection_var.set(f"監視用LLM設定: {provider} / {model}")
-        self.monitor_llm_detail_var.set(f"次の探索LLM呼び出しから適用: {provider} / {model}")
+        self.monitor_connection_var.set(i18n.t('u6.monitor_llm_settings', provider=provider, model=model))
+        self.monitor_llm_detail_var.set(i18n.t('u6.applies_from_the_next_research_llm', provider=provider, model=model))
         if not silent:
-            messagebox.showinfo(APP_NAME,"探索用LLM設定を適用しました。\n\n現在応答待ちの呼び出しはそのまま完了し、次の探索LLM呼び出しから新設定を使用します。")
+            messagebox.showinfo(APP_NAME,i18n.t('u6.research_llm_settings_applied_the_current'))
         return True
 
     def apply_translation_settings_everywhere(self, silent=False):
@@ -5730,26 +5710,26 @@ class App(BaseTk):
             self._sync_monitor_targets_from_discovery_selection()
             roots=self._current_monitor_roots()
         if not roots:
-            messagebox.showinfo(APP_NAME,"監視対象がありません。［翻訳状況］タブでゲーム / Mod場所を1件以上選択してください。")
+            messagebox.showinfo(APP_NAME,i18n.t('u6.no_monitor_targets_select_at_least'))
             return
         self.monitor_stop_event.clear(); self.monitor_force_event.set(); self.monitor_snapshot={}
         self._monitor_worker_settings = self._snapshot_monitor_worker_settings()
-        self.monitor_toggle_btn.config(text="常時監視を停止")
-        self.monitor_status_var.set(f"● 常時監視中 — {len(roots)}か所 / 初回確認中…")
-        self._set_monitor_scan_status("● 未翻訳Mod監視中", f"{len(roots)}か所の変更されたYAMLを確認しています")
+        self.monitor_toggle_btn.config(text=i18n.t('u6.stop_continuous_monitoring'))
+        self.monitor_status_var.set(i18n.t('u6.monitoring_locations_initial_check', roots_count=len(roots)))
+        self._set_monitor_scan_status(i18n.t('u6.monitoring_untranslated_mods'), i18n.t('u6.checking_changed_yaml_files_in_locations', roots_count=len(roots)))
         self.monitor_thread=threading.Thread(target=self._monitor_worker,daemon=True)
         self.monitor_thread.start()
 
     def stop_monitor(self):
         if not (self.monitor_thread and self.monitor_thread.is_alive()):
-            self.monitor_status_var.set("○ 監視停止中")
-            self.monitor_toggle_btn.config(text="常時監視を開始")
+            self.monitor_status_var.set(i18n.t('u6.monitoring_stopped'))
+            self.monitor_toggle_btn.config(text=i18n.t('u6.start_continuous_monitoring'))
             return
         self.monitor_stop_event.set(); self.monitor_force_event.set()
         if self.monitor_llm_controller:
             self.monitor_llm_controller.request_stop(save=False)
-        self.monitor_status_var.set("監視停止処理中…")
-        self.monitor_toggle_btn.config(text="停止処理中…", state="disabled")
+        self.monitor_status_var.set(i18n.t('u6.stopping_monitor'))
+        self.monitor_toggle_btn.config(text=i18n.t('u6.stopping'), state="disabled")
 
     def monitor_scan_now(self):
         # 旧内部呼び出しとの互換。現在は「再調査」に統合。
@@ -5765,7 +5745,7 @@ class App(BaseTk):
         model = settings.get("model", "")
         api_key = settings.get("api_key", "")
         if not model:
-            self.events.put(("monitor_log","監視専用LLMが未選択のため曖昧候補の精査をスキップしました。"))
+            self.events.put(("monitor_log",i18n.t('u6.no_monitor_llm_selected_skipping_review')))
             return candidates
         self.monitor_llm_controller=core.TranslationController(progress_callback=lambda p:self.events.put(("monitor_progress",p)))
         try:
@@ -5775,7 +5755,7 @@ class App(BaseTk):
             keep=set()
             for pos,(original_idx,c) in enumerate(ambiguous):
                 if decisions.get(pos,True):
-                    c["confidence"]="LLM確認"; keep.add(original_idx)
+                    c["confidence"]=i18n.t('u6.llm_review'); keep.add(original_idx)
             return [c for i,c in enumerate(candidates) if not c.get("needs_llm") or i in keep]
         finally:
             self.monitor_llm_controller=None
@@ -5795,19 +5775,19 @@ class App(BaseTk):
                         combined_stats[f"{prefix}::{rel}"]=val
                 changed = first or forced or combined_stats != self.monitor_snapshot
                 if changed:
-                    self.events.put(("monitor_status",f"● 常時監視中 — 解析中… ({len(roots)}か所)"))
+                    self.events.put(("monitor_status",i18n.t('u6.monitoring_analyzing_locations', roots_count=len(roots))))
                     candidates=[]
                     for root in roots:
                         try:
                             candidates.extend(core.scan_translation_gaps(root))
                         except Exception as exc:
-                            self.events.put(("monitor_log",f"{root}: 解析をスキップ: {exc}"))
+                            self.events.put(("monitor_log",i18n.t('u6.skipped_analysis', root=root, exc=exc)))
                     try:
                         candidates=self._refine_candidates_with_monitor_llm(candidates, settings)
                     except core.StopRequested:
                         if self.monitor_stop_event.is_set(): break
                     except Exception as e:
-                        self.events.put(("monitor_log",f"軽量LLM精査をスキップ: {e}"))
+                        self.events.put(("monitor_log",i18n.t('u6.skipped_lightweight_llm_review', value=e)))
                     self.monitor_candidates=candidates; self.monitor_snapshot=combined_stats
                     self.events.put(("monitor_results",candidates))
                     first=False
@@ -6215,7 +6195,7 @@ class App(BaseTk):
                     eligible.append(root)
                     overrides[self._mod_classification_key(root)] = ov
             except Exception as exc:
-                record_error("Mod初期分類", exc, str(root))
+                record_error(i18n.t('u6.initial_mod_classification'), exc, str(root))
         rows=core.build_translation_mod_index(eligible)
         self._annotate_translation_index_with_base_game_keys(rows)
         for row in rows:
@@ -6263,27 +6243,27 @@ class App(BaseTk):
     def _open_mod_relation_dialog(self, origin="status"):
         rows=self._known_mod_rows_for_relation_dialog()
         if not rows:
-            messagebox.showinfo(APP_NAME,"先に翻訳状況でMod一覧を取得してください。")
+            messagebox.showinfo(APP_NAME,i18n.t('u6.retrieve_the_mod_list_in_translation'))
             return
-        win=tk.Toplevel(self); win.title("Mod分類・関連付け"); win.geometry("1050x650"); win.transient(self)
+        win=tk.Toplevel(self); win.title(i18n.t('u6.mod_classification_and_linking')); win.geometry("1050x650"); win.transient(self)
         outer=ttk.Frame(win,padding=10); outer.pack(fill="both",expand=True)
-        ttk.Label(outer,text="手動例外は自動判定より優先します。日本語化Modは複数の対応元Modを指定できます。",foreground="#555").pack(fill="x",pady=(0,8))
+        ttk.Label(outer,text=i18n.t('u6.manual_exceptions_override_automatic_assessment_translation', target_name=i18n.t("lang." + 'japanese')),foreground="#555").pack(fill="x",pady=(0,8))
         pane=ttk.Panedwindow(outer,orient="horizontal"); pane.pack(fill="both",expand=True)
         lf=ttk.LabelFrame(pane,text="Mod",padding=6); rf=ttk.Frame(pane); pane.add(lf,weight=3); pane.add(rf,weight=4)
         mt=ttk.Treeview(lf,columns=("mod","class","sources","path"),show="headings",selectmode="browse")
-        for c,txt,w in (("mod","Mod",240),("class","手動分類",110),("sources","対応元",70),("path","場所",360)):
+        for c,txt,w in (("mod","Mod",240),("class",i18n.t('u6.manual_classification_2'),110),("sources",i18n.t('u6.linked_sources'),70),("path",i18n.t('u6.location_3'),360)):
             mt.heading(c,text=txt); mt.column(c,width=w,minwidth=w,stretch=False,anchor="w")
         msy=ttk.Scrollbar(lf,orient="vertical",command=mt.yview); msx=ttk.Scrollbar(lf,orient="horizontal",command=mt.xview); mt.configure(yscrollcommand=msy.set,xscrollcommand=msx.set)
         lf.rowconfigure(0,weight=1); lf.columnconfigure(0,weight=1); mt.grid(row=0,column=0,sticky="nsew"); msy.grid(row=0,column=1,sticky="ns"); msx.grid(row=1,column=0,sticky="ew")
         mt_actions=ttk.Frame(lf); mt_actions.grid(row=2,column=0,columnspan=2,sticky="ew",pady=(7,0))
         role_var=tk.StringVar(value="auto"); current_path=tk.StringVar(value="")
-        rolebox=ttk.LabelFrame(rf,text="分類",padding=8); rolebox.pack(fill="x")
-        for text,val in (("自動判定","auto"),("このModは日本語化Modです","translation"),("このModは通常Modです","source")):
+        rolebox=ttk.LabelFrame(rf,text=i18n.t('u6.classification'),padding=8); rolebox.pack(fill="x")
+        for text,val in ((i18n.t('u6.automatic_assessment'),"auto"),(i18n.t('u6.this_is_a_translation_mod', target_name=i18n.t("lang." + 'japanese')),"translation"),(i18n.t('u6.this_is_a_source_mod'),"source")):
             ttk.Radiobutton(rolebox,text=text,value=val,variable=role_var).pack(anchor="w",pady=2)
-        ttk.Label(rolebox,text="日本語化Mod指定では、対応元を指定しなくても翻訳Mod候補として扱います。対応元を指定した場合、その関係を最優先します。",foreground="#666",wraplength=520,justify="left").pack(anchor="w",pady=(6,0))
-        srcbox=ttk.LabelFrame(rf,text="対応元Mod（複数選択可）",padding=8); srcbox.pack(fill="both",expand=True,pady=(8,0))
+        ttk.Label(rolebox,text=i18n.t('u6.marking_a_mod_as_a_translation', target_name=i18n.t("lang." + 'japanese')),foreground="#666",wraplength=520,justify="left").pack(anchor="w",pady=(6,0))
+        srcbox=ttk.LabelFrame(rf,text=i18n.t('u6.linked_source_mods_multi_select'),padding=8); srcbox.pack(fill="both",expand=True,pady=(8,0))
         st=ttk.Treeview(srcbox,columns=("mod","path"),show="headings",selectmode="extended")
-        st.heading("mod",text="元Mod"); st.heading("path",text="場所"); st.column("mod",width=260,minwidth=260,stretch=False); st.column("path",width=480,minwidth=480,stretch=False)
+        st.heading("mod",text=i18n.t('u6.source_mod_4')); st.heading("path",text=i18n.t('u6.location_3')); st.column("mod",width=260,minwidth=260,stretch=False); st.column("path",width=480,minwidth=480,stretch=False)
         ssy=ttk.Scrollbar(srcbox,orient="vertical",command=st.yview); ssx=ttk.Scrollbar(srcbox,orient="horizontal",command=st.xview); st.configure(yscrollcommand=ssy.set,xscrollcommand=ssx.set)
         srcbox.rowconfigure(0,weight=1); srcbox.columnconfigure(0,weight=1); st.grid(row=0,column=0,sticky="nsew"); ssy.grid(row=0,column=1,sticky="ns"); ssx.grid(row=1,column=0,sticky="ew")
         src_actions=ttk.Frame(srcbox); src_actions.grid(row=2,column=0,columnspan=2,sticky="ew",pady=(7,0))
@@ -6313,10 +6293,10 @@ class App(BaseTk):
                 st.event_generate("<<TreeviewSelect>>")
 
         st.bind("<Button-1>",toggle_source_click,add="+")
-        ttk.Button(src_actions,text="対応元Modの選択解除",command=clear_source_selection).pack(side="left")
+        ttk.Button(src_actions,text=i18n.t('u6.deselect_linked_source_mods'),command=clear_source_selection).pack(side="left")
         iid_by_path={}; row_by_iid={}
         for row in rows:
-            ov=self._mod_relation_override(Path(row["path"])); role=ov.get("role","auto"); label={"auto":"自動","translation":"日本語化Mod","source":"通常Mod"}.get(role,"自動")
+            ov=self._mod_relation_override(Path(row["path"])); role=ov.get("role","auto"); label={"auto":i18n.t('u6.automatic'),"translation":i18n.t('u6.translation_mod', target_name=i18n.t("lang." + 'japanese')),"source":i18n.t('u6.source_mod_3')}.get(role,i18n.t('u6.automatic'))
             iid=mt.insert("","end",values=(row["mod"],label,len(ov.get("source_paths") or []),row["path"])); iid_by_path[row["path"]]=iid; row_by_iid[iid]=row
         def clear_mod_selection(*_):
             sel=mt.selection()
@@ -6369,7 +6349,7 @@ class App(BaseTk):
         mt.bind("<ButtonPress-1>",remember_mod_click,add="+")
         mt.bind("<ButtonRelease-1>",toggle_mod_click,add="+")
         mt.bind("<<TreeviewSelect>>",load_selected)
-        ttk.Button(mt_actions,text="選択解除",command=clear_mod_selection).pack(side="left")
+        ttk.Button(mt_actions,text=i18n.t('u6.deselect_all'),command=clear_mod_selection).pack(side="left")
         btns=ttk.Frame(rf); btns.pack(fill="x",pady=(8,0))
         def save_current():
             raw=current_path.get()
@@ -6382,13 +6362,13 @@ class App(BaseTk):
             self._set_mod_relation_override(Path(raw),role_var.get(),sources)
             iid=iid_by_path.get(raw)
             if iid:
-                row=row_by_iid[iid]; label={"auto":"自動","translation":"日本語化Mod","source":"通常Mod"}.get(role_var.get(),"自動")
+                row=row_by_iid[iid]; label={"auto":i18n.t('u6.automatic'),"translation":i18n.t('u6.translation_mod', target_name=i18n.t("lang." + 'japanese')),"source":i18n.t('u6.source_mod_3')}.get(role_var.get(),i18n.t('u6.automatic'))
                 mt.item(iid,values=(row["mod"],label,len(sources),row["path"]))
             self._invalidate_mod_status_cache_paths([r["path"] for r in rows])
             self._refresh_diagnostic_targets()
-            messagebox.showinfo(APP_NAME,"Mod分類・関連付けの例外設定を保存しました。次回の再調査 / 総合診断から反映されます。",parent=win)
-        ttk.Button(btns,text="この設定を保存",command=save_current).pack(side="left")
-        ttk.Button(btns,text="閉じる",command=win.destroy).pack(side="right")
+            messagebox.showinfo(APP_NAME,i18n.t('u6.mod_classification_link_exceptions_saved_they'),parent=win)
+        ttk.Button(btns,text=i18n.t('u6.save_these_settings'),command=save_current).pack(side="left")
+        ttk.Button(btns,text=i18n.t('u6.close'),command=win.destroy).pack(side="right")
         pre=self._preselected_relation_path(origin)
         iid=iid_by_path.get(pre) or (mt.get_children()[0] if mt.get_children() else "")
         if iid:
@@ -6500,7 +6480,7 @@ class App(BaseTk):
             return None
         sel = self.mod_status_tree.selection()
         if not sel:
-            messagebox.showinfo(APP_NAME, "翻訳状況の一覧からModを1つ選択してください。")
+            messagebox.showinfo(APP_NAME, i18n.t('u6.select_one_mod_in_the_translation'))
             return None
         iid = sel[0]
         if iid.startswith("mod_"):
@@ -6521,10 +6501,10 @@ class App(BaseTk):
         """翻訳状況一覧で選択したModだけを強制再調査し、他の結果は保持する。"""
         selected=self._selected_mod_status_results()
         if not selected:
-            messagebox.showinfo(APP_NAME,"翻訳状況の一覧から再調査するModを選択してください。Ctrlキーを押しながらクリックすると複数選択できます。")
+            messagebox.showinfo(APP_NAME,i18n.t('u6.select_mods_to_research_again_in'))
             return
         if self.mod_research_thread and self.mod_research_thread.is_alive():
-            messagebox.showinfo(APP_NAME,"すでに調査中です。")
+            messagebox.showinfo(APP_NAME,i18n.t('u6.research_is_already_running'))
             return
         roots=[]; selected_paths=set()
         for result in selected:
@@ -6534,7 +6514,7 @@ class App(BaseTk):
                 try:selected_paths.add(str(root.resolve()))
                 except Exception:selected_paths.add(str(root))
         if not roots:
-            messagebox.showinfo(APP_NAME,"選択した項目から調査可能なModフォルダを確認できませんでした。")
+            messagebox.showinfo(APP_NAME,i18n.t('u6.no_accessible_mod_folders_found_in'))
             return
         kept=[]
         for r in self.mod_research_results:
@@ -6694,11 +6674,11 @@ class App(BaseTk):
 
     def _status_results_except_selected(self):
         if not self.mod_research_results:
-            messagebox.showinfo(APP_NAME, "先にModの翻訳状況を調査してください。")
+            messagebox.showinfo(APP_NAME, i18n.t('u6.research_mod_translation_status_first'))
             return None, None
         selected=self._selected_mod_status_results()
         if not selected:
-            messagebox.showinfo(APP_NAME, "除外するModを1つ以上選択してください。\nCtrlキーを押しながらクリックすると複数選択できます。")
+            messagebox.showinfo(APP_NAME, i18n.t('u6.select_at_least_one_mod_to'))
             return None, None
         excluded={str(Path(r.get("path", ""))) for r in selected}
         remaining=[r for r in self.mod_research_results if str(Path(r.get("path", ""))) not in excluded]
@@ -6995,14 +6975,13 @@ class App(BaseTk):
             except Exception:
                 continue
             if result.get("has_gaps"):
-                name=item.get("mod_name") or Path(item.get("input", "")).name or "項目"
+                name=item.get("mod_name") or Path(item.get("input", "")).name or i18n.t('u6.item')
                 notices.append(f"{name}: {core.source_language_gap_reason_text(result)}")
         if not notices:
             return ""
-        text = "⚠ 原文に欠落あり\n英語・簡体字中国語の原文を比較したところ、片方にのみ存在する翻訳対象キーがあります。\n"
-        text += "\n".join(notices[:10])
+        text = i18n.t('u6.gaps_in_source_text_english_and', notices="\n".join(notices[:10]))
         if len(notices) > 10:
-            text += f"\n…ほか {len(notices)-10}件"
+            text += i18n.t('u6.and_more', value=len(notices) - 10)
         return text
 
     def _generated_japanese_files(self, output_root: Path):
@@ -7058,7 +7037,7 @@ class App(BaseTk):
         out_root=Path(item.get("output", ""))
         generated=self._generated_japanese_files(out_root)
         if not ext_root.is_dir() or not ext_loc.is_dir():
-            return False,"後順位の日本語化Modを特定できません"
+            return False,i18n.t('u6.cannot_identify_the_later_translation_mod', target_name=i18n.t("lang." + 'japanese'))
         mappings=[]
         for src in generated:
             try: rel=src.relative_to(out_root)
@@ -7068,27 +7047,21 @@ class App(BaseTk):
             safe_rel=safe_parent / safe_name
             mappings.append((src,ext_loc / safe_rel,safe_rel))
         if not mappings:
-            return False,"日本語化Modへ書き込む完成済み日本語YAMLがありません"
+            return False,i18n.t('u6.no_completed_japanese_yaml_files_to', target_name=i18n.t("lang." + 'japanese'))
         ext_name=conflict.get("mod") or ext_root.name
         src_name=item.get("mod_name") or Path(item.get("mod_root", "")).name
         shared=int(conflict.get("shared_keys",0) or 0)
         source_only=int(conflict.get("source_only_keys",0) or 0)
-        paths="\n".join(f"  ・{path}" for path in conflict.get("relative_paths",[])[:8])
+        paths="\n".join(i18n.t('u6.detail_5', path=path) for path in conflict.get("relative_paths",[])[:8])
         if confirm:
             warning=(
-                "⚠ 後順位の日本語化Modが同名ファイルを上書きしています。\n\n"
-                f"元Mod: {src_name}（ロード順 {int(conflict.get('source_position',0))+1}）\n"
-                f"実際に優先されるMod: {ext_name}（ロード順 {int(conflict.get('position',0))+1}）\n"
-                f"同一パス: {int(conflict.get('path_match_count',0))}件\n{paths}\n"
-                f"共通キー: {shared}件 / 新版側だけのキー: {source_only}件\n\n"
-                "後順位Modの既存localization全体をバックアップしてから、完成済み翻訳で同名ファイルを更新します。\n"
-                "続行しますか？")
-            if not messagebox.askyesno("警告 — 後順位日本語化Modへ上書き",warning,icon="warning"):
+                i18n.t('u6.a_later_translation_mod_overrides_same', src_name=src_name, value=int(conflict.get('source_position', 0)) + 1, ext_name=ext_name, value_2=int(conflict.get('position', 0)) + 1, value_3=int(conflict.get('path_match_count', 0)), paths=paths, shared=shared, source_only=source_only, target_name=i18n.t("lang." + 'japanese')))
+            if not messagebox.askyesno(i18n.t('u6.warning_overwrite_later_translation_mod', target_name=i18n.t("lang." + 'japanese')),warning,icon="warning"):
                 return False,i18n.t("p0.reason.cancelled")
         stamp=datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         backup_root,_meta=self._create_full_localization_snapshot(
-            ext_root,"同名ファイル競合・旧版日本語化Mod更新",category="上書き",source_mod_name=src_name,
-            state_label="後順位日本語化Modの同名ファイル更新直前（既存localization全体）",stamp=stamp)
+            ext_root,i18n.t('u6.same_name_file_conflict_legacy_translation', target_name=i18n.t("lang." + 'japanese')),category="上書き",source_mod_name=src_name,
+            state_label=i18n.t('u6.before_updating_same_name_files_in', target_name=i18n.t("lang." + 'japanese')),stamp=stamp)
         copied=0; replaced=0
         try:
             for src,dst,_rel in mappings:
@@ -7096,20 +7069,18 @@ class App(BaseTk):
                 dst.parent.mkdir(parents=True,exist_ok=True)
                 shutil.copy2(src,dst); copied += 1
             coverage=core.analyze_external_translation_coverage(Path(item.get("mod_root") or ext_root),ext_root)
-            validation=("上書き後確認: 欠損なし" if coverage.get("complete") else
-                        f"⚠ 上書き後も欠損あり: {coverage.get('gap_reason','翻訳不足があります')}")
+            validation=(i18n.t('u6.post_overwrite_check_no_gaps') if coverage.get("complete") else
+                        i18n.t('u6.gaps_remain_after_overwrite', gap_reason=coverage.get('gap_reason', i18n.t('u6.translations_are_missing'))))
             self._invalidate_mod_status_cache_paths([ext_root])
-            reason=(f"後順位日本語化Mod更新 {copied} / 置換 {replaced} / 共通キー {shared} / "
-                    f"新版側固有 {source_only} / {validation}")
+            reason=(i18n.t('u6.updated_later_translation_mod_replaced_shared', copied=copied, replaced=replaced, shared=shared, source_only=source_only, validation=validation, target_name=i18n.t("lang." + 'japanese')))
             if notify:
                 messagebox.showinfo(APP_NAME,
-                    f"後順位の日本語化Modを更新しました。\n\n対象: {ext_name}\n書き込み: {copied}件\n"
-                    f"既存ファイル置換: {replaced}件\nバックアップ先: {backup_root}\n\n{validation}")
+                    i18n.t('u6.updated_later_translation_mod_target_files', ext_name=ext_name, copied=copied, replaced=replaced, backup_root=backup_root, validation=validation, target_name=i18n.t("lang." + 'japanese')))
             return True,reason
         except Exception as exc:
-            record_error("同名ファイル競合・日本語化Mod上書き",exc,str(ext_root))
+            record_error(i18n.t('u6.same_name_file_conflict_translation_mod', target_name=i18n.t("lang." + 'japanese')),exc,str(ext_root))
             if notify:
-                messagebox.showerror(APP_NAME,f"後順位日本語化Modへの上書きに失敗しました。\n{exc}\n\nバックアップ先: {backup_root}")
+                messagebox.showerror(APP_NAME,i18n.t('u6.could_not_overwrite_later_translation_mod', exc=exc, backup_root=backup_root, target_name=i18n.t("lang." + 'japanese')))
             return False,str(exc)
 
     def _queue_item_is_completed(self, item):
@@ -7173,7 +7144,7 @@ class App(BaseTk):
         gap_keys = {k for k in item.get("external_gap_keys", []) if k}
         out_root = Path(item.get("output", ""))
         if not ext_root.is_dir() or not ext_loc.is_dir():
-            return False,"日本語化Modの場所を特定できません"
+            return False,i18n.t('u6.cannot_identify_the_translation_mod_location', target_name=i18n.t("lang." + 'japanese'))
         if not gap_keys:
             return False,i18n.t("p0.reason.no_gap_info")
         generated = self._generated_japanese_files(out_root)
@@ -7193,15 +7164,10 @@ class App(BaseTk):
         src_name = item.get("mod_name") or Path(item.get("mod_root", "")).name
         if confirm:
             warning=(
-                f"⚠ 別の日本語化Modへ不足分だけを書き込みます。\n\n"
-                f"元Mod: {src_name}\n日本語化Mod: {ext_name}\n対象: {ext_root}\n"
-                f"差分キー: {len(patch_values)}件\n\n"
-                "このModと上書き先が、適切な日本語化Modの関係になっているか確認してください。\n\n"
-                "既存の日本語訳は維持し、欠損・未翻訳と判定されたキーだけ更新/追加します。\n"
-                "変更対象ファイルは実行前にバックアップします。\n続行しますか？")
-            if not messagebox.askyesno("警告 — 日本語化Modへ差分上書き", warning, icon="warning"):
+                i18n.t('u6.write_only_missing_translations_to_another', src_name=src_name, ext_name=ext_name, ext_root=ext_root, patch_values_count=len(patch_values), target_name=i18n.t("lang." + 'japanese')))
+            if not messagebox.askyesno(i18n.t('u6.warning_overwrite_differences_to_translation_mod', target_name=i18n.t("lang." + 'japanese')), warning, icon="warning"):
                 return False,i18n.t("p0.reason.cancelled")
-            if not messagebox.askyesno("最終確認", "日本語化Modへ不足分だけを書き込みます。本当に続行しますか？", icon="warning"):
+            if not messagebox.askyesno(i18n.t('u6.final_confirmation'), i18n.t('u6.write_only_missing_translations_to_the', target_name=i18n.t("lang." + 'japanese')), icon="warning"):
                 return False,i18n.t("p0.reason.cancelled")
 
         existing_key_file = {}
@@ -7214,8 +7180,8 @@ class App(BaseTk):
                 continue
         stamp=datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         backup_root, backup_meta = self._create_full_localization_snapshot(
-            ext_root, "日本語化Mod差分上書き", category="上書き", source_mod_name=src_name,
-            state_label="日本語化Modへの差分上書き直前の原文（既存localization全体）", stamp=stamp
+            ext_root, i18n.t('u6.translation_mod_difference_overwrite', target_name=i18n.t("lang." + 'japanese')), category="上書き", source_mod_name=src_name,
+            state_label=i18n.t('u6.source_text_before_difference_overwrite_to', target_name=i18n.t("lang." + 'japanese')), stamp=stamp
         )
         backed=set(); updated=0; added=0
         patch_file = ext_loc / "japanese" / "paradox_localization_translator_missing_l_japanese.yml"
@@ -7248,24 +7214,24 @@ class App(BaseTk):
                     added += 1
                 patch_file.write_text("\ufeff"+text.lstrip("\ufeff"),encoding="utf-8")
             _, source_mod_root = self._infer_mod_target_for_item(item)
-            validation_text = "上書き後確認: 判定対象を特定できません"
+            validation_text = i18n.t('u6.post_overwrite_check_cannot_identify_assessment')
             validation_warning = False
             if source_mod_root and Path(source_mod_root).is_dir():
                 coverage = core.analyze_external_translation_coverage(source_mod_root, ext_root)
                 if coverage.get("complete"):
-                    validation_text = "上書き後確認: 欠損なし"
+                    validation_text = i18n.t('u6.post_overwrite_check_no_gaps')
                 else:
                     validation_warning = True
-                    validation_text = f"⚠ 本文自体に欠落があります。\n{coverage.get('gap_reason','翻訳不足があります')}"
+                    validation_text = i18n.t('u6.the_text_itself_has_gaps', gap_reason=coverage.get('gap_reason', i18n.t('u6.translations_are_missing')))
             if notify:
                 messagebox.showinfo(APP_NAME,
-                    f"日本語化Modへ差分を反映しました。\n\n既存キー更新: {updated}件\n新規キー追加: {added}件\nバックアップ: {len(backed)}ファイル\nバックアップ先: {backup_root if backed else '変更前ファイルなし'}\n\n{validation_text}")
-            reason=f"既存キー更新 {updated} / 新規キー追加 {added} / {validation_text}"
+                    i18n.t('u6.applied_differences_to_translation_mod_existing', updated=updated, added=added, backed_count=len(backed), value=backup_root if backed else i18n.t('u6.no_pre_change_files'), validation_text=validation_text, target_name=i18n.t("lang." + 'japanese')))
+            reason=i18n.t('u6.existing_keys_updated_new_keys_added', updated=updated, added=added, validation_text=validation_text)
             return True,reason
         except Exception as e:
-            record_error("日本語化Mod差分上書き", e, str(ext_root))
+            record_error(i18n.t('u6.translation_mod_difference_overwrite', target_name=i18n.t("lang." + 'japanese')), e, str(ext_root))
             if notify:
-                messagebox.showerror(APP_NAME, f"日本語化Modへの差分上書き中にエラーが発生しました。\n{e}\n\nバックアップ先: {backup_root}")
+                messagebox.showerror(APP_NAME, i18n.t('u6.error_overwriting_differences_to_translation_mod', value=e, backup_root=backup_root, target_name=i18n.t("lang." + 'japanese')))
             return False,str(e)
 
     def _merge_translation_gaps_into_external_mod(self, item):
@@ -7281,28 +7247,24 @@ class App(BaseTk):
     def _perform_source_mod_overwrite(self, item, confirm=True, notify=True):
         loc_root, mod_root, mappings = self._source_overwrite_layout(item)
         if not loc_root:
-            return False,"元のModのlocalizationフォルダを特定できません"
+            return False,i18n.t('u6.cannot_identify_the_source_mod_s')
         if not mappings:
-            return False,"完成済み日本語YAMLが出力先に見つかりません"
+            return False,i18n.t('u6.no_completed_yaml_files_in_the', target_name=i18n.t("lang." + _item_target_lang(item)))
 
         existing=sum(1 for _,dst,_ in mappings if dst.exists())
         mod_name=item.get("mod_name") or Path(mod_root).name
         if confirm:
             warning=(
-                f"⚠ 元のModへ日本語化ファイルを直接書き込みます。\n\n"
-                f"Mod: {mod_name}\n対象: {mod_root}\n日本語YAML: {len(mappings)}件\n"
-                f"既存ファイルの上書き: {existing}件\n\n"
-                "既存ファイルは実行前にバックアップされます。\n"
-                "Mod更新・Steam Workshop更新時には上書き内容が失われる可能性があります。\n\n続行しますか？")
-            if not messagebox.askyesno("警告 — Modへ直接上書き", warning, icon="warning"):
+                i18n.t('u6.write_translated_files_directly_to_the', mod_name=mod_name, mod_root=mod_root, mappings_count=len(mappings), existing=existing, target_name=i18n.t("lang." + _item_target_lang(item))))
+            if not messagebox.askyesno(i18n.t('u6.warning_overwrite_mod_directly'), warning, icon="warning"):
                 return False,i18n.t("p0.reason.cancelled")
-            if not messagebox.askyesno("最終確認", "本当に元のModへ書き込みますか？\nこの操作は対象ファイルを置き換えます。", icon="warning"):
+            if not messagebox.askyesno(i18n.t('u6.final_confirmation'), i18n.t('u6.write_to_the_source_mod_this'), icon="warning"):
                 return False,i18n.t("p0.reason.cancelled")
 
         stamp=datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         backup_root, backup_meta = self._create_full_localization_snapshot(
-            mod_root, "元Mod上書き", category="上書き", source_mod_name=mod_name,
-            state_label="元Modへの直接上書き直前の原文（既存localization全体）", stamp=stamp
+            mod_root, i18n.t('u6.source_mod_overwrite'), category="上書き", source_mod_name=mod_name,
+            state_label=i18n.t('u6.source_text_before_direct_source_mod'), stamp=stamp
         )
         copied=0; backed=0
         try:
@@ -7315,62 +7277,57 @@ class App(BaseTk):
                 shutil.copy2(src,dst); copied += 1
             if _item_target_lang(item) != core.DEFAULT_TARGET_LANG:
                 # 上書き後の欠落確認（翻訳状況の判定）は日本語だけ
-                validation_text = "上書き後確認: 日本語以外は省略"
+                validation_text = i18n.t('u6.post_overwrite_check_skipped_for_non')
             elif (post := core.analyze_mod_translation_status(mod_root)).get("gap_count", 0):
-                validation_text = f"⚠ 本文自体に欠落があります。\n{post.get('gap_reason') or core.gap_reason_text(post.get('candidates', []))}"
+                validation_text = i18n.t('u6.the_text_itself_has_gaps_2', value=post.get('gap_reason') or core.gap_reason_text(post.get('candidates', [])))
             else:
-                validation_text = "上書き後確認: 欠損なし"
+                validation_text = i18n.t('u6.post_overwrite_check_no_gaps')
             if notify:
                 messagebox.showinfo(APP_NAME,
-                    f"Modへ日本語化ファイルを上書きしました。\n\n書き込み: {copied}件\nバックアップ: {backed}件\nバックアップ先: {backup_root if backed else '既存ファイルなし'}\n\n{validation_text}")
-            return True,f"書き込み {copied} / バックアップ {backed} / {validation_text}"
+                    i18n.t('u6.overwrote_mod_with_translated_files_files', copied=copied, backed=backed, value=backup_root if backed else i18n.t('u6.no_existing_files'), validation_text=validation_text, target_name=i18n.t("lang." + _item_target_lang(item))))
+            return True,i18n.t('u6.files_written_backups', copied=copied, backed=backed, validation_text=validation_text)
         except Exception as e:
-            record_error("Mod直接上書き", e, str(mod_root))
+            record_error(i18n.t('u6.direct_mod_overwrite'), e, str(mod_root))
             if notify:
-                messagebox.showerror(APP_NAME, f"上書き中にエラーが発生しました。\n{e}\n\nバックアップ先: {backup_root}")
+                messagebox.showerror(APP_NAME, i18n.t('u6.error_overwriting_files_backup_location', value=e, backup_root=backup_root))
             return False,str(e)
 
     def _overwrite_single_item_interactive(self, item, prefer_external=True):
         if self.single_overwrite_thread is not None:
-            messagebox.showinfo(APP_NAME,'上書き処理はすでにバックグラウンドで実行中です。'); return False
+            messagebox.showinfo(APP_NAME,i18n.t('u6.an_overwrite_is_already_running_in')); return False
         if not self._queue_item_is_completed(item):
-            messagebox.showinfo(APP_NAME,'上書きできるのは翻訳完了済みの項目です。'); return False
+            messagebox.showinfo(APP_NAME,i18n.t('u6.only_completed_translation_items_can_be')); return False
         use_external=False; conflict_target=None
         if prefer_external:
             preferred,conflicts=self._preferred_later_translation_conflict(item)
             if preferred:
                 ext_name=preferred.get('mod') or Path(preferred.get('path','')).name
-                paths='\n'.join(f"  ・{p}" for p in preferred.get('relative_paths',[])[:6])
+                paths='\n'.join(i18n.t('u6.detail_6', value=p) for p in preferred.get('relative_paths',[])[:6])
                 choice=messagebox.askyesnocancel(
-                    '同名localizationファイルの競合',
-                    f"元Modへ保存しても、後順位の日本語化Mod『{ext_name}』に同名ファイルがあるため反映されません。\n\n"
-                    f"同一パス:\n{paths}\n共通キー: {preferred.get('shared_keys',0)}件\n"
-                    f"新版側だけのキー: {preferred.get('source_only_keys',0)}件\n\n"
-                    "はい: 後順位の日本語化Modをバックアップして更新\n"
-                    "いいえ: それでも元Modへ保存\nキャンセル: 何もしない",icon='warning')
+                    i18n.t('u6.same_name_localization_file_conflict'),
+                    i18n.t('u6.saving_to_the_source_mod_will', ext_name=ext_name, paths=paths, shared_keys=preferred.get('shared_keys', 0), source_only_keys=preferred.get('source_only_keys', 0), target_name=i18n.t("lang." + _item_target_lang(item))),icon='warning')
                 if choice is None: return False
                 if choice: conflict_target=preferred
             elif item.get('external_translation_path') and _item_target_lang(item) == core.DEFAULT_TARGET_LANG:
                 ext_name=item.get('external_translation_mod','') or Path(item.get('external_translation_path','')).name
-                choice=messagebox.askyesnocancel('上書き先の確認',f"日本語化Mod『{ext_name}』が見つかっています。\n\nはい: 日本語化Modへ差分上書き\nいいえ: 元Modへ上書き\nキャンセル: 何もしない",icon='question')
+                choice=messagebox.askyesnocancel(i18n.t('u6.confirm_overwrite_destination'),i18n.t('u6.translation_mod_found_yes_overwrite_differences', ext_name=ext_name, target_name=i18n.t("lang." + _item_target_lang(item))),icon='question')
                 if choice is None: return False
                 use_external=bool(choice)
             elif conflicts:
                 effective=next((row for row in conflicts if row.get('effective')),conflicts[-1])
                 if not messagebox.askyesno(
-                    '警告 — 同名ファイル競合',
-                    f"後順位Mod『{effective.get('mod') or Path(effective.get('path','')).name}』に同じlocalizationファイルがあります。\n"
-                    "元Modへ保存しても、ゲームでは後順位Modのファイルが優先される可能性があります。\n\nそれでも元Modへ保存しますか？",
+                    i18n.t('u6.warning_same_name_file_conflict'),
+                    i18n.t('u6.later_mod_has_the_same_localization', value=effective.get('mod') or Path(effective.get('path', '')).name),
                     icon='warning'):
                     return False
         target_label=((conflict_target.get('mod') or Path(conflict_target.get('path','')).name) if conflict_target
-                      else (item.get('external_translation_mod') or '日本語化Mod') if use_external
-                      else (item.get('mod_name') or '元Mod'))
-        if not messagebox.askyesno('警告 — Modへ上書き',f"対象: {target_label}\n\n既存localizationは実行前にバックアップします。\nファイル走査・バックアップ・書き込みはバックグラウンドで実行します。\n続行しますか？",icon='warning'):
+                      else (item.get('external_translation_mod') or i18n.t('u6.translation_mod', target_name=i18n.t("lang." + _item_target_lang(item)))) if use_external
+                      else (item.get('mod_name') or i18n.t('u6.source_mod_4')))
+        if not messagebox.askyesno(i18n.t('u6.warning_overwrite_mod'),i18n.t('u6.target_existing_localization_is_backed_up', target_label=target_label),icon='warning'):
             return False
-        if not messagebox.askyesno('最終確認',f'本当に書き込みますか？\nこの操作は対象Modの{core.target_language_label(_item_target_lang(item))}localizationを変更します。',icon='warning'):
+        if not messagebox.askyesno(i18n.t('u6.final_confirmation'),i18n.t('u6.write_these_files_this_changes_localization', value=i18n.t('lang.' + _item_target_lang(item))),icon='warning'):
             return False
-        self.progress_text.set(f'上書きをバックグラウンドで実行中… {target_label}')
+        self.progress_text.set(i18n.t('u6.overwriting_in_the_background', target_label=target_label))
         def work():
             try:
                 if item.get('missing_only'):
@@ -7380,7 +7337,7 @@ class App(BaseTk):
                         target_root=Path(item.get('external_translation_path','')); target_loc=Path(item.get('external_translation_localization',''))
                     else:
                         target_loc,target_root=self._infer_mod_target_for_item(item)
-                    if not target_loc or not target_root: ok,reason=False,'不足翻訳の上書き先を特定できません'
+                    if not target_loc or not target_root: ok,reason=False,i18n.t('u6.cannot_identify_the_destination_for_missing')
                     else: ok,reason=self._merge_missing_only_output(item,Path(target_loc),Path(target_root),confirm=False,notify=False)
                 elif conflict_target:
                     ok,reason=self._perform_full_translation_mod_overwrite(item,conflict_target,confirm=False,notify=False)
@@ -7390,7 +7347,7 @@ class App(BaseTk):
                     ok,reason=self._perform_source_mod_overwrite(item,confirm=False,notify=False)
                 self.events.put(('single_overwrite_done',(item,ok,reason,target_label)))
             except Exception as exc:
-                record_error('単体上書きバックグラウンド処理',exc,target_label); self.events.put(('single_overwrite_done',(item,False,str(exc),target_label)))
+                record_error(i18n.t('u6.background_single_overwrite'),exc,target_label); self.events.put(('single_overwrite_done',(item,False,str(exc),target_label)))
         self.single_overwrite_thread=threading.Thread(target=work,daemon=True,name='single-overwrite'); self.single_overwrite_thread.start()
         self._refresh_operation_states()
         return True
@@ -7400,48 +7357,48 @@ class App(BaseTk):
         if ok:
             self._set_overwritten_status(item); self._invalidate_status_cache_for_item(item)
             self._refresh_queue_tree(); self._refresh_chinese_queue_tree(); self._save_workspace_state('overwrite_completed')
-            self.progress_text.set(f'上書き完了: {target_label}')
+            self.progress_text.set(i18n.t('u6.overwrite_complete', target_label=target_label))
             self._refresh_backup_restore_entries()
-            if not self._closing: messagebox.showinfo(APP_NAME,f'上書きが完了しました。\n\n対象: {target_label}\n{reason}')
+            if not self._closing: messagebox.showinfo(APP_NAME,i18n.t('u6.overwrite_complete_target', target_label=target_label, reason=reason))
         else:
-            self.progress_text.set('上書きできませんでした')
-            if reason != i18n.t("p0.reason.cancelled") and not self._closing: messagebox.showinfo(APP_NAME,f'上書きできませんでした。\n{reason}')
+            self.progress_text.set(i18n.t('u6.could_not_overwrite'))
+            if reason != i18n.t("p0.reason.cancelled") and not self._closing: messagebox.showinfo(APP_NAME,i18n.t('u6.could_not_overwrite_2', reason=reason))
 
     def _bulk_overwrite_queue_entries(self, entries, queue_kind="normal"):
         if self.bulk_overwrite_thread is not None:
-            messagebox.showinfo(APP_NAME,'一括上書きはすでにバックグラウンドで実行中です。'); return
+            messagebox.showinfo(APP_NAME,i18n.t('u6.a_bulk_overwrite_is_already_running')); return
         eligible=[]; skipped_unfinished=0
         for idx,item in entries:
             if self._queue_item_is_completed(item): eligible.append((idx,item))
             else: skipped_unfinished+=1
         if not eligible:
-            messagebox.showinfo(APP_NAME,'選択項目に翻訳完了済みの項目がありません。'); return
+            messagebox.showinfo(APP_NAME,i18n.t('u6.no_completed_translation_items_selected')); return
         conflict_targets={}
         for _idx,item in eligible:
             try:
                 preferred,_conflicts=self._preferred_later_translation_conflict(item)
                 if preferred: conflict_targets[id(item)]=preferred
             except Exception as exc:
-                record_error('一括上書き前の同名ファイル競合確認',exc,item.get('mod_name',''))
+                record_error(i18n.t('u6.same_name_file_conflict_check_before'),exc,item.get('mod_name',''))
         has_external=any((item.get('external_translation_path') and _item_target_lang(item) == core.DEFAULT_TARGET_LANG)
                          or id(item) in conflict_targets for _,item in eligible); policy='source'
         if has_external:
-            choice=messagebox.askyesnocancel('一括上書き先の方針',
-                f'翻訳完了済み {len(eligible)}件を一括上書きします。\n\nはい: 日本語化Modを優先（差分追加または同名ファイル更新）\n      日本語化Modがない項目は元Modへ上書き\nいいえ: すべて元Modへ上書き\nキャンセル: 何もしない',icon='question')
+            choice=messagebox.askyesnocancel(i18n.t('u6.bulk_overwrite_destination_policy'),
+                i18n.t('u6.bulk_overwrite_completed_items_yes_prefer', eligible_count=len(eligible), target_name=i18n.t("lang." + 'japanese')),icon='question')
             if choice is None: return
             policy='external' if choice else 'source'
-        policy_text='既存日本語化Modを優先' if policy=='external' else 'すべて元Modへ上書き'
-        relationship_warning='\n日本語化Modへ上書きする項目について、元Modと上書き先が適切な日本語化Modの関係になっているか確認してください。\n' if policy=='external' else ''
+        policy_text=i18n.t('u6.prefer_existing_translation_mods', target_name=i18n.t("lang." + 'japanese')) if policy=='external' else i18n.t('u6.write_everything_to_source_mods')
+        relationship_warning=i18n.t('u6.for_items_written_to_translation_mods', target_name=i18n.t("lang." + 'japanese')) if policy=='external' else ''
         if conflict_targets:
-            relationship_warning += f"\n後順位Modの同名ファイルに隠される項目: {len(conflict_targets)}件\n"
-        if not messagebox.askyesno('一括上書きの確認',
-            f'対象: {len(eligible)}件\n方針: {policy_text}\n未完了のためスキップ予定: {skipped_unfinished}件\n{relationship_warning}\n各Modについて既存ファイルのバックアップを作成してから書き込みます。\n続行しますか？',icon='warning'):
+            relationship_warning += i18n.t('u6.items_hidden_by_later_mods_same', conflict_targets_count=len(conflict_targets))
+        if not messagebox.askyesno(i18n.t('u6.confirm_bulk_overwrite'),
+            i18n.t('u6.targets_policy_skipped_as_unfinished_each', eligible_count=len(eligible), policy_text=policy_text, skipped_unfinished=skipped_unfinished, relationship_warning=relationship_warning),icon='warning'):
             return
-        self.progress_text.set(f'一括上書きをバックグラウンドで実行中… 0/{len(eligible)}')
+        self.progress_text.set(i18n.t('u6.bulk_overwrite_in_the_background_0', eligible_count=len(eligible)))
         def work():
             success=0; skipped=skipped_unfinished; failed=0; details=[]
             for pos,(_,item) in enumerate(eligible,1):
-                name=item.get('mod_name') or Path(item.get('input','')).name or '項目'
+                name=item.get('mod_name') or Path(item.get('input','')).name or i18n.t('u6.item')
                 self.events.put(('bulk_overwrite_progress',(pos,len(eligible),name)))
                 try:
                     conflict_target=conflict_targets.get(id(item)) if policy=='external' else None
@@ -7452,23 +7409,23 @@ class App(BaseTk):
                             target_root=Path(item.get('external_translation_path','')); target_loc=Path(item.get('external_translation_localization',''))
                         else:
                             target_loc,target_root=self._infer_mod_target_for_item(item)
-                        if not target_loc or not target_root: ok,reason=False,'不足翻訳の上書き先を特定できません'
+                        if not target_loc or not target_root: ok,reason=False,i18n.t('u6.cannot_identify_the_destination_for_missing')
                         else: ok,reason=self._merge_missing_only_output(item,Path(target_loc),Path(target_root),confirm=False,notify=False)
                     elif conflict_target:
                         ok,reason=self._perform_full_translation_mod_overwrite(item,conflict_target,confirm=False,notify=False)
                     elif policy=='external' and item.get('external_translation_path') and _item_target_lang(item) == core.DEFAULT_TARGET_LANG:
                         ok,reason=self._perform_external_gap_overwrite(item,confirm=False,notify=False)
                         if not ok and reason in {i18n.t("p0.reason.no_gap_info"),i18n.t("p0.reason.no_gap_translation")}:
-                            skipped+=1; details.append(f'{name}: スキップ ({reason})'); continue
+                            skipped+=1; details.append(i18n.t('u6.skipped', name=name, reason=reason)); continue
                     else:
                         ok,reason=self._perform_source_mod_overwrite(item,confirm=False,notify=False)
                     if ok:
                         self._set_overwritten_status(item); self._invalidate_status_cache_for_item(item); success+=1
                         if '⚠' in str(reason): details.append(f'{name}: {reason}')
                     else:
-                        failed+=1; details.append(f'{name}: 失敗 ({reason})')
+                        failed+=1; details.append(i18n.t('u6.failed', name=name, reason=reason))
                 except Exception as exc:
-                    failed+=1; details.append(f'{name}: 失敗 ({exc})'); record_error('一括上書き',exc,name)
+                    failed+=1; details.append(i18n.t('u6.failed_2', name=name, exc=exc)); record_error(i18n.t('u6.bulk_overwrite'),exc,name)
             self.events.put(('bulk_overwrite_done',(success,skipped,failed,details,queue_kind)))
         self._bulk_overwrite_queue_kind=queue_kind
         self.bulk_overwrite_thread=threading.Thread(target=work,daemon=True,name='bulk-overwrite'); self.bulk_overwrite_thread.start()
@@ -7479,11 +7436,11 @@ class App(BaseTk):
         self._bulk_overwrite_queue_kind=None
         self._refresh_queue_tree(); self._refresh_chinese_queue_tree(); self._save_workspace_state('bulk_overwrite_completed')
         if self.queue_items and all(self._queue_item_is_completed(x) for x in self.queue_items): self._delete_session()
-        self.progress_text.set(f'一括上書き完了: 成功 {success} / スキップ {skipped} / 失敗 {failed}')
-        summary=f'一括上書きが完了しました。\n\n上書き成功: {success}件\nスキップ: {skipped}件\n失敗: {failed}件'
+        self.progress_text.set(i18n.t('u6.bulk_overwrite_complete_succeeded_skipped_failed', success=success, skipped=skipped, failed=failed))
+        summary=i18n.t('u6.bulk_overwrite_complete_succeeded_skipped_failed_2', success=success, skipped=skipped, failed=failed)
         if details:
-            summary+='\n\n詳細:\n'+'\n'.join(details[:12])
-            if len(details)>12: summary+=f'\n…ほか {len(details)-12}件'
+            summary+=i18n.t('u6.details', value='\n'.join(details[:12]))
+            if len(details)>12: summary+=i18n.t('u6.and_more', value=len(details) - 12)
         if not self._closing: messagebox.showinfo(APP_NAME,summary)
         self._refresh_backup_restore_entries()
 
@@ -7492,7 +7449,7 @@ class App(BaseTk):
             return self._overwrite_single_item_interactive(item_override,prefer_external=prefer_external)
         entries=self._selected_normal_queue_entries()
         if not entries:
-            messagebox.showinfo(APP_NAME,"通常翻訳キューから上書きする項目を選択してください。")
+            messagebox.showinfo(APP_NAME,i18n.t('u6.select_items_to_overwrite_in_the'))
             return
         self._bulk_overwrite_queue_entries(entries,queue_kind="normal")
 
@@ -7506,13 +7463,13 @@ class App(BaseTk):
             if item.get("mod_localization") == loc or item.get("input") == loc:
                 candidates.append((idx,item))
         if not candidates:
-            messagebox.showinfo(APP_NAME, "このModの完成済み翻訳がキューに見つかりません。\n先に『通常翻訳キューへ追加』で対象Modをキューへ追加し、翻訳を完了してください。")
+            messagebox.showinfo(APP_NAME, i18n.t('u6.no_completed_translation_for_this_mod'))
             return
         idx,item=candidates[-1]
         self.overwrite_selected_translation_to_mod(item_override=item)
 
     def clear_mod_status_results(self):
-        if not messagebox.askyesno(APP_NAME, "翻訳状況一覧と保存済みキャッシュを消去しますか？"):
+        if not messagebox.askyesno(APP_NAME, i18n.t('u6.clear_translation_status_results_and_saved')):
             return
         self.mod_research_results=[]
         self.mod_status_search_var.set("")
@@ -7521,39 +7478,39 @@ class App(BaseTk):
         with self.mod_status_cache_lock:
             self.mod_status_cache={"version":MOD_STATUS_CACHE_VERSION,"items":{},"updated_at":datetime.now().isoformat(timespec="seconds")}
             core.save_json(MOD_STATUS_CACHE_PATH,self.mod_status_cache)
-        self.mod_status_summary_var.set("調査結果: 0件")
+        self.mod_status_summary_var.set(i18n.t('u6.research_results_0'))
 
     def export_mod_status_csv(self):
         if not self.mod_research_results:
-            messagebox.showinfo(APP_NAME,"保存する調査結果がありません。")
+            messagebox.showinfo(APP_NAME,i18n.t('u6.no_research_results_to_save'))
             return
-        p=filedialog.asksaveasfilename(title="翻訳状況をCSV保存",defaultextension=".csv",filetypes=[("CSV","*.csv")],initialfile="mod_translation_status.csv")
+        p=filedialog.asksaveasfilename(title=i18n.t('u6.save_translation_status_as_csv'),defaultextension=".csv",filetypes=[("CSV","*.csv")],initialfile="mod_translation_status.csv")
         if not p: return
         import csv
         with open(p,"w",encoding="utf-8-sig",newline="") as f:
-            w=csv.writer(f); w.writerow(["状態","Mod","欠損件数","結果","場所"])
+            w=csv.writer(f); w.writerow([i18n.t('u6.status'),"Mod",i18n.t('u6.gap_count'),i18n.t('u6.result'),i18n.t('u6.location_3')])
             for r in self.mod_research_results:
-                w.writerow([r.get("status",""),r.get("mod",""),r.get("gap_count",0),r.get("message",""),r.get("path","")])
-        messagebox.showinfo(APP_NAME,"CSVを保存しました。")
+                w.writerow([display_status(r),r.get("mod",""),r.get("gap_count",0),ui_status.display_message(r),r.get("path","")])
+        messagebox.showinfo(APP_NAME,i18n.t('u6.csv_saved'))
 
     def clear_monitor_results(self):
         self.monitor_candidates=[]
         if hasattr(self,"monitor_tree"):
             for x in self.monitor_tree.get_children(): self.monitor_tree.delete(x)
-        self.monitor_summary_var.set("未翻訳候補: 0")
+        self.monitor_summary_var.set(i18n.t('u6.untranslated_candidates_0'))
 
     def export_monitor_csv(self):
         if not self.monitor_candidates:
-            messagebox.showinfo(APP_NAME,"保存する候補がありません。")
+            messagebox.showinfo(APP_NAME,i18n.t('u6.no_candidates_to_save'))
             return
-        p=filedialog.asksaveasfilename(title="未翻訳候補をCSV保存",defaultextension=".csv",filetypes=[("CSV","*.csv")],initialfile="untranslated_candidates.csv")
+        p=filedialog.asksaveasfilename(title=i18n.t('u6.save_untranslated_candidates_as_csv'),defaultextension=".csv",filetypes=[("CSV","*.csv")],initialfile="untranslated_candidates.csv")
         if not p: return
         import csv
         with open(p,"w",encoding="utf-8-sig",newline="") as f:
-            w=csv.writer(f); w.writerow(["種類","判定","ファイル","キー","原文","現在の日本語"])
+            w=csv.writer(f); w.writerow([i18n.t('u6.type'),i18n.t('u6.assessment'),i18n.t('u6.file'),i18n.t('u6.key'),i18n.t('u6.source_text'),i18n.t('u6.current_japanese')])
             for c in self.monitor_candidates:
                 w.writerow([c.get("kind",""),c.get("confidence",""),c.get("target_file") or c.get("source_file",""),c.get("key",""),c.get("source",""),c.get("target","")])
-        messagebox.showinfo(APP_NAME,"CSVを保存しました。")
+        messagebox.showinfo(APP_NAME,i18n.t('u6.csv_saved'))
 
     def _build_models_tab(self):
         t=self.tab_models
@@ -8034,9 +7991,9 @@ class App(BaseTk):
                 candidates = list(result.get("candidates", []))
                 status_label = result.get("status", "")
         except Exception as exc:
-            record_error("差分翻訳 翻訳状況欠損判定", exc, str(mod_root))
+            record_error(i18n.t('u6.difference_translation_translation_status_gap_assessment'), exc, str(mod_root))
             candidates = list(item.get("status_gap_candidates", []))
-            status_label = "保存済み翻訳状況"
+            status_label = i18n.t('u6.saved_translation_status')
 
         wanted = {str(c.get("key")) for c in candidates if c.get("key")}
         files = core.gather_yml_files(p) if p.exists() else []
@@ -9115,7 +9072,7 @@ class App(BaseTk):
             self._restore_status_rows_cache = None
             self._save_shared_mod_state_cache("translation_status:" + str(reason))
         except Exception as exc:
-            record_error("翻訳状況状態キャッシュ保存", exc)
+            record_error(i18n.t('u6.save_translation_status_cache'), exc)
 
     def _schedule_translation_status_state_save(self, reason="update", delay_ms=750):
         """Coalesce rapid status-row events into one main-thread snapshot write."""
@@ -11435,7 +11392,7 @@ class App(BaseTk):
             self.llm_detail_var.set("停止要求済み — 現在のAPI/LLM応答完了を待っています")
 
     # ---------------- monitor/research LLM activity ----------------
-    def _handle_monitor_llm_activity(self, payload, operation="未翻訳Mod探索"):
+    def _handle_monitor_llm_activity(self, payload, operation=i18n.t('u6.untranslated_mod_research')):
         state = payload.get("state")
         provider = payload.get("provider", self.monitor_provider_var.get())
         model = payload.get("model", self.monitor_model_var.get())
@@ -11448,26 +11405,26 @@ class App(BaseTk):
             self.monitor_llm_banner.config(bg="#2563eb")
             self.monitor_llm_status_label.config(bg="#2563eb", fg="white")
             self.monitor_llm_detail_label.config(bg="#2563eb", fg="white")
-            self.monitor_llm_status_var.set(f"● 探索用LLM 動作中 — {operation}")
+            self.monitor_llm_status_var.set(i18n.t('u6.research_llm_active', operation=operation))
             modtxt = f" / {self.monitor_current_mod}" if self.monitor_current_mod else ""
-            self.monitor_llm_detail_var.set(f"{provider} / {model}{modtxt} — 応答待ち")
+            self.monitor_llm_detail_var.set(i18n.t('u6.waiting_for_response', provider=provider, model=model, modtxt=modtxt))
             self.monitor_llm_stop_btn.config(state="normal")
             self.after(500, self._update_monitor_llm_elapsed)
         elif state == "retry":
-            self.monitor_llm_status_var.set(f"● 探索用LLM 再試行中 — {operation}")
-            self.monitor_llm_detail_var.set(f"{provider} / {model} — 再試行 {payload.get('attempt',0)}/{payload.get('retries',0)}")
+            self.monitor_llm_status_var.set(i18n.t('u6.research_llm_retrying', operation=operation))
+            self.monitor_llm_detail_var.set(i18n.t('u6.retry', provider=provider, model=model, attempt=payload.get('attempt', 0), retries=payload.get('retries', 0)))
         elif state == "end":
             self.monitor_llm_active_ids.discard(activity_id)
             if not self.monitor_llm_active_ids:
-                self._set_monitor_llm_idle("探索用LLM 待機中", "LLM精査は終了しました。Mod調査は継続する場合があります")
+                self._set_monitor_llm_idle(i18n.t('u6.research_llm_idle'), i18n.t('u6.llm_review_ended_mod_research_may'))
 
     def _update_monitor_llm_elapsed(self):
         if not self.monitor_llm_active_ids or self.monitor_llm_busy_since is None:
             return
         import time
         secs=max(0,int(time.time()-self.monitor_llm_busy_since))
-        base=self.monitor_llm_detail_var.get().split(" / 経過 ")[0]
-        self.monitor_llm_detail_var.set(f"{base} / 経過 {secs}秒")
+        base=self.monitor_llm_detail_var.get().split(i18n.t('u6.elapsed'))[0]
+        self.monitor_llm_detail_var.set(i18n.t('u6.elapsed_seconds', base=base, secs=secs))
         self.after(1000,self._update_monitor_llm_elapsed)
 
     def _set_monitor_scan_status(self, text, detail=""):
@@ -11477,10 +11434,10 @@ class App(BaseTk):
         self.monitor_llm_status_label.config(bg="#dbeafe",fg="#1e3a8a")
         self.monitor_llm_detail_label.config(bg="#dbeafe",fg="#1e3a8a")
         self.monitor_llm_status_var.set(text)
-        self.monitor_llm_detail_var.set(detail or "未翻訳Modを機械的に調査しています")
+        self.monitor_llm_detail_var.set(detail or i18n.t('u6.checking_untranslated_mods_automatically'))
         self.monitor_llm_stop_btn.config(state="normal" if (self.mod_research_thread and self.mod_research_thread.is_alive()) or (self.monitor_thread and self.monitor_thread.is_alive()) else "disabled")
 
-    def _set_monitor_llm_idle(self, status="探索用LLM 待機中", detail="未翻訳Modの探索・精査は実行されていません"):
+    def _set_monitor_llm_idle(self, status=i18n.t('u6.research_llm_idle'), detail=i18n.t('u6.no_untranslated_mod_research_review_is')):
         self.monitor_llm_active_ids.clear(); self.monitor_llm_busy_since=None
         self.monitor_llm_status_var.set(status); self.monitor_llm_detail_var.set(detail)
         self.monitor_llm_banner.config(bg="#dbeafe")
@@ -11493,8 +11450,8 @@ class App(BaseTk):
         self.monitor_stop_event.set()
         if self.monitor_llm_controller:
             self.monitor_llm_controller.request_stop(save=False)
-        self.monitor_llm_status_var.set("探索停止要求済み")
-        self.monitor_llm_detail_var.set("現在の探索用LLM応答が終わり次第、安全に停止します")
+        self.monitor_llm_status_var.set(i18n.t('u6.stop_requested'))
+        self.monitor_llm_detail_var.set(i18n.t('u6.stops_safely_after_the_current_research'))
 
     # ---------------- misc ----------------
     def _open_path(self, path: Path):
