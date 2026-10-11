@@ -2616,8 +2616,17 @@ def collect_translation_qa_pairs(input_path: Path, output_path: Path,
             continue
         planned.add(token)
         pairs.append({"source_file":str(source), "target_file":str(target),
-                      "source_language":source_lang})
+                      "source_language":source_lang, "target_language":target_lang})
     return pairs
+
+
+def target_language_of_pair(pair: dict, default: str = DEFAULT_TARGET_LANG) -> str:
+    """QA の組の翻訳先。組に書かれていなければ既定（日本語）。
+
+    ファイルの見出しからは決めない：英語の localization（l_english）に日本語を書く旧式の日本語化 Mod があるため。
+    """
+    lang = str(pair.get("target_language") or "")
+    return lang if lang in TARGET_LANGUAGES else default
 
 
 def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
@@ -2637,6 +2646,7 @@ def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
         source = Path(pair.get("source_file") or pair.get("source") or "")
         target = Path(pair.get("target_file") or pair.get("target") or "")
         source_lang = str(pair.get("source_language") or pair.get("lang") or "english")
+        pair_target = target_language_of_pair(pair, target_lang)
         created_target = False
         try:
             if controller:
@@ -2647,16 +2657,17 @@ def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
                 raise FileNotFoundError(f"原文ファイルが見つかりません: {source}")
             if not target.exists():
                 target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(f"\ufeffl_{target_lang}:\n", encoding="utf-8")
+                target.write_text(f"\ufeffl_{pair_target}:\n", encoding="utf-8")
                 created_target = True
             result = qa_file_with_auto_repair(
-                target, source, source_lang=source_lang, glossary=glossary,
+                target, source, source_lang=source_lang,
+                glossary=glossary if pair_target == DEFAULT_TARGET_LANG else None,
                 model=model, url=url, provider=provider, api_key=api_key, preset=preset,
-                controller=controller, chinese_basis=(source_lang == "simp_chinese" and target_lang == DEFAULT_TARGET_LANG),
+                controller=controller, chinese_basis=(source_lang == "simp_chinese" and pair_target == DEFAULT_TARGET_LANG),
                 max_passes=max_passes, backup_dir=backup_dir,
                 backup_relative_root=None,
                 progress_context={"file_no":file_index,"file_total":len(pair_list)},
-                target_lang=target_lang)
+                target_lang=pair_target)
             if created_target and result.get("final_errors", 0) >= result.get("initial_errors", 0):
                 target.unlink(missing_ok=True)
                 result["rolled_back"] = True
@@ -3057,7 +3068,8 @@ def update_localization_value(path: Path, key: str, new_value: str) -> bool:
     return changed
 
 
-def compare_localization_entries(source_entries: Dict[str, str], target_entries: Dict[str, str], source_lang: str = "english") -> List[dict]:
+def compare_localization_entries(source_entries: Dict[str, str], target_entries: Dict[str, str], source_lang: str = "english",
+                                 target_lang: str = DEFAULT_TARGET_LANG) -> List[dict]:
     """Compare source/target localization dictionaries key-by-key."""
     rows = []
     for key in sorted(set(source_entries) | set(target_entries)):
@@ -3065,11 +3077,11 @@ def compare_localization_entries(source_entries: Dict[str, str], target_entries:
         dst = target_entries.get(key, "")
         if key not in target_entries:
             status = "missing"
-            message = "日本語側にキーがありません"
+            message = f"{target_language_label(target_lang)}側にキーがありません"
         elif key not in source_entries:
             status = "extra"
-            message = "日本語側だけに存在するキーです"
-        elif looks_untranslated(src, dst, source_lang):
+            message = f"{target_language_label(target_lang)}側だけに存在するキーです"
+        elif looks_untranslated(src, dst, source_lang, target_lang):
             status = "untranslated"
             message = "原文のまま残っている可能性があります"
         else:
