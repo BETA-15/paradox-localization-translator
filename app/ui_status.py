@@ -190,3 +190,28 @@ def display_message(result) -> str:
         if text:
             return text
     return str(result.get("message") or "")
+
+
+DIAGNOSTIC_KINDS = {
+    'localization欠落': 'u7.kind.missing_localization',
+    'YAML読込エラー': 'u7.kind.yaml_error',
+    '日本語化Mod（複数対応可）': 'u7.kind.translation_mod',
+    '日本語化Mod候補（未確定）': 'u7.kind.translation_candidate',
+    '英語原文なし': 'u7.kind.missing_english',
+    '簡体字中国語なし': 'u7.kind.missing_chinese',
+    '日本語なし': 'u7.kind.missing_target',
+    '同一Mod内の完全重複': 'u7.kind.identical_duplicates',
+    '同一Mod内の訳競合': 'u7.kind.translation_conflicts',
+    '不要日本語キー': 'u7.kind.unnecessary_keys',
+    '不要日本語ファイル': 'u7.kind.unnecessary_files',
+    '修復基準なし': 'u7.kind.no_repair_basis',
+    '本体/日本語化Mod重複': 'u7.kind.source_translation_duplicates',
+    '日本語ファイル異常増加': 'u7.kind.excess_target_files',
+    '異常なし': 'u7.kind.healthy',
+    '本体/日本語化Mod統合': 'u7.kind.source_translation_integration',
+}
+
+
+def diagnostic_kind_label(kind: str, target_lang: str = "japanese") -> str:
+    key = DIAGNOSTIC_KINDS.get(kind)
+    return i18n.t(key, target_name=i18n.t("lang." + target_lang)) if key else kind

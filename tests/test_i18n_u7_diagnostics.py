@@ -999,7 +999,8 @@ def test_original_japanese_display(key, original, reference, fields, owner):
 
 def test_all_u7_keys_have_english_without_fallback():
     i18n.set_ui_language("english")
-    assert set(JAPANESE) == set(ENGLISH) == {case[0] for case in ORIGINAL_CASES}
+    assert set(JAPANESE) == set(ENGLISH)
+    assert {case[0] for case in ORIGINAL_CASES} <= set(JAPANESE)
     for key in JAPANESE:
         assert key.startswith("u7.")
         assert i18n.t(key) == ENGLISH[key]
@@ -1014,16 +1015,26 @@ def test_u7_call_fields_match_templates():
             continue
         if not isinstance(node.func.value, ast.Name) or node.func.value.id != "i18n" or node.func.attr != "t":
             continue
-        if not node.args or not isinstance(node.args[0], ast.Constant):
+        if not node.args:
             continue
-        key = node.args[0].value
-        if not isinstance(key, str) or not key.startswith("u7."):
-            continue
-        calls.append(key)
-        fields = {name for _, name, _, _ in Formatter().parse(JAPANESE[key]) if name}
-        assert fields == {keyword.arg for keyword in node.keywords}, (node.lineno, key)
-        assert "key" not in fields
-    assert set(calls) == set(JAPANESE)
+        key_nodes = [node.args[0]]
+        if isinstance(node.args[0], ast.IfExp):
+            key_nodes = [node.args[0].body, node.args[0].orelse]
+        for key_node in key_nodes:
+            if not isinstance(key_node, ast.Constant):
+                continue
+            key = key_node.value
+            if not isinstance(key, str) or not key.startswith("u7."):
+                continue
+            calls.append(key)
+            fields = {name for _, name, _, _ in Formatter().parse(JAPANESE[key]) if name}
+            provided = {keyword.arg for keyword in node.keywords}
+            assert fields <= provided, (node.lineno, key)
+            assert provided - fields <= ({"target_name"} if isinstance(node.args[0], ast.IfExp) else set()), (node.lineno, key)
+            assert "key" not in fields
+    import ui_status
+    helper_keys = set(ui_status.DIAGNOSTIC_KINDS.values()) | {"u7.source_copy_rejected"}
+    assert set(calls) | helper_keys == set(JAPANESE)
 
 
 @pytest.mark.parametrize("language", i18n.UI_LANGUAGES)
@@ -1067,8 +1078,6 @@ INTERNAL_VALUES_BY_OWNER = {'App._safe_backup_mod_token': ['[^0-9A-Za-zぁ-ん�
                                                     '不足分上書き',
                                                     '元Mod上書き',
                                                     'ゲーム未特定'],
- 'App._on_backup_restore_selected': ['ゲーム未特定'],
- 'App._restore_selected_backup': ['ゲーム未特定'],
  'App._restore_selected_backup.work': ['復元前退避', '復元前退避'],
  'App._attach_diagnostic_integration_issues': ['本体/日本語化Mod統合', '本体/日本語化Mod重複'],
  'App._analyze_localization_health': ['localization欠落',
@@ -1087,7 +1096,7 @@ INTERNAL_VALUES_BY_OWNER = {'App._safe_backup_mod_token': ['[^0-9A-Za-zぁ-ん�
                                       '日本語ファイル異常増加',
                                       '異常なし'],
  'App._backup_localization_for_repair': ['総合診断修復', '総合診断'],
- 'App._start_localization_diagnostic.work': ['診断', 'バックアップ'],
+ 'App._start_localization_diagnostic.work': ['バックアップ'],
  'App._refresh_diagnostic_action_state': ['本体/日本語化Mod統合'],
  'App._restore_workspace_state': ['中国語基準翻訳', '中国語基準翻訳'],
  'App.restore_session': ['翻訳中', '不明'],

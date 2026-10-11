@@ -4537,6 +4537,8 @@ def build_translation_mod_index(mod_roots: Iterable[Path], *, target_lang: str =
             "dependencies": _descriptor_dependency_names(root),
             "profile": _mod_content_profile(root, jp_files, en_files, zh_files, other_language_files),
         })
+        if target_lang != "japanese":
+            rows[-1]["language_paths"] = data.get("language_paths") or {}
     return rows
 
 
@@ -4894,7 +4896,7 @@ def _normalized_relation_text(value: str) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip())
 
 
-def classify_translation_candidate_role(row: dict, *, target_lang: str = "japanese") -> dict:
+def classify_translation_candidate_role(row: dict, *, target_lang: str = "japanese", source_language_entries: Optional[dict] = None, source_language_paths: Optional[dict] = None) -> dict:
     """Classify candidate shape independently from any one source Mod relation."""
     japanese_keys = set(row.get("japanese_keys") or set(row.get("japanese", {}) or {}))
     language_keys = dict(row.get("language_keys") or {})
@@ -4932,7 +4934,26 @@ def classify_translation_candidate_role(row: dict, *, target_lang: str = "japane
         base_classification = "large_override_candidate"
     else:
         base_classification = "normal"
+    copy_evidence = {}
+    if target_lang not in {"japanese", "english"}:
+        originals = source_language_entries if source_language_entries is not None else source_entries
+        original_paths = source_language_paths if source_language_paths is not None else (row.get("language_paths") or {})
+        english = originals.get("english") or {}
+        chinese = originals.get("simp_chinese") or {}
+        comparable = identical = 0
+        for key, target in (row.get("japanese") or {}).items():
+            source_lang = "english" if key in english else "simp_chinese"
+            source = english.get(key) if key in english else chinese.get(key)
+            source_file = Path((original_paths.get(source_lang) or {}).get(key) or row.get("path") or "")
+            if source is None or not _qa_same_as_source_candidate(key, source, source, source_lang, target_lang, source_file):
+                continue
+            comparable += 1
+            identical += int(_qa_same_as_source_candidate(key, source, target, source_lang, target_lang, source_file))
+        copy_evidence = {"candidate_source_comparable": comparable, "candidate_source_identical": identical}
+        if comparable >= 20 and identical / comparable >= 0.80:
+            copy_evidence["candidate_rejected"] = "source_copy"
     return {
+        **copy_evidence,
         "candidate_total_keys": japanese_count,
         "candidate_base_keys": base_count,
         "candidate_base_rate": base_rate,
@@ -5228,13 +5249,13 @@ def translation_relation_evidence(source_language_entries: dict, row: dict,
 def _translation_mod_weight(source_name: str, source_keys: set, row: dict,
                             source_language_entries: Optional[dict] = None,
                             source_path: str = "",
-                            source_profile: Optional[dict] = None, *, target_lang: str = "japanese") -> dict:
+                            source_profile: Optional[dict] = None, *, target_lang: str = "japanese", source_language_paths: Optional[dict] = None) -> dict:
     """Score a relation only after candidate-role and effective-key gates pass."""
     source_language_entries = dict(source_language_entries or {})
     if not source_language_entries:
         source_language_entries = {"english": {key: "" for key in set(source_keys or set())}, "simp_chinese": {}}
     evidence = translation_relation_evidence(source_language_entries, row, source_profile=source_profile, target_lang=target_lang)
-    role = classify_translation_candidate_role(row, target_lang=target_lang)
+    role = classify_translation_candidate_role(row, target_lang=target_lang, source_language_entries=source_language_entries, source_language_paths=source_language_paths)
     profile = dict(row.get("profile") or {})
     language_files = dict(row.get("language_files") or {})
     japanese_file_count = int(language_files.get(target_lang, row.get("japanese_files", 0)) or 0)
@@ -5314,7 +5335,7 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict,
     )
     weighted_tier = str(evidence.get("weighted_tier") or "auto")
     numeric_gate = bool(evidence.get("relation_gate") or (multi_relation_gate and weighted_tier != "reject"))
-    final_gate = bool(numeric_gate and translation_shape_gate and base_role_gate)
+    final_gate = bool(numeric_gate and translation_shape_gate and base_role_gate and not role.get("candidate_rejected"))
 
     effective_overlap_n = int(evidence.get("effective_overlap_keys", 0) or 0)
     source_effective_n = int(evidence.get("source_effective_keys", 0) or 0)
@@ -5365,6 +5386,8 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict,
         reasons.append(i18n.t('u9.relation_base_excluded.target', target_name=i18n.t("lang." + target_lang)))
     if not numeric_gate:
         reasons.append(i18n.t('u9.relation_gate_failed'))
+    if role.get("candidate_rejected") == "source_copy":
+        reasons.append(i18n.t('u7.source_copy_rejected'))
 
     public_evidence = {key: value for key, value in evidence.items() if not key.startswith("_")}
     return {
@@ -5566,7 +5589,11 @@ def rank_external_japanese_translations(mod_root: Path, translation_index: Optio
             source_path=source_id,
             source_profile=source_profile,
             target_lang=target_lang,
+            source_language_paths=src_data.get("language_paths"),
         )
+        if weight.get("candidate_rejected") == "source_copy":
+            ranked.append({**row, **weight})
+            continue
         if manual_role == "translation" and source_id in manual_sources:
             reasons = [i18n.t('u9.manual_relation_override.target', target_name=i18n.t("lang." + target_lang))] + list(weight.get("reasons") or [])
             weight = {**weight, "score": 100.0, "raw_score": max(100.0, float(weight.get("raw_score",0.0) or 0.0)),
