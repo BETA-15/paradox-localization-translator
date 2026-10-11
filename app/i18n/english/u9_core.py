@@ -1,6 +1,11 @@
 """U9 translator_core の見せる文（english）。"""
 
 STRINGS = {
+    "u9.script_han_in_target": "Han characters in the translation ({count}; Korean parenthetical Han annotations are notices)",
+    "u9.script_kana_in_target": "Kana characters in the translation ({count})",
+    "u9.script_hangul_in_target": "Hangul characters in the translation ({count})",
+    "u9.script_cyrillic_in_target": "Cyrillic characters in the translation ({count})",
+    "u9.english_left_in_target": "Possible English remaining in the translation (acronyms, model numbers and proper nouns may be valid)",
     "u9.unsupported_game_language": "{game} cannot read {target_name} (l_{target_lang}). Translations will not appear in the game. Languages supported by {supported_game}: {supported_languages}",
     "u9.glossary_unsupported_format": "Unsupported format ({format_name}). This app uses Glossary JSON in {{\"source\": \"translation\"}} format. Import a ParaTranz Glossary using “Import ParaTranz Glossary”.",
     "u9.thinking_only_warning": "{model} is a {marker} that cannot stop thinking, so it cannot translate. It may spend too long thinking, time out, or return an empty response. Choose a non-thinking instruct model such as qwen3:4b-instruct-2507.",

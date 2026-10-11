@@ -1,6 +1,11 @@
 """U9 translator_core の見せる文（japanese）。"""
 
 STRINGS = {
+    "u9.script_han_in_target": "訳文に漢字が混入しています（{count}字。韓国語の括弧内の漢字の添え書きは注意扱い）",
+    "u9.script_kana_in_target": "訳文にかなが混入しています（{count}字）",
+    "u9.script_hangul_in_target": "訳文にハングルが混入しています（{count}字）",
+    "u9.script_cyrillic_in_target": "訳文にキリル文字が混入しています（{count}字）",
+    "u9.english_left_in_target": "訳文に英語が残っている可能性があります（略語・型番・固有名詞なら問題ありません）",
     "u9.unsupported_game_language": "{game} は{target_name}（l_{target_lang}）を読めません。翻訳しても、ゲームの中には表示されません。{supported_game} が読める言語: {supported_languages}",
     "u9.glossary_unsupported_format": "対応していない形式です（{format_name}）。このアプリの用語集は {{\"原語\": \"訳語\"}} 形式のJSONです。ParaTranz の用語集は『ParaTranz の用語集を取り込む』から取り込めます。",
     "u9.thinking_only_warning": "{model} は思考を止められない{marker}のため、翻訳には使用できません。1回の翻訳で長く考え込み、時間切れや空の応答になります。qwen3:4b-instruct-2507 などのinstruct版（思考なし）のモデルを選んでください。",

@@ -234,7 +234,7 @@ def test_qa_on_french_output_reports_no_japanese_specific_errors():
                              target_lang="french")
     assert not [i for i in issues if i["severity"] in {"error", "warning"}]
     same = [i for i in issues if i["type"] == "same_as_source"]
-    assert len(same) == 1 and same[0]["severity"] == "notice" and same[0]["repairable"] is False
+    assert not same
 
 
 def test_without_english_simplified_chinese_is_preferred_over_other_languages(tmp_path, monkeypatch):
