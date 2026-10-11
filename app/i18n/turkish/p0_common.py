@@ -56,7 +56,7 @@ STRINGS = {
     'p0.no_scan_results': 'Tarama sonucu yok',
     'p0.no_translation_status_scan_results': 'Çeviri durumu tarama sonucu yok',
     'p0.unknown_file': 'Bilinmeyen dosya',
-    'p0.the_qa_comparison_editor_also': 'QA / Karşılaştır ve düzenle sekmesi de seçili hedef dile göre denetler. Mod taraması, çeviri modu algılama ve ilişkilendirme, yalnızca farkları çevirme ve Çince tabanlı çeviri yalnızca Japonca için kullanılabilir. Diğer hedef dillerin kalite denetimleri Japoncadan daha basittir (Latin harfli diller arasında yalnızca kaynakla aynı metin denetlenir).',
+    'p0.the_qa_comparison_editor_also': 'QA / Karşılaştırma düzenleyicisi sekmesi de burada seçilen hedef dile göre denetler. Japonca dışındaki hedef dillerde kalite denetimi Japoncadakinden daha basittir (karışmış yazı sistemleri, kaynakla aynı metin ve kalan İngilizce denetlenir). Hedef dil İngilizce olduğunda mod taramasında harici çeviri modları eşleştirilmez.',
     'p0.this_feature_is_available_only': "Bu özellik yalnızca Japonca Sözlük'lerde kullanılabilir",
     'p0.missing_only_translation_is_available': '“Yalnızca farkları çevir” yalnızca hedef dili Japonca olan öğelerde kullanılabilir. Diğer diller için “Tümünü sıfırdan çevir” seçeneğini kullanın.',
     'p0.the_llm_response_was_empty': 'LLM yanıtı boştu',

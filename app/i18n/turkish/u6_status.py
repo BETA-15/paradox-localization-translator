@@ -42,7 +42,7 @@ STRINGS = {
     'u6.how_it_works': 'Nasıl çalışır?',
     'u6.while_idle_only_yaml_modification_times': "Beklerken yalnızca hedef YAML dosyalarının değişiklik zamanları ve boyutları denetlenir. Sadece değişen hedefler çözümlenir; sadece belirsiz adaylar izleme LLM'sine gönderilir. Otomatik çeviri veya dosya değişikliği yapılmaz.",
     'u6.japanese_translation_status_by_mod': 'Moda göre {target_name} çeviri durumu',
-    'u6.mod_research_translation_mod_assessment_and': '(Mod taraması, {target_name} çeviri modu değerlendirmesi ve ilişkilendirmesi yalnızca Japonca için)',
+    'u6.mod_research_translation_mod_assessment_and': '(Mod taraması, {target_name} çeviri modu değerlendirmesi ve ilişkilendirmesi)',
     'u6.target_relation_scope': '(Mod taraması, {target_name} çeviri modu değerlendirmesi ve ilişkilendirmesi)',
     'u6.game_mod_location': 'Oyun / mod konumu',
     'u6.detect_game_mod_locations': 'Oyun / mod konumlarını algıla',
