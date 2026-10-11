@@ -383,6 +383,14 @@ def glossary_file_problem(path: Path) -> str:
     return problem
 
 
+def glossary_path_for_language(base_path, target_lang) -> Path:
+    """翻訳先の言語の用語集のパス。日本語は今の glossary.json、ほかは同じフォルダの <名前>_<言語>.json。"""
+    base_path = Path(base_path)
+    if target_lang == DEFAULT_TARGET_LANG:
+        return base_path
+    return base_path.with_name(f"{base_path.stem}_{target_lang}.json")
+
+
 def load_glossary(path: Optional[Path]) -> dict:
     if not path:
         return {}
