@@ -42,7 +42,7 @@ STRINGS = {
     "u6.how_it_works": "工作方式",
     "u6.while_idle_only_yaml_modification_times": "空闲时仅检查 YAML 的修改时间和大小。仅解析有变动的文件，不明确的候选交由监视专用 LLM 复核。不会翻译或写入文件。",
     "u6.japanese_translation_status_by_mod": "各模组的{target_name}翻译状况",
-    "u6.mod_research_translation_mod_assessment_and": "（模组检查、{target_name}翻译模组判断与关联；仅支持日语）",
+    "u6.mod_research_translation_mod_assessment_and": '（模组检查、{target_name}翻译模组判断与关联）',
     "u6.target_relation_scope": "（模组检查、{target_name}翻译模组判断与关联）",
     "u6.game_mod_location": "游戏 / 模组位置",
     "u6.detect_game_mod_locations": "自动检测游戏 / 模组位置",

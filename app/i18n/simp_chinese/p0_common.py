@@ -56,7 +56,7 @@ STRINGS = {
     "p0.no_scan_results": "无检查结果",
     "p0.no_translation_status_scan_results": "没有翻译状况检查结果",
     "p0.unknown_file": "未知文件",
-    "p0.the_qa_comparison_editor_also": "QA／对比编辑标签页也会以此处选择的目标语言为基准检查。目标语言不是日语时，无法使用模组检查、日语翻译模组识别与关联、仅翻译差异及以中文为基准的翻译（日语专用）。其他目标语言的质量检查比日语更简化（拉丁字母语言之间仅检查译文是否与原文相同）。",
+    "p0.the_qa_comparison_editor_also": '“QA / 对比编辑”选项卡也会按照此处选择的目标语言进行检查。日语以外的目标语言的质量检查比日语简单（检查混入的其他文字、与原文相同的值以及残留的英语）。目标语言为英语时，模组调查不会比对外部翻译模组。',
     "p0.this_feature_is_available_only": "此功能仅适用于日语术语表",
     "p0.missing_only_translation_is_available": "“仅翻译差异”仅适用于目标语言为日语的项目。其他语言的项目请使用“从头翻译全部内容”。",
     "p0.the_llm_response_was_empty": "LLM 响应为空",
