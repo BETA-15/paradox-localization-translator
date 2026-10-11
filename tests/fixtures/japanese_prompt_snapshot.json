@@ -1,0 +1,22 @@
+{
+ "proofread_with_source": {
+  "system": "あなたはParadoxゲーム日本語ローカライズの校正者です。誤字、脱字、助詞、重複、不自然な日本語だけを修正してください。\n意味を勝手に変えず、@@0@@ 等のプレースホルダは絶対に変更しないでください。回答は修正後本文だけ。\nプリセット: Crusader Kings III。中世の称号・封建制・宮廷・宗教・制度の歴史語彙を重視する。\n用語集:\nDuke=>公爵",
+  "user": "原文参考: The Duke arrives [VAR]\n日本語: 公爵が来た @@0@@"
+ },
+ "proofread_plain": {
+  "system": "あなたはParadoxゲーム日本語ローカライズの校正者です。誤字、脱字、助詞、重複、不自然な日本語だけを修正してください。\n意味を勝手に変えず、@@0@@ 等のプレースホルダは絶対に変更しないでください。回答は修正後本文だけ。\nプリセット: Paradox Interactiveゲーム全般。簡潔で自然なUI日本語を優先する。\n用語集:\n",
+  "user": "公爵が来た"
+ },
+ "glossary_conflicts": {
+  "system": "あなたはParadoxゲーム日本語ローカライズの用語統一担当です。\n同じ原語に複数の日本語訳が使われています。各原語について、既存候補から最も自然で一貫した訳語を1つ選ぶか、明らかに改善できる場合だけ短い新しい訳語を提案してください。\n文全体ではなく用語・短いラベルとして扱い、ゲーム変数や記号は変更しません。\n出力はJSON配列のみ。各要素は {\"source\":\"...\",\"preferred\":\"...\"} としてください。",
+  "user": "{\"preset\": \"HOI4\", \"items\": [{\"source\": \"Duke\", \"source_lang\": \"english\", \"variants\": [\"公爵\", \"大公\"]}]}"
+ },
+ "monitor_classify": {
+  "system": "あなたは日本語ゲームローカライズの軽量QA判定器です。\n各行が『日本語版に残った未翻訳テキストで、日本語へ翻訳すべきか』だけを判定してください。\n固有の商品名・人名・一般的な略語・コード・型番など、通常そのまま表示してよいものは NO。\n英語などの説明文、UI語、文章、翻訳されるべき一般語は YES。\n出力は入力と同じ番号を使い、必ず `N|||YES` または `N|||NO` の1行だけ。説明は禁止。",
+  "user": "0|||Open the gate"
+ },
+ "benchmark": {
+  "system": "日本語翻訳だけを返してください。説明は不要です。",
+  "user": "Translate this into concise natural Japanese: The council approved the new law after a long debate."
+ }
+}

@@ -1,0 +1,22 @@
+[
+  {"id":101,"term":"Protectorate","translation":"保護国","note":"","pos":"noun","variants":["Protectorates"],"caseSensitive":false,"project":1,"uid":9,"updatedBy":9,"createdAt":"example"},
+  {"id":102,"term":" Grand Fleet ","translation":"大艦隊","note":"海軍の名前","pos":"noun","variants":[],"caseSensitive":true},
+  {"id":103,"term":"&","translation":"※架空の表記ルール","note":""},
+  {"id":104,"term":"-","translation":"──","note":"【ルール】説明文では半角スペースを入れないように"},
+  {"id":105,"term":"-esque","translation":"風"},
+  {"id":106,"term":"?!","translation":"!?","note":"例外的に半角で"},
+  {"id":107,"term":"QX","translation":"架空商会","caseSensitive":false},
+  {"id":108,"term":"A","translation":"甲"},
+  {"id":109,"term":"ABC","translation":"組織"},
+  {"id":110,"term":"Empire","translation":"帝国","note":"省略しないように","variants":["Empires","Protectorate"]},
+  {"id":111,"term":" Empire ","translation":"別訳"},
+  {"id":112,"term":"Protectorates","translation":"別訳"},
+  {"id":113,"term":"pre-","translation":"前"},
+  {"id":114,"term":"—","translation":"──"},
+  {"id":115,"term":"123","translation":"番号"},
+  {"id":116,"term":"王朝","translation":"朝廷","note":"旧字体は禁止"},
+  {"id":117,"term":"Rule","translation":"※変更禁止"},
+  {"id":118,"term":" Mixed ","translation":"混合","variants":[" Mixeds ","Mixed"]},
+  {"id":119,"term":"X1","translation":"型式"},
+  {"id":120,"term":"漢","translation":"漢字","note":"表記ルール"}
+]

@@ -70,8 +70,87 @@ DUAL_SEP = " ⟪ZH_REF⟫ "
 
 KNOWN_SOURCE_LANGS = [
     "english", "simp_chinese", "german", "french", "spanish",
-    "russian", "polish", "braz_por", "japanese", "korean",
+    "russian", "polish", "braz_por", "japanese", "korean", "turkish",
 ]
+
+# 翻訳先に選べる言語（Paradox の公式11言語）。言語の情報はここだけに置く。
+# script: 文字の種類。品質チェックの分け方に使う
+#   japanese＝かな・漢字、han＝漢字（簡体字）、hangul＝ハングル、cyrillic＝キリル文字、latin＝ラテン文字
+TARGET_LANGUAGES = {
+    "english": {"label": "英語", "name": "English", "script": "latin", "remove_cjk_spaces": False},
+    "french": {"label": "フランス語", "name": "French", "script": "latin", "remove_cjk_spaces": False},
+    "german": {"label": "ドイツ語", "name": "German", "script": "latin", "remove_cjk_spaces": False},
+    "spanish": {"label": "スペイン語", "name": "Spanish", "script": "latin", "remove_cjk_spaces": False},
+    "japanese": {"label": "日本語", "name": "Japanese", "script": "japanese", "remove_cjk_spaces": True},
+    "korean": {"label": "韓国語", "name": "Korean", "script": "hangul", "remove_cjk_spaces": False},
+    "polish": {"label": "ポーランド語", "name": "Polish", "script": "latin", "remove_cjk_spaces": False},
+    "braz_por": {"label": "ポルトガル語（ブラジル）", "name": "Brazilian Portuguese", "script": "latin", "remove_cjk_spaces": False},
+    "russian": {"label": "ロシア語", "name": "Russian", "script": "cyrillic", "remove_cjk_spaces": False},
+    "simp_chinese": {"label": "簡体字中国語", "name": "Simplified Chinese", "script": "han", "remove_cjk_spaces": True},
+    "turkish": {"label": "トルコ語", "name": "Turkish", "script": "latin", "remove_cjk_spaces": False},
+}
+
+# ゲームが読める言語（2026-10-11、この Mac のゲーム本体の localization フォルダで確認。
+# EU5 は未導入のため Steam の対応言語）。CK3 は clausewitz/jomini に braz_por・turkish があるが、
+# ゲーム本文（game/localization）には無いので 9 言語とする。
+GAME_LANGUAGES = {
+    "Crusader Kings III": ("english", "french", "german", "spanish", "japanese", "korean",
+                           "polish", "russian", "simp_chinese"),
+    "Hearts of Iron IV": ("english", "french", "german", "spanish", "japanese", "korean",
+                          "polish", "braz_por", "russian", "simp_chinese"),
+    "Stellaris": ("english", "french", "german", "spanish", "japanese", "korean",
+                  "polish", "braz_por", "russian", "simp_chinese"),
+    "Victoria 3": tuple(TARGET_LANGUAGES),
+    "Europa Universalis V": tuple(TARGET_LANGUAGES),
+    "Europa Universalis IV": ("english", "french", "german", "spanish"),
+    "Imperator: Rome": ("english", "french", "german", "spanish", "russian", "simp_chinese"),
+}
+# 対応言語を調べるときだけ使う。Mod の自動探索の対象（PARADOX_STEAM_GAMES）は増やさない。
+_GAME_LANGUAGE_PATH_HINTS = {
+    "Crusader Kings III": ("1158310", "Crusader Kings III"),
+    "Hearts of Iron IV": ("394360", "Hearts of Iron IV"),
+    "Stellaris": ("281990", "Stellaris"),
+    "Victoria 3": ("529340", "Victoria 3"),
+    "Europa Universalis V": ("3450310", "Europa Universalis V"),
+    "Europa Universalis IV": ("236850", "Europa Universalis IV"),
+    "Imperator: Rome": ("859580", "Imperator"),
+}
+_PRESET_GAMES = {"CK3": "Crusader Kings III", "HOI4": "Hearts of Iron IV", "Stellaris": "Stellaris",
+                 "Victoria 3": "Victoria 3", "EU5": "Europa Universalis V"}
+
+
+def target_language_label(lang: str) -> str:
+    return TARGET_LANGUAGES.get(lang, {}).get("label", lang)
+
+
+def target_language_name(lang: str) -> str:
+    """指示文（英語のテンプレート）に書く言語名。"""
+    return TARGET_LANGUAGES.get(lang, {}).get("name", lang)
+
+
+def target_language_script(lang: str) -> str:
+    return TARGET_LANGUAGES.get(lang, {}).get("script", "latin")
+
+
+def game_for_translation(path=None, preset: str = "") -> str:
+    """Mod の場所（Workshop の appid か Documents の Mod フォルダ）から、分からなければプリセットからゲームを推定する。"""
+    raw = str(path or "").replace("\\", "/").lower()
+    for game, (appid, docs_name) in _GAME_LANGUAGE_PATH_HINTS.items():
+        if f"/workshop/content/{appid}/" in raw or f"/{docs_name.lower()}/mod/" in raw:
+            return game
+    return _PRESET_GAMES.get(preset, "")
+
+
+def game_language_warning(target_lang: str, path=None, preset: str = "") -> str:
+    """ゲームが読めない言語へ翻訳しようとしているなら説明を返す。問題なし・ゲーム不明なら空文字。"""
+    game = game_for_translation(path, preset)
+    supported = GAME_LANGUAGES.get(game)
+    if not supported or target_lang in supported:
+        return ""
+    names = "・".join(target_language_label(x) for x in supported)
+    basis = "" if game_for_translation(path, "") else "（Mod の場所からゲームが分からないため、ゲームプリセットから判断）"
+    return (f"{game} は{target_language_label(target_lang)}（l_{target_lang}）を読めません{basis}。"
+            f"翻訳しても、ゲームの中には表示されません。{game} が読める言語: {names}")
 
 LINE_PATTERN = re.compile(
     r'^(?P<indent>\s*)(?P<key>[A-Za-z0-9_.\-\'&][A-Za-z0-9_.\-\'& ]*)\s*:\s*'
@@ -87,15 +166,79 @@ LOOSE_LINE_PATTERN = re.compile(
 HEADER_PATTERN = re.compile(r'^\s*l_(?P<lang>[a-z_]+)\s*:\s*$')
 
 PROTECT_PATTERNS = [
-    r'\[[^\[\]]*\]', r'\$[^\$]+\$', r'£[^£]+£', r'@[A-Za-z_]+!',
+    # £ のアイコンは「£名前£」のほか、閉じの £ を書かない「£名前」（後ろの空白や記号で終わる）と、「£名前|コマ番号」がある（HOI4）。
+    # 以前の £[^£]+£ は閉じの無いアイコンを守れず、「£A  £B」では次のアイコンの £ までを1つと取り違えた（v0.12.0 で修正）。
+    r'\[[^\[\]]*\]', r'\$[^\$]+\$', r'£[A-Za-z0-9_\-]+(?:\|[A-Za-z0-9_]+)?£?', r'@[A-Za-z_]+!',
     r'§[A-Za-z!]', r'#[A-Za-z_]+(?:;[^#]*)?', r'#!', r'\\n', r'\\"',
 ]
 PROTECT_RE = re.compile('(' + '|'.join(PROTECT_PATTERNS) + ')')
+
+
+# HOI4 のアイコンは「£名前£」のほか、閉じの £ を書かずに後ろの半角スペースで名前を終える書き方（「£trigger_no 文」）がある。
+# その空白を取るとアイコン名が後ろの文字とつながって表示が壊れるので、閉じの無いアイコンは書式の記号として扱い、前後の空白を残す。
+_SPACING_TOKEN_RE = None
+
+
+def _is_katakana_word_char(character: str) -> bool:
+    """名前の一部になるカタカナ（長音「ー」を含む。中黒「・」と記号は含めない）。"""
+    return len(character) == 1 and ("\u30a1" <= character <= "\u30fa" or character in "ーヽヾ")
+
+
+def normalize_cjk_spacing(text: str, target_lang: str) -> tuple[str, int]:
+    """Remove ASCII spaces at CJK boundaries without altering protected tokens."""
+    if not TARGET_LANGUAGES.get(target_lang, {}).get("remove_cjk_spaces", False):
+        return text, 0
+
+    def character_kind(character):
+        codepoint = ord(character)
+        if any(start <= codepoint <= end for start, end in (
+            (0x3001, 0x303F), (0x3040, 0x30FF), (0x31F0, 0x31FF),
+            (0x3400, 0x4DBF), (0x4E00, 0x9FFF), (0xF900, 0xFAFF),
+            (0xFE10, 0xFE19), (0xFE30, 0xFE6F), (0xFF01, 0xFF60),
+            (0xFFE0, 0xFFE6), (0x20000, 0x323AF),
+        )):
+            return "cjk"
+        if character.isascii() and character.isalnum():
+            return "alnum"
+        return "other"
+
+    atoms = []
+    cursor = 0
+    for match in _SPACING_TOKEN_RE.finditer(text):
+        atoms.extend(("space" if piece.startswith(" ") else character_kind(piece), piece)
+                     for piece in re.findall(r" +|.", text[cursor:match.start()], re.DOTALL))
+        token = match.group()
+        kind = ("protected" if token.startswith("£") and not token.endswith("£") else
+                "variable" if token.startswith(("[", "$", "£")) else
+                "color_end" if token == "§!" else
+                "color_start" if token.startswith("§") else "protected")
+        atoms.append((kind, token))
+        cursor = match.end()
+    atoms.extend(("space" if piece.startswith(" ") else character_kind(piece), piece)
+                 for piece in re.findall(r" +|.", text[cursor:], re.DOTALL))
+    output = []
+    removed = 0
+    for index, (kind, piece) in enumerate(atoms):
+        if kind == "space" and 0 < index < len(atoms) - 1:
+            left, right = atoms[index - 1][0], atoms[index + 1][0]
+            if ((left == "cjk" and right in {"cjk", "alnum", "variable", "color_end"})
+                    or (right == "cjk" and left in {"cjk", "alnum", "variable", "color_start"})):
+                removed += len(piece)
+                # カタカナの語どうしの空白（外国の名前の区切り。例「ブリストル ブレニム」）は、取らずに中黒「・」にする（著者の判断）。
+                if (left == right == "cjk" and _is_katakana_word_char(atoms[index - 1][1])
+                        and _is_katakana_word_char(atoms[index + 1][1])):
+                    output.append("・")
+                continue
+        output.append(piece)
+    return "".join(output), removed
+
+
 PLACEHOLDER_PREFIX = "@@"
 PLACEHOLDER_SUFFIX = "@@"
 PLACEHOLDER_RE = re.compile(re.escape(PLACEHOLDER_PREFIX) + r'(\d+)' + re.escape(PLACEHOLDER_SUFFIX))
 # 閉じ記号が崩れたプレースホルダ（@@0@・@@0）。消してよいのは閉じ記号の残りの @ だけで、後ろの訳文は残す。
 PLACEHOLDER_FALLBACK_RE = re.compile(re.escape(PLACEHOLDER_PREFIX) + r'(\d+)@?')
+_SPACING_TOKEN_RE = PROTECT_RE  # 閉じの無い £ のアイコンも PROTECT_RE が1つの記号として見分ける
 
 GAME_PRESETS = {
     "General": "Paradox Interactiveゲーム全般。簡潔で自然なUI日本語を優先する。",
@@ -104,6 +247,26 @@ GAME_PRESETS = {
     "HOI4": "Hearts of Iron IV。20世紀前半の軍事・政治・外交・装備用語を重視する。",
     "Stellaris": "Stellaris。SF、宇宙政治、技術、艦船、異星文明の用語を自然に訳す。",
     "EU5": "Europa Universalis V。中世後期から近世・近代初期の政治・外交・宗教・交易・軍事・制度語彙を重視する。",
+}
+
+# 日本語以外の翻訳先で使う英語版のプリセット（日本語版 GAME_PRESETS と同じキー）。
+GAME_PRESETS_EN = {
+    "General": "Paradox Interactive games in general. Prefer short, natural UI wording.",
+    "CK3": "Crusader Kings III. Use medieval vocabulary for titles, feudalism, courts, religion and institutions.",
+    "Victoria 3": "Victoria 3. Use 19th-century political, economic, industrial and diplomatic terms.",
+    "HOI4": "Hearts of Iron IV. Use early 20th-century military, political, diplomatic and equipment terms.",
+    "Stellaris": "Stellaris. Translate science-fiction, space politics, technology, ship and alien-civilization terms naturally.",
+    "EU5": ("Europa Universalis V. Use late-medieval to early-modern vocabulary for politics, diplomacy, "
+            "religion, trade, warfare and institutions."),
+}
+
+# 言語ごとの書き方の注意（英語版の指示文に足す）。
+_TARGET_STYLE_NOTES = {
+    "simp_chinese": "Write in Simplified Chinese characters, not Traditional Chinese.",
+    "braz_por": "Use Brazilian Portuguese spelling and vocabulary, not European Portuguese.",
+    "spanish": "Use neutral Spanish that reads naturally in a game interface.",
+    "korean": "Write in Hangul; do not leave English words untranslated unless they are proper names.",
+    "russian": "Write in Cyrillic; do not leave English words untranslated unless they are proper names.",
 }
 
 
@@ -276,12 +439,20 @@ def glossary_file_problem(path: Path) -> str:
     problem = (
         f"対応していない形式です（{format_name}）。"
         'このアプリの用語集は {"原語": "訳語"} 形式のJSONです。'
-        "ParaTranz などから書き出した用語集はまだ読み込めません。"
+        "ParaTranz の用語集は『ParaTranz の用語集を取り込む』から取り込めます。"
     )
     if isinstance(data, list) and data and isinstance(data[0], dict):
         if "term" in data[0] and "translation" in data[0]:
             problem += "ParaTranz の用語集のようです。"
     return problem
+
+
+def glossary_path_for_language(base_path, target_lang) -> Path:
+    """翻訳先の言語の用語集のパス。日本語は今の glossary.json、ほかは同じフォルダの <名前>_<言語>.json。"""
+    base_path = Path(base_path)
+    if target_lang == DEFAULT_TARGET_LANG:
+        return base_path
+    return base_path.with_name(f"{base_path.stem}_{target_lang}.json")
 
 
 def load_glossary(path: Optional[Path]) -> dict:
@@ -341,14 +512,22 @@ def escape_localization_value(value: str) -> str:
 def translation_cache_key(provider: str, model: str, preset: str, source_lang: str,
                           original: str, glossary: Optional[dict] = None,
                           dual_source: bool = False, zh_ref: str = "",
-                          translation_mode: str = "standard") -> str:
-    """Cache key including settings that materially change translation output."""
+                          translation_mode: str = "standard",
+                          target_lang: str = DEFAULT_TARGET_LANG) -> str:
+    """Cache key including settings that materially change translation output.
+
+    翻訳先が日本語のときは v0.11.80 までとまったく同じキーにする（利用者のキャッシュを捨てないため）。
+    ほかの言語のときだけ翻訳先を加え、別の言語の訳がキャッシュから返らないようにする。
+    """
     glossary_blob = json.dumps(glossary or {}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    cfg_blob = "\n".join([
+    cfg_parts = [
         normalize_provider(provider), model or "", preset or "", source_lang or "",
         "dual=1" if dual_source else "dual=0", f"mode={translation_mode}", text_hash(glossary_blob),
         text_hash(zh_ref or "") if dual_source else "no-zh",
-    ])
+    ]
+    if (target_lang or DEFAULT_TARGET_LANG) != DEFAULT_TARGET_LANG:
+        cfg_parts.append(f"target={target_lang}")
+    cfg_blob = "\n".join(cfg_parts)
     return f"v6:{text_hash(cfg_blob)}:{text_hash(original)}"
 
 
@@ -379,6 +558,36 @@ def looks_untranslatable(value: str) -> bool:
     return not bool(re.search(r'[A-Za-z0-9\u3040-\u30ff\u4e00-\u9fff]', stripped))
 
 
+_SCRIPT_RES = {
+    "japanese": re.compile(r'[\u3040-\u30ff\u4e00-\u9fff]'),
+    "han": re.compile(r'[\u4e00-\u9fff]'),
+    "hangul": re.compile(r'[\uac00-\ud7af\u1100-\u11ff\u3130-\u318f]'),
+    "cyrillic": re.compile(r'[\u0400-\u04ff]'),
+}
+# ラテン文字以外の「文字」（ラテン文字の翻訳先に残っていたら未翻訳の印）。
+_NON_LATIN_LETTER_RE = re.compile(r'[\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af\u0400-\u04ff]')
+
+
+def _letters_outside_script(text: str, script: str) -> int:
+    """翻訳先の文字の種類に含まれない文字（ラテン文字・かな・漢字・ハングル・キリル文字）の数。"""
+    count = len(re.findall(r'[A-Za-z]', text))
+    for name, pattern in (("japanese", re.compile(r'[\u3040-\u30ff]')), ("han", _SCRIPT_RES["han"]),
+                          ("hangul", _SCRIPT_RES["hangul"]), ("cyrillic", _SCRIPT_RES["cyrillic"])):
+        if name == script or (script == "japanese" and name == "han"):
+            continue
+        count += len(pattern.findall(text))
+    return count
+
+
+def _english_residue(plain: str) -> bool:
+    """訳文に英語の語句がそのまま残っているように見えるか（v0.11.80 の日本語の判定と同じ基準）。"""
+    words = re.findall(r"[A-Za-z]+(?:'[A-Za-z]+)?", plain)
+    letters = ''.join(words)
+    if not words or len(letters) < 4:
+        return False
+    if len(words) == 1 and words[0].isupper() and len(words[0]) <= 6:
+        return False
+    return len(words) >= 2 or (len(words[0]) >= 4 and any(c.islower() for c in words[0]))
 def looks_like_chinese_in_japanese(text: str) -> bool:
     """日本語の訳のはずが、中国語（簡体字・繁体字）の文になっていないか（v0.11.81）。
 
@@ -422,22 +631,44 @@ def looks_like_chinese_in_japanese(text: str) -> bool:
     ))
 
 
-def unusable_japanese_translation(original: str, translated: str, source_lang: str) -> bool:
-    """翻訳・キャッシュ・QA・自動修復で「日本語の訳として使えない」か。未翻訳に加え、中国語の訳も弾く。
+def unusable_translation(original: str, translated: str, source_lang: str,
+                         target_lang: str = DEFAULT_TARGET_LANG) -> bool:
+    """翻訳・キャッシュ・QA・自動修復で「訳として使えない」か。未翻訳に加え、翻訳先が日本語なら中国語の訳も弾く（v0.11.81）。
 
     Mod 調査（日本語化Modの欠損の判定）は looks_untranslated のままにし、調査の結果は変えない。
     """
-    return looks_untranslated(original, translated, source_lang) or looks_like_chinese_in_japanese(translated)
+    if looks_untranslated(original, translated, source_lang, target_lang):
+        return True
+    return (target_lang or DEFAULT_TARGET_LANG) == DEFAULT_TARGET_LANG and looks_like_chinese_in_japanese(translated)
+
+
+def unusable_japanese_translation(original: str, translated: str, source_lang: str) -> bool:
+    return unusable_translation(original, translated, source_lang, DEFAULT_TARGET_LANG)
+
+
+def foreign_in_output(value: str, target_lang: str = DEFAULT_TARGET_LANG) -> bool:
+    """原文の無い訳（修復モード・QA）に、ほかの言語が残っていないか。日本語なら中国語も見る。"""
+    if looks_foreign_in_target(value, target_lang):
+        return True
+    return (target_lang or DEFAULT_TARGET_LANG) == DEFAULT_TARGET_LANG and looks_like_chinese_in_japanese(value)
 
 
 def foreign_in_japanese_output(value: str) -> bool:
-    """原文の無い日本語の訳（修復モード・QA）に、英語や中国語が残っていないか。"""
-    return looks_foreign_in_target(value, "japanese") or looks_like_chinese_in_japanese(value)
+    return foreign_in_output(value, DEFAULT_TARGET_LANG)
 
 
 def looks_foreign_in_target(value: str, target_lang: str) -> bool:
     if target_lang != "japanese":
-        return False
+        # ラテン文字の言語どうしは文字の種類で見分けられないので判定しない（誤検出を避ける）。
+        script = target_language_script(target_lang)
+        if script == "latin":
+            return False
+        plain = PROTECT_RE.sub('', value).strip()
+        if not plain or _SCRIPT_RES[script].search(plain):
+            return False
+        if script != "han" and len(_SCRIPT_RES["han"].findall(plain)) >= 2:
+            return True
+        return _english_residue(plain)
     plain = PROTECT_RE.sub('', value).strip()
     if not plain or re.search(r'[\u3040-\u30ff\u4e00-\u9fff]', plain):
         return False
@@ -473,7 +704,10 @@ def _looks_like_untranslated_chinese_sentence(text: str) -> bool:
     return not kana and len(han) >= 12
 
 
-def looks_untranslated(original: str, translated: str, source_lang: str) -> bool:
+def looks_untranslated(original: str, translated: str, source_lang: str,
+                       target_lang: str = DEFAULT_TARGET_LANG) -> bool:
+    if (target_lang or DEFAULT_TARGET_LANG) != DEFAULT_TARGET_LANG:
+        return _looks_untranslated_other(original, translated, source_lang, target_lang)
     if not original or not translated:
         return False
     orig = original.strip()
@@ -497,8 +731,43 @@ def looks_untranslated(original: str, translated: str, source_lang: str) -> bool
     return False
 
 
-def cache_entry_is_valid(original: str, cached: str, source_lang: str) -> bool:
-    return not unusable_japanese_translation(original, cached, source_lang)
+# ラテン文字の言語どうしで原文と同じ訳を「未翻訳」とみなす語数。固有名詞（Napoleon、Karl Marx など）は
+# 同じ綴りのままが正しいことが多いので、文と言える長さのときだけ未翻訳にする。
+LATIN_SAME_AS_SOURCE_MIN_WORDS = 4
+
+
+def _looks_untranslated_other(original: str, translated: str, source_lang: str, target_lang: str) -> bool:
+    """日本語以外の翻訳先の未翻訳判定。文字の種類で見分け、ラテン文字どうしは「原文と同じ」だけを見る。"""
+    if not original or not translated:
+        return False
+    orig = original.strip()
+    trans = translated.strip()
+    orig_plain = PROTECT_RE.sub('', orig).strip()
+    trans_plain = PROTECT_RE.sub('', trans).strip()
+    if not orig_plain or not trans_plain:
+        return False
+    script = target_language_script(target_lang)
+    if script == "latin":
+        if len(_NON_LATIN_LETTER_RE.findall(trans_plain)) >= 2:
+            return True
+        if orig == trans:
+            words = re.findall(r"[^\W\d_]+(?:'[^\W\d_]+)?", orig_plain)
+            return len(words) >= LATIN_SAME_AS_SOURCE_MIN_WORDS
+        return False
+    if orig == trans:
+        if target_language_script(source_lang) == "latin":
+            # 略語（AI・DLC・OK など）はそのままが正しいことが多い。日本語と同じ基準の「英語の語句が残っている」で判定する。
+            return _english_residue(orig_plain)
+        if _letters_outside_script(orig_plain, script) >= 2:
+            return True
+    if _SCRIPT_RES[script].search(trans_plain):
+        return False
+    return looks_foreign_in_target(trans, target_lang)
+
+
+def cache_entry_is_valid(original: str, cached: str, source_lang: str,
+                         target_lang: str = DEFAULT_TARGET_LANG) -> bool:
+    return not unusable_translation(original, cached, source_lang, target_lang)
 
 
 def glossary_for_prompt(glossary: dict, values: Iterable[str], max_items: int = 80) -> List[Tuple[str, str]]:
@@ -835,10 +1104,37 @@ def ollama_num_ctx(system_prompt: str, user_content: str) -> int:
     return OLLAMA_NUM_CTX_STEPS[-1]
 
 
+REASONING_MODEL_MARKER = "考える過程に時間を使うモデル"
+
+
+class ReasoningModelError(RuntimeError):
+    """応答が考える過程だけで、訳が返らなかった（考える過程を止められないモデル）。再試行しても同じなので繰り返さない。"""
+
+
+def reasoning_model_warning_text(model: str) -> str:
+    return (f"{model} は{REASONING_MODEL_MARKER}のため、翻訳に向きません。"
+            "1回の翻訳で長く考え込み、時間切れや空の応答になります。instruct 版など、考える過程を出さないモデルに替えてください。")
+
+
+# LM Studio が reasoning_effort を受け付けなかった（HTTP 400）サーバーとモデル。2回目からは送らない。
+_LMSTUDIO_NO_REASONING_EFFORT: set = set()
+
+
+def _response_reasoning(p: str, body: dict) -> str:
+    """応答に含まれる考える過程（LM Studio・OpenAI 互換の reasoning_content、Ollama の thinking）。"""
+    if p == "ollama":
+        return str((body.get("message") or {}).get("thinking") or "")
+    if p in {"lmstudio", "openai_compat"}:
+        choices = body.get("choices") or []
+        message = (choices[0] if choices else {}).get("message") or {}
+        return str(message.get("reasoning_content") or message.get("reasoning") or "")
+    return ""
+
+
 def call_llm_raw(provider: str, url: str, model: str, user_content: str, system_prompt: str,
                  timeout: int = 300, retries: int = 5,
                  controller: Optional[TranslationController] = None,
-                 temperature: float = 0.2, api_key: str = "") -> str:
+                 temperature: float = 0.2, api_key: str = "", max_tokens: Optional[int] = None) -> str:
     """Call local or cloud LLM APIs and emit per-request performance metrics."""
     p = normalize_provider(provider)
     base = _base_url_for_provider(provider, url)
@@ -863,6 +1159,8 @@ def call_llm_raw(provider: str, url: str, model: str, user_content: str, system_
                     "options": {"temperature": temperature,
                                 "num_ctx": ollama_num_ctx(system_prompt, user_content)},
                 }
+                if max_tokens:
+                    payload["options"]["num_predict"] = int(max_tokens)
             elif p in {"lmstudio", "openai_compat"}:
                 if p == "lmstudio" and not base.endswith('/v1'):
                     base += '/v1'
@@ -873,6 +1171,11 @@ def call_llm_raw(provider: str, url: str, model: str, user_content: str, system_
                                  {"role": "user", "content": user_content}],
                     "stream": False, "temperature": temperature,
                 }
+                # LM Studio は reasoning_effort="none" で考える過程を止められる（qwen3.8 などで確認）。
+                if p == "lmstudio" and (base, model) not in _LMSTUDIO_NO_REASONING_EFFORT:
+                    payload["reasoning_effort"] = "none"
+                if max_tokens:
+                    payload["max_tokens"] = int(max_tokens)
             elif p == "openai":
                 if not base.endswith('/v1'):
                     base += '/v1'
@@ -894,8 +1197,18 @@ def call_llm_raw(provider: str, url: str, model: str, user_content: str, system_
             else:
                 raise RuntimeError(f"未対応のプロバイダです: {provider}")
             req = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers)
-            with _urlopen(req, timeout=timeout) as resp:
-                body = json.loads(resp.read().decode("utf-8"))
+            try:
+                with _urlopen(req, timeout=timeout) as resp:
+                    body = json.loads(resp.read().decode("utf-8"))
+            except urllib.error.HTTPError as http_error:
+                if http_error.code != 400 or "reasoning_effort" not in payload:
+                    raise
+                # reasoning_effort を受け付けないサーバー・モデル。外して同じ依頼を送り直す。
+                _LMSTUDIO_NO_REASONING_EFFORT.add((base, model))
+                payload.pop("reasoning_effort", None)
+                req = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers)
+                with _urlopen(req, timeout=timeout) as resp:
+                    body = json.loads(resp.read().decode("utf-8"))
             elapsed = max(time.perf_counter() - started, 1e-6)
             completion_tokens = 0
             provider_tps = 0.0
@@ -934,6 +1247,8 @@ def call_llm_raw(provider: str, url: str, model: str, user_content: str, system_
                 # 思考中の「1|||…」のような行を訳として取り込まないよう空として扱う。
                 content = ""
             content = strip_reasoning(content).strip().strip('`').strip()
+            if not content and _response_reasoning(p, body).strip():
+                raise ReasoningModelError(reasoning_model_warning_text(model))
             if not content:
                 raise RuntimeError("LLMから空の応答が返されました")
             if controller:
@@ -944,6 +1259,12 @@ def call_llm_raw(provider: str, url: str, model: str, user_content: str, system_
                 controller.notify(kind="llm_activity", state="end", activity_id=activity_id, provider=provider_display_name(provider), model=model, success=True)
             return content
         except StopRequested:
+            raise
+        except ReasoningModelError as e:
+            # 考える過程だけが返るモデルは、何度送っても同じ。時間切れを繰り返さずにすぐ知らせる。
+            if controller:
+                controller.notify(kind="llm_activity", state="end", activity_id=activity_id, provider=provider_display_name(provider), model=model, success=False, error=str(e), attempt=attempt + 1, retries=retries)
+                controller.notify(kind="llm_metric", metric=_metric(provider, model, max(time.perf_counter() - overall_start, 1e-6), False, error=str(e)))
             raise
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError,
                 json.JSONDecodeError, ConnectionError, OSError, RuntimeError, KeyError, IndexError) as e:
@@ -963,6 +1284,24 @@ def call_llm_raw(provider: str, url: str, model: str, user_content: str, system_
         controller.notify(kind="llm_metric", metric=_metric(provider, model, elapsed, False, error=str(last_err)))
     raise RuntimeError(f"LLM呼び出しに{retries}回失敗しました: {last_err}")
 
+def reasoning_model_probe_warning(provider: str, url: str, model: str, api_key: str = "",
+                                  timeout: float = 60) -> str:
+    """翻訳を始める前に短い依頼を1回送り、考える過程だけが返るモデルなら説明を返す。問題なし・確かめられないなら空文字。
+
+    ローカルの LLM（Ollama・LM Studio・OpenAI 互換）だけを確かめる。クラウドの API には送らない（料金がかかるため）。
+    """
+    if normalize_provider(provider) not in {"ollama", "lmstudio", "openai_compat"} or not model:
+        return ""
+    try:
+        call_llm_raw(provider, url, model, "0|||Hello", "Translate each line. Reply only with N|||translation.",
+                     timeout=timeout, retries=1, temperature=0.0, max_tokens=64)
+    except ReasoningModelError as exc:
+        return str(exc)
+    except Exception:
+        return ""
+    return ""
+
+
 def benchmark_model(provider: str, url: str, model: str,
                     controller: Optional[TranslationController] = None, api_key: str = "") -> dict:
     """Run a short deterministic translation benchmark and return the observed metric."""
@@ -979,7 +1318,9 @@ def benchmark_model(provider: str, url: str, model: str,
 
 def build_system_prompt(source_lang: str, glossary: Optional[dict] = None,
                         preset: str = "General", dual_source: bool = False,
-                        chinese_basis: bool = False) -> str:
+                        chinese_basis: bool = False, target_lang: str = DEFAULT_TARGET_LANG) -> str:
+    if (target_lang or DEFAULT_TARGET_LANG) != DEFAULT_TARGET_LANG:
+        return _build_system_prompt_other(source_lang, glossary, preset, dual_source, target_lang)
     lang_label = {"english": "英語", "simp_chinese": "簡体字中国語"}.get(source_lang, source_lang)
     preset_text = GAME_PRESETS.get(preset, GAME_PRESETS["General"])
     glossary_text = ""
@@ -1014,6 +1355,38 @@ def build_system_prompt(source_lang: str, glossary: Optional[dict] = None,
 """
 
 
+def _build_system_prompt_other(source_lang: str, glossary: Optional[dict], preset: str,
+                               dual_source: bool, target_lang: str) -> str:
+    """日本語以外の翻訳先の指示文（英語で書いたテンプレート）。中国語基準翻訳は日本語専用なので使わない。"""
+    source_name = target_language_name(source_lang)
+    target_name = target_language_name(target_lang)
+    preset_text = GAME_PRESETS_EN.get(preset, GAME_PRESETS_EN["General"])
+    style = _TARGET_STYLE_NOTES.get(target_lang, "")
+    style_text = f"\n7. {style}" if style else ""
+    glossary_text = ""
+    if glossary:
+        pairs = [f"- {k} => {v}" for k, v in glossary.items()]
+        glossary_text = "\nGlossary (use these translations where they apply):\n" + "\n".join(pairs)
+    dual_text = ""
+    if dual_source and target_lang != "simp_chinese":
+        dual_text = (f"\nSome inputs have a Simplified Chinese reference translation after `{DUAL_SEP.strip()}`. "
+                     "Use the English text for the in-game meaning and the Chinese reference for institutional terms "
+                     f"and proper names. Do not output [VAR] from the reference.")
+    return f"""You are a professional localizer for Paradox Interactive games.
+Translate the {source_name} game text into natural, readable {target_name}.
+Game context: {preset_text}
+
+Each input line starts with `N|||`. Reply only with lines in the form `N|||translated text`, using the same numbers.
+Rules:
+1. Never change, delete or move placeholders such as @@0@@ @@1@@.
+2. Keep the number of lines and the numbering. No explanations, notes, Markdown or extra blank lines.
+3. Keep UI labels short. Use historical, military and political terms that fit the context in {target_name}.
+4. Keep the template structure and line-break markers of the source.
+5. Do not return the source text unchanged. Translate all natural-language text into {target_name}; proper names may stay as they are when that is usual in {target_name}.
+6. Output {target_name} only.{style_text}{dual_text}{glossary_text}
+"""
+
+
 def call_ollama_raw(url: str, model: str, user_content: str, system_prompt: str,
                     timeout: int = 300, retries: int = 5,
                     controller: Optional[TranslationController] = None) -> str:
@@ -1025,11 +1398,14 @@ def translate_batch(url: str, model: str, jobs: list, source_lang: str,
                     dual_source: bool = False,
                     controller: Optional[TranslationController] = None,
                     provider: str = "Ollama", api_key: str = "",
-                    chinese_basis: bool = False) -> List[str]:
+                    chinese_basis: bool = False, target_lang: str = DEFAULT_TARGET_LANG) -> List[str]:
     if not jobs:
         return []
+    if target_lang in {"english", "simp_chinese"}:
+        dual_source = False  # 翻訳先そのものを参考訳として渡さない
     selected_glossary = dict(glossary_for_prompt(glossary or {}, [j["value"] for j in jobs]))
-    prompt = build_system_prompt(source_lang, selected_glossary, preset, dual_source, chinese_basis)
+    prompt = build_system_prompt(source_lang, selected_glossary, preset, dual_source, chinese_basis,
+                                 target_lang=target_lang)
     lines = []
     for i, j in enumerate(jobs):
         text = j["protected"]
@@ -1363,6 +1739,21 @@ def classify_monitor_candidates(provider: str, url: str, model: str, candidates:
     return decisions
 
 
+def source_language_priority(source_lang: str, target_lang: str = DEFAULT_TARGET_LANG) -> int:
+    """同じ出力先に複数の言語の原文があるとき、どれを原文にするかの順位（小さいほど優先）。
+
+    english → simp_chinese → その他 → 翻訳先と同じ言語（修復：残った外国語だけを訳す）の順。
+    翻訳先が english や simp_chinese のときは、その言語を原文から外して最後に回す。
+    """
+    if source_lang == target_lang:
+        return 3
+    if source_lang == "english":
+        return 0
+    if source_lang == "simp_chinese":
+        return 1
+    return 2
+
+
 def remap_rel_dir(rel_dir: Path, target_lang: str) -> Path:
     """Map a source localization directory into an isolated target-language tree.
 
@@ -1534,7 +1925,8 @@ def build_chinese_reference_map(input_path: Path) -> Dict[str, str]:
     return refs
 
 
-def _apply_batch_result(batch, translated_list, results, cache, source_lang, failed):
+def _apply_batch_result(batch, translated_list, results, cache, source_lang, failed,
+                        target_lang: str = DEFAULT_TARGET_LANG):
     if translated_list is None:
         for j in batch:
             results[j["line_idx"]] = j["value"]
@@ -1542,7 +1934,7 @@ def _apply_batch_result(batch, translated_list, results, cache, source_lang, fai
         return
     for j, protected_translation in zip(batch, translated_list):
         restored = restore_text(protected_translation, j["tokens"])
-        if unusable_japanese_translation(j["value"], restored, source_lang):
+        if unusable_translation(j["value"], restored, source_lang, target_lang):
             results[j["line_idx"]] = j["value"]
             failed.add(j["line_idx"])
             cache.pop(j["hash"], None)
@@ -1558,12 +1950,26 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
                  glossary: Optional[dict] = None, preset: str = "General",
                  zh_refs: Optional[dict] = None, dual_source: bool = False,
                  cache_file: Optional[Path] = None, file_no: int = 0, file_total: int = 0,
-                 provider: str = "Ollama", api_key: str = "", chinese_basis: bool = False):
+                 provider: str = "Ollama", api_key: str = "", chinese_basis: bool = False,
+                 normalize_spacing: bool = True):
+    if target_lang in {"english", "simp_chinese"}:
+        dual_source = False  # 翻訳先そのものを原文・参考訳にしない
     raw = read_localization_text(in_path)
     lines = raw.splitlines(keepends=False)
     source_lang = detect_source_lang(in_path, lines)
     repair_target_file = source_lang == target_lang
-    translation_source_lang = "english" if repair_target_file and target_lang == "japanese" else source_lang
+    # 翻訳先と同じ言語のファイルは「修復」：残った外国語（英語）だけを訳す。日本語は v0.11.80 と同じ。
+    translation_source_lang = "english" if repair_target_file else source_lang
+
+    def key_zh_ref(key: str) -> str:
+        """キャッシュのキーと LLM に渡す中国語の参考訳。探すとき・保存するとき・書き出すときで必ず同じ値にする。
+
+        英中併用は英語の原文のときだけ使う（v0.12.0 まで、英語以外の原文では探すキーにだけ参考訳が入り、
+        保存したキーと食い違ってキャッシュが当たらなかった）。
+        """
+        if not dual_source or translation_source_lang != "english":
+            return ""
+        return (zh_refs or {}).get(key, "")
     if repair_target_file and verbose:
         print(f"  原文は既に{target_lang}です。未翻訳の外国語部分だけを修復します")
 
@@ -1581,14 +1987,14 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
         idx = len(parsed_lines) - 1
         if not value or looks_untranslatable(value):
             continue
-        if repair_target_file and not (foreign_in_japanese_output(value) if target_lang == "japanese"
-                                           else looks_foreign_in_target(value, target_lang)):
+        if repair_target_file and not foreign_in_output(value, target_lang):
             continue
         h = translation_cache_key(provider, model, preset, translation_source_lang, value,
                                   glossary=glossary, dual_source=dual_source,
-                                  zh_ref=(zh_refs or {}).get(m.group("key").strip(), ""),
-                                  translation_mode="chinese_basis" if chinese_basis else "standard")
-        if h in cache and cache_entry_is_valid(value, cache[h], translation_source_lang):
+                                  zh_ref=key_zh_ref(m.group("key").strip()),
+                                  translation_mode="chinese_basis" if chinese_basis else "standard",
+                                  target_lang=target_lang)
+        if h in cache and cache_entry_is_valid(value, cache[h], translation_source_lang, target_lang):
             continue
         if h in cache:
             cache.pop(h, None)
@@ -1596,7 +2002,7 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
         jobs.append({
             "line_idx": idx, "key": m.group("key").strip(), "value": value,
             "protected": protected, "tokens": tokens, "hash": h,
-            "zh_ref": (zh_refs or {}).get(m.group("key").strip()) if translation_source_lang == "english" else None,
+            "zh_ref": key_zh_ref(m.group("key").strip()),
         })
 
     total_keys = sum(1 for k, _ in parsed_lines if k == "line")
@@ -1649,14 +2055,16 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
                 j["hash"] = translation_cache_key(
                     cfg["provider"], cfg["model"], cfg["preset"], translation_source_lang, j["value"],
                     glossary=cfg["glossary"], dual_source=cfg["dual_source"], zh_ref=j.get("zh_ref") or "",
-                    translation_mode="chinese_basis" if chinese_basis else "standard")
+                    translation_mode="chinese_basis" if chinese_basis else "standard",
+                                  target_lang=target_lang)
             group.append(b)
 
         def run_one(b):
             try:
                 return b, translate_batch(cfg["url"], cfg["model"], b, translation_source_lang,
                                           cfg["glossary"], cfg["preset"], cfg["dual_source"],
-                                          controller, cfg["provider"], cfg["api_key"], chinese_basis), None
+                                          controller, cfg["provider"], cfg["api_key"], chinese_basis,
+                                          target_lang=target_lang), None
             except StopRequested:
                 return b, None, "__STOP__"
             except Exception as e:
@@ -1671,7 +2079,7 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
         for b, translated, err in work_results:
             if err == "__STOP__":
                 raise StopRequested()
-            _apply_batch_result(b, translated, results, cache, translation_source_lang, failed)
+            _apply_batch_result(b, translated, results, cache, translation_source_lang, failed, target_lang)
             for job in b:
                 line_idx = job["line_idx"]
                 if line_idx in failed:
@@ -1723,13 +2131,15 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
             j["hash"] = translation_cache_key(
                 cfg["provider"], cfg["model"], cfg["preset"], translation_source_lang, j["value"],
                 glossary=cfg["glossary"], dual_source=cfg["dual_source"], zh_ref=j.get("zh_ref") or "",
-                translation_mode="chinese_basis" if chinese_basis else "standard")
+                translation_mode="chinese_basis" if chinese_basis else "standard",
+                                  target_lang=target_lang)
             try:
                 tr = translate_batch(cfg["url"], cfg["model"], [j], translation_source_lang,
                                      cfg["glossary"], cfg["preset"], cfg["dual_source"],
-                                     controller, cfg["provider"], cfg["api_key"], chinese_basis)
+                                     controller, cfg["provider"], cfg["api_key"], chinese_basis,
+                                          target_lang=target_lang)
                 restored = restore_text(tr[0], j["tokens"])
-                if unusable_japanese_translation(j["value"], restored, translation_source_lang):
+                if unusable_translation(j["value"], restored, translation_source_lang, target_lang):
                     cache.pop(j["hash"], None)
                     failure_reasons[j["line_idx"]] = "単発再試行後も原文のまま、または翻訳として利用できませんでした"
                 else:
@@ -1745,6 +2155,7 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
                 save_cache(cache_file, cache)
 
     out_lines = []
+    spaces_removed = 0
     for idx, (kind, data) in enumerate(parsed_lines):
         if kind == "header": out_lines.append(data); continue
         if kind == "raw": out_lines.append(data); continue
@@ -1753,13 +2164,17 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
         if idx in results:
             translated = results[idx]
         elif orig and not looks_untranslatable(orig):
-            zh_ref = (zh_refs or {}).get(m.group("key").strip(), "") if translation_source_lang == "english" else ""
+            zh_ref = key_zh_ref(m.group("key").strip())
             h = translation_cache_key(provider, model, preset, translation_source_lang, orig,
                                       glossary=glossary, dual_source=dual_source, zh_ref=zh_ref,
-                                      translation_mode="chinese_basis" if chinese_basis else "standard")
+                                      translation_mode="chinese_basis" if chinese_basis else "standard",
+                                  target_lang=target_lang)
             translated = cache.get(h, orig)
         else:
             translated = orig
+        if normalize_spacing and (not repair_target_file or foreign_in_output(orig, target_lang)):
+            translated, removed = normalize_cjk_spacing(translated, target_lang)
+            spaces_removed += removed
         escaped_translated = escape_localization_value(translated)
         out_lines.append(f'{m.group("indent")}{m.group("key")}: {m.group("version") or ""}"{escaped_translated}"{m.group("trailing") or ""}')
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1772,7 +2187,7 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
         for j in jobs if j["line_idx"] in failed
     ]
     return {"jobs": len(jobs), "failed": len(failed), "keys": total_keys,
-            "failed_jobs": failed_jobs}
+            "failed_jobs": failed_jobs, "spaces_removed": spaces_removed}
 
 
 def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OLLAMA_URL,
@@ -1781,10 +2196,13 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
                     include_target_files=True, controller: Optional[TranslationController] = None,
                     glossary_path=None, preset="General", dual_source=False,
                     auto_qa=True, provider="Ollama", api_key="",
-                    qa_backup_root=None, qa_repair_max_passes=2):
+                    qa_backup_root=None, qa_repair_max_passes=2, normalize_spacing: bool = True):
     input_path = Path(input_path)
     output_path = Path(output_path)
     output_path.mkdir(parents=True, exist_ok=True)
+    target_lang = target_lang or DEFAULT_TARGET_LANG
+    if target_lang in {"english", "simp_chinese"}:
+        dual_source = False  # 英中併用（英語の原文＋中国語の参考訳）は、翻訳先が英語・中国語のときは使わない
     if cache_path:
         cache_file = Path(cache_path); cache_file.parent.mkdir(parents=True, exist_ok=True)
     elif cache_dir:
@@ -1884,12 +2302,14 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
             collect_file_error(p, "読み込み・文字コード判定", exc)
     if dual_source and any(lang == "english" for _p, lang in file_info):
         file_info = [(p, lang) for p, lang in file_info if lang != "simp_chinese"]
+    # 同じ出力先になる原文が複数あれば、先に処理したものが使われる（後のものは「出力先重複」でスキップ）。
+    file_info.sort(key=lambda row: (source_language_priority(row[1], target_lang), str(row[0])))
 
     print(f"プロバイダ: {provider} / モデル: {model} / 対象ファイル: {len(file_info)} / 読込スキップ: {sum(1 for row in file_errors if row.get('skipped'))} / プリセット: {preset} / 英中併用: {'ON' if dual_source else 'OFF'}")
     base_dir = input_path if input_path.is_dir() else input_path.parent
     planned = {}
     processed = 0
-    total_jobs = total_failed = 0
+    total_jobs = total_failed = spaces_removed = 0
     try:
         for i, (f, source_lang) in enumerate(file_info, 1):
             if controller:
@@ -1905,7 +2325,8 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
                 print(f"[{i}/{len(file_info)}] {f.relative_to(base_dir) if input_path.is_dir() else f.name} -> {out}")
                 stats = process_file(f, out, url, model, target_lang, cache, workers, verbose,
                                      batch_size, controller, glossary, preset, zh_refs, dual_source,
-                                     cache_file, i, len(file_info), provider, api_key, False)
+                                     cache_file, i, len(file_info), provider, api_key, False,
+                                     normalize_spacing=normalize_spacing)
             except StopRequested:
                 raise
             except Exception as exc:
@@ -1916,6 +2337,7 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
                                            "timestamp": time.time()})
                 continue
             processed += 1; total_jobs += stats["jobs"]; total_failed += stats["failed"]
+            spaces_removed += stats.get("spaces_removed", 0)
             for failed_job in stats.get("failed_jobs", []):
                 llm_failures.append({"file": str(f), **failed_job})
             save_cache(cache_file, cache)
@@ -1926,16 +2348,20 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
                         qa_result = qa_file_with_auto_repair(
                             out, source_ref, source_lang=source_lang, glossary=glossary,
                             model=model, url=url, provider=provider, api_key=api_key, preset=preset,
-                            controller=controller, chinese_basis=(source_lang == "simp_chinese"),
+                            controller=controller,
+                            chinese_basis=(source_lang == "simp_chinese" and target_lang == DEFAULT_TARGET_LANG),
                             max_passes=qa_repair_max_passes, backup_dir=qa_backup_dir,
-                            backup_relative_root=output_path)
+                            backup_relative_root=output_path, target_lang=target_lang,
+                            normalize_spacing=normalize_spacing)
                     else:
-                        qa_result = qa_file_with_syntax_repair(out, source_ref, source_lang=source_lang, glossary=glossary)
+                        qa_result = qa_file_with_syntax_repair(out, source_ref, source_lang=source_lang, glossary=glossary,
+                                                               target_lang=target_lang)
                         qa_result.update({"initial_errors":sum(x.get("severity")=="error" for x in qa_result["issues"]),
                                           "final_errors":sum(x.get("severity")=="error" for x in qa_result["issues"]),
                                           "repaired":qa_result.get("syntax_repaired",0), "repair_attempts":0,
                                           "backup":"", "rolled_back":False, "events":[]})
                     issues = qa_result["issues"]
+                    spaces_removed += qa_result.get("spaces_removed", 0)
                     severe = sum(1 for x in issues if x["severity"] == "error")
                     warn = sum(1 for x in issues if x["severity"] == "warning")
                     notice = sum(1 for x in issues if x["severity"] == "notice")
@@ -1960,6 +2386,7 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
         report_path = save_error_report(interrupted=True)
         print("保存して中断しました。次回はキャッシュから再開できます。")
         return {"processed": processed, "interrupted": True, "jobs": total_jobs, "failed": total_failed,
+                "spaces_removed": spaces_removed,
                 "skipped": sum(1 for row in file_errors if row.get("skipped")), "file_errors": file_errors,
                 "warnings": sum(1 for row in file_errors if not row.get("skipped")),
                 "encoding_recoveries": encoding_recoveries, "error_report": str(report_path),
@@ -1979,7 +2406,9 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
         print(f"警告付きで完了しました。スキップ {sum(1 for row in file_errors if row.get('skipped'))}ファイル / 翻訳失敗 {total_failed}件")
     else:
         print("完了しました。")
+    print(f"半角スペース除去: {spaces_removed}個")
     return {"processed": processed, "interrupted": False, "jobs": total_jobs, "failed": total_failed,
+            "spaces_removed": spaces_removed,
             "skipped": sum(1 for row in file_errors if row.get("skipped")), "file_errors": file_errors,
             "warnings": sum(1 for row in file_errors if not row.get("skipped")),
             "encoding_recoveries": encoding_recoveries, "error_report": str(report_path),
@@ -2053,7 +2482,7 @@ def _qa_issue(key: str, severity: str, issue_type: str, message: str, value: str
 
 def qa_entries(target_entries: Dict[str,str], source_entries: Optional[Dict[str,str]] = None,
                source_lang: str = "english", glossary: Optional[dict] = None,
-               source_path: Optional[Path] = None) -> List[dict]:
+               source_path: Optional[Path] = None, target_lang: str = DEFAULT_TARGET_LANG) -> List[dict]:
     """QA Japanese localization against an optional source localization.
 
     ``source_lang`` may be ``english`` or ``simp_chinese``.  Chinese-source QA is
@@ -2065,15 +2494,22 @@ def qa_entries(target_entries: Dict[str,str], source_entries: Optional[Dict[str,
     issues = []
     glossary = glossary or {}
     for key, value in target_entries.items():
+        _, removable_spaces = normalize_cjk_spacing(value, target_lang)
+        if removable_spaces:
+            issues.append(_qa_issue(key, "notice", "cjk_space",
+                                    f"文字の間に余分な半角スペースが{removable_spaces}個あります", value,
+                                    rule_id="QA-SPACE-001", repairable=False,
+                                    recommended_action="内容を確認"))
         # English residues can be detected without a source file.  When a source
         # entry is present, looks_untranslated() below performs the source-aware
         # check so the same issue is not reported twice.
-        if (not source_entries or key not in source_entries) and foreign_in_japanese_output(value):
-            label = "中国語の未翻訳候補" if looks_like_chinese_in_japanese(value) else "英語の未翻訳候補"
+        if (not source_entries or key not in source_entries) and foreign_in_output(value, target_lang):
+            label = ("中国語の未翻訳候補" if target_lang == DEFAULT_TARGET_LANG and looks_like_chinese_in_japanese(value)
+                     else "英語の未翻訳候補")
             issues.append(_qa_issue(key, "error", "untranslated", label, value,
                                     rule_id="QA-UNTRANSLATED-EN-001", repairable=False,
                                     recommended_action="原文を指定して再翻訳"))
-        for item in typo_checks(value):
+        for item in (typo_checks(value) if target_lang == DEFAULT_TARGET_LANG else ()):
             issues.append({"key": key, "value": value, "rule_id":"QA-TYPO-001",
                            "repairable":False, "recommended_action":"内容を確認", **item})
         if '@@' in value:
@@ -2082,8 +2518,9 @@ def qa_entries(target_entries: Dict[str,str], source_entries: Optional[Dict[str,
                                     recommended_action="原文から再翻訳"))
         if source_entries and key in source_entries:
             src = source_entries[key]
-            if unusable_japanese_translation(src, value, source_lang):
-                proper, reason = looks_like_proper_noun_candidate(key, src, value, source_lang, source_path)
+            if unusable_translation(src, value, source_lang, target_lang):
+                proper, reason = (looks_like_proper_noun_candidate(key, src, value, source_lang, source_path)
+                                  if target_lang == DEFAULT_TARGET_LANG else (False, ""))
                 if proper:
                     issues.append(_qa_issue(key, "notice", "proper_noun_untranslated",
                                             "固有名詞の可能性があるため原文同一表記を注意として扱います", value,
@@ -2094,6 +2531,12 @@ def qa_entries(target_entries: Dict[str,str], source_entries: Optional[Dict[str,
                     issues.append(_qa_issue(key, "error", "untranslated", msg, value,
                                             rule_id="QA-UNTRANSLATED-ZH-001" if source_lang == "simp_chinese" else "QA-UNTRANSLATED-EN-002",
                                             repairable=True, recommended_action="原文から再翻訳"))
+            elif (target_lang != DEFAULT_TARGET_LANG and target_language_script(target_lang) == "latin"
+                  and src.strip() == value.strip() and re.search(r"[^\W\d_]{4,}", PROTECT_RE.sub("", src))):
+                issues.append(_qa_issue(key, "notice", "same_as_source",
+                                        "原文と同じ表記です（固有名詞なら問題ありません）", value,
+                                        rule_id="QA-SAME-AS-SOURCE-001", repairable=False,
+                                        recommended_action="固有名詞か、訳し忘れかを確認"))
             src_tokens = extract_protected_tokens(src)
             dst_tokens = extract_protected_tokens(value)
             if src_tokens != dst_tokens:
@@ -2128,7 +2571,7 @@ def qa_entries(target_entries: Dict[str,str], source_entries: Optional[Dict[str,
 
 
 def qa_file(target_path: Path, source_path: Optional[Path] = None, source_lang: Optional[str] = None,
-            glossary: Optional[dict] = None) -> List[dict]:
+            glossary: Optional[dict] = None, target_lang: str = DEFAULT_TARGET_LANG) -> List[dict]:
     _, target_entries, _ = parse_localization_file(Path(target_path))
     source_entries = None
     detected_lang = source_lang or "english"
@@ -2136,7 +2579,8 @@ def qa_file(target_path: Path, source_path: Optional[Path] = None, source_lang: 
         detected_lang, source_entries, _ = parse_localization_file(Path(source_path))
         if source_lang:
             detected_lang = source_lang
-    issues = qa_entries(target_entries, source_entries, detected_lang, glossary, source_path=source_path)
+    issues = qa_entries(target_entries, source_entries, detected_lang, glossary, source_path=source_path,
+                        target_lang=target_lang)
     def line_map(lines):
         result = {}
         for number, line in enumerate(lines, 1):
@@ -2206,10 +2650,11 @@ def repair_syntax_tokens(source: str, target: str) -> Tuple[str, bool]:
 
 
 def qa_file_with_syntax_repair(target_path: Path, source_path: Optional[Path] = None,
-                               source_lang: Optional[str] = None, glossary: Optional[dict] = None) -> dict:
+                               source_lang: Optional[str] = None, glossary: Optional[dict] = None,
+                               target_lang: str = DEFAULT_TARGET_LANG) -> dict:
     """Run QA, safely repair missing edge tokens, persist, then QA again."""
     target_path = Path(target_path)
-    initial = qa_file(target_path, source_path, source_lang=source_lang, glossary=glossary)
+    initial = qa_file(target_path, source_path, source_lang=source_lang, glossary=glossary, target_lang=target_lang)
     syntax_initial = [x for x in initial if x.get("type") == "syntax"]
     repaired = 0
     if syntax_initial and source_path and Path(source_path).exists():
@@ -2224,8 +2669,8 @@ def qa_file_with_syntax_repair(target_path: Path, source_path: Optional[Path] = 
             if changed:
                 updates[key] = new_value
         if updates:
-            repaired = upsert_localization_values(target_path, updates)
-    final = qa_file(target_path, source_path, source_lang=source_lang, glossary=glossary)
+            repaired = upsert_localization_values(target_path, updates, target_lang)
+    final = qa_file(target_path, source_path, source_lang=source_lang, glossary=glossary, target_lang=target_lang)
     syntax_unresolved = sum(1 for x in final if x.get("type") == "syntax")
     return {
         "issues": final,
@@ -2282,7 +2727,9 @@ def qa_file_with_auto_repair(target_path: Path, source_path: Path, *,
                              chinese_basis: bool = False, max_passes: int = 2,
                              backup_dir: Optional[Path] = None,
                              backup_relative_root: Optional[Path] = None,
-                             progress_context: Optional[dict] = None) -> dict:
+                             progress_context: Optional[dict] = None,
+                             target_lang: str = DEFAULT_TARGET_LANG,
+                             normalize_spacing: bool = True) -> dict:
     """Back up a translated file, repair QA errors, and re-run QA.
 
     Warnings and notices are deliberately never changed. Safe edge-token repair is attempted
@@ -2298,23 +2745,25 @@ def qa_file_with_auto_repair(target_path: Path, source_path: Path, *,
     notify("initial_qa")
     detected_lang, source_entries, _ = parse_localization_file(source_path)
     detected_lang = source_lang or detected_lang
-    initial = qa_file(target_path, source_path, source_lang=detected_lang, glossary=glossary)
+    initial = qa_file(target_path, source_path, source_lang=detected_lang, glossary=glossary, target_lang=target_lang)
     initial_errors = [x for x in initial if x.get("severity") == "error"]
     events = []
     backup_path = None
     if not initial_errors:
         return {"issues": initial, "initial_errors": 0, "final_errors": 0, "repaired": 0,
-                "repair_attempts": 0, "backup": "", "rolled_back": False, "events": events}
+                "repair_attempts": 0, "backup": "", "rolled_back": False, "events": events,
+                "spaces_removed": 0}
     if backup_dir:
         notify("backup",initial_errors=len(initial_errors))
         backup_path = _backup_qa_repair_target(target_path, Path(backup_dir), backup_relative_root)
 
     repaired_keys = set()
+    spaces_removed = 0
     attempts = 0
     for pass_no in range(1, max(1, int(max_passes)) + 1):
         if controller:
             controller.wait_if_paused()
-        current = qa_file(target_path, source_path, source_lang=detected_lang, glossary=glossary)
+        current = qa_file(target_path, source_path, source_lang=detected_lang, glossary=glossary, target_lang=target_lang)
         errors = [x for x in current if x.get("severity") == "error" and x.get("repairable")]
         if not errors:
             break
@@ -2336,10 +2785,10 @@ def qa_file_with_auto_repair(target_path: Path, source_path: Path, *,
                                    "action": "safe_token_repair", "result": "updated"})
         if updates:
             notify("mechanical_repair",pass_no=pass_no,repair_keys=len(updates))
-            upsert_localization_values(target_path, updates)
+            upsert_localization_values(target_path, updates, target_lang)
             repaired_keys.update(updates)
 
-        current = qa_file(target_path, source_path, source_lang=detected_lang, glossary=glossary)
+        current = qa_file(target_path, source_path, source_lang=detected_lang, glossary=glossary, target_lang=target_lang)
         retry_by_key = {}
         for issue in current:
             if issue.get("severity") != "error" or not issue.get("repairable"):
@@ -2361,7 +2810,8 @@ def qa_file_with_auto_repair(target_path: Path, source_path: Path, *,
         try:
             translated = translate_batch(url, model, jobs, detected_lang, glossary=glossary,
                                          preset=preset, controller=controller, provider=provider,
-                                         api_key=api_key, chinese_basis=chinese_basis)
+                                         api_key=api_key, chinese_basis=chinese_basis,
+                                         target_lang=target_lang)
         except StopRequested:
             raise
         except Exception as exc:
@@ -2373,21 +2823,24 @@ def qa_file_with_auto_repair(target_path: Path, source_path: Path, *,
         updates = {}
         for job, translated_value in zip(jobs, translated):
             restored = restore_text(translated_value, job["tokens"])
-            valid = (not unusable_japanese_translation(job["value"], restored, detected_lang)
+            valid = (not unusable_translation(job["value"], restored, detected_lang, target_lang)
                      and extract_protected_tokens(restored) == extract_protected_tokens(job["value"])
                      and "@@" not in restored)
             if valid:
+                if normalize_spacing:
+                    restored, removed = normalize_cjk_spacing(restored, target_lang)
+                    spaces_removed += removed
                 updates[job["key"]] = restored
                 repaired_keys.add(job["key"])
             events.append({"pass": pass_no, "key": job["key"], "issue_type": job["issue_type"],
                            "action": "retranslate", "result": "updated" if valid else "rejected_by_validation"})
         if updates:
-            upsert_localization_values(target_path, updates)
+            upsert_localization_values(target_path, updates, target_lang)
 
         notify("recheck",pass_no=pass_no,updated_keys=len(updates))
 
     notify("final_qa")
-    final = qa_file(target_path, source_path, source_lang=detected_lang, glossary=glossary)
+    final = qa_file(target_path, source_path, source_lang=detected_lang, glossary=glossary, target_lang=target_lang)
     final_errors = [x for x in final if x.get("severity") == "error"]
     rolled_back = False
     if repaired_keys and len(final_errors) >= len(initial_errors) and backup_path and backup_path.exists():
@@ -2397,12 +2850,13 @@ def qa_file_with_auto_repair(target_path: Path, source_path: Path, *,
         events.append({"pass": attempts, "key": "", "issue_type": "file",
                        "action": "rollback", "result": "restored",
                        "reason": "修復前よりエラーが減らなかったため"})
-        final = qa_file(target_path, source_path, source_lang=detected_lang, glossary=glossary)
+        final = qa_file(target_path, source_path, source_lang=detected_lang, glossary=glossary, target_lang=target_lang)
         final_errors = [x for x in final if x.get("severity") == "error"]
     return {
         "issues": final, "initial_errors": len(initial_errors), "final_errors": len(final_errors),
         "repaired": len(repaired_keys), "repair_attempts": attempts,
         "backup": str(backup_path or ""), "rolled_back": rolled_back, "events": events,
+        "spaces_removed": 0 if rolled_back else spaces_removed,
     }
 
 
@@ -2411,20 +2865,24 @@ def collect_translation_qa_pairs(input_path: Path, output_path: Path,
                                  target_lang: str = DEFAULT_TARGET_LANG) -> List[dict]:
     """Map source localization files to the Japanese outputs used by translation jobs."""
     input_path, output_path = Path(input_path), Path(output_path)
-    allowed = set(source_langs or ())
+    # source_langs=None は「翻訳先以外のすべての言語」。
+    allowed = (set(source_langs) if source_langs is not None else set(KNOWN_SOURCE_LANGS)) - {target_lang}
     if input_path.is_file():
         files, base_dir = [input_path], input_path.parent
     else:
         files, base_dir = gather_yml_files(input_path), input_path
-    pairs = []
-    planned = set()
+    detected = []
     for source in files:
         try:
             source_lang = detect_source_lang(source, read_localization_text(source).splitlines()[:5])
         except Exception:
             continue
-        if source_lang not in allowed:
-            continue
+        if source_lang in allowed:
+            detected.append((source, source_lang))
+    detected.sort(key=lambda row: (source_language_priority(row[1], target_lang), str(row[0])))
+    pairs = []
+    planned = set()
+    for source, source_lang in detected:
         relative = source.parent.relative_to(base_dir) if input_path.is_dir() else Path(".")
         target = output_path / remap_rel_dir(relative, target_lang) / rename_for_target(
             source, target_lang, source_lang)
@@ -2433,19 +2891,31 @@ def collect_translation_qa_pairs(input_path: Path, output_path: Path,
             continue
         planned.add(token)
         pairs.append({"source_file":str(source), "target_file":str(target),
-                      "source_language":source_lang})
+                      "source_language":source_lang, "target_language":target_lang})
     return pairs
+
+
+def target_language_of_pair(pair: dict, default: str = DEFAULT_TARGET_LANG) -> str:
+    """QA の組の翻訳先。組に書かれていなければ既定（日本語）。
+
+    ファイルの見出しからは決めない：英語の localization（l_english）に日本語を書く旧式の日本語化 Mod があるため。
+    """
+    lang = str(pair.get("target_language") or "")
+    return lang if lang in TARGET_LANGUAGES else default
 
 
 def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
                          model: str = DEFAULT_MODEL, url: str = DEFAULT_OLLAMA_URL,
                          provider: str = "Ollama", api_key: str = "", preset: str = "General",
                          glossary_path=None, controller: Optional[TranslationController] = None,
-                         max_passes: int = 2, label: str = "manual_qa") -> dict:
+                         max_passes: int = 2, label: str = "manual_qa",
+                         target_lang: str = DEFAULT_TARGET_LANG,
+                         normalize_spacing: bool = True) -> dict:
     """Repair every error in QA pairs while isolating file failures."""
     glossary = load_glossary(Path(glossary_path)) if glossary_path else {}
     backup_dir = create_qa_repair_backup_dir(Path(backup_root), label)
     results, failures = [], []
+    spaces_removed = 0
     total_initial = total_final = total_warnings = total_notices = total_repaired = 0
     pair_list = list(pairs or [])
     interrupted = False
@@ -2453,6 +2923,7 @@ def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
         source = Path(pair.get("source_file") or pair.get("source") or "")
         target = Path(pair.get("target_file") or pair.get("target") or "")
         source_lang = str(pair.get("source_language") or pair.get("lang") or "english")
+        pair_target = target_language_of_pair(pair, target_lang)
         created_target = False
         try:
             if controller:
@@ -2463,18 +2934,21 @@ def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
                 raise FileNotFoundError(f"原文ファイルが見つかりません: {source}")
             if not target.exists():
                 target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text("\ufeffl_japanese:\n", encoding="utf-8")
+                target.write_text(f"\ufeffl_{pair_target}:\n", encoding="utf-8")
                 created_target = True
             result = qa_file_with_auto_repair(
-                target, source, source_lang=source_lang, glossary=glossary,
+                target, source, source_lang=source_lang,
+                glossary=glossary if pair_target == DEFAULT_TARGET_LANG else None,
                 model=model, url=url, provider=provider, api_key=api_key, preset=preset,
-                controller=controller, chinese_basis=(source_lang == "simp_chinese"),
+                controller=controller, chinese_basis=(source_lang == "simp_chinese" and pair_target == DEFAULT_TARGET_LANG),
                 max_passes=max_passes, backup_dir=backup_dir,
                 backup_relative_root=None,
-                progress_context={"file_no":file_index,"file_total":len(pair_list)})
+                progress_context={"file_no":file_index,"file_total":len(pair_list)},
+                target_lang=pair_target, normalize_spacing=normalize_spacing)
             if created_target and result.get("final_errors", 0) >= result.get("initial_errors", 0):
                 target.unlink(missing_ok=True)
                 result["rolled_back"] = True
+                result["spaces_removed"] = 0
                 result.setdefault("events", []).append({
                     "pass":result.get("repair_attempts",0), "key":"", "issue_type":"file",
                     "action":"rollback_created_output", "result":"removed",
@@ -2491,6 +2965,7 @@ def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
             total_warnings += warnings
             total_notices += notices
             total_repaired += int(result.get("repaired",0) or 0)
+            spaces_removed += result.get("spaces_removed", 0)
             if controller:
                 controller.notify(kind="qa_repair_progress",stage="file_done",file_no=file_index,
                                   file_total=len(pair_list),source_file=str(source),target_file=str(target),
@@ -2513,7 +2988,9 @@ def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
         "summary":{"files":len(results)+len(failures), "completed_files":len(results),
                    "failed_files":len(failures), "initial_errors":total_initial,
                    "final_errors":total_final, "resolved_errors":max(0,total_initial-total_final),
-                   "warnings":total_warnings, "notices":total_notices, "repaired_keys":total_repaired},
+                   "warnings":total_warnings, "notices":total_notices, "repaired_keys":total_repaired,
+                   "spaces_removed":spaces_removed},
+        "spaces_removed":spaces_removed,
         "files":results, "failures":failures,
     }
 
@@ -2579,6 +3056,7 @@ def build_auto_glossary_candidates(pairs: Iterable[dict]) -> List[dict]:
             "conflict": len(variants) > 1,
             "keys": keys_by_source[src][:30],
             "source_kind": "auto",
+            "term_kind": _classify_glossary_term_kind(src, langs.get(src, "english"), keys_by_source[src][0], preferred),
         })
     out.sort(key=lambda x: (not x["conflict"], -x["occurrences"], x["source"]))
     return out
@@ -2627,6 +3105,75 @@ def _is_probable_specific_glossary_term(key: str, source: str, target: str, sour
             return True
 
     return False
+
+
+_TERM_KIND_VERBS = {
+    "increase", "decrease", "gain", "lose", "add", "remove", "enable", "disable",
+    "unlock", "lock", "can", "cannot", "is", "are", "has", "have", "will", "do",
+    "does", "get", "give", "take", "make", "build", "raise", "lower", "reduce",
+    "improve", "start", "stop", "join", "leave", "declare", "accept", "refuse",
+    "reject", "allow", "ban", "demand", "request", "send", "recruit", "grant",
+    "revoke", "choose", "select", "open", "close", "show", "hide",
+}
+_TERM_KIND_FUNCTION_WORDS = {"to", "for", "per", "by", "with", "from", "into", "than", "if", "when", "while", "not"}
+# 固有名詞（組織名・条約名など）の中で小文字のままでよい語。
+_TITLE_CONNECTORS = {"of", "the", "and", "for", "in", "on", "at", "to", "a", "an", "de", "del", "della", "la", "le", "les",
+                     "du", "des", "von", "van", "der", "den", "y", "e", "da", "do", "dos", "das", "und", "et", "di", "en", "i", "al", "el"}
+# "Ltd."・"Jr."・"S.A."・"H.R.M." のような略語は、文の終わりの「.」ではない。
+_ABBREVIATION_RE = re.compile(r"^(?:[A-Za-z]{1,4}\.){2,}$|^(?:Jr|Sr|Ltd|Co|Inc|Rev|Dr|Mr|Mrs|Ms|St|Gen|Col|Lt|Capt|Adm|Gov|Pres|Bros|No|Vol)\.$")
+# 形容詞としても使う動詞。"Close Air Support"・"Lower Yangtze"・"Open Door Policy" のような名前の頭に来る。
+_ADJECTIVE_VERBS = {"close", "lower", "open"}
+
+
+def _is_title_case_name(words: List[str]) -> bool:
+    """英語の各語が大文字で始まる（つなぎの語は小文字でよい）名詞句か。組織名・条約名・地名など。"""
+    words = [w for w in words if w[:1].isalpha()]  # "2nd" のような数字で始まる語は見ない
+    if not words or not (words[0][:1].isupper() or words[0] == "the"):
+        return False
+    capitalized = 0
+    for word in words:
+        if word[:1].isupper():
+            capitalized += 1
+        elif word.lower() not in _TITLE_CONNECTORS:
+            return False
+    # "Support for Infantry" のような UI の句と、"Cape to Cairo Railway" のような名前を分けるため、
+    # for・to を含むときは大文字の語が3つ以上あるときだけ名前とみなす。
+    if {"for", "to"} & {w.lower() for w in words}:
+        return capitalized >= 3
+    return capitalized >= (1 if words[0] == "the" else 2)
+
+
+def _classify_glossary_term_kind(source: str, source_lang: str, key: str = "", target: str = "") -> str:
+    """自動生成の用語候補の種類（要望C）。proper＝固有名詞、term＝単語、phrase＝定型句。原文の側だけで決める。
+
+    定型句の第一の目印は文の終わりの記号（出来事の選択肢の短い返事 "Great!"、"So be it." など）と変数。
+    大文字で始まる語が並ぶ名前（"The League of Eight Provinces" など）は、長くても固有名詞にする。
+    """
+    text = (source or "").strip()
+    if PROTECT_RE.search(text):
+        return "phrase"
+    plain = PROTECT_RE.sub('', text).strip()
+    if plain.endswith(('.', '!', '?', '…', '。', '！', '？')) and not _ABBREVIATION_RE.match(plain):
+        return "phrase"
+    words = re.findall(r"[^\W\d_][\w'\-]*", plain)
+    tokens = plain.split()
+    if source_lang == "english":
+        lowered = [word.lower() for word in words]
+        if len(words) >= 2 and lowered[0] in _TERM_KIND_VERBS and not (
+                lowered[0] in _ADJECTIVE_VERBS and _is_title_case_name(tokens)):
+            return "phrase"
+        if 2 <= len(tokens) <= 10 and _is_title_case_name(tokens):
+            return "proper"
+        if len(words) >= 4:
+            return "phrase"
+        if _TERM_KIND_FUNCTION_WORDS.intersection(lowered) or re.search(r"\d", plain):
+            return "phrase"
+    elif source_lang == "simp_chinese":
+        if plain.startswith(("增加", "减少", "获得", "失去", "提高", "降低", "解锁", "允许", "禁止", "可以", "需要")):
+            return "phrase"
+    if _is_probable_specific_glossary_term(key, source, target, source_lang):
+        return "proper"
+    return "term"
 
 
 def build_import_glossary_candidates_from_records(records: Iterable[dict], source_kind: str = "import",
@@ -2713,7 +3260,7 @@ def resolve_auto_glossary_conflicts(provider: str, url: str, model: str, candida
 
     Failure is non-fatal: the frequency-based preferred wording remains in place.
     """
-    conflicts = [c for c in candidates if c.get("conflict")][:80]
+    conflicts = [c for c in candidates if c.get("conflict") and c.get("term_kind") != "phrase"][:80]
     if not conflicts or not model:
         return candidates
     payload = [{
@@ -2745,7 +3292,134 @@ def glossary_variants_path(glossary_path: Path) -> Path:
     return glossary_path.with_name(glossary_path.stem + "_variants.json")
 
 
-def save_auto_glossary_candidates(glossary_path: Path, candidates: List[dict], preserve_existing: bool = True) -> dict:
+def is_paratranz_glossary(data) -> bool:
+    return isinstance(data, list) and all(
+        isinstance(item, dict) and "term" in item and "translation" in item
+        for item in data
+    )
+
+
+def classify_paratranz_glossary(items: list) -> dict:
+    """Classify entries before importing; counts are exclusive by rule priority.
+
+    terms counts all accepted keys, including variants. spaces_fixed and
+    duplicates count source occurrences, including variants.
+    """
+    if not is_paratranz_glossary(items):
+        raise ValueError("ParaTranz の用語集（term / translation を持つリスト）ではありません。")
+    result = {"terms": {}, "meta": {}, "rules": [], "short_terms": [], "note_rules": []}
+    counts = dict.fromkeys(("items", "terms", "from_variants", "rules", "affixes", "symbols",
+                           "short_terms", "spaces_fixed", "duplicates", "note_rules"), 0)
+    counts["items"] = len(items)
+    seen = set()
+
+    def add_source(raw, item, variant_of=None):
+        if not isinstance(raw, str) or not raw.strip() or not isinstance(item["translation"], str):
+            raise ValueError("原語と訳語は文字列で、原語は空白だけでない必要があります。")
+        source = raw.strip()
+        counts["spaces_fixed"] += int(source != raw)
+        if source in seen:
+            counts["duplicates"] += 1
+            return
+        seen.add(source)
+        translation = item["translation"]
+        note = item.get("note", "")
+        note = note if isinstance(note, str) else ""
+        entry = {"term": source, "translation": translation, "note": note}
+        if translation.startswith("※"):
+            category, reason = "rules", "訳語が「※」で始まるルールの項目"
+        elif source.startswith("-") or source.endswith("-"):
+            category, reason = "affixes", "原語が「-」で始まるか終わる接辞の項目"
+        elif not any(character.isalnum() and re.fullmatch(
+                r"[A-Za-z0-9\u1100-\u11ff\u3000-\u312f\u3130-\u318f\u31a0-\u31bf"
+                r"\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff\ua960-\ua97f\uac00-\ud7ff"
+                r"\uf900-\ufaff\uff66-\uffdc\U00020000-\U000323af]", character) for character in source):
+            category, reason = "symbols", "英字・数字・CJKの文字がない記号だけの項目"
+        else:
+            category, reason = None, None
+        if category:
+            counts[category] += 1
+            result["rules"].append({**entry, "reason": reason})
+            return
+        result["terms"][source] = translation
+        result["meta"][source] = {
+            "source_kind": "import:paratranz", "paratranz_id": item.get("id"),
+            "note": note, "pos": item.get("pos", ""),
+            "case_sensitive": item.get("caseSensitive", False),
+            "variant_of": variant_of, "project": item.get("project"),
+        }
+        counts["terms"] += 1
+        counts["from_variants"] += int(variant_of is not None)
+        if re.fullmatch(r"[A-Za-z]{1,2}", source):
+            result["short_terms"].append(entry)
+            counts["short_terms"] += 1
+        if any(word in note for word in ("ルール", "入れないように", "しないように", "禁止")):
+            result["note_rules"].append({**entry, "reason": "note にルールがある（自動でプロンプトには入れません）"})
+            counts["note_rules"] += 1
+
+    for item in items:
+        add_source(item["term"], item)
+        variants = item.get("variants") or []  # ParaTranz は variants が無い語を null で書き出す
+        if not isinstance(variants, list):
+            variants = []
+        for variant in variants:
+            if isinstance(variant, str) and variant.strip():
+                add_source(variant, item, item["term"].strip())
+    result["counts"] = counts
+    return result
+
+
+def glossary_notation_rules_path(glossary_path: Path) -> Path:
+    glossary_path = Path(glossary_path)
+    return glossary_path.with_name(glossary_path.stem + "_notation_rules.json")
+
+
+def save_paratranz_import(glossary_path, classified, mode) -> dict:
+    if mode not in ("merge", "replace"):
+        raise ValueError("取り込み方法は merge または replace を指定してください。")
+    glossary_path = Path(glossary_path)
+    with _JSON_SAVE_LOCK:
+        problem = glossary_file_problem(glossary_path)
+        if problem:
+            raise ValueError(problem + " 対応していない形式のファイルには上書きしません。")
+        existing = load_glossary(glossary_path)
+        glossary = dict(existing) if mode == "merge" else {}
+        metadata = load_json(glossary_variants_path(glossary_path), {})
+        if not isinstance(metadata, dict):
+            raise ValueError("用語の補助ファイルが辞書形式ではないため上書きしません。")
+        if mode == "replace":
+            metadata = {source: value for source, value in metadata.items() if source in classified["terms"]}
+        added, updated, conflicts = [], [], []
+        for source, translation in classified["terms"].items():
+            if mode == "merge" and source in existing and existing[source] != translation:
+                conflicts.append({"term": source, "existing": existing[source], "incoming": translation})
+                continue
+            if source not in existing:
+                added.append(source)
+            elif existing[source] != translation:
+                updated.append(source)
+            glossary[source] = translation
+            previous = metadata.get(source, {})
+            metadata[source] = {**(previous if isinstance(previous, dict) else {}), **classified["meta"][source]}
+        rules_path = glossary_notation_rules_path(glossary_path)
+        notation = load_json(rules_path, {}) if mode == "merge" else {}
+        if not isinstance(notation, dict) or any(not isinstance(notation.get(key, []), list) for key in ("rules", "note_rules")):
+            raise ValueError("表記ルールのファイルの形式が不正なため上書きしません。")
+        for key in ("rules", "note_rules"):
+            entries = list(notation.get(key, []))
+            for entry in classified[key]:
+                if entry not in entries:
+                    entries.append(entry)
+            notation[key] = entries
+        save_glossary(glossary_path, glossary)
+        save_json(glossary_variants_path(glossary_path), metadata)
+        save_json(rules_path, notation)
+    return {"added": added, "updated": updated, "conflicts": conflicts,
+            "counts": {"added": len(added), "updated": len(updated), "conflicts": len(conflicts)}}
+
+
+def save_auto_glossary_candidates(glossary_path: Path, candidates: List[dict], preserve_existing: bool = True,
+                                  include_phrases: bool = False) -> dict:
     """Merge generated terminology into the normal glossary and save variant metadata."""
     glossary_path = Path(glossary_path)
     glossary = load_glossary(glossary_path) if preserve_existing else {}
@@ -2754,16 +3428,21 @@ def save_auto_glossary_candidates(glossary_path: Path, candidates: List[dict], p
         variants = {}
     added = 0
     conflicts = 0
+    term_kind_counts = {"proper": 0, "term": 0, "phrase": 0}
     for c in candidates:
         src = str(c.get("source", "")).strip()
         preferred = str(c.get("preferred", "")).strip()
         if not src or not preferred:
             continue
+        term_kind = c.get("term_kind", "")
+        if term_kind in term_kind_counts:
+            term_kind_counts[term_kind] += 1
         existed = src in glossary
         was_generated = src in variants
         if not existed:
-            glossary[src] = preferred
-            added += 1
+            if term_kind != "phrase" or include_phrases:
+                glossary[src] = preferred
+                added += 1
         else:
             preferred = glossary[src]
         # A manually registered term must remain a manual term. Automatic generation
@@ -2780,10 +3459,12 @@ def save_auto_glossary_candidates(glossary_path: Path, candidates: List[dict], p
             "source_lang": c.get("source_lang", ""),
             "occurrences": int(c.get("occurrences", 0)),
             "source_kind": c.get("source_kind", "auto"),
+            "term_kind": term_kind,
         }
     save_glossary(glossary_path, glossary)
     save_json(glossary_variants_path(glossary_path), variants)
-    return {"added": added, "total": len(candidates), "conflicts": conflicts, "glossary_size": len(glossary)}
+    return {"added": added, "total": len(candidates), "conflicts": conflicts, "glossary_size": len(glossary),
+            "term_kind_counts": term_kind_counts, "include_phrases": include_phrases}
 
 
 def bulk_unify_qa_terms(target_path: Path, source_path: Path, glossary_path: Path) -> dict:
@@ -2831,9 +3512,20 @@ def bulk_unify_qa_terms(target_path: Path, source_path: Path, glossary_path: Pat
 def proofread_text(url: str, model: str, text: str, source_text: str = "",
                    glossary: Optional[dict] = None, preset: str = "General",
                    provider: str = "Ollama", api_key: str = "",
-                   controller: Optional[TranslationController] = None) -> str:
+                   controller: Optional[TranslationController] = None,
+                   target_lang: str = DEFAULT_TARGET_LANG) -> str:
     protected, tokens = protect_text(text)
     glossary_text = "\n".join(f"{k}=>{v}" for k,v in (glossary or {}).items())
+    if (target_lang or DEFAULT_TARGET_LANG) != DEFAULT_TARGET_LANG:
+        target_name = target_language_name(target_lang)
+        system = f"""You are a proofreader for the {target_name} localization of a Paradox game. Fix only typos, missing words, grammar mistakes, duplicated words and unnatural {target_name}.
+Do not change the meaning, and never change placeholders such as @@0@@. Reply with the corrected text only.
+Game context: {GAME_PRESETS_EN.get(preset, GAME_PRESETS_EN['General'])}
+Glossary:\n{glossary_text}"""
+        user = (f"Source for reference: {PROTECT_RE.sub('[VAR]', source_text)}\n{target_name}: {protected}"
+                if source_text else protected)
+        raw = call_llm_raw(provider, url, model, user, system, api_key=api_key, controller=controller)
+        return restore_text(raw.strip().strip('`').strip(), tokens)
     system = f"""あなたはParadoxゲーム日本語ローカライズの校正者です。誤字、脱字、助詞、重複、不自然な日本語だけを修正してください。
 意味を勝手に変えず、@@0@@ 等のプレースホルダは絶対に変更しないでください。回答は修正後本文だけ。
 プリセット: {GAME_PRESETS.get(preset, GAME_PRESETS['General'])}
@@ -2861,7 +3553,8 @@ def update_localization_value(path: Path, key: str, new_value: str) -> bool:
     return changed
 
 
-def compare_localization_entries(source_entries: Dict[str, str], target_entries: Dict[str, str], source_lang: str = "english") -> List[dict]:
+def compare_localization_entries(source_entries: Dict[str, str], target_entries: Dict[str, str], source_lang: str = "english",
+                                 target_lang: str = DEFAULT_TARGET_LANG) -> List[dict]:
     """Compare source/target localization dictionaries key-by-key."""
     rows = []
     for key in sorted(set(source_entries) | set(target_entries)):
@@ -2869,11 +3562,11 @@ def compare_localization_entries(source_entries: Dict[str, str], target_entries:
         dst = target_entries.get(key, "")
         if key not in target_entries:
             status = "missing"
-            message = "日本語側にキーがありません"
+            message = f"{target_language_label(target_lang)}側にキーがありません"
         elif key not in source_entries:
             status = "extra"
-            message = "日本語側だけに存在するキーです"
-        elif unusable_japanese_translation(src, dst, source_lang):
+            message = f"{target_language_label(target_lang)}側だけに存在するキーです"
+        elif unusable_translation(src, dst, source_lang, target_lang):
             status = "untranslated"
             message = "原文のまま残っている可能性があります"
         else:
@@ -2889,7 +3582,7 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
                                   cache_path=None, controller: Optional[TranslationController] = None,
                                   glossary_path=None, preset="General", auto_qa=True,
                                   provider="Ollama", api_key="", qa_backup_root=None,
-                                  qa_repair_max_passes=2):
+                                  qa_repair_max_passes=2, normalize_spacing: bool = True):
     """Translate only Simplified Chinese localization using Chinese wording as the terminology basis."""
     input_path = Path(input_path)
     output_path = Path(output_path)
@@ -2917,7 +3610,7 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
     if not chinese_files:
         raise RuntimeError("簡体字中国語（l_simp_chinese）のYAMLファイルが見つかりませんでした。")
 
-    total_jobs = total_failed = processed = 0
+    total_jobs = total_failed = processed = spaces_removed = 0
     qa_errors = qa_warnings = qa_notices = 0
     qa_report = []
     qa_repaired = 0
@@ -2939,18 +3632,22 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
                 f, out, url, model, target_lang, cache, workers, True,
                 batch_size, controller, glossary, preset, None, False,
                 cache_file, i, len(chinese_files), provider, api_key, True,
+                normalize_spacing=normalize_spacing,
             )
             processed += 1
             total_jobs += stats["jobs"]
             total_failed += stats["failed"]
+            spaces_removed += stats.get("spaces_removed", 0)
             save_cache(cache_file, cache)
             if auto_qa and out.exists():
                 qa_result = qa_file_with_auto_repair(
                     out, f, source_lang="simp_chinese", glossary=glossary,
                     model=model, url=url, provider=provider, api_key=api_key, preset=preset,
                     controller=controller, chinese_basis=True, max_passes=qa_repair_max_passes,
-                    backup_dir=qa_backup_dir, backup_relative_root=output_path)
+                    backup_dir=qa_backup_dir, backup_relative_root=output_path,
+                    normalize_spacing=normalize_spacing)
                 issues = qa_result["issues"]
+                spaces_removed += qa_result.get("spaces_removed", 0)
                 severe = sum(1 for x in issues if x["severity"] == "error")
                 warn = sum(1 for x in issues if x["severity"] == "warning")
                 notice = sum(1 for x in issues if x["severity"] == "notice")
@@ -2971,6 +3668,7 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
         save_cache(cache_file, cache)
         save_source_manifest(cache_file, current_manifest)
         return {"interrupted": True, "processed_files": processed, "jobs": total_jobs, "failed": total_failed, "cache": str(cache_file),
+        "spaces_removed": spaces_removed,
                 "qa_errors": qa_errors, "qa_warnings": qa_warnings, "qa_notices": qa_notices}
     save_source_manifest(cache_file, current_manifest)
     qa_report_path = output_path / "chinese_basis_qa_report.json"
@@ -2983,7 +3681,9 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
                        "repair_events":len(qa_repair_events)},
             "issues":qa_report, "repair_events":qa_repair_events,
         })
+    print(f"半角スペース除去: {spaces_removed}個")
     return {"interrupted": False, "processed_files": processed, "jobs": total_jobs, "failed": total_failed, "cache": str(cache_file), "output": str(output_path),
+    "spaces_removed": spaces_removed,
             "qa_errors": qa_errors, "qa_warnings": qa_warnings, "qa_notices":qa_notices, "qa_repaired":qa_repaired,
             "qa_report": str(qa_report_path) if auto_qa else "", "qa_backup":str(qa_backup_dir or "")}
 
@@ -3013,11 +3713,14 @@ def qa_translation_output(input_path: Path, output_path: Path, glossary_path=Non
     syntax_repaired = 0
     syntax_unresolved = 0
     planned = set()
+    detected = []
     for f in files:
         try:
-            source_lang = detect_source_lang(f, read_localization_text(f).splitlines()[:5])
+            detected.append((f, detect_source_lang(f, read_localization_text(f).splitlines()[:5])))
         except Exception:
             continue
+    detected.sort(key=lambda row: (source_language_priority(row[1], target_lang), str(row[0])))
+    for f, source_lang in detected:
         rel = f.parent.relative_to(base_dir) if input_path.is_dir() else Path(".")
         out = output_path / remap_rel_dir(rel, target_lang) / rename_for_target(f, target_lang, source_lang)
         out_key = str(out.resolve())
@@ -3031,11 +3734,12 @@ def qa_translation_output(input_path: Path, output_path: Path, glossary_path=Non
             except Exception:
                 src_entries = {}
             for key in src_entries:
-                issues_all.append({"source_file": str(f), "target_file": str(out), "key": key, "severity": "error", "type": "missing_output", "message": "対応する日本語出力ファイルがありません", "value": ""})
+                issues_all.append({"source_file": str(f), "target_file": str(out), "key": key, "severity": "error", "type": "missing_output", "message": f"対応する{target_language_label(target_lang)}の出力ファイルがありません", "value": ""})
             continue
         checked += 1
         source_ref = None if source_lang == target_lang else f
-        qa_result = qa_file_with_syntax_repair(out, source_ref, source_lang=source_lang, glossary=glossary)
+        qa_result = qa_file_with_syntax_repair(out, source_ref, source_lang=source_lang, glossary=glossary,
+                                               target_lang=target_lang)
         syntax_detected += qa_result["syntax_detected"]
         syntax_repaired += qa_result["syntax_repaired"]
         syntax_unresolved += qa_result["syntax_unresolved"]
@@ -3103,13 +3807,13 @@ def translate_single_text(url: str, model: str, text: str, source_lang: str = "e
                           glossary: Optional[dict] = None, preset: str = "General",
                           provider: str = "Ollama", api_key: str = "",
                           controller: Optional[TranslationController] = None,
-                          chinese_basis: bool = False) -> str:
+                          chinese_basis: bool = False, target_lang: str = DEFAULT_TARGET_LANG) -> str:
     """Translate one localization value while preserving Paradox tokens."""
     protected, tokens = protect_text(text)
     job = {"value": text, "protected": protected, "tokens": tokens}
     out = translate_batch(url, model, [job], source_lang, glossary=glossary, preset=preset,
                           dual_source=False, controller=controller, provider=provider, api_key=api_key,
-                          chinese_basis=chinese_basis)[0]
+                          chinese_basis=chinese_basis, target_lang=target_lang)[0]
     return restore_text(out, tokens)
 
 

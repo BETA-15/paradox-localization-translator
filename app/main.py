@@ -37,7 +37,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.11.81"
+APP_VERSION = "0.12.0"
 MOD_STATUS_CACHE_VERSION = 16
 TRANSLATION_STATUS_SNAPSHOT_SCHEMA = 2
 MOD_STATUS_EMPTY_IID = "__mod_status_empty__"
@@ -100,10 +100,109 @@ def _qa_severity_group(issues):
     return "ok"
 
 
+TARGET_LANG_NOTE=("QA／比較編集タブも、ここで選んだ翻訳先の基準で確認します。日本語以外の翻訳先では、Mod調査・日本語化Modの判定と紐付け・差分だけ翻訳・中国語基準翻訳は使えません"
+                  "（日本語のみ）。日本語以外の品質チェックは日本語より簡易です（ラテン文字の言語どうしは「原文と同じ」だけを確認します）。")
+
+
+def _target_lang_choice(lang):
+    """翻訳先の選択欄に出す文字（例: フランス語（l_french））。"""
+    return f"{core.target_language_label(lang)}（l_{lang}）"
+
+
+def _target_lang_from_choice(text):
+    for lang in core.TARGET_LANGUAGES:
+        if text == _target_lang_choice(lang) or text == lang:
+            return lang
+    return core.DEFAULT_TARGET_LANG
+
+
+def _item_target_lang(item):
+    """キュー項目の翻訳先。v0.11 までに保存された項目には無いので日本語とみなす。"""
+    lang=str((item or {}).get("target_lang") or core.DEFAULT_TARGET_LANG)
+    return lang if lang in core.TARGET_LANGUAGES else core.DEFAULT_TARGET_LANG
+
+
+def _current_target_lang(app):
+    var=getattr(app,"target_lang_var",None)
+    return _target_lang_from_choice(var.get()) if var is not None else core.DEFAULT_TARGET_LANG
+
+
+def _normalize_spacing_enabled(app):
+    var = getattr(app, "normalize_spacing_var", None)
+    return bool(var.get()) if var is not None else True
+
+
+def _glossary_language(app):
+    var=getattr(app,"glossary_lang_var",None)
+    return _target_lang_from_choice(var.get()) if var is not None else core.DEFAULT_TARGET_LANG
+
+
+def _selected_glossary_path(app):
+    return core.glossary_path_for_language(app.glossary_path_var.get() or DEFAULT_GLOSSARY,
+                                           _glossary_language(app))
+
+
+def _existing_language_glossary(base_path, target_lang):
+    if not base_path:
+        return None
+    path=core.glossary_path_for_language(base_path,target_lang)
+    return path if path.is_file() else None
+
+
+def _japanese_glossary_only(app):
+    if _glossary_language(app) == core.DEFAULT_TARGET_LANG:
+        return True
+    messagebox.showinfo(APP_NAME,"この機能は日本語の用語集だけで使えます")
+    return False
+
+
+def _cache_for_target(cache_path, lang):
+    """翻訳先ごとのキャッシュファイル。日本語は今までの場所のまま。
+
+    source_manifest.json はキャッシュと同じフォルダに置かれるので、ほかの言語はフォルダごと分け、
+    日本語の差分判定（前回の原文の記録）を別の言語の翻訳で上書きしない。
+    """
+    cache=Path(cache_path)
+    if lang == core.DEFAULT_TARGET_LANG:
+        return cache
+    path=cache.parent / f"target_{lang}" / cache.name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _target_language_problems(items, diff_requested=False, preset=""):
+    """翻訳開始前の確認：(止める理由, ゲームが読めない言語の警告の一覧) を返す。"""
+    other=[it for it in items if _item_target_lang(it) != core.DEFAULT_TARGET_LANG]
+    if diff_requested and other:
+        return "「差分だけ翻訳」は翻訳先が日本語の項目だけで使えます。日本語以外の項目は「一からすべて翻訳」を使ってください。", []
+    warnings=[]
+    for it in items:
+        warning=core.game_language_warning(_item_target_lang(it), it.get("input",""), preset)
+        if warning and warning not in warnings:
+            warnings.append(warning)
+    return "", warnings
+
+
+def _generated_language_files(output_root, target_lang):
+    files=[]
+    output_root=Path(output_root)
+    if not output_root.exists():
+        return files
+    for p in sorted(output_root.rglob("*.yml")):
+        try:
+            head=core.read_localization_text(p).splitlines()[:5]
+            lang=core.detect_source_lang(p,head)
+        except Exception:
+            lang=""
+        if lang == target_lang or f"_l_{target_lang}" in p.name.lower():
+            files.append(p)
+    return files
+
+
 DIFF_TRANSLATE_ATTEMPTS = 2  # 差分翻訳で、使えない訳が返ったときに訳し直す回数（最初の1回を含む）
 
 
-def _diff_translation_problem(source_text, translated, source_lang):
+def _diff_translation_problem(source_text, translated, source_lang, target_lang=core.DEFAULT_TARGET_LANG):
     """差分翻訳の訳文が書き込めるかを確かめる。書けないなら理由、書けるなら空文字。
 
     通常翻訳（process_file）と同じく、原文のまま・未翻訳に見えるもの・ゲーム変数やタグが原文と食い違うもの・
@@ -116,9 +215,9 @@ def _diff_translation_problem(source_text, translated, source_lang):
         return "内部の記号（@@N@@）が残りました"
     if core.extract_protected_tokens(text) != core.extract_protected_tokens(source_text):
         return "ゲーム変数・タグが原文と一致しません"
-    if core.looks_like_chinese_in_japanese(text):
+    if target_lang == core.DEFAULT_TARGET_LANG and core.looks_like_chinese_in_japanese(text):
         return "日本語ではなく中国語の応答でした"
-    if text.strip() == str(source_text or "").strip() or core.unusable_japanese_translation(source_text, text, source_lang):
+    if text.strip() == str(source_text or "").strip() or core.unusable_translation(source_text, text, source_lang, target_lang):
         return "原文のまま、または翻訳として使えない応答でした"
     return ""
 
@@ -147,6 +246,11 @@ def _llm_connection_alert_content(provider, url, model="", error=""):
         if model: lines.append(f"モデル: {model}")
         return {"title":"このモデルは使用できません","heading":"推論（Thinking）モデルは使用できません",
                 "message":"\n".join(lines),"category":"thinking_model","provider":display,"endpoint":endpoint}
+    if core.REASONING_MODEL_MARKER in detail:
+        lines=[detail,"",f"プロバイダ: {display}",f"接続先: {endpoint}"]
+        if model: lines.append(f"モデル: {model}")
+        return {"title":"このモデルは使用できません","heading":"考える過程を出すモデルは翻訳に向きません",
+                "message":"\n".join(lines),"category":"reasoning_model","provider":display,"endpoint":endpoint}
     if core.EMBEDDING_ONLY_MARKER in detail:
         lines=[detail,"",f"プロバイダ: {display}",f"接続先: {endpoint}"]
         if model: lines.append(f"モデル: {model}")
@@ -998,14 +1102,20 @@ class App(BaseTk):
         self.url_var = tk.StringVar(value=last_translation.get("url") or core.default_url_for_provider(last_translation.get("provider", "Ollama")))
         self.model_var = tk.StringVar(value=last_translation.get("model") or core.DEFAULT_MODEL)
         self.preset_var = tk.StringVar(value="CK3")
+        saved_target=str((self.app_preferences or {}).get("target_lang") or core.DEFAULT_TARGET_LANG) if isinstance(getattr(self,"app_preferences",None),dict) else core.DEFAULT_TARGET_LANG
+        self.target_lang_var = tk.StringVar(value=saved_target if saved_target in core.TARGET_LANGUAGES else core.DEFAULT_TARGET_LANG)
+        self.target_lang_choice_var = tk.StringVar(value=_target_lang_choice(self.target_lang_var.get()))
         self.batch_var = tk.IntVar(value=max(1, int(last_translation.get("batch", 40) or 40)))
         self.workers_var = tk.IntVar(value=max(1, int(last_translation.get("workers", 1) or 1)))
         self.performance_preset_var = tk.StringVar(value="標準（40 / 1）")
         self.repair_var = tk.BooleanVar(value=True)
+        self.normalize_spacing_var = tk.BooleanVar(value=bool(last_translation.get("normalize_spacing", True)))
         self.dual_var = tk.BooleanVar(value=False)
         self.autoqa_var = tk.BooleanVar(value=True)
         self.chinese_autoqa_var = tk.BooleanVar(value=bool(last_translation.get("chinese_autoqa", True)))
         self.glossary_path_var = tk.StringVar(value=str(DEFAULT_GLOSSARY))
+        self.glossary_lang_var = tk.StringVar(value=_target_lang_choice(core.DEFAULT_TARGET_LANG))
+        self.glossary_actual_path_var = tk.StringVar()
         self.auto_glossary_status_var = tk.StringVar(value="自動用語作成: 待機中")
         self.auto_glossary_controller = None
         self.auto_glossary_thread = None
@@ -1523,6 +1633,15 @@ class App(BaseTk):
                               "LLM・バッチ・並列・プリセット・用語集などは［モデル / 接続］タブの共通設定を使用します。"),
                   wraplength=430,foreground="#333",justify="left").pack(fill="x")
 
+        langbox=ttk.LabelFrame(left,text="翻訳先の言語",padding=9); langbox.pack(fill="x",pady=(5,0)); langbox.columnconfigure(1,weight=1)
+        ttk.Label(langbox,text="翻訳先").grid(row=0,column=0,sticky="w")
+        self.target_lang_combo=ttk.Combobox(langbox,textvariable=self.target_lang_choice_var,state="readonly",width=26,
+                                            values=[_target_lang_choice(x) for x in core.TARGET_LANGUAGES])
+        self.target_lang_combo.grid(row=0,column=1,sticky="w",padx=(6,0))
+        self.target_lang_combo.bind("<<ComboboxSelected>>",lambda _e:self._set_target_lang(_target_lang_from_choice(self.target_lang_choice_var.get())))
+        ttk.Label(langbox,text="キューへ追加するときの翻訳先です。追加済みの項目の翻訳先は変わりません。",foreground="#555",wraplength=430,justify="left").grid(row=1,column=0,columnspan=2,sticky="w",pady=(4,0))
+        ttk.Label(langbox,text=TARGET_LANG_NOTE,foreground="#8a5a00",wraplength=430,justify="left").grid(row=2,column=0,columnspan=2,sticky="w",pady=(4,0))
+
         src=ttk.LabelFrame(left,text="入力 / 出力",padding=9); src.pack(fill="x",pady=(5,0)); src.columnconfigure(0,weight=1)
         ttk.Label(src,text="YAML / Mod / localizationフォルダ").grid(row=0,column=0,sticky="w")
         self.normal_input_entry=ttk.Entry(src,textvariable=self.normal_input_var,state="readonly")
@@ -1987,7 +2106,7 @@ class App(BaseTk):
         self.chinese_progress["value"]=0; self.chinese_progress_var.set("キュー翻訳準備中…"); self.llm_operation="中国語基準翻訳"
         self.chinese_controller=core.TranslationController(progress_callback=lambda x:self.events.put(("chinese_progress",x)))
         self.chinese_start_btn.config(state="disabled"); self.chinese_pause_btn.config(state="normal", text="一時停止"); self.chinese_stop_btn.config(state="normal")
-        settings={"provider":self.provider_var.get(),"url":self.url_var.get().strip(),"model":self.model_var.get().strip(),"api_key":self.api_key_var.get().strip(),"preset":self.preset_var.get(),"batch":max(1,self.batch_var.get()),"workers":max(1,self.workers_var.get()),"glossary":self.glossary_path_var.get().strip() or None,"autoqa":self.chinese_autoqa_var.get()}
+        settings={"provider":self.provider_var.get(),"url":self.url_var.get().strip(),"model":self.model_var.get().strip(),"api_key":self.api_key_var.get().strip(),"preset":self.preset_var.get(),"batch":max(1,self.batch_var.get()),"workers":max(1,self.workers_var.get()),"glossary":self.glossary_path_var.get().strip() or None,"autoqa":self.chinese_autoqa_var.get(),"normalize_spacing":_normalize_spacing_enabled(self)}
         snapshot=[(app_state.ensure_queue_item_id(self.chinese_queue_items[i]), dict(self.chinese_queue_items[i])) for i in selected_indices]
         def worker():
             try:
@@ -2006,7 +2125,8 @@ class App(BaseTk):
                     cache=Path(item.get("cache", "")) if item.get("cache") else self._new_cache_path(inp)
                     item["output"]=str(out); item["cache"]=str(cache)
                     live_item["output"]=str(out); live_item["cache"]=str(cache)
-                    result=core.run_chinese_basis_translation(inp,out,model=settings["model"],url=settings["url"],workers=settings["workers"],batch_size=settings["batch"],cache_path=cache,controller=self.chinese_controller,glossary_path=settings["glossary"],preset=settings["preset"],auto_qa=settings["autoqa"],provider=settings["provider"],api_key=settings["api_key"],qa_backup_root=BACKUP_ROOT/"QA自動修復")
+                    result=core.run_chinese_basis_translation(inp,out,model=settings["model"],url=settings["url"],workers=settings["workers"],batch_size=settings["batch"],cache_path=cache,controller=self.chinese_controller,glossary_path=settings["glossary"],preset=settings["preset"],auto_qa=settings["autoqa"],provider=settings["provider"],api_key=settings["api_key"],qa_backup_root=BACKUP_ROOT/"QA自動修復",normalize_spacing=settings["normalize_spacing"])
+                    self.events.put(("chinese_log", f"半角スペース除去: {result.get('spaces_removed',0)}個"))
                     qa_errors += int(result.get("qa_errors",0) or 0)
                     qa_warnings += int(result.get("qa_warnings",0) or 0)
                     qa_notices += int(result.get("qa_notices",0) or 0)
@@ -2449,22 +2569,35 @@ class App(BaseTk):
 
     def _build_glossary_tab(self):
         t=self.tab_glossary
+        language_bar=ttk.Frame(t); language_bar.pack(fill="x",pady=(0,6))
+        ttk.Label(language_bar,text="言語").pack(side="left")
+        language_choice=ttk.Combobox(language_bar,textvariable=self.glossary_lang_var,
+                                    values=[_target_lang_choice(lang) for lang in core.TARGET_LANGUAGES],state="readonly")
+        language_choice.pack(side="left",padx=6)
+        language_choice.bind("<<ComboboxSelected>>",lambda event:self.load_glossary_ui(silent=True))
+        ttk.Label(t,textvariable=self.glossary_actual_path_var).pack(fill="x",pady=(0,6))
+        self.glossary_path_var.trace_add("write",lambda *args:self.glossary_actual_path_var.set(
+            f"この言語のファイル: {_selected_glossary_path(self)}"))
         top=ttk.LabelFrame(t,text="用語集設定",padding=8); top.pack(fill="x",pady=(0,6))
         ttk.Label(top,text="用語集ファイル").pack(side="left")
         ttk.Entry(top,textvariable=self.glossary_path_var).pack(side="left",fill="x",expand=True,padx=6)
-        ttk.Button(top,text="読込",command=self.load_glossary_ui).pack(side="left")
-        ttk.Button(top,text="保存",command=self.save_glossary_ui).pack(side="left",padx=(6,0))
+        ttk.Button(top,text="読込",command=lambda:self._run_glossary_action(self.load_glossary_ui)).pack(side="left")
+        ttk.Button(top,text="保存",command=lambda:self._run_glossary_action(self.save_glossary_ui)).pack(side="left",padx=(6,0))
         ttk.Label(top,textvariable=self.auto_glossary_status_var,foreground="#555").pack(side="right",padx=(8,0))
 
+        import_bar=ttk.Frame(t); import_bar.pack(fill="x",pady=(0,6))
+        ttk.Button(import_bar,text="ParaTranz の用語集（JSON）を取り込む",
+                   command=lambda:self._run_glossary_action(self.import_paratranz_glossary)).pack(side="left")
+        ttk.Button(import_bar,text="表記ルールを見る",command=self.show_glossary_notation_rules).pack(side="left",padx=6)
         panes=ttk.Panedwindow(t,orient="horizontal"); panes.pack(fill="both",expand=True)
         manual=ttk.LabelFrame(panes,text="自分で作った用語",padding=8)
         generated=ttk.LabelFrame(panes,text="自動生成 / 取り込み用語",padding=8)
         panes.add(manual,weight=1); panes.add(generated,weight=1)
 
         mbar=ttk.Frame(manual); mbar.pack(fill="x",pady=(0,6))
-        ttk.Button(mbar,text="用語追加",command=self.add_glossary_term).pack(side="left")
-        ttk.Button(mbar,text="選択編集",command=self.edit_glossary_term).pack(side="left",padx=(6,0))
-        ttk.Button(mbar,text="選択削除",command=self.delete_glossary_term).pack(side="left",padx=(6,0))
+        ttk.Button(mbar,text="用語追加",command=lambda:self._run_glossary_action(self.add_glossary_term)).pack(side="left")
+        ttk.Button(mbar,text="選択編集",command=lambda:self._run_glossary_action(self.edit_glossary_term)).pack(side="left",padx=(6,0))
+        ttk.Button(mbar,text="選択削除",command=lambda:self._run_glossary_action(self.delete_glossary_term)).pack(side="left",padx=(6,0))
         ttk.Label(manual,text="手動で固定した原語 → 日本語訳です。手動用語は自動生成で上書きされません。",foreground="#666",wraplength=520,justify="left").pack(fill="x",anchor="w",pady=(0,6))
         self.glossary_tree=ttk.Treeview(manual,columns=("src","dst"),show="headings")
         self.glossary_tree.heading("src",text="原語"); self.glossary_tree.heading("dst",text="日本語")
@@ -2487,13 +2620,26 @@ class App(BaseTk):
         ttk.Label(generated,text="通常翻訳・中国語基準翻訳・QA・差分調査で作成した用語と、ゲーム本体や既存日本語化から取り込んだ用語を表示します。自動生成は各作業タブから実行します。",foreground="#666",wraplength=560,justify="left").pack(fill="x",anchor="w",pady=(0,4))
         self.auto_glossary_drop_hint=ttk.Label(generated,text=("ドラッグ＆ドロップ対応 — 日本語YAML / 日本語化Mod / localizationフォルダ" if DND_AVAILABLE else "ドラッグ＆ドロップはこのビルドでは利用できません"),foreground="#555")
         self.auto_glossary_drop_hint.pack(fill="x",anchor="w",pady=(0,6))
-        self.auto_glossary_tree=ttk.Treeview(generated,columns=("src","dst","kind"),show="headings")
-        for c,label,w in (("src","原語",250),("dst","日本語",280),("kind","由来",140)):
+        self.auto_glossary_include_phrases_var=tk.BooleanVar(value=False)
+        ttk.Checkbutton(generated,text="定型句も用語集に入れる",variable=self.auto_glossary_include_phrases_var).pack(anchor="w",pady=(0,4))
+        filters=ttk.Frame(generated); filters.pack(fill="x",pady=(0,6))
+        self.auto_glossary_kind_filter_vars={}
+        for term_kind,label in (("proper","固有名詞"),("term","単語"),("phrase","定型句")):
+            variable=tk.BooleanVar(value=True)
+            self.auto_glossary_kind_filter_vars[term_kind]=variable
+            ttk.Checkbutton(filters,text=label,variable=variable,command=self._refresh_auto_glossary_tree).pack(side="left",padx=(0,8))
+        self.auto_glossary_tree=ttk.Treeview(generated,columns=("src","dst","kind","term_kind"),show="headings")
+        for c,label,w in (("src","原語",250),("dst","日本語",280),("kind","由来",140),("term_kind","種類",90)):
             self.auto_glossary_tree.heading(c,text=label); self.auto_glossary_tree.column(c,width=w,stretch=True)
         self._enable_tree_sort(self.auto_glossary_tree)
         gy=ttk.Scrollbar(generated,orient="vertical",command=self.auto_glossary_tree.yview); gx=ttk.Scrollbar(generated,orient="horizontal",command=self.auto_glossary_tree.xview)
         self.auto_glossary_tree.configure(yscrollcommand=gy.set,xscrollcommand=gx.set)
         self.auto_glossary_tree.pack(fill="both",expand=True); gx.pack(fill="x")
+        self.auto_glossary_tree.bind("<Map>",lambda event:self.after_idle(self._refresh_auto_glossary_tree))
+        self.glossary_note_var=tk.StringVar(value="note: 用語を選択すると表示します")
+        ttk.Label(t,textvariable=self.glossary_note_var,wraplength=1000,justify="left").pack(fill="x",pady=6)
+        for tree in (self.glossary_tree,self.auto_glossary_tree):
+            tree.bind("<<TreeviewSelect>>",lambda event:self.show_selected_glossary_note(event.widget))
         if DND_AVAILABLE:
             try:
                 self._register_dnd_widgets([generated,self.auto_glossary_drop_hint,self.auto_glossary_tree],self.on_glossary_import_drop_paths)
@@ -2501,6 +2647,7 @@ class App(BaseTk):
                 self.auto_glossary_drop_hint.configure(text=f"ドラッグ＆ドロップ初期化失敗: {exc}")
                 record_error("用語集DnD初期化",exc)
         self.load_glossary_ui(silent=True)
+        self._refresh_auto_glossary_tree()
 
     def _build_settings_tab(self):
         t = self.tab_settings
@@ -3180,6 +3327,15 @@ Mod更新後だけ追加翻訳:
 4. 訳文を編集して保存
 
 この使い方タブはアプリ内蔵説明書です。配布版だけを受け取った利用者でも、外部READMEを開かず基本操作から高度機能まで確認できます。
+
+【非公式のツールです】
+このツールは個人が開発している非公式のツールで、Paradox Interactive 社とは関係ありません。各ゲームの名称は、それぞれの権利者の商標です。
+ツールは無料で、すべての機能を誰でも使えます（MIT ライセンス）。
+
+【翻訳した Mod を公開するときのお願い】
+・元の Mod の作者の許可を取ってください。他の人の Mod の翻訳を Steam Workshop などで公開するときは、原作者に連絡して許可をもらうのが慣習です。
+・無料で公開してください。Paradox Interactive の利用規約では、Mod などのユーザー作成コンテンツを有料の壁の向こうに置くことはできません（かけた時間への寄付を受けることは認められています）。
+・機械翻訳を含む場合は、その旨を説明に書いておくと、利用者が判断しやすくなります。
 """
         box.insert("1.0", guide)
         box.config(state="disabled")
@@ -3297,6 +3453,7 @@ Mod更新後だけ追加翻訳:
         t = self.tab_status
         top = ttk.Frame(t); top.pack(fill="x", pady=(0,6))
         ttk.Label(top, text="Modごとの日本語翻訳状況", font=("", 13, "bold")).pack(side="left")
+        ttk.Label(top, text="（Mod調査・日本語化Modの判定と紐付けは日本語のみ）", foreground="#8a5a00").pack(side="left", padx=(8,0))
         ttk.Label(top, textvariable=self.mod_status_summary_var).pack(side="right")
 
         # フルHDでも縦方向が苦しくなりにくいよう、左に設定系、右に結果系を置く。
@@ -5793,6 +5950,7 @@ Mod更新後だけ追加翻訳:
                     "batch": max(1, self.batch_var.get()),
                     "workers": max(1, self.workers_var.get()),
                     "chinese_autoqa": bool(self.chinese_autoqa_var.get()),
+                    "normalize_spacing": _normalize_spacing_enabled(self),
                 },
                 "monitor_llm": {
                     "provider": self.monitor_provider_var.get(),
@@ -5802,6 +5960,7 @@ Mod更新後だけ追加翻訳:
                 "window_close": {
                     "action": {"毎回確認":"confirm","最小化":"minimize","終了":"quit"}.get(self.close_action_var.get(), "confirm"),
                 },
+                "target_lang": self.target_lang_var.get() if hasattr(self, "target_lang_var") else core.DEFAULT_TARGET_LANG,
             })
             core.save_json(APP_PREFS_PATH, data)
             self.app_preferences = data
@@ -6834,7 +6993,8 @@ Mod更新後だけ追加翻訳:
         if not loc.is_dir():
             return None
         isolated_out = self._isolated_output_path(loc, Path(self.normal_output_var.get().strip() or str(OUTPUT_ROOT)), result.get("mod", mod_root.name))
-        self._append_queue(loc, out=isolated_out)
+        # 翻訳状況（日本語化Modの調査）から入れた項目は、日本語化Modへの上書きなどを使うので日本語に固定する。
+        self._append_queue(loc, out=isolated_out, target_lang=core.DEFAULT_TARGET_LANG)
         item = self.queue_items[-1]
         item["mod_root"] = str(mod_root)
         item["mod_localization"] = str(loc)
@@ -7007,7 +7167,8 @@ Mod更新後だけ追加翻訳:
                 new_item, msg = self._append_chinese_queue(input_path, mod_name + ("（不足分）" if missing_only else ""))
             else:
                 before = len(self.queue_items)
-                self._append_queue(input_path)
+                # 中国語基準翻訳キュー（日本語専用）から移す項目は日本語に固定する。
+                self._append_queue(input_path, target_lang=core.DEFAULT_TARGET_LANG)
                 new_item = self.queue_items[-1] if len(self.queue_items) > before else None
                 msg = ""
             if not new_item:
@@ -7162,18 +7323,7 @@ Mod更新後だけ追加翻訳:
         return text
 
     def _generated_japanese_files(self, output_root: Path):
-        files=[]
-        if not output_root.exists():
-            return files
-        for p in sorted(output_root.rglob("*.yml")):
-            try:
-                head=core.read_localization_text(p).splitlines()[:5]
-                lang=core.detect_source_lang(p,head)
-            except Exception:
-                lang=""
-            if lang == "japanese" or "_l_japanese" in p.name.lower():
-                files.append(p)
-        return files
+        return _generated_language_files(output_root, "japanese")
 
     def _source_overwrite_layout(self, item):
         """Return the direct-source overwrite layout without writing any files."""
@@ -7185,13 +7335,14 @@ Mod更新後だけ追加翻訳:
         input_path = Path(item.get("input", ""))
         target_base = loc_root if input_path.is_dir() and core.is_localization_dir_name(input_path.name) else mod_root
         mappings=[]
-        for src in self._generated_japanese_files(out_root):
+        target_lang=_item_target_lang(item)
+        for src in _generated_language_files(out_root, target_lang):
             try:
                 rel=src.relative_to(out_root)
             except ValueError:
                 continue
-            safe_parent = core.remap_rel_dir(rel.parent, "japanese")
-            safe_name = core.rename_for_target(src, "japanese", "japanese")
+            safe_parent = core.remap_rel_dir(rel.parent, target_lang)
+            safe_name = core.rename_for_target(src, target_lang, target_lang)
             safe_rel = safe_parent / safe_name
             mappings.append((src,target_base / safe_rel,safe_rel))
         return loc_root, mod_root, mappings
@@ -7212,6 +7363,8 @@ Mod更新後だけ追加翻訳:
 
     def _preferred_later_translation_conflict(self, item):
         conflicts=self._source_overwrite_path_conflicts(item)
+        if _item_target_lang(item) != core.DEFAULT_TARGET_LANG:
+            return None,conflicts  # 後順位の「日本語化Mod」の判定は日本語だけ
         preferred=next((row for row in reversed(conflicts)
                         if row.get("effective") and row.get("stale_translation_candidate")),None)
         return preferred,conflicts
@@ -7477,8 +7630,10 @@ Mod更新後だけ追加翻訳:
                     shutil.copy2(dst,bdst); backed += 1
                 dst.parent.mkdir(parents=True,exist_ok=True)
                 shutil.copy2(src,dst); copied += 1
-            post = core.analyze_mod_translation_status(mod_root)
-            if post.get("gap_count", 0):
+            if _item_target_lang(item) != core.DEFAULT_TARGET_LANG:
+                # 上書き後の欠落確認（翻訳状況の判定）は日本語だけ
+                validation_text = "上書き後確認: 日本語以外は省略"
+            elif (post := core.analyze_mod_translation_status(mod_root)).get("gap_count", 0):
                 validation_text = f"⚠ 本文自体に欠落があります。\n{post.get('gap_reason') or core.gap_reason_text(post.get('candidates', []))}"
             else:
                 validation_text = "上書き後確認: 欠損なし"
@@ -7512,7 +7667,7 @@ Mod更新後だけ追加翻訳:
                     "いいえ: それでも元Modへ保存\nキャンセル: 何もしない",icon='warning')
                 if choice is None: return False
                 if choice: conflict_target=preferred
-            elif item.get('external_translation_path'):
+            elif item.get('external_translation_path') and _item_target_lang(item) == core.DEFAULT_TARGET_LANG:
                 ext_name=item.get('external_translation_mod','') or Path(item.get('external_translation_path','')).name
                 choice=messagebox.askyesnocancel('上書き先の確認',f"日本語化Mod『{ext_name}』が見つかっています。\n\nはい: 日本語化Modへ差分上書き\nいいえ: 元Modへ上書き\nキャンセル: 何もしない",icon='question')
                 if choice is None: return False
@@ -7530,7 +7685,7 @@ Mod更新後だけ追加翻訳:
                       else (item.get('mod_name') or '元Mod'))
         if not messagebox.askyesno('警告 — Modへ上書き',f"対象: {target_label}\n\n既存localizationは実行前にバックアップします。\nファイル走査・バックアップ・書き込みはバックグラウンドで実行します。\n続行しますか？",icon='warning'):
             return False
-        if not messagebox.askyesno('最終確認','本当に書き込みますか？\nこの操作は対象Modの日本語localizationを変更します。',icon='warning'):
+        if not messagebox.askyesno('最終確認',f'本当に書き込みますか？\nこの操作は対象Modの{core.target_language_label(_item_target_lang(item))}localizationを変更します。',icon='warning'):
             return False
         self.progress_text.set(f'上書きをバックグラウンドで実行中… {target_label}')
         def work():
@@ -7585,7 +7740,8 @@ Mod更新後だけ追加翻訳:
                 if preferred: conflict_targets[id(item)]=preferred
             except Exception as exc:
                 record_error('一括上書き前の同名ファイル競合確認',exc,item.get('mod_name',''))
-        has_external=any(item.get('external_translation_path') or id(item) in conflict_targets for _,item in eligible); policy='source'
+        has_external=any((item.get('external_translation_path') and _item_target_lang(item) == core.DEFAULT_TARGET_LANG)
+                         or id(item) in conflict_targets for _,item in eligible); policy='source'
         if has_external:
             choice=messagebox.askyesnocancel('一括上書き先の方針',
                 f'翻訳完了済み {len(eligible)}件を一括上書きします。\n\nはい: 日本語化Modを優先（差分追加または同名ファイル更新）\n      日本語化Modがない項目は元Modへ上書き\nいいえ: すべて元Modへ上書き\nキャンセル: 何もしない',icon='question')
@@ -7617,7 +7773,7 @@ Mod更新後だけ追加翻訳:
                         else: ok,reason=self._merge_missing_only_output(item,Path(target_loc),Path(target_root),confirm=False,notify=False)
                     elif conflict_target:
                         ok,reason=self._perform_full_translation_mod_overwrite(item,conflict_target,confirm=False,notify=False)
-                    elif policy=='external' and item.get('external_translation_path'):
+                    elif policy=='external' and item.get('external_translation_path') and _item_target_lang(item) == core.DEFAULT_TARGET_LANG:
                         ok,reason=self._perform_external_gap_overwrite(item,confirm=False,notify=False)
                         if not ok and reason in {'日本語化Modへ反映する差分情報がありません','完成済み出力に差分訳が見つかりません'}:
                             skipped+=1; details.append(f'{name}: スキップ ({reason})'); continue
@@ -7759,6 +7915,7 @@ Mod更新後だけ追加翻訳:
         ttk.Checkbutton(common,text="既存日本語の未翻訳を修復",variable=self.repair_var,command=self._save_llm_preferences).grid(row=1,column=0,columnspan=2,sticky="w",pady=(6,0))
         ttk.Checkbutton(common,text="通常翻訳後にバックアップ・自動QA・エラー修正",variable=self.autoqa_var,command=self._save_llm_preferences).grid(row=2,column=0,columnspan=2,sticky="w",pady=(4,0))
         ttk.Checkbutton(common,text="中国語基準翻訳後にバックアップ・自動QA・エラー修正",variable=self.chinese_autoqa_var,command=self._save_llm_preferences).grid(row=3,column=0,columnspan=2,sticky="w",pady=(4,0))
+        ttk.Checkbutton(common,text="日本語・中国語の文字の間の半角スペースを取り除く",variable=self.normalize_spacing_var,command=self._save_llm_preferences).grid(row=11,column=0,columnspan=2,sticky="w",pady=(4,0))
         ttk.Label(common,text="バッチ").grid(row=4,column=0,sticky="w",pady=(7,0))
         ttk.Spinbox(common,from_=1,to=500,textvariable=self.batch_var,width=8,command=self._save_llm_preferences).grid(row=4,column=1,sticky="w",padx=(6,0),pady=(7,0))
         ttk.Label(common,text="並列").grid(row=5,column=0,sticky="w",pady=(5,0))
@@ -8025,6 +8182,13 @@ Mod更新後だけ追加翻訳:
         raw = self.normal_output_var.get().strip() if hasattr(self, "normal_output_var") else ""
         root = Path(raw) if raw else _automatic_output_root()
         return self._isolated_output_path(Path(p), root)
+
+    def _set_target_lang(self, lang, save=True):
+        lang=_target_lang_from_choice(lang)
+        self.target_lang_var.set(lang)
+        self.target_lang_choice_var.set(_target_lang_choice(lang))
+        if save:
+            self._save_llm_preferences()
 
     def _ensure_isolated_item_output(self, item: dict, mode: str = "normal"):
         if item.get("custom_output"):
@@ -8339,7 +8503,7 @@ Mod更新後だけ追加翻訳:
                 f"差分翻訳対象を確認しました。\n\nスナップショット: {snapshot_note}\n新規キー: {c['added']}\n変更キー: {c['changed']}\n削除キー: {c['removed']}\n翻訳状況の欠損（このキューで補完可能）: {missing_total}\n新規ファイル: {c['added_files']}\n削除ファイル: {c['removed_files']}\n\n原文差分と翻訳状況の欠損だけを補完します。")
         return diff
 
-    def _append_queue(self,p:Path,out:Path|None=None,status="待機",cache:Path|None=None):
+    def _append_queue(self,p:Path,out:Path|None=None,status="待機",cache:Path|None=None,target_lang:str|None=None):
         if self._normal_queue_locked():
             return None
         p = Path(p)
@@ -8347,7 +8511,8 @@ Mod更新後だけ追加翻訳:
             return
         out=out or self._default_output(p)
         cache_path = cache or self._new_cache_path(p)
-        item={"input":str(p),"output":str(out),"status":status,"cache":str(cache_path),"output_isolated_v2":True}
+        item={"input":str(p),"output":str(out),"status":status,"cache":str(cache_path),"output_isolated_v2":True,
+              "target_lang":target_lang or self.target_lang_var.get()}
         app_state.ensure_queue_item_id(item)
         self.queue_items.append(item)
         self._refresh_queue_tree(); self._save_workspace_state("normal_queue_changed")
@@ -8493,6 +8658,8 @@ Mod更新後だけ追加翻訳:
         for i,item in enumerate(self.queue_items):
             inp=Path(item.get("input", ""))
             label=item.get("mod_name") or (inp.stem if inp.is_file() else inp.name) or "項目"
+            if _item_target_lang(item) != core.DEFAULT_TARGET_LANG:
+                label=f"［{core.target_language_label(_item_target_lang(item))}］{label}"
             self.queue_tree.insert("", "end", iid=str(i), values=(
                 label,
                 self._queue_display_path(item.get("input", "")),
@@ -8602,6 +8769,7 @@ Mod更新後だけ追加翻訳:
             "変更前ファイルはバックアップし、修正後にエラーが減らなければ自動復元します。\n続行しますか？"):
             return
         settings={
+            "normalize_spacing":_normalize_spacing_enabled(self),
             "provider":self.provider_var.get(), "url":self.url_var.get().strip(),
             "model":self.model_var.get().strip(), "api_key":self.api_key_var.get().strip(),
             "preset":self.preset_var.get(), "glossary":self.glossary_path_var.get().strip() or None,
@@ -8618,7 +8786,8 @@ Mod更新後だけ追加翻訳:
                     pairs,backup_root=BACKUP_ROOT/"QA自動修復",model=settings["model"],url=settings["url"],
                     provider=settings["provider"],api_key=settings["api_key"],preset=settings["preset"],
                     glossary_path=settings["glossary"],controller=self.qa_repair_controller,
-                    max_passes=2,label=f"{origin}_manual_qa")
+                    max_passes=2,label=f"{origin}_manual_qa",
+                    normalize_spacing=settings["normalize_spacing"])
                 report_path=QA_LOG_ROOT/f'qa_auto_repair_{datetime.now().strftime("%Y%m%d_%H%M%S_%f")}.json'
                 core.save_json(report_path,result)
                 contexts=[]
@@ -8643,7 +8812,7 @@ Mod更新後だけ追加翻訳:
         text=(f"修正前エラー {summary.get('initial_errors',0)} / 修正後 {summary.get('final_errors',0)} / "
               f"解消 {summary.get('resolved_errors',0)} / 修正キー {summary.get('repaired_keys',0)} / "
               f"警告 {summary.get('warnings',0)} / 注意 {summary.get('notices',0)} / "
-              f"失敗ファイル {summary.get('failed_files',0)}")
+              f"失敗ファイル {summary.get('failed_files',0)} / 半角スペース除去 {summary.get('spaces_removed',0)}個")
         if origin=="review":
             self.review_last_qa_repair_result=result
             self._apply_review_qa_batch_loaded(contexts,failures)
@@ -8709,7 +8878,12 @@ Mod更新後だけ追加翻訳:
         pairs=[]
         for _idx,item in entries:
             inp=Path(item.get("input", "")); out=Path(item.get("output", ""))
-            if inp.exists(): pairs.extend(core.collect_translation_qa_pairs(inp,out,("english","simp_chinese")))
+            if not inp.exists(): continue
+            target_lang=_item_target_lang(item)
+            if target_lang == core.DEFAULT_TARGET_LANG:
+                pairs.extend(core.collect_translation_qa_pairs(inp,out,("english","simp_chinese")))
+            else:
+                pairs.extend(core.collect_translation_qa_pairs(inp,out,None,target_lang=target_lang))
         self._start_manual_qa_repair(pairs,"normal")
 
     def change_output(self):
@@ -8798,6 +8972,10 @@ Mod更新後だけ追加翻訳:
         entries=list(entries or [])
         if not entries:
             messagebox.showinfo(APP_NAME,'差分翻訳する項目を選択してください。'); return
+        if mode!='chinese':
+            stop,_warnings=_target_language_problems([item for _idx,item in entries], diff_requested=True)
+            if stop:
+                messagebox.showinfo(APP_NAME, stop); return
         repair_enabled=bool(self.repair_var.get())
         if mode=='chinese': self.chinese_progress_var.set(f'差分をバックグラウンド解析中… 0/{len(entries)}')
         else: self.progress_text.set(f'差分をバックグラウンド解析中… 0/{len(entries)}')
@@ -8878,6 +9056,13 @@ Mod更新後だけ追加翻訳:
         if not selected_indices:
             messagebox.showinfo(APP_NAME, "翻訳する項目を選択してください."); return
         if not _llm_ready:
+            preset_var=getattr(self,"preset_var",None)
+            stop,warnings=_target_language_problems([self.queue_items[i] for i in selected_indices], diff_requested,
+                                                    preset_var.get() if preset_var is not None else "")
+            if stop:
+                messagebox.showinfo(APP_NAME, stop); return
+            if warnings and not messagebox.askyesno("ゲームが読めない言語", "\n\n".join(warnings)+"\n\nそれでも翻訳しますか？", icon="warning"):
+                return
             indices=tuple(selected_indices)
             self._begin_llm_preflight("通常翻訳",
                 lambda:self._start_normal_selected(indices,diff_requested=diff_requested,_llm_ready=True))
@@ -8899,7 +9084,8 @@ Mod更新後だけ追加翻訳:
             "api_key":self.api_key_var.get().strip(), "preset":self.preset_var.get(),
             "batch":max(1,self.batch_var.get()), "workers":max(1,self.workers_var.get()),
             "glossary":self.glossary_path_var.get().strip() or None, "dual":False,
-            "repair":self.repair_var.get(), "autoqa":self.autoqa_var.get()}
+            "repair":self.repair_var.get(), "autoqa":self.autoqa_var.get(),
+            "normalize_spacing":_normalize_spacing_enabled(self)}
         self._active_normal_item_ids = [app_state.ensure_queue_item_id(self.queue_items[idx]) for idx in selected_indices]
         mode_label = "差分だけ翻訳" if diff_requested else "一からすべて翻訳"
         self._append_log(f"翻訳開始: {len(selected_indices)}項目 / {mode_label}")
@@ -8934,16 +9120,23 @@ Mod更新後だけ追加翻訳:
             phase = "再試行" if retry_pass else "開始"
             self.events.put(("normal_log", f"{phase}: {item_label(item)} ({pos+1}/{total})"))
             self._checkpoint({"queue_index":i,"queue_item_id":item_id,"retry_pass":retry_pass})
-            cache_file=Path(self._ensure_item_cache(item))
+            target_lang=_item_target_lang(item)
+            cache_file=_cache_for_target(self._ensure_item_cache(item), target_lang)
             st=getattr(self,"translation_start_settings",{})
+            glossary_path=(st.get("glossary") or None) if target_lang == core.DEFAULT_TARGET_LANG else _existing_language_glossary(st.get("glossary"),target_lang)
+            if target_lang != core.DEFAULT_TARGET_LANG:
+                glossary_note=f"用語集: {glossary_path.name}" if glossary_path else "この言語の用語集はありません"
+                self.events.put(("normal_log", f"翻訳先: {_target_lang_choice(target_lang)}（{glossary_note}）"))
             result=core.run_translation(
                 item["input"], item["output"], model=st.get("model", ""), url=st.get("url", ""),
                 workers=max(1,int(st.get("workers",1) or 1)), batch_size=max(1,int(st.get("batch",40) or 40)), cache_path=cache_file,
                 resume=True, verbose=True, include_target_files=bool(st.get("repair",True)), controller=self.controller,
-                glossary_path=st.get("glossary") or None, preset=st.get("preset","CK3"),
+                glossary_path=glossary_path,
+                preset=st.get("preset","CK3"),
                 dual_source=False, auto_qa=bool(st.get("autoqa",True)),
                 provider=st.get("provider","Ollama"), api_key=st.get("api_key", ""),
-                qa_backup_root=BACKUP_ROOT/"QA自動修復")
+                qa_backup_root=BACKUP_ROOT/"QA自動修復", target_lang=target_lang,
+                normalize_spacing=bool(st.get("normalize_spacing", True)))
             self._register_cache_job(item)
             skipped=int(result.get("skipped",0) or 0)
             failed=int(result.get("failed",0) or 0)
@@ -8957,6 +9150,7 @@ Mod更新後だけ追加翻訳:
             }
             item["translation_error_report"]=result.get("error_report", "")
             self.events.put(("normal_log", f"処理結果: {item_label(item)} / ファイル {result.get('processed',0)} / LLMジョブ {result.get('jobs',0)} / 失敗 {failed} / スキップ {skipped} / 警告 {warnings}"))
+            self.events.put(("normal_log", f"半角スペース除去: {result.get('spaces_removed',0)}個"))
             if bool(st.get("autoqa",True)):
                 self.events.put(("normal_log", f"自動QA・修正: error {result.get('qa_errors',0)} / warning {result.get('qa_warnings',0)} / notice {result.get('qa_notices',0)} / 修正 {result.get('qa_repaired',0)}"))
                 if result.get("qa_report"):
@@ -9423,10 +9617,12 @@ Mod更新後だけ追加翻訳:
                 "url":self._workspace_scalar(self.url_var,""),
                 "model":self._workspace_scalar(self.model_var,""),
                 "preset":self._workspace_scalar(self.preset_var,"CK3"),
+                "target_lang":self._workspace_scalar(self.target_lang_var,core.DEFAULT_TARGET_LANG),
                 "batch":self._workspace_scalar(self.batch_var,40),
                 "workers":self._workspace_scalar(self.workers_var,1),
                 "performance_preset":self._workspace_scalar(self.performance_preset_var,"標準（40 / 1）"),
                 "repair":bool(self._workspace_scalar(self.repair_var,True)),
+                "normalize_spacing":_normalize_spacing_enabled(self),
                 "dual":bool(self._workspace_scalar(self.dual_var,False)),
                 "autoqa":bool(self._workspace_scalar(self.autoqa_var,True)),
                 "chinese_autoqa":bool(self._workspace_scalar(self.chinese_autoqa_var,True)),
@@ -9539,8 +9735,10 @@ Mod更新後だけ追加翻訳:
             m=data.get("models") or {}
             self.provider_var.set(m.get("provider",self.provider_var.get())); self.url_var.set(m.get("url",self.url_var.get())); self.model_var.set(m.get("model",self.model_var.get()))
             self.preset_var.set(m.get("preset",self.preset_var.get())); self.batch_var.set(max(1,int(m.get("batch",self.batch_var.get()) or 40))); self.workers_var.set(max(1,int(m.get("workers",self.workers_var.get()) or 1)))
+            self.normalize_spacing_var.set(bool(m.get("normalize_spacing",_normalize_spacing_enabled(self))))
             self.performance_preset_var.set(m.get("performance_preset",self.performance_preset_var.get())); self.repair_var.set(bool(m.get("repair",self.repair_var.get()))); self.dual_var.set(bool(m.get("dual",self.dual_var.get())))
             self.autoqa_var.set(bool(m.get("autoqa",self.autoqa_var.get()))); self.chinese_autoqa_var.set(bool(m.get("chinese_autoqa",self.chinese_autoqa_var.get()))); self.profile_var.set(m.get("profile",self.profile_var.get()))
+            self._set_target_lang(m.get("target_lang",self.target_lang_var.get()),save=False)
 
             mon=data.get("monitor") or {}
             self.monitor_target_paths=[str(x) for x in (mon.get("target_paths") or []) if x]
@@ -9590,6 +9788,7 @@ Mod更新後だけ追加翻訳:
                     "dual":st.get("dual",False),"autoqa":st.get("autoqa",True),"glossary":st.get("glossary") or str(DEFAULT_GLOSSARY)}
         return {"provider":self.provider_var.get(),"url":self.url_var.get(),"model":self.model_var.get(),"preset":self.preset_var.get(),
                 "batch":self.batch_var.get(),"workers":self.workers_var.get(),"repair":self.repair_var.get(),
+                "normalize_spacing":_normalize_spacing_enabled(self),
                 "dual":self.dual_var.get(),"autoqa":self.autoqa_var.get(),"glossary":self.glossary_path_var.get()}
 
     def _append_resume_history(self, event: str, data: dict):
@@ -9697,6 +9896,7 @@ Mod更新後だけ追加翻訳:
         self.current_queue_index=max(0,int(data.get("queue_index",0) or 0))
         s=data.get("settings",{})
         self.provider_var.set(s.get("provider",self.provider_var.get())); self.url_var.set(s.get("url",self.url_var.get())); self.model_var.set(s.get("model",self.model_var.get())); self.preset_var.set(s.get("preset",self.preset_var.get()))
+        self.normalize_spacing_var.set(bool(s.get("normalize_spacing", True)))
         self.batch_var.set(s.get("batch",40)); self.workers_var.set(s.get("workers",1)); self.repair_var.set(s.get("repair",True)); self.dual_var.set(s.get("dual",False)); self.autoqa_var.set(s.get("autoqa",True)); self.glossary_path_var.set(s.get("glossary",str(DEFAULT_GLOSSARY)))
         for item in self.queue_items:
             self._ensure_item_cache(item)
@@ -9815,7 +10015,7 @@ Mod更新後だけ追加翻訳:
                 models=core.list_models(provider,url,timeout=8,api_key=api_key)
                 if core.normalize_provider(provider) in {"ollama","lmstudio"} and not models:
                     raise RuntimeError("接続には成功しましたが、読み込み済みのモデルがありません")
-                warning=core.unusable_model_warning(provider,url,model)
+                warning=core.unusable_model_warning(provider,url,model) or core.reasoning_model_probe_warning(provider,url,model,api_key)
                 if warning:
                     raise RuntimeError(warning)
                 self.events.put(("llm_preflight_done",{"token":token,"models":models}))
@@ -9887,11 +10087,12 @@ Mod更新後だけ追加翻訳:
             self.diff_summary_var.set('差分をバックグラウンド解析中…'); return
         self.diff_batch_contexts=[]
         self.diff_summary_var.set('差分をバックグラウンド解析中… GUIは操作できます')
+        target_lang=_current_target_lang(self)
         def work():
             try:
                 source_lang,source_entries,_=core.parse_localization_file(src)
                 _,target_entries,_=core.parse_localization_file(dst)
-                rows=core.compare_localization_entries(source_entries,target_entries,source_lang)
+                rows=core.compare_localization_entries(source_entries,target_entries,source_lang,target_lang)
                 self.events.put(('diff_inspector_loaded',(source_lang,source_entries,target_entries,rows)))
             except Exception as exc:
                 self.events.put(('diff_inspector_load_error',str(exc)))
@@ -9908,13 +10109,14 @@ Mod更新後だけ追加翻訳:
             self.diff_summary_var.set('差分をバックグラウンド解析中…'); return
         self.diff_src_var.set(str(pairs[0]["source"])); self.diff_dst_var.set(str(pairs[0]["target"]))
         self.diff_summary_var.set(f'差分を一括解析中… {len(pairs)}ファイル / GUIは操作できます')
+        target_lang=_current_target_lang(self)
         def work():
             contexts=[]; errors=[]
             for pair in pairs:
                 try:
                     lang,source,_=core.parse_localization_file(Path(pair["source"]))
                     _,target,_=core.parse_localization_file(Path(pair["target"]))
-                    rows=core.compare_localization_entries(source,target,lang)
+                    rows=core.compare_localization_entries(source,target,lang,target_lang)
                     contexts.append({"source_path":Path(pair["source"]),"target_path":Path(pair["target"]),"lang":lang,
                                      "source_entries":source,"target_entries":target,"rows":list(rows or [])})
                 except Exception as exc:
@@ -10006,7 +10208,7 @@ Mod更新後だけ追加翻訳:
         try:
             target=Path(self.diff_dst_var.get())
             self._backup_before_diff_write([str(target)])
-            core.upsert_localization_values(target, {key:value})
+            core.upsert_localization_values(target, {key:value}, _current_target_lang(self))
             self._invalidate_status_after_diff_write([str(target), self.diff_src_var.get()])
             if len(self.diff_batch_contexts)>1:
                 pairs=[{"source":c["source_path"],"target":c["target_path"],"lang":c["lang"]} for c in self.diff_batch_contexts]
@@ -10100,8 +10302,10 @@ Mod更新後だけ追加翻訳:
         self.diff_controller = core.TranslationController(progress_callback=lambda p:self.events.put(("diff_translate_progress", p)))
         self.llm_operation = "差分翻訳"
         self.diff_message_var.set(f"差分翻訳中… {len(tasks)}件")
-        glossary_path = self.glossary_path_var.get().strip()
+        target_lang = _current_target_lang(self)
+        glossary_path = _existing_language_glossary(self.glossary_path_var.get().strip(),target_lang)
         diff_settings = {
+            "normalize_spacing": _normalize_spacing_enabled(self),
             "url": self.url_var.get().strip(), "model": self.model_var.get().strip(),
             "preset": self.preset_var.get(), "provider": self.provider_var.get(),
             "api_key": self.api_key_var.get().strip(),
@@ -10110,6 +10314,7 @@ Mod更新後だけ追加翻訳:
             try:
                 glossary = core.load_glossary(Path(glossary_path)) if glossary_path else {}
                 outputs = {}
+                spaces_removed = 0
                 untranslated = []
                 for i, (ci,key) in enumerate(tasks, 1):
                     if self.diff_controller.stop_event.is_set(): raise core.StopRequested()
@@ -10122,28 +10327,33 @@ Mod更新後だけ追加翻訳:
                         try:
                             translated=core.translate_single_text(diff_settings["url"], diff_settings["model"], source_text, source_lang,
                                                                   glossary, diff_settings["preset"], diff_settings["provider"], diff_settings["api_key"], self.diff_controller,
-                                                                  chinese_basis=(source_lang == "simp_chinese"))
+                                                                  chinese_basis=(source_lang == "simp_chinese" and target_lang == core.DEFAULT_TARGET_LANG),
+                                                                  target_lang=target_lang)
                         except core.StopRequested:
                             raise
                         except Exception as exc:
                             translated=""; problem=f"翻訳に失敗しました: {type(exc).__name__}: {exc}"
                             continue
-                        problem=_diff_translation_problem(source_text, translated, source_lang)
+                        problem=_diff_translation_problem(source_text, translated, source_lang, target_lang)
                         if not problem:
                             break
                     if problem:
-                        # 原文のまま・使えない訳は日本語ファイルへ書き戻さず、「未翻訳のまま」として結果に出す。
+                        # 原文のまま・使えない訳は訳文のファイルへ書き戻さず、「未翻訳のまま」として結果に出す。
                         untranslated.append({"file":Path(context["target_path"]).name,"key":key,"reason":problem})
                         continue
+                    if diff_settings["normalize_spacing"]:
+                        translated, removed = core.normalize_cjk_spacing(translated, target_lang)
+                        spaces_removed += removed
                     outputs.setdefault(str(context["target_path"]),{})[key]=translated
                 backups = self._backup_before_diff_write(list(outputs)) if outputs else []
                 for target_path,values in outputs.items():
-                    core.upsert_localization_values(Path(target_path),values)
+                    core.upsert_localization_values(Path(target_path),values,target_lang)
                 if outputs:
                     self._invalidate_status_after_diff_write(
                         list(outputs) + [str(contexts[ci]["source_path"]) for ci,_key in tasks])
                 self.events.put(("diff_translate_done", {
                     "written": sum(len(v) for v in outputs.values()), "untranslated": untranslated,
+                    "spaces_removed": spaces_removed,
                     "backups": [str(x) for x in backups], "total": len(tasks)}))
             except core.StopRequested:
                 self.events.put(("diff_translate_stopped", None))
@@ -10441,7 +10651,8 @@ Mod更新後だけ追加翻訳:
             self._set_review_auto_repair_enabled(False)
             messagebox.showinfo(APP_NAME,"現在のQA結果に自動修復できるエラーはありません。"); return
         pairs=[{"source_file":str(c.get("source_path") or ""),"target_file":str(c.get("target_path") or ""),
-                "source_language":str(c.get("lang") or "english")} for c in contexts]
+                "source_language":str(c.get("lang") or "english"),
+                "target_language":str(c.get("target_lang") or core.DEFAULT_TARGET_LANG)} for c in contexts]
         self._start_manual_qa_repair(pairs,"review")
 
     def load_review_pairs(self, pairs):
@@ -10463,7 +10674,8 @@ Mod更新後だけ追加翻訳:
         if self.review_worker and self.review_worker.is_alive():
             self.qa_summary_var.set('QAをバックグラウンド解析中…'); return
         self._clear_pending_review_qa_log()
-        glossary_path=Path(self.glossary_path_var.get()) if self.glossary_path_var.get() else None
+        target_lang=_current_target_lang(self)
+        glossary_path=_existing_language_glossary(self.glossary_path_var.get(),target_lang)
         self.qa_summary_var.set(f'QAを一括解析中… {len(pairs)}ファイル / GUIは操作できます')
         def work():
             contexts=[]; errors=[]
@@ -10480,8 +10692,8 @@ Mod更新後だけ追加翻訳:
                     stage="target_read"
                     _,target,_=core.parse_localization_file(target_path)
                     stage="qa_analysis"
-                    issues=core.qa_file(target_path,source_path,source_lang=lang,glossary=glossary)
-                    contexts.append({"source_path":source_path,"target_path":target_path,"lang":lang,
+                    issues=core.qa_file(target_path,source_path,source_lang=lang,glossary=glossary,target_lang=target_lang)
+                    contexts.append({"source_path":source_path,"target_path":target_path,"lang":lang,"target_lang":target_lang,
                                      "source_entries":source,"target_entries":target,"issues":list(issues or [])})
                 except Exception as exc:
                     errors.append({"source_file":str(source_path),"target_file":str(target_path),"source_language":lang,"stage":stage,
@@ -10495,7 +10707,8 @@ Mod更新後だけ追加翻訳:
         self._clear_pending_review_qa_log()
         dst=Path(self.review_dst_var.get()) if self.review_dst_var.get() else None
         src=Path(self.review_src_var.get()) if self.review_src_var.get() else None
-        glossary_path=Path(self.glossary_path_var.get()) if self.glossary_path_var.get() else None
+        target_lang=_current_target_lang(self)
+        glossary_path=_existing_language_glossary(self.glossary_path_var.get(),target_lang)
         existing_target=dict(self.review_target_entries); existing_source=dict(self.review_source_entries); existing_lang=self.review_source_lang
         self.qa_summary_var.set('QAをバックグラウンド解析中… GUIは操作できます')
         def work():
@@ -10513,9 +10726,10 @@ Mod更新後だけ追加翻訳:
                 glossary=core.load_glossary(glossary_path) if glossary_path else {}
                 stage="qa_analysis"
                 if dst and dst.exists():
-                    issues=core.qa_file(dst,src if src and src.exists() else None,source_lang=source_lang,glossary=glossary)
+                    issues=core.qa_file(dst,src if src and src.exists() else None,source_lang=source_lang,glossary=glossary,
+                                        target_lang=target_lang)
                 else:
-                    issues=core.qa_entries(target,source or None,source_lang,glossary,source_path=src)
+                    issues=core.qa_entries(target,source or None,source_lang,glossary,source_path=src,target_lang=target_lang)
                 self.events.put(('review_qa_loaded',(source_lang,source,target,issues)))
             except Exception as exc:
                 self.events.put(('review_qa_error',{"source_file":str(src or ""),"target_file":str(dst or ""),"source_language":str(existing_lang or ""),
@@ -10531,7 +10745,8 @@ Mod更新後だけ追加翻訳:
         notices=sum(x['severity']=='notice' for x in self.review_issues)
         self.review_last_qa_contexts=[{"source_path":Path(self.review_src_var.get()) if self.review_src_var.get() else "",
                                       "target_path":Path(self.review_dst_var.get()) if self.review_dst_var.get() else "",
-                                      "lang":source_lang,"source_entries":source_entries,"target_entries":target_entries,"issues":self.review_issues}]
+                                      "lang":source_lang,"target_lang":_current_target_lang(self),
+                                      "source_entries":source_entries,"target_entries":target_entries,"issues":self.review_issues}]
         self.review_last_qa_errors=[]; self._set_review_qa_log_enabled(True)
         self._set_review_auto_repair_enabled(_qa_contexts_have_repairable_errors(self.review_last_qa_contexts))
         self.qa_summary_var.set(f'QA: エラー {errs} / 警告 {warns} / 注意 {notices} / キー {len(self.review_target_entries)}')
@@ -10663,6 +10878,7 @@ Mod更新後だけ追加翻訳:
                     self.review_tree.selection_set(iid); self.review_tree.see(iid); break
 
     def save_review_glossary_term(self):
+        target_lang=_current_target_lang(self)
         key=self._selected_review_key()
         if not key:
             messagebox.showinfo(APP_NAME, "用語集へ保存する項目をQA / 比較編集の一覧から選択してください。")
@@ -10673,9 +10889,9 @@ Mod更新後だけ追加翻訳:
             messagebox.showinfo(APP_NAME, "選択した項目に原文がありません。")
             return
         if not dst:
-            messagebox.showinfo(APP_NAME, "日本語訳を入力してから用語集へ保存してください。")
+            messagebox.showinfo(APP_NAME, f"{core.target_language_label(target_lang)}訳を入力してから用語集へ保存してください。")
             return
-        p=Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY)
+        p=core.glossary_path_for_language(self.glossary_path_var.get() or DEFAULT_GLOSSARY,target_lang)
         gl=core.load_glossary(p)
         old=gl.get(src)
         if old is not None and old != dst:
@@ -10686,9 +10902,10 @@ Mod更新後だけ追加翻訳:
                 return
         gl[src]=dst
         core.save_glossary(p,gl)
-        self.glossary_path_var.set(str(p))
+        if target_lang == core.DEFAULT_TARGET_LANG: self.glossary_path_var.set(str(p))
         # QA / 比較編集から明示的に保存した語は「手動用語」として扱う。
-        variants=self._glossary_variant_metadata()
+        variants=core.load_json(core.glossary_variants_path(p),{})
+        if not isinstance(variants,dict): variants={}
         variants.pop(src,None)
         core.save_json(core.glossary_variants_path(p),variants)
         self.load_glossary_ui(silent=True)
@@ -10709,7 +10926,8 @@ Mod更新後だけ追加翻訳:
         self.issue_text.set("AI校正中…（上部のLLM動作表示から停止できます）")
         self.llm_operation = "AI誤字脱字校正"
         self.proofread_controller=core.TranslationController(progress_callback=lambda p:self.events.put(("proofread_progress",p)))
-        glossary_path = self.glossary_path_var.get().strip()
+        target_lang = _current_target_lang(self)
+        glossary_path = _existing_language_glossary(self.glossary_path_var.get().strip(),target_lang)
         proofread_settings = {
             "url": self.url_var.get().strip(), "model": self.model_var.get().strip(),
             "preset": self.preset_var.get(), "provider": self.provider_var.get(),
@@ -10718,7 +10936,7 @@ Mod更新後だけ追加翻訳:
         def work():
             try:
                 glossary=core.load_glossary(Path(glossary_path)) if glossary_path else {}
-                out=core.proofread_text(proofread_settings["url"],proofread_settings["model"],text,src,glossary,proofread_settings["preset"],proofread_settings["provider"],proofread_settings["api_key"],controller=self.proofread_controller)
+                out=core.proofread_text(proofread_settings["url"],proofread_settings["model"],text,src,glossary,proofread_settings["preset"],proofread_settings["provider"],proofread_settings["api_key"],controller=self.proofread_controller,target_lang=target_lang)
                 self.events.put(("proofread",out))
             except core.StopRequested:
                 self.events.put(("proofread_stopped",None))
@@ -10727,6 +10945,7 @@ Mod更新後だけ追加翻訳:
         self.proofread_thread.start()
 
     def bulk_unify_review_terms(self):
+        if not _japanese_glossary_only(self): return
         src = Path(self.review_src_var.get()) if self.review_src_var.get() else None
         dst = Path(self.review_dst_var.get()) if self.review_dst_var.get() else None
         if not src or not src.exists() or not dst or not dst.exists():
@@ -10789,6 +11008,7 @@ Mod更新後だけ追加翻訳:
         return []
 
     def start_auto_glossary_generation(self, origin):
+        if not _japanese_glossary_only(self): return
         if self._closing:
             return
         if self.glossary_import_busy:
@@ -10811,12 +11031,14 @@ Mod更新後だけ追加翻訳:
         self.auto_glossary_controller=core.TranslationController(progress_callback=lambda p:self.events.put(("auto_glossary_progress",p)))
         settings={"provider":self.provider_var.get(),"url":self.url_var.get().strip(),"model":self.model_var.get().strip(),"preset":self.preset_var.get(),"api_key":self.api_key_var.get().strip()}
         glossary_path=Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY)
+        include_phrases_var=getattr(self,"auto_glossary_include_phrases_var",None)
+        include_phrases=bool(include_phrases_var.get()) if include_phrases_var is not None else False
         def work():
             try:
                 candidates=core.build_auto_glossary_candidates(pairs)
                 if candidates:
                     candidates=core.resolve_auto_glossary_conflicts(settings["provider"],settings["url"],settings["model"],candidates,settings["preset"],settings["api_key"],self.auto_glossary_controller)
-                result=core.save_auto_glossary_candidates(glossary_path,candidates,preserve_existing=True)
+                result=core.save_auto_glossary_candidates(glossary_path,candidates,preserve_existing=True,include_phrases=include_phrases)
                 self.events.put(("auto_glossary_done",result))
             except core.StopRequested:
                 self.events.put(("auto_glossary_error","停止しました"))
@@ -10826,13 +11048,52 @@ Mod更新後だけ追加翻訳:
         self.auto_glossary_thread.start()
 
     # ---------------- glossary ----------------
+    def _refresh_auto_glossary_tree(self, display_only=True):
+        if not hasattr(self,"auto_glossary_tree"):
+            return
+        path=_selected_glossary_path(self)  # 用語集タブで選んでいる言語の用語集
+        if core.glossary_file_problem(path):
+            return
+        glossary=core.load_glossary(path)
+        metadata=self._glossary_variant_metadata()
+        rows={source:(target,metadata[source]) for source,target in glossary.items() if isinstance(metadata.get(source),dict) and metadata[source]}
+        if display_only:
+            for source,meta in metadata.items():
+                if isinstance(meta,dict) and meta.get("term_kind")=="phrase" and source not in glossary and meta.get("preferred"):
+                    rows[source]=(meta["preferred"],meta)
+        for row_id in self.auto_glossary_tree.get_children():
+            self.auto_glossary_tree.delete(row_id)
+        labels={"proper":"固有名詞","term":"単語","phrase":"定型句"}
+        filters=getattr(self,"auto_glossary_kind_filter_vars",{})
+        for source,(target,meta) in sorted(rows.items()):
+            term_kind=meta.get("term_kind","")
+            variable=filters.get(term_kind)
+            if display_only and variable is not None and not variable.get():
+                continue
+            self.auto_glossary_tree.insert("","end",values=(source,target,self._glossary_kind_label(meta),labels.get(term_kind,"")))
+
+    def _run_glossary_action(self, action):
+        self._refresh_auto_glossary_tree(display_only=False)
+        try:
+            return action()
+        finally:
+            self._refresh_auto_glossary_tree()
+
+    @staticmethod
+    def _auto_glossary_kind_summary(result):
+        counts=result.get("term_kind_counts",{})
+        phrase_note="" if result.get("include_phrases") else "（用語集には入れていません）"
+        return f"固有名詞 {counts.get('proper',0)}／単語 {counts.get('term',0)}／定型句 {counts.get('phrase',0)}{phrase_note}"
+
     def _glossary_variant_metadata(self):
-        p=Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY)
+        p=_selected_glossary_path(self)
         data=core.load_json(core.glossary_variants_path(p), {})
         return data if isinstance(data,dict) else {}
 
     def _glossary_kind_label(self, meta):
         kind=str((meta or {}).get("source_kind", "auto"))
+        if kind == "import:paratranz":
+            return "ParaTranz"
         if kind.startswith("base:"):
             return "ゲーム本体: "+kind.split(":",1)[1]
         if kind.startswith("import:file"):
@@ -10903,6 +11164,7 @@ Mod更新後だけ追加翻訳:
             self.auto_glossary_status_var.set(status)
 
     def _start_glossary_import_thread(self, worker, status="用語取り込みをバックグラウンドで開始しました…"):
+        if not _japanese_glossary_only(self): return False
         if self.auto_glossary_controller is not None:
             messagebox.showinfo(APP_NAME,"自動用語作成中です。完了してから用語取り込みを実行してください。")
             return False
@@ -10946,6 +11208,7 @@ Mod更新後だけ追加翻訳:
         return {"records":records,"japanese_keys":len(jp_entries),"japanese_files":jp_files,"english":english_count,"chinese":chinese_count,"unmatched":unmatched,"source_files":source_files,"root":Path(root)}
 
     def _start_japanese_glossary_import(self, targets, source_kind, label, mode):
+        if not _japanese_glossary_only(self): return
         targets=[Path(x) for x in targets if Path(x).exists()]
         if not targets:
             return
@@ -11061,6 +11324,7 @@ Mod更新後だけ追加翻訳:
         }
 
     def _save_imported_glossary_candidates(self, candidates, label, stats=None):
+        if not _japanese_glossary_only(self): return
         if not candidates:
             msg="取り込み可能な用語候補が見つかりませんでした。"
             if stats:
@@ -11069,6 +11333,7 @@ Mod更新後だけ追加翻訳:
             return
         result=core.save_auto_glossary_candidates(Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY),candidates,preserve_existing=True)
         self.load_glossary_ui(silent=True)
+        if hasattr(self,"_refresh_auto_glossary_tree"): self._refresh_auto_glossary_tree()
         self.auto_glossary_status_var.set(f"{label}: {result.get('added',0)}件追加 / 候補 {result.get('total',0)}件")
         lines=[f"{label}が完了しました。",f"候補: {result.get('total',0)}件",f"新規追加: {result.get('added',0)}件"]
         if stats:
@@ -11101,6 +11366,7 @@ Mod更新後だけ追加翻訳:
         self._start_japanese_glossary_import(targets,source_kind,label,mode)
 
     def import_glossary_from_base_game(self):
+        if not _japanese_glossary_only(self): return
         if self.glossary_import_busy:
             messagebox.showinfo(APP_NAME,"用語取り込みはすでにバックグラウンドで実行中です。")
             return
@@ -11121,6 +11387,7 @@ Mod更新後だけ追加翻訳:
         self._start_glossary_import_thread(worker,status=f"{game} 本体からの用語取り込みを開始しました…")
 
     def import_glossary_from_japanese_source(self, kind):
+        if not _japanese_glossary_only(self): return
         if self.glossary_import_busy:
             messagebox.showinfo(APP_NAME,"用語取り込みはすでにバックグラウンドで実行中です。")
             return
@@ -11152,6 +11419,7 @@ Mod更新後だけ追加翻訳:
         return self._collect_qa_diff_pairs(loc,loc,source_langs=("english","simp_chinese"))
 
     def on_glossary_import_drop_paths(self,event):
+        if not _japanese_glossary_only(self): return
         if self.glossary_import_busy:
             self.auto_glossary_status_var.set("用語取り込みはすでにバックグラウンドで実行中です。")
             return event.action if hasattr(event,"action") else None
@@ -11177,8 +11445,116 @@ Mod更新後だけ追加翻訳:
         p=filedialog.askopenfilename(filetypes=[("JSON","*.json"),("All","*")])
         if p: self.glossary_path_var.set(p); self.load_glossary_ui(silent=True)
 
+    def show_selected_glossary_note(self, tree):
+        selected=tree.selection()
+        if not selected:
+            self.glossary_note_var.set("note: 用語を選択すると表示します")
+            return
+        source=tree.item(selected[0],"values")[0]
+        metadata=self._glossary_variant_metadata().get(source,{})
+        note=metadata.get("note","") if isinstance(metadata,dict) else ""
+        self.glossary_note_var.set(f"{source} — note: {note or 'なし'}")
+
+    def _show_glossary_import_text(self, parent, text):
+        frame=ttk.Frame(parent); frame.pack(fill="both",expand=True,padx=8,pady=8)
+        view=tk.Text(frame,wrap="word",height=20)
+        scroll=ttk.Scrollbar(frame,orient="vertical",command=view.yview)
+        view.configure(yscrollcommand=scroll.set)
+        scroll.pack(side="right",fill="y"); view.pack(side="left",fill="both",expand=True)
+        view.insert("1.0",text); view.configure(state="disabled")
+        def copy_selection(event=None):
+            try:
+                selected=view.get("sel.first","sel.last")
+            except tk.TclError:
+                return "break"
+            view.clipboard_clear(); view.clipboard_append(selected)
+            return "break"
+        view.bind("<Control-c>",copy_selection); view.bind("<Command-c>",copy_selection)
+        ttk.Button(parent,text="選択部分をコピー",command=copy_selection).pack(anchor="w",padx=8)
+        return view
+
+    def import_paratranz_glossary(self):
+        filename=filedialog.askopenfilename(title="ParaTranz の用語集（JSON）を取り込む",filetypes=[("JSON","*.json")])
+        if not filename: return
+        try:
+            text,_encoding=core.decode_text_bytes(Path(filename).read_bytes())
+            data=json.loads(text)
+            if not core.is_paratranz_glossary(data):
+                raise ValueError("ParaTranz の用語集（term / translation を持つリスト）ではありません。")
+            classified=core.classify_paratranz_glossary(data)
+        except (OSError,UnicodeError,ValueError) as exc:
+            messagebox.showerror("ParaTranz 取り込みエラー",str(exc)); return
+        self.confirm_paratranz_import(classified)
+
+    def confirm_paratranz_import(self, classified):
+        dialog=tk.Toplevel(self); dialog.title("ParaTranz 用語集の取り込み確認"); dialog.geometry("850x700")
+        dialog.transient(self); dialog.grab_set()
+        labels={"items":"元の項目", "terms":"取り込む用語（variants込み）", "from_variants":"variantsから追加",
+                "rules":"※で始まるルール", "affixes":"接辞", "symbols":"記号のみ", "short_terms":"短い英字の語",
+                "spaces_fixed":"空白を直した数", "duplicates":"重なり（先の語を使用）", "note_rules":"noteにルールがある語"}
+        summary="\n".join(f"{label}: {classified['counts'][key]}" for key,label in labels.items())
+        for title,key in (("短い語は、ほかの単語の一部に誤って当たるおそれがあります","short_terms"),
+                          ("表記ルールに回る項目（用語集には入れません）","rules"),
+                          ("note にルールがある語（用語は取り込み、noteはプロンプトに入れません）","note_rules")):
+            summary+="\n\n"+title+"\n"
+            summary+="\n".join(f"{entry['term']} → {entry['translation']}\n  note: {entry['note']}  {entry.get('reason','')}" for entry in classified[key]) or "なし"
+        self._show_glossary_import_text(dialog,summary)
+        options=ttk.Frame(dialog); options.pack(fill="x",padx=8,pady=8)
+        language=tk.StringVar(value=_target_lang_choice(_glossary_language(self)))
+        mode=tk.StringVar(value="merge")
+        ttk.Label(options,text="取り込み先の言語").pack(side="left")
+        ttk.Combobox(options,textvariable=language,values=[_target_lang_choice(lang) for lang in core.TARGET_LANGUAGES],state="readonly").pack(side="left",padx=6)
+        ttk.Radiobutton(options,text="今の用語集に足す",variable=mode,value="merge").pack(side="left")
+        ttk.Radiobutton(options,text="置き換える",variable=mode,value="replace").pack(side="left")
+        destination=tk.StringVar()
+        def update_destination(*args):
+            path=core.glossary_path_for_language(self.glossary_path_var.get() or DEFAULT_GLOSSARY,_target_lang_from_choice(language.get()))
+            destination.set(f"保存先: {path}")
+        language.trace_add("write",update_destination); update_destination()
+        ttk.Label(dialog,textvariable=destination,wraplength=820).pack(fill="x",padx=8)
+        ttk.Label(dialog,text="置き換える場合は既存の用語と表記ルールを置き換えます。表記ルールはA2へ手でコピーできます。",wraplength=820).pack(fill="x",padx=8)
+        def import_selected():
+            path=core.glossary_path_for_language(self.glossary_path_var.get() or DEFAULT_GLOSSARY,_target_lang_from_choice(language.get()))
+            try:
+                result=core.save_paratranz_import(path,classified,mode.get())
+            except (OSError,ValueError) as exc:
+                messagebox.showerror("ParaTranz 取り込みエラー",str(exc),parent=dialog); return
+            self.glossary_lang_var.set(language.get())
+            self.load_glossary_ui(silent=True)
+            self.progress_text.set(f"ParaTranz: 追加 {result['counts']['added']} / 更新 {result['counts']['updated']} / 訳が違う語 {result['counts']['conflicts']}")
+            dialog.destroy()
+            if result["conflicts"]:
+                conflicts=tk.Toplevel(self); conflicts.title("訳が違う語（今の訳を残しました）"); conflicts.geometry("750x500")
+                self._show_glossary_import_text(conflicts,"\n\n".join(f"{entry['term']}\n今の訳: {entry['existing']}\n取り込み側の訳: {entry['incoming']}" for entry in result["conflicts"]))
+                ttk.Button(conflicts,text="閉じる",command=conflicts.destroy).pack(pady=8)
+        buttons=ttk.Frame(dialog); buttons.pack(fill="x",padx=8,pady=8)
+        ttk.Button(buttons,text="取り込む",command=import_selected).pack(side="right")
+        ttk.Button(buttons,text="やめる",command=dialog.destroy).pack(side="right",padx=6)
+
+    def show_glossary_notation_rules(self):
+        path=core.glossary_notation_rules_path(_selected_glossary_path(self))
+        try:
+            data=json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"rules":[],"note_rules":[]}
+            if not isinstance(data,dict) or any(not isinstance(data.get(key,[]),list) or any(not isinstance(entry,dict) for entry in data.get(key,[])) for key in ("rules","note_rules")):
+                raise ValueError("表記ルールのファイルの形式が不正です。")
+        except (OSError,ValueError) as exc:
+            messagebox.showerror("表記ルール",str(exc)); return
+        dialog=tk.Toplevel(self); dialog.title("表記ルール（読み取り専用）"); dialog.geometry("850x600")
+        text=f"{path}\n自動でプロンプトには入りません。必要な内容を選択し、コピーしてA2へ手で写してください。"
+        for title,key in (("表記ルール","rules"),("note にルールがある語","note_rules")):
+            text+="\n\n"+title+"\n"
+            text+="\n\n".join(f"原語: {entry.get('term','')}\n訳: {entry.get('translation','')}\nnote: {entry.get('note','')}\n理由: {entry.get('reason','')}" for entry in data.get(key,[])) or "なし"
+        self._show_glossary_import_text(dialog,text)
+        ttk.Button(dialog,text="閉じる",command=dialog.destroy).pack(pady=8)
+
     def load_glossary_ui(self,silent=False):
-        p=Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY)
+        p=_selected_glossary_path(self)
+        label=core.target_language_label(_glossary_language(self))
+        if hasattr(self,"glossary_actual_path_var"):
+            self.glossary_actual_path_var.set(f"この言語のファイル: {p}")
+        for tree_name in ("glossary_tree","auto_glossary_tree"):
+            tree=getattr(self,tree_name,None)
+            if tree is not None and hasattr(tree,"heading"): tree.heading("dst",text=label)
         problem=core.glossary_file_problem(p)
         if problem:
             self._glossary_unsafe_path=p.resolve()
@@ -11190,6 +11566,8 @@ Mod更新後だけ追加翻訳:
             return
         gl=core.load_glossary(p)
         self._glossary_unsafe_path=None
+        if hasattr(self,"glossary_note_var"):
+            self.glossary_note_var.set("note: 用語を選択すると表示します")
         variants=self._glossary_variant_metadata()
         if hasattr(self,"glossary_tree"):
             for x in self.glossary_tree.get_children(): self.glossary_tree.delete(x)
@@ -11204,7 +11582,7 @@ Mod更新後だけ追加翻訳:
         if not silent: self.progress_text.set(f"用語集 {len(gl)}件を読み込みました")
 
     def save_glossary_ui(self):
-        p=Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY)
+        p=_selected_glossary_path(self)
         if p.resolve()==getattr(self,"_glossary_unsafe_path",None) or core.glossary_file_problem(p):
             messagebox.showerror("用語集保存エラー","対応していない形式のファイルなので上書きしません。別の名前で保存してください。")
             return
@@ -11217,15 +11595,17 @@ Mod更新後だけ追加翻訳:
             for iid in self.auto_glossary_tree.get_children():
                 vals=self.auto_glossary_tree.item(iid,"values")
                 if len(vals)>=2: gl[str(vals[0])]=str(vals[1])
-        core.save_glossary(p,gl); self.glossary_path_var.set(str(p)); self.progress_text.set(f"用語集保存: {p}")
+        core.save_glossary(p,gl)
+        if _glossary_language(self) == core.DEFAULT_TARGET_LANG: self.glossary_path_var.set(str(p))
+        self.progress_text.set(f"用語集保存: {p}")
 
     def add_glossary_term(self):
         src=simpledialog.askstring("用語追加","原語（英語/中国語）")
         if not src: return
-        dst=simpledialog.askstring("用語追加",f"「{src}」の固定日本語訳")
+        dst=simpledialog.askstring("用語追加",f"「{src}」の固定{core.target_language_label(_glossary_language(self))}訳")
         if dst:
             # 手動追加した語は自動分類メタデータから外し、左側へ表示する。
-            p=Path(self.glossary_path_var.get() or DEFAULT_GLOSSARY)
+            p=_selected_glossary_path(self)
             variants=self._glossary_variant_metadata(); variants.pop(src,None); core.save_json(core.glossary_variants_path(p),variants)
             self.glossary_tree.insert("","end",values=(src,dst)); self.save_glossary_ui(); self.load_glossary_ui(silent=True)
 
@@ -11235,7 +11615,7 @@ Mod更新後だけ追加翻訳:
         src,dst=self.glossary_tree.item(sel[0],"values")
         nsrc=simpledialog.askstring("用語編集","原語",initialvalue=src)
         if not nsrc: return
-        ndst=simpledialog.askstring("用語編集","日本語",initialvalue=dst)
+        ndst=simpledialog.askstring("用語編集",core.target_language_label(_glossary_language(self)),initialvalue=dst)
         if ndst is not None: self.glossary_tree.item(sel[0],values=(nsrc,ndst)); self.save_glossary_ui()
 
     def delete_glossary_term(self):
@@ -11935,6 +12315,8 @@ Mod更新後だけ追加翻訳:
                         messagebox.showerror(APP_NAME,"翻訳検索エラー: "+str(payload.get("error","")))
                 elif kind=="normal_log":
                     self._append_log(str(payload))
+                elif kind=="chinese_log":
+                    self._append_chinese_log(str(payload))
                 elif kind=="queue_refresh": self._refresh_queue_tree()
                 elif kind=="done":
                     self.worker=None
@@ -11987,6 +12369,7 @@ Mod更新後だけ追加翻訳:
                         else:
                             self.load_diff_inspector()
                     message=f"差分翻訳完了: 書き込み {result.get('written',0)}件"
+                    message+=f" / 半角スペース除去 {result.get('spaces_removed',0)}個"
                     if left: message+=f" / 未翻訳のまま {len(left)}件（原文のまま・使えない訳は書き込みませんでした）"
                     self.diff_message_var.set(message)
                     if left and not self._closing:
@@ -12006,8 +12389,10 @@ Mod更新後だけ追加翻訳:
                     self.auto_glossary_controller=None; self.auto_glossary_thread=None
                     self._set_llm_idle("LLM 待機中","自動用語作成が完了しました")
                     self.load_glossary_ui(silent=True)
-                    self.auto_glossary_status_var.set(f"追加 {payload.get('added',0)} / 候補 {payload.get('total',0)} / 表記揺れ {payload.get('conflicts',0)}")
-                    if not self._closing: messagebox.showinfo(APP_NAME, f"自動用語作成が完了しました。\n候補: {payload.get('total',0)}件\n新規追加: {payload.get('added',0)}件\n複数訳を統一: {payload.get('conflicts',0)}件")
+                    if hasattr(self,"_refresh_auto_glossary_tree"): self._refresh_auto_glossary_tree()
+                    kind_summary=App._auto_glossary_kind_summary(payload)
+                    self.auto_glossary_status_var.set(f"追加 {payload.get('added',0)} / 候補 {payload.get('total',0)} / 表記揺れ {payload.get('conflicts',0)} / {kind_summary}")
+                    if not self._closing: messagebox.showinfo(APP_NAME, f"自動用語作成が完了しました。\n候補: {payload.get('total',0)}件\n新規追加: {payload.get('added',0)}件\n複数訳を統一: {payload.get('conflicts',0)}件\n{kind_summary}")
                 elif kind=="auto_glossary_error":
                     self.auto_glossary_controller=None; self.auto_glossary_thread=None
                     self._set_llm_idle("LLM 待機中","自動用語作成を終了しました")
@@ -12043,6 +12428,7 @@ Mod更新後だけ追加翻訳:
                             lines=[f"{label}が完了しました。","取り込み可能な用語候補はありませんでした。"]
                         else:
                             self.load_glossary_ui(silent=True)
+                            if hasattr(self,"_refresh_auto_glossary_tree"): self._refresh_auto_glossary_tree()
                             self.auto_glossary_status_var.set(f"{label}: {result.get('added',0)}件追加 / 候補 {result.get('total',0)}件")
                             lines=[f"{label}が完了しました。",f"候補: {result.get('total',0)}件",f"新規追加: {result.get('added',0)}件"]
                         if stats:
