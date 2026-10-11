@@ -59,3 +59,26 @@ def test_close_action_and_performance_preset_mapping_reads_old_and_new_values():
     assert us.performance_preset_from_label("Stable (20 / 1)") == "stable"
     i18n.set_ui_language("japanese")
     assert us.performance_preset_label("standard") == "標準（40 / 1）"
+
+
+def test_saved_message_parts_are_rebuilt_in_the_current_language(monkeypatch):
+    import i18n
+    import ui_status as us
+    monkeypatch.setitem(i18n.japanese.STRINGS, "test.msg.a", "{name}には翻訳がありません。")
+    monkeypatch.setitem(i18n.english.STRINGS, "test.msg.a", "{name} has no translation.")
+    monkeypatch.setitem(i18n.japanese.STRINGS, "test.msg.b", "欠損 {count} 件")
+    monkeypatch.setitem(i18n.english.STRINGS, "test.msg.b", "{count} gaps")
+    result = {"message": "古い文", "message_parts": [us.message_part("test.msg.a", name="Mod A"),
+                                                   us.message_part("test.msg.b", count=3)]}
+    previous = i18n.get_ui_language()
+    try:
+        i18n.set_ui_language("japanese")
+        assert us.display_message(result) == "Mod Aには翻訳がありません。 欠損 3 件"
+        i18n.set_ui_language("english")
+        assert us.display_message(result) == "Mod A has no translation. 3 gaps"
+        # 古い版で保存した結果（message だけ）は、そのまま出す
+        assert us.display_message({"message": "Mod Aというモッドは日本語翻訳がありません。"}) == "Mod Aというモッドは日本語翻訳がありません。"
+        assert us.display_message({"message": "x", "message_parts": []}) == "x"
+        assert us.display_message(None) == ""
+    finally:
+        i18n.set_ui_language(previous)

@@ -158,3 +158,35 @@ def performance_preset_from_label(label: str) -> str:
         if label == performance_preset_label(preset):
             return preset
     return "standard"
+
+
+# 保存して後で表示し直す文（第3段 2-3 章の決まり2）：文そのものではなく「key と差し込む値」を保存する。
+# 結果の dict に "message_parts": [{"id": i18n の key, "fields": {...}}, ...] を入れ、表示するときに組み立てる。
+# "message"（作ったときの画面の言語の文）も今までどおり入れておく（古い版・ログ用）。
+MESSAGE_PART_JOINER = " "
+
+
+def message_part(key: str, **fields) -> dict:
+    return {"id": key, "fields": dict(fields)}
+
+
+def build_message(parts) -> str:
+    """message_parts を、今の画面の言語の文にする。"""
+    texts = []
+    for part in parts or []:
+        if isinstance(part, dict) and part.get("id"):
+            fields = part.get("fields") if isinstance(part.get("fields"), dict) else {}
+            texts.append(i18n.t(str(part["id"]), **fields))
+    return MESSAGE_PART_JOINER.join(text for text in texts if text).strip()
+
+
+def display_message(result) -> str:
+    """保存した結果の文を表示する。message_parts があれば今の画面の言語で組み立て、無ければ（古い版の結果）message をそのまま。"""
+    if not isinstance(result, dict):
+        return str(result or "")
+    parts = result.get("message_parts")
+    if parts:
+        text = build_message(parts)
+        if text:
+            return text
+    return str(result.get("message") or "")
