@@ -11,7 +11,7 @@ import help_doc_status as hs  # noqa: E402
 import i18n  # noqa: E402
 
 # 全文の訳が出そろっていなければならない言語（段階1の U8 で english、段階2で残りを足す）
-REQUIRED_LANGUAGES: tuple = ()
+REQUIRED_LANGUAGES: tuple = ("english",)
 
 
 def test_japanese_original_reproduces_the_v0_12_manual_layout():
@@ -71,4 +71,9 @@ def test_help_text_falls_back_and_marks_stale_sections(monkeypatch):
     text = help_.help_text("french")
     assert "[fr pas à jour]\n[fr glossaire]" in text
     assert "[en s10_glossary]" not in text and "[en intro]" in text
-    assert help_.help_title("french") == i18n.japanese.help_doc.HELP_TITLE  # 題も英語・日本語の順に戻る
+    # 題も英語・日本語の順に戻る
+    monkeypatch.setattr(i18n.english.help_doc, "HELP_TITLE", "[en title]", raising=False)
+    monkeypatch.setattr(i18n.french.help_doc, "HELP_TITLE", "", raising=False)
+    assert help_.help_title("french") == "[en title]"
+    monkeypatch.setattr(i18n.english.help_doc, "HELP_TITLE", "")
+    assert help_.help_title("french") == i18n.japanese.help_doc.HELP_TITLE
