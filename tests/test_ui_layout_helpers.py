@@ -8,6 +8,235 @@ import i18n
 from ui_layout import FlowRow, WrappingCheck, _autowrap, flow_rows, initial_pane_split, pane_split, wrap_width
 
 
+class FakeHeadingTree:
+    def __init__(self, columns, show="headings", displaycolumns="#all", width=600,
+                 xscrollcommand="existing_scrollbar"):
+        self.columns = columns
+        self.options = dict(columns=tuple(columns), show=show,
+                            displaycolumns=displaycolumns, xscrollcommand=xscrollcommand)
+        self.width = width
+        self.changes = []
+        self.bindings = {}
+        self.tk = SimpleNamespace(splitlist=lambda value: value.split() if isinstance(value, str) else value,
+                                  getboolean=lambda value: value not in (False, 0, "0", "false"))
+
+    def cget(self, name):
+        return self.options[name]
+
+    def heading(self, column, option=None, **options):
+        self.columns[column].update(options)
+        return self.columns[column][option] if option else self.columns[column].copy()
+
+    def column(self, column, **options):
+        if options:
+            self.changes.append((column, options))
+            self.columns[column].update(options)
+        return self.columns[column].copy()
+
+    def winfo_width(self):
+        return self.width
+
+    def bind(self, event, callback, add=None):
+        self.bindings[event] = callback
+        return "binding"
+
+
+def heading_column(text, width, minwidth=20, stretch=False):
+    return dict(text=text, width=width, minwidth=minwidth, stretch=stretch, anchor="w")
+
+
+def test_fit_tree_headings_grows_only_short_columns_and_preserves_larger_minimum():
+    from ui_layout import fit_tree_headings
+    tree = FakeHeadingTree({"short": heading_column("Short", 100),
+                            "long": heading_column("Long heading", 60, minwidth=160)})
+    fit_tree_headings(tree, measure=lambda text: {"Short": 40, "Long heading": 120}[text])
+    assert tree.changes == [("long", {"width": 132, "minwidth": 160})]
+    assert tree.columns["long"]["anchor"] == "w"
+    assert tree.columns["long"]["stretch"] is False
+    fit_tree_headings(tree, measure=lambda text: {"Short": 40, "Long heading": 120}[text])
+    assert len(tree.changes) == 1
+
+
+def test_fit_tree_headings_protects_stretch_columns_when_viewport_shrinks():
+    from ui_layout import fit_tree_headings
+    tree = FakeHeadingTree({"name": heading_column("Name", 200, stretch=True)}, width=30)
+    fit_tree_headings(tree, padding=16, measure=lambda text: 80)
+    assert tree.columns["name"]["width"] == 200
+    assert tree.columns["name"]["minwidth"] == 96
+    assert tree.columns["name"]["stretch"] is True
+
+
+def test_fit_tree_headings_measures_visible_tree_column_and_skips_hidden_columns():
+    from ui_layout import fit_tree_headings
+    tree = FakeHeadingTree({"visible": heading_column("Visible", 50),
+                            "hidden": heading_column("Hidden", 50)},
+                           show="tree headings", displaycolumns=("visible",))
+    tree.columns["#0"] = heading_column("Category", 60)
+    measured = []
+    fit_tree_headings(tree, measure=lambda text: measured.append(text) or 90)
+    assert measured == ["Category", "Visible"]
+    assert tree.columns["#0"]["width"] == 102
+    assert tree.columns["hidden"]["width"] == 50
+
+
+def test_fit_tree_headings_accepts_tcl_option_tokens_and_numeric_display_columns():
+    from ui_layout import fit_tree_headings
+
+    class Token:
+        def __init__(self, value):
+            self.value = value
+
+        def __str__(self):
+            return self.value
+
+    tree = FakeHeadingTree({"visible": heading_column("Visible", 50),
+                            "hidden": heading_column("Hidden", 50)},
+                           show=(Token("headings"),), displaycolumns=(Token("0"),))
+    fit_tree_headings(tree, measure=lambda text: 90)
+    assert tree.columns["visible"]["width"] == 102
+    assert tree.columns["hidden"]["width"] == 50
+
+
+def test_fit_tree_headings_refits_changed_text_without_shrinking_existing_width():
+    from ui_layout import fit_tree_headings
+    tree = FakeHeadingTree({"name": heading_column("Name", 60)})
+    fit_tree_headings(tree, measure=lambda text: len(text) * 10)
+    tree.columns["name"]["text"] = "Name ▲"
+    fit_tree_headings(tree, measure=lambda text: len(text) * 10)
+    assert tree.columns["name"]["width"] == 72
+    tree.columns["name"]["text"] = "Name"
+    fit_tree_headings(tree, measure=lambda text: len(text) * 10)
+    assert tree.columns["name"]["width"] == 72
+
+
+def test_sort_marker_refits_the_actual_main_method_without_tk():
+    from ui_layout import fit_tree_headings
+    source = Path(__file__).resolve().parents[1] / "app" / "main.py"
+    parsed = ast.parse(source.read_text(encoding="utf-8"))
+    method = next(node for node in ast.walk(parsed) if isinstance(node, ast.FunctionDef)
+                  and node.name == "_sort_treeview")
+    tree = FakeHeadingTree({"name": heading_column("Name", 60)})
+    tree.get_children = lambda parent: ()
+
+    state = SimpleNamespace(_tree_sort_states={}, _tree_heading_labels={(str(tree), "name"): "Name"})
+    scope = {"tk": SimpleNamespace(TclError=RuntimeError),
+             "fit_tree_headings": lambda widget: fit_tree_headings(widget, measure=lambda text: len(text) * 10)}
+    exec(compile(ast.Module(body=[method], type_ignores=[]), str(source), "exec"), scope)
+    scope["_sort_treeview"](state, tree, "name")
+    assert tree.columns["name"]["text"] == "Name ▲"
+    assert tree.columns["name"]["width"] == 72
+    scope["_sort_treeview"](state, tree, "name")
+    assert tree.columns["name"]["text"] == "Name ▼"
+    assert tree.columns["name"]["width"] == 72
+
+
+def test_fit_tree_headings_does_not_measure_when_headings_are_hidden():
+    from ui_layout import fit_tree_headings
+    tree = FakeHeadingTree({"name": heading_column("Name", 60)}, show="tree")
+    fit_tree_headings(tree, measure=lambda text: pytest.fail("hidden heading measured"))
+    assert tree.changes == []
+
+
+@pytest.mark.parametrize("language,required", [
+    ("english", 199), ("french", 291), ("german", 243), ("spanish", 266),
+    ("japanese", 185), ("korean", 177), ("polish", 216), ("braz_por", 213),
+    ("russian", 257), ("simp_chinese", 134), ("turkish", 171),
+])
+def test_chinese_queue_heading_fits_reported_width_in_all_ui_languages(language, required):
+    from ui_layout import fit_tree_headings
+    text = i18n.t_lang(language, "u2.target_language")
+    tree = FakeHeadingTree({"target": heading_column(text, 120, minwidth=100)})
+    fit_tree_headings(tree, measure=lambda heading: required - 12)
+    assert tree.columns["target"]["width"] == required
+    assert tree.columns["target"]["minwidth"] == required
+
+
+def test_fit_tree_headings_uses_heading_font_only_when_measure_is_not_injected(monkeypatch):
+    import ui_layout
+    calls = []
+    tree = FakeHeadingTree({"name": heading_column("Name", 60)})
+
+    def font(name, **options):
+        calls.append((name, options))
+        return SimpleNamespace(measure=lambda text: 90)
+
+    monkeypatch.setattr(ui_layout.tkfont, "nametofont", font)
+    ui_layout.fit_tree_headings(tree, measure=lambda text: 40)
+    assert calls == []
+    ui_layout.fit_tree_headings(tree)
+    assert calls == [("TkHeadingFont", {"root": tree})]
+    assert tree.columns["name"]["width"] == 102
+
+
+def test_every_main_table_fits_headings_after_connecting_horizontal_scrollbar():
+    source = Path(__file__).resolve().parents[1] / "app" / "main.py"
+    parsed = ast.parse(source.read_text(encoding="utf-8"))
+    creations = [node for node in ast.walk(parsed) if isinstance(node, ast.Assign)
+                 and isinstance(node.value, ast.Call) and ast.unparse(node.value.func) == "ttk.Treeview"]
+    assert len(creations) == 18
+    for creation in creations:
+        target = ast.unparse(creation.targets[0])
+        method = next(node for node in ast.walk(parsed) if isinstance(node, ast.FunctionDef)
+                      and node.lineno < creation.lineno <= node.end_lineno)
+        connections = [node for node in ast.walk(method) if isinstance(node, ast.Call)
+                       and ast.unparse(node.func) == target + ".configure"
+                       and any(keyword.arg == "xscrollcommand" for keyword in node.keywords)]
+        fits = [node for node in ast.walk(method) if isinstance(node, ast.Call)
+                and ast.unparse(node.func) == "fit_tree_headings"
+                and ast.unparse(node.args[0]) == target]
+        assert connections and fits, target
+        assert creation.lineno < connections[0].lineno < fits[0].lineno, target
+
+
+@pytest.mark.parametrize("method_name", ["_sort_treeview", "_refresh_relation_target_labels", "load_glossary_ui"])
+def test_heading_rewrites_are_followed_by_refitting(method_name):
+    source = Path(__file__).resolve().parents[1] / "app" / "main.py"
+    parsed = ast.parse(source.read_text(encoding="utf-8"))
+    method = next(node for node in ast.walk(parsed) if isinstance(node, ast.FunctionDef)
+                  and node.name == method_name)
+    writes = [node for node in ast.walk(method) if isinstance(node, ast.Call)
+              and isinstance(node.func, ast.Attribute) and node.func.attr == "heading"
+              and any(keyword.arg == "text" for keyword in node.keywords)]
+    fits = [node for node in ast.walk(method) if isinstance(node, ast.Call)
+            and ast.unparse(node.func) == "fit_tree_headings"]
+    assert writes and fits
+    assert max(node.lineno for node in writes) < max(node.lineno for node in fits)
+
+
+@pytest.mark.parametrize("manager", ["pack", "grid"])
+def test_fit_tree_headings_adds_one_scrollbar_on_overflow_after_mapping(monkeypatch, manager):
+    import ui_layout
+    tree = FakeHeadingTree({"name": heading_column("Long heading", 60)},
+                           width=1, xscrollcommand="")
+    bars = []
+    placements = []
+    tree.master = object()
+    tree.winfo_manager = lambda: manager
+    tree.grid_info = lambda: dict(row=2, column=1, rowspan=1, columnspan=2)
+    tree.xview = lambda *args: None
+    tree.configure = lambda **options: tree.options.update(options)
+
+    def scrollbar(parent, **options):
+        assert parent is tree.master
+        assert options == {"orient": "horizontal", "command": tree.xview}
+        bar = SimpleNamespace(set=lambda *args: None,
+                              pack=lambda **options: placements.append(options),
+                              grid=lambda **options: placements.append(options))
+        bars.append(bar)
+        return bar
+
+    monkeypatch.setattr(ui_layout.ttk, "Scrollbar", scrollbar)
+    ui_layout.fit_tree_headings(tree, measure=lambda text: 120)
+    assert bars == []
+    tree.width = 100
+    tree.bindings["<Configure>"](SimpleNamespace(widget=tree))
+    tree.bindings["<Configure>"](SimpleNamespace(widget=tree))
+    assert len(bars) == 1
+    assert tree.columns["name"]["width"] == 132
+    assert placements == ([dict(side="bottom", fill="x", before=tree)] if manager == "pack"
+                          else [dict(row=3, column=1, columnspan=2, sticky="ew")])
+
+
 @pytest.mark.parametrize("viewport,requested,expected", [
     (800, 300, 800), (300, 800, 800), (400, 400, 400), (0, 0, 1),
 ])
