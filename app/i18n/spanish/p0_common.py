@@ -56,7 +56,7 @@ STRINGS = {
     'p0.no_scan_results': 'Sin resultados de análisis',
     'p0.no_translation_status_scan_results': 'No hay resultados de análisis de Estado de la traducción',
     'p0.unknown_file': 'Archivo desconocido',
-    'p0.the_qa_comparison_editor_also': 'La pestaña QA / Comparar y editar también comprueba el idioma de destino seleccionado aquí. El análisis de mods, la detección y asociación de mods de traducción al japonés, la traducción solo de diferencias y la traducción basada en el chino solo están disponibles para japonés. Las comprobaciones de calidad de otros idiomas son más sencillas (entre idiomas de escritura latina, solo se comprueba si el texto coincide con el original).',
+    'p0.the_qa_comparison_editor_also': 'La pestaña QA / Editor de comparación también comprueba según el idioma de destino elegido aquí. Las comprobaciones de calidad para idiomas de destino distintos del japonés son más sencillas (mezcla de sistemas de escritura, texto idéntico al original e inglés restante). Cuando el idioma de destino es el inglés, el análisis de mods no compara mods de traducción externos.',
     'p0.this_feature_is_available_only': 'Esta función solo está disponible para Glosarios japoneses',
     'p0.missing_only_translation_is_available': '«Traducir solo las diferencias» solo está disponible para elementos con japonés como idioma de destino. Para otros idiomas, usa «Traducir todo desde cero».',
     'p0.the_llm_response_was_empty': 'La respuesta del LLM estaba vacía',
