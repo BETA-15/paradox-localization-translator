@@ -137,7 +137,11 @@ def screenshot(app, path: Path) -> bool:
 
 def measure(languages, size: str, shots: Path | None) -> dict:
     data_root = Path(tempfile.mkdtemp(prefix="plt-ui-overflow-"))
-    os.environ["PARADOX_TRANSLATOR_DATA_ROOT"] = str(data_root)
+    os.environ["PARADOX_TRANSLATOR_DATA_ROOT"] = str(data_root / "data")
+    # HOME も一時フォルダにする：古い置き場所（~/.paradox_localization_translator）のモデルの統計や、
+    # 本物の Steam の Mod の一覧を読まない（写真に利用者の環境の値が出ない。利用者のデータにも触らない）
+    os.environ["HOME"] = str(data_root / "home")
+    (data_root / "home").mkdir(parents=True, exist_ok=True)
     sys.path.insert(0, str(ROOT / "app"))
     import translator_core as core
     core.list_models = lambda *a, **k: []
