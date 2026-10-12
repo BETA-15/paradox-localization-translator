@@ -465,6 +465,26 @@ def _compact_status_gap_groups(rows):
     return compact
 
 
+def _inherit_status_queue_context(item, result):
+    fields = ("external_translation_mod", "external_translation_path",
+              "external_translation_localization", "external_gap_keys",
+              "status_gap_candidates", "status_gap_count")
+    if _item_target_lang(item) != result.get("target_lang", core.DEFAULT_TARGET_LANG):
+        for field in fields:
+            item.pop(field, None)
+        return
+    for field in fields[:3]:
+        item[field] = result.get(field, "")
+    item["external_gap_keys"] = [row.get("key") for row in _status_gap_rows(result, external=True) if row.get("key")]
+
+
+def _put_monitor_event(app, kind, payload, settings):
+    if "generation" in settings:
+        app.events.put(("monitor_event", (settings["generation"], kind, payload)))
+    else:
+        app.events.put((kind, payload))
+
+
 def _status_gap_rows(result, external=False):
     """Return full live gaps or rebuild lightweight persisted gaps on demand."""
     if not isinstance(result, dict):
@@ -4086,7 +4106,7 @@ class App(BaseTk):
             pass
         return max(highest, legacy) + 1
 
-    def _create_full_localization_snapshot(self, target_root, backup_kind, *, category='上書き', source_mod_name='', state_label='', stamp=None, target_lang=None):
+    def _create_full_localization_snapshot(self, target_root, backup_kind, *, category='上書き', source_mod_name='', state_label='', stamp=None, target_lang=None, backup_kind_id=None):
         target_root=Path(target_root)
         if core.is_localization_dir_name(target_root.name):
             loc=target_root
@@ -4135,6 +4155,8 @@ class App(BaseTk):
         }
         if target_lang and target_lang != "japanese":
             manifest["target_lang"] = target_lang
+        if backup_kind_id and target_lang and target_lang != core.DEFAULT_TARGET_LANG:
+            manifest["backup_kind_id"] = backup_kind_id
         (root / 'backup_manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8')
         return root, manifest
 
@@ -5834,7 +5856,9 @@ class App(BaseTk):
             messagebox.showinfo(APP_NAME,i18n.t('u6.no_monitor_targets_select_at_least'))
             return
         self.monitor_stop_event.clear(); self.monitor_force_event.set(); self.monitor_snapshot={}
+        self._monitor_generation = getattr(self, "_monitor_generation", 0) + 1
         self._monitor_worker_settings = self._snapshot_monitor_worker_settings()
+        self._monitor_worker_settings["generation"] = self._monitor_generation
         self.monitor_toggle_btn.config(text=i18n.t('u6.stop_continuous_monitoring'))
         self.monitor_status_var.set(i18n.t('u6.monitoring_locations_initial_check', roots_count=len(roots)))
         self._set_monitor_scan_status(i18n.t('u6.monitoring_untranslated_mods'), i18n.t('u6.checking_changed_yaml_files_in_locations', roots_count=len(roots)))
@@ -5842,6 +5866,7 @@ class App(BaseTk):
         self.monitor_thread.start()
 
     def stop_monitor(self):
+        self._monitor_restart_generation = None
         if not (self.monitor_thread and self.monitor_thread.is_alive()):
             self.monitor_status_var.set(i18n.t('u6.monitoring_stopped'))
             self.monitor_toggle_btn.config(text=i18n.t('u6.start_continuous_monitoring'))
@@ -5866,13 +5891,13 @@ class App(BaseTk):
         model = settings.get("model", "")
         api_key = settings.get("api_key", "")
         if not model:
-            self.events.put(("monitor_log",i18n.t('u6.no_monitor_llm_selected_skipping_review')))
+            _put_monitor_event(self, "monitor_log", i18n.t('u6.no_monitor_llm_selected_skipping_review'), settings)
             return candidates
-        self.monitor_llm_controller=core.TranslationController(progress_callback=lambda p:self.events.put(("monitor_progress",p)))
+        self.monitor_llm_controller=core.TranslationController(progress_callback=lambda p:_put_monitor_event(self, "monitor_progress", p, settings))
         try:
             decisions=core.classify_monitor_candidates(
                 provider,url,model,[c for _,c in ambiguous],self.monitor_llm_controller,
-                api_key,batch_size=40)
+                api_key,batch_size=40,target_lang=settings.get("target_lang", core.DEFAULT_TARGET_LANG))
             keep=set()
             for pos,(original_idx,c) in enumerate(ambiguous):
                 if decisions.get(pos,True):
@@ -5884,6 +5909,7 @@ class App(BaseTk):
     def _monitor_worker(self, one_shot=False):
         roots=self._current_monitor_roots()
         settings = dict(getattr(self, "_monitor_worker_settings", {}) or {})
+        emit = lambda kind, payload: _put_monitor_event(self, kind, payload, settings)
         try:
             first=True
             while not self.monitor_stop_event.is_set():
@@ -5896,21 +5922,23 @@ class App(BaseTk):
                         combined_stats[f"{prefix}::{rel}"]=val
                 changed = first or forced or combined_stats != self.monitor_snapshot
                 if changed:
-                    self.events.put(("monitor_status",i18n.t('u6.monitoring_analyzing_locations', roots_count=len(roots))))
+                    emit("monitor_status",i18n.t('u6.monitoring_analyzing_locations', roots_count=len(roots)))
                     candidates=[]
                     for root in roots:
                         try:
                             candidates.extend(core.scan_translation_gaps(root, target_lang=settings.get("target_lang", core.DEFAULT_TARGET_LANG)))
                         except Exception as exc:
-                            self.events.put(("monitor_log",i18n.t('u6.skipped_analysis', root=root, exc=exc)))
+                            emit("monitor_log",i18n.t('u6.skipped_analysis', root=root, exc=exc))
                     try:
                         candidates=self._refine_candidates_with_monitor_llm(candidates, settings)
                     except core.StopRequested:
                         if self.monitor_stop_event.is_set(): break
                     except Exception as e:
-                        self.events.put(("monitor_log",i18n.t('u6.skipped_lightweight_llm_review', value=e)))
+                        emit("monitor_log",i18n.t('u6.skipped_lightweight_llm_review', value=e))
+                    if self.monitor_stop_event.is_set() or settings.get("generation", 0) != getattr(self, "_monitor_generation", 0):
+                        break
                     self.monitor_candidates=candidates; self.monitor_snapshot=combined_stats
-                    self.events.put(("monitor_results",candidates))
+                    emit("monitor_results",candidates)
                     first=False
                 if one_shot:
                     break
@@ -5918,9 +5946,9 @@ class App(BaseTk):
                 for _ in range(interval*5):
                     if self.monitor_stop_event.is_set() or self.monitor_force_event.is_set(): break
                     self.monitor_stop_event.wait(0.2)
-            self.events.put(("monitor_stopped",None))
+            emit("monitor_stopped",None)
         except Exception as e:
-            self.events.put(("monitor_error",str(e)))
+            emit("monitor_error",str(e))
 
     def _tk_callback_exception(self, exc_type, exc_value, exc_tb):
         try:
@@ -6148,23 +6176,28 @@ class App(BaseTk):
         snapshots = []
         for manifest_path in BACKUP_ROOT.glob("*/*/*/*/backup_manifest.json"):
             manifest = core.load_json(manifest_path, {})
-            if not isinstance(manifest, dict) or manifest.get("backup_kind") not in kinds:
+            if not isinstance(manifest, dict):
+                continue
+            kind_id = manifest.get("backup_kind_id")
+            if (kind_id != "source_mod_overwrite" if kind_id else manifest.get("backup_kind") not in kinds):
                 continue
             if not manifest.get("target_root") or self._mod_classification_key(Path(manifest["target_root"])) != key:
                 continue
             if manifest.get("snapshot_type") != "full_localization":
                 continue
-            if manifest.get("written_target_lang") == target_lang:
-                return False
             loc = manifest_path.parent / "localization"
-            if loc.is_dir():
-                snapshots.append((str(manifest.get("created_at") or manifest_path), loc))
+            snapshots.append((str(manifest.get("created_at") or manifest.get("timestamp") or manifest_path), loc))
         if not snapshots:
             return None
         loc = min(snapshots, key=lambda entry: entry[0])[1]
+        if not loc.is_dir():
+            return None
         for file in core.gather_yml_files(loc):
-            if core.parse_localization_file(file)[0] == target_lang:
-                return True
+            try:
+                if core.parse_localization_file(file)[0] == target_lang:
+                    return True
+            except Exception:
+                continue
         return False
 
     def _first_seen_japanese_candidate(self, mod_root: Path, *, target_lang=None) -> bool:
@@ -6765,10 +6798,7 @@ class App(BaseTk):
                 item["mod_root"]=str(mod_root)
                 item["mod_localization"]=str(loc)
                 item["direct_from_status"]=True
-                item["external_translation_mod"]=result.get("external_translation_mod","")
-                item["external_translation_path"]=result.get("external_translation_path","")
-                item["external_translation_localization"]=result.get("external_translation_localization","")
-                item["external_gap_keys"]=[c.get("key") for c in _status_gap_rows(result, external=True) if c.get("key")]
+                _inherit_status_queue_context(item, result)
                 added+=1
         self._refresh_chinese_queue_tree()
         if added:
@@ -6863,13 +6893,11 @@ class App(BaseTk):
         item["mod_localization"] = str(loc)
         item["mod_name"] = result.get("mod", mod_root.name)
         item["direct_from_status"] = True
-        item["external_translation_mod"] = result.get("external_translation_mod", "")
-        item["external_translation_path"] = result.get("external_translation_path", "")
-        item["external_translation_localization"] = result.get("external_translation_localization", "")
-        item["external_gap_keys"] = [c.get("key") for c in _status_gap_rows(result, external=True) if c.get("key")]
+        _inherit_status_queue_context(item, result)
         # Preserve the exact gap set shown in the Translation Status tab for diagnostics/session restore.
-        item["status_gap_candidates"] = _status_gap_rows(result)
-        item["status_gap_count"] = int(result.get("gap_count", 0) or 0)
+        if _item_target_lang(item) == result.get("target_lang", core.DEFAULT_TARGET_LANG):
+            item["status_gap_candidates"] = _status_gap_rows(result)
+            item["status_gap_count"] = int(result.get("gap_count", 0) or 0)
         return item
 
     def _status_results_except_selected(self):
@@ -6924,12 +6952,10 @@ class App(BaseTk):
             if item:
                 mod_root=Path(result.get("path", ""))
                 item["mod_root"]=str(mod_root); item["mod_localization"]=str(loc); item["direct_from_status"]=True
-                item["external_translation_mod"]=result.get("external_translation_mod","")
-                item["external_translation_path"]=result.get("external_translation_path","")
-                item["external_translation_localization"]=result.get("external_translation_localization","")
-                item["external_gap_keys"]=[c.get("key") for c in _status_gap_rows(result, external=True) if c.get("key")]
-                item["status_gap_candidates"] = _status_gap_rows(result)
-                item["status_gap_count"] = int(result.get("gap_count", 0) or 0)
+                _inherit_status_queue_context(item, result)
+                if _item_target_lang(item) == result.get("target_lang", core.DEFAULT_TARGET_LANG):
+                    item["status_gap_candidates"] = _status_gap_rows(result)
+                    item["status_gap_count"] = int(result.get("gap_count", 0) or 0)
                 added += 1
         self._refresh_chinese_queue_tree()
         if added:
@@ -7011,11 +7037,15 @@ class App(BaseTk):
             mod_name = item.get("mod_name") or (Path(mod_root).name if mod_root else Path(loc).name)
             source_lang = "english" if queue_kind == "chinese" else "simp_chinese"
             target_kind = "normal" if queue_kind == "chinese" else "chinese"
+            destination_lang = _item_target_lang(item)
+            if target_kind == "chinese":
+                target_var = getattr(self, "chinese_target_lang_var", None)
+                destination_lang = target_var.get() if target_var is not None else core.DEFAULT_TARGET_LANG
             input_path = Path(loc)
             missing_keys = []
             if missing_only:
                 preferred = "simp_chinese" if queue_kind == "chinese" else "english"
-                gaps = core.scan_translation_gaps(Path(loc), preferred_source=preferred, target_lang=_item_target_lang(item))
+                gaps = core.scan_translation_gaps(Path(loc), preferred_source=preferred, target_lang=destination_lang)
                 origin = "english_only" if source_lang == "english" else "chinese_only"
                 missing_keys = [g.get("key") for g in gaps if g.get("source_origin") == origin and g.get("key")]
                 if not missing_keys:
@@ -7040,9 +7070,12 @@ class App(BaseTk):
             new_item["mod_name"] = mod_name + ("（不足分）" if missing_only else "")
             new_item["mod_root"] = str(mod_root or Path(loc).parent)
             new_item["mod_localization"] = str(loc)
-            for key in ("external_translation_mod","external_translation_path","external_translation_localization","external_gap_keys"):
-                if item.get(key):
-                    new_item[key] = item.get(key)
+            if _item_target_lang(new_item) == _item_target_lang(item):
+                for key in ("external_translation_mod","external_translation_path","external_translation_localization","external_gap_keys"):
+                    if item.get(key):
+                        new_item[key] = item.get(key)
+            else:
+                _inherit_status_queue_context(new_item, {"target_lang": _item_target_lang(item)})
             if missing_only:
                 new_item["missing_only"] = True
                 new_item["missing_source_lang"] = source_lang
@@ -7101,7 +7134,7 @@ class App(BaseTk):
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         backup_root, backup_meta = self._create_full_localization_snapshot(
             target_root, "不足分上書き", category="上書き", source_mod_name=item.get("mod_name", ""),
-            state_label=i18n.t('u1.before_missing_overwrite'), stamp=stamp, target_lang=target_lang
+            state_label=i18n.t('u1.before_missing_overwrite'), stamp=stamp, target_lang=target_lang, backup_kind_id="missing_overwrite"
         )
         _record_written_target(backup_root, backup_meta, target_lang)
         try:
@@ -7295,7 +7328,7 @@ class App(BaseTk):
         stamp=datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         backup_root,_meta=self._create_full_localization_snapshot(
             ext_root,i18n.t('u6.same_name_file_conflict_legacy_translation', target_name=i18n.t("lang." + target_lang)),category="上書き",source_mod_name=src_name,
-            state_label=i18n.t('u6.before_updating_same_name_files_in', target_name=i18n.t("lang." + target_lang)),stamp=stamp, target_lang=target_lang)
+            state_label=i18n.t('u6.before_updating_same_name_files_in', target_name=i18n.t("lang." + target_lang)),stamp=stamp, target_lang=target_lang, backup_kind_id="translation_mod_full_overwrite")
         _record_written_target(backup_root, _meta, target_lang)
         existing_keys = _existing_target_keys(ext_loc, target_lang) if target_lang != core.DEFAULT_TARGET_LANG else set()
         copied=0; replaced=0
@@ -7429,7 +7462,7 @@ class App(BaseTk):
         stamp=datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         backup_root, backup_meta = self._create_full_localization_snapshot(
             ext_root, i18n.t('u6.translation_mod_difference_overwrite', target_name=i18n.t("lang." + target_lang)), category="上書き", source_mod_name=src_name,
-            state_label=i18n.t('u6.source_text_before_difference_overwrite_to', target_name=i18n.t("lang." + target_lang)), stamp=stamp, target_lang=target_lang
+            state_label=i18n.t('u6.source_text_before_difference_overwrite_to', target_name=i18n.t("lang." + target_lang)), stamp=stamp, target_lang=target_lang, backup_kind_id="translation_mod_gap_overwrite"
         )
         _record_written_target(backup_root, backup_meta, target_lang)
         backed=set(); updated=0; added=0
@@ -7522,7 +7555,7 @@ class App(BaseTk):
         stamp=datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         backup_root, backup_meta = self._create_full_localization_snapshot(
             mod_root, i18n.t('u6.source_mod_overwrite'), category="上書き", source_mod_name=mod_name,
-            state_label=i18n.t('u6.source_text_before_direct_source_mod'), stamp=stamp, target_lang=_overwrite_target_lang(self, item)
+            state_label=i18n.t('u6.source_text_before_direct_source_mod'), stamp=stamp, target_lang=_overwrite_target_lang(self, item), backup_kind_id="source_mod_overwrite"
         )
         _record_written_target(backup_root, backup_meta, target_lang)
         existing_keys = _existing_target_keys(loc_root, target_lang) if target_lang != core.DEFAULT_TARGET_LANG else set()
@@ -8110,6 +8143,21 @@ class App(BaseTk):
         self.target_lang_var.set(lang)
         self.target_lang_choice_var.set(_target_lang_choice(lang))
         self._refresh_glossary_import_language_labels()
+        if previous != lang and hasattr(self, "monitor_stop_event"):
+            monitoring = bool(getattr(self, "monitor_thread", None) and self.monitor_thread.is_alive())
+            self._monitor_generation = getattr(self, "_monitor_generation", 0) + 1
+            self.monitor_stop_event.set()
+            self.monitor_force_event.set()
+            controller = getattr(self, "monitor_llm_controller", None)
+            if controller:
+                controller.request_stop(save=False)
+            self.monitor_candidates = []
+            self.monitor_snapshot = {}
+            self.clear_monitor_results()
+            if monitoring:
+                generation = self._monitor_generation
+                self._monitor_restart_generation = generation
+                self.after(100, lambda: self._restart_monitor_after_language_change(generation))
         if previous != lang and hasattr(self, "mod_status_tree"):
             self.mod_research_stop_event.set()
             self.mod_research_results = []
@@ -8120,6 +8168,19 @@ class App(BaseTk):
             self._restore_cached_mod_status()
         if save:
             self._save_llm_preferences()
+
+    def _restart_monitor_after_language_change(self, generation):
+        if generation != getattr(self, "_monitor_restart_generation", None):
+            return
+        if getattr(self, "_closing", False):
+            return
+        if self.monitor_thread and self.monitor_thread.is_alive():
+            self.after(100, lambda: self._restart_monitor_after_language_change(generation))
+            return
+        self._monitor_restart_generation = None
+        self.monitor_thread = None
+        self.monitor_toggle_btn.config(state="normal")
+        self.start_monitor()
 
     def _refresh_relation_target_labels(self, previous, target_lang):
         keys = (
@@ -11856,6 +11917,10 @@ class App(BaseTk):
             while budget.allow_next():
                 kind,payload=self.events.get_nowait()
                 budget.record()
+                if kind == "monitor_event":
+                    generation, kind, payload = payload
+                    if generation != getattr(self, "_monitor_generation", 0):
+                        continue
                 if kind=="models":
                     self.model_combo["values"]=payload
                     if payload and self.model_var.get() not in payload: self.model_var.set(payload[0])

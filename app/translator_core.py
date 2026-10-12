@@ -1756,11 +1756,12 @@ def scan_translation_gaps(root: Path, preferred_source: str = "english", *, targ
 
 def classify_monitor_candidates(provider: str, url: str, model: str, candidates: List[dict],
                                 controller: Optional[TranslationController] = None,
-                                api_key: str = "", batch_size: int = 40) -> Dict[int, bool]:
+                                api_key: str = "", batch_size: int = 40,
+                                target_lang: str = DEFAULT_TARGET_LANG) -> Dict[int, bool]:
     """Use a small LLM only for ambiguous monitor candidates.
 
     Returns ``{candidate_index: True}`` for entries that should be translated to
-    Japanese. Definite missing-file/key candidates should not be passed here.
+    the target language. Definite missing-file/key candidates should not be passed here.
     """
     decisions: Dict[int, bool] = {}
     if not candidates:
@@ -1770,6 +1771,14 @@ def classify_monitor_candidates(provider: str, url: str, model: str, candidates:
 固有の商品名・人名・一般的な略語・コード・型番など、通常そのまま表示してよいものは NO。
 英語などの説明文、UI語、文章、翻訳されるべき一般語は YES。
 出力は入力と同じ番号を使い、必ず `N|||YES` または `N|||NO` の1行だけ。説明は禁止。"""
+    if target_lang != DEFAULT_TARGET_LANG:
+        target_name = target_language_name(target_lang)
+        system = f"""You are a lightweight QA classifier for {target_name} game localization.
+For each line, decide only whether it is untranslated text remaining in the {target_name} version and should be translated into {target_name}.
+Use {target_name} localization conventions, not Japanese conventions.
+Answer NO for proper product names, personal names, common abbreviations, code, and model numbers normally left unchanged in {target_name}.
+Answer YES for foreign-language descriptions, UI terms, sentences, and ordinary words that should be localized into {target_name}.
+Use the same input numbers and output exactly one `N|||YES` or `N|||NO` line per input. No explanations."""
     for start in range(0, len(candidates), max(1, batch_size)):
         if controller:
             controller.wait_if_paused()
