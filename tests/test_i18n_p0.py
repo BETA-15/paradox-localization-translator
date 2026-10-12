@@ -383,6 +383,17 @@ def test_all_added_keys_have_independent_original_cases():
         "p0.no_importable_japanese_localization_was": "u4.target_invalid",
         "p0.japanese_keys": "u4.target_keys",
         "p0.import_glossary_from_japanese_localization": "u4.target_localization_import",
+        # タブの名前はタブだけに使う key（p0.tab_label.*）に移した（収まらない言語で短くするため）
+        "p0.translation_queue": "p0.tab_label.translate",
+        "p0.qa_comparison_editor": "p0.tab_label.review",
+        "p0.difference_scan": "p0.tab_label.diff",
+        "p0.translation_search": "p0.tab_label.search",
+        "p0.glossary": "p0.tab_label.glossary",
+        "p0.model_connection": "p0.tab_label.models",
+        "p0.untranslated_monitor": "p0.tab_label.monitor",
+        "p0.translation_status": "p0.tab_label.status",
+        "p0.restore_backup": "p0.tab_label.backup",
+        "p0.help": "p0.tab_label.help",
     }
     retired = {"p0.missing_only_translation_is_available"}
     assert main._target_language_problems([{"target_lang": "english"}], diff_requested=True)[0] == ""

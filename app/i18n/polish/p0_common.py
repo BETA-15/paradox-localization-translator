@@ -1,6 +1,19 @@
 """P0 共通（タブ名・閉じる処理・全体のイベント・App の外の定数）（polish）。key の頭は単位の名前にする。"""
 
 STRINGS = {
+    'p0.tab_label.translate': 'Tłumacz',
+    'p0.tab_label.chinese': 'Baza chińska',
+    'p0.tab_label.review': 'QA / Porównanie',
+    'p0.tab_label.diff': 'Różnice',
+    'p0.tab_label.search': 'Szukaj',
+    'p0.tab_label.glossary': 'Glosariusz',
+    'p0.tab_label.models': 'Modele',
+    'p0.tab_label.monitor': 'Monitor',
+    'p0.tab_label.status': 'Stan',
+    'p0.tab_label.diagnostic': 'Diagnostyka',
+    'p0.tab_label.backup': 'Kopie zapasowe',
+    'p0.tab_label.settings': 'Ustawienia',
+    'p0.tab_label.help': 'Pomoc',
     'p0.settings.ui_language_frame': 'Język interfejsu',
     'p0.settings.ui_language_label': 'Język',
     'p0.settings.ui_language_note': 'Zmiana nastąpi po ponownym uruchomieniu aplikacji. Trwające tłumaczenia nie zostaną zatrzymane.',
