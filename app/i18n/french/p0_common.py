@@ -1,6 +1,19 @@
 """Traduction française — éléments communs."""
 
 STRINGS = {
+    'p0.tab_label.translate': 'Traduire',
+    'p0.tab_label.chinese': 'Base chinoise',
+    'p0.tab_label.review': 'QA / Comparer',
+    'p0.tab_label.diff': 'Écarts',
+    'p0.tab_label.search': 'Recherche',
+    'p0.tab_label.glossary': 'Glossaire',
+    'p0.tab_label.models': 'Modèles',
+    'p0.tab_label.monitor': 'Surveillance',
+    'p0.tab_label.status': 'État',
+    'p0.tab_label.diagnostic': 'Diagnostic',
+    'p0.tab_label.backup': 'Sauvegardes',
+    'p0.tab_label.settings': 'Paramètres',
+    'p0.tab_label.help': 'Aide',
     'p0.settings.ui_language_frame': 'Langue d’affichage',
     'p0.settings.ui_language_label': 'Langue',
     'p0.settings.ui_language_note': 'Le changement prend effet au redémarrage de l’application. Les traductions en cours ne sont pas arrêtées.',

@@ -1,6 +1,19 @@
 """P0 共通（タブ名・閉じる処理・全体のイベント・App の外の定数）（turkish）。key の頭は単位の名前にする。"""
 
 STRINGS = {
+    'p0.tab_label.translate': 'Çevir',
+    'p0.tab_label.chinese': 'Çince tabanlı',
+    'p0.tab_label.review': 'QA / Karşılaştır',
+    'p0.tab_label.diff': 'Farklar',
+    'p0.tab_label.search': 'Ara',
+    'p0.tab_label.glossary': 'Sözlük',
+    'p0.tab_label.models': 'Modeller',
+    'p0.tab_label.monitor': 'İzleme',
+    'p0.tab_label.status': 'Durum',
+    'p0.tab_label.diagnostic': 'Tanılama',
+    'p0.tab_label.backup': 'Yedekler',
+    'p0.tab_label.settings': 'Ayarlar',
+    'p0.tab_label.help': 'Yardım',
     'p0.settings.ui_language_frame': 'Arayüz dili',
     'p0.settings.ui_language_label': 'Gösterilecek dil',
     'p0.settings.ui_language_note': 'Uygulama yeniden başlatıldığında uygulanır. Süren çeviriler durdurulmaz.',

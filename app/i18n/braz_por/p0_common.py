@@ -1,6 +1,19 @@
 """P0 共通（タブ名・閉じる処理・全体のイベント・App の外の定数）（braz_por）。key の頭は単位の名前にする。"""
 
 STRINGS = {
+    'p0.tab_label.translate': 'Traduzir',
+    'p0.tab_label.chinese': 'Base chinesa',
+    'p0.tab_label.review': 'QA / Comparar',
+    'p0.tab_label.diff': 'Diferenças',
+    'p0.tab_label.search': 'Busca',
+    'p0.tab_label.glossary': 'Glossário',
+    'p0.tab_label.models': 'Modelos',
+    'p0.tab_label.monitor': 'Monitor',
+    'p0.tab_label.status': 'Situação',
+    'p0.tab_label.diagnostic': 'Diagnóstico',
+    'p0.tab_label.backup': 'Backups',
+    'p0.tab_label.settings': 'Configurações',
+    'p0.tab_label.help': 'Ajuda',
     'p0.settings.ui_language_frame': 'Idioma da interface',
     'p0.settings.ui_language_label': 'Idioma de exibição',
     'p0.settings.ui_language_note': 'A alteração entra em vigor após reiniciar o aplicativo. As traduções em andamento não serão interrompidas.',

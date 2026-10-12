@@ -1,6 +1,19 @@
 """简体中文界面文本。"""
 
 STRINGS = {
+    'p0.tab_label.translate': '翻译 / 队列',
+    'p0.tab_label.chinese': '以中文为基准的翻译',
+    'p0.tab_label.review': 'QA / 对比编辑',
+    'p0.tab_label.diff': '差异检查',
+    'p0.tab_label.search': '翻译搜索',
+    'p0.tab_label.glossary': '术语表',
+    'p0.tab_label.models': '模型 / 连接',
+    'p0.tab_label.monitor': '未翻译监视',
+    'p0.tab_label.status': '翻译状况',
+    'p0.tab_label.diagnostic': '综合诊断',
+    'p0.tab_label.backup': '恢复备份',
+    'p0.tab_label.settings': '设置',
+    'p0.tab_label.help': '使用说明',
     "p0.settings.ui_language_frame": "界面语言",
     "p0.settings.ui_language_label": "显示语言",
     "p0.settings.ui_language_note": "重启后生效，不会停止正在运行的翻译。",

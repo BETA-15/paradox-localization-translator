@@ -1,6 +1,19 @@
 """P0 共通（タブ名・閉じる処理・全体のイベント・App の外の定数）（japanese）。key の頭は単位の名前にする。"""
 
 STRINGS = {
+    'p0.tab_label.translate': '翻訳 / キュー',
+    'p0.tab_label.chinese': '中国語基準翻訳',
+    'p0.tab_label.review': 'QA / 比較編集',
+    'p0.tab_label.diff': '差分調査',
+    'p0.tab_label.search': '翻訳検索',
+    'p0.tab_label.glossary': '用語集',
+    'p0.tab_label.models': 'モデル / 接続',
+    'p0.tab_label.monitor': '未翻訳監視',
+    'p0.tab_label.status': '翻訳状況',
+    'p0.tab_label.diagnostic': '総合診断',
+    'p0.tab_label.backup': 'バックアップ復元',
+    'p0.tab_label.settings': '設定',
+    'p0.tab_label.help': '使い方',
     'p0.settings.ui_language_frame': '画面の言語',
     'p0.settings.ui_language_label': '表示する言語',
     'p0.settings.ui_language_note': '再起動すると切り替わります。動いている翻訳は止まりません。',

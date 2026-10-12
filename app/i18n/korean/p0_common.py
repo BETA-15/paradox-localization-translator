@@ -1,6 +1,19 @@
 """P0 共通（タブ名・閉じる処理・全体のイベント・App の外の定数）（korean）。key の頭は単位の名前にする。"""
 
 STRINGS = {
+    'p0.tab_label.translate': '번역 / 대기열',
+    'p0.tab_label.chinese': '중국어 기준 번역',
+    'p0.tab_label.review': 'QA / 비교 편집',
+    'p0.tab_label.diff': '변경분 조사',
+    'p0.tab_label.search': '번역 검색',
+    'p0.tab_label.glossary': '용어집',
+    'p0.tab_label.models': '모델 / 연결',
+    'p0.tab_label.monitor': '미번역 감시',
+    'p0.tab_label.status': '번역 현황',
+    'p0.tab_label.diagnostic': '종합 진단',
+    'p0.tab_label.backup': '백업 복원',
+    'p0.tab_label.settings': '설정',
+    'p0.tab_label.help': '사용 방법',
     'p0.settings.ui_language_frame': '화면 언어',
     'p0.settings.ui_language_label': '표시 언어',
     'p0.settings.ui_language_note': '앱을 다시 시작하면 적용됩니다. 진행 중인 번역은 중단되지 않습니다.',
