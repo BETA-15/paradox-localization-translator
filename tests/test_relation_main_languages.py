@@ -250,6 +250,7 @@ def test_explicit_written_language_and_other_mod_backups(monkeypatch, tmp_path):
     root = mod_fixture(tmp_path)
     backup = main.BACKUP_ROOT / "game" / "source__hash" / "overwrite" / "generation"
     backup.mkdir(parents=True)
+    (backup / "localization").mkdir()
     manifest = {"target_root": str(root), "backup_kind": main.i18n.t('u6.source_mod_overwrite'),
                 "snapshot_type": "full_localization", "written_target_lang": "korean"}
     (backup / "backup_manifest.json").write_text(json.dumps(manifest))
