@@ -8,10 +8,11 @@ STRINGS = {
     'p0.tab_label.search': 'Поиск',
     'p0.tab_label.glossary': 'Глоссарий',
     'p0.tab_label.models': 'Модели',
-    'p0.tab_label.monitor': 'Мониторинг',
+    'p0.tab_label.monitor': 'Монитор',
     'p0.tab_label.status': 'Состояние',
     'p0.tab_label.diagnostic': 'Диагностика',
-    'p0.tab_label.backup': 'Резервные копии',
+    # タブの名前は、ウィンドウの幅 1180 に収めるため短くした（Резервные копии → Копии、Мониторинг → Монитор。v0.13.0）
+    'p0.tab_label.backup': 'Копии',
     'p0.tab_label.settings': 'Настройки',
     'p0.tab_label.help': 'Справка',
     'p0.settings.ui_language_frame': 'Язык интерфейса',

@@ -114,4 +114,4 @@ def measured_widths():
 def test_tab_widths_fit(language, measured_widths):
     result = measured_widths[language]
     assert len(result['labels']) == 13
-    assert result['after'] <= 1400, (language, result)
+    assert result['after'] <= 1140, (language, result)  # 最小の幅 1180 の窓に収まる
