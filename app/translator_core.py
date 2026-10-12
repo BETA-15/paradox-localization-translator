@@ -2267,6 +2267,8 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
         cache_file = output_path / CACHE_FILE_NAME
     cache = load_cache(cache_file) if (resume or cache_file.exists()) else {}
     current_manifest = build_source_manifest(input_path, None if include_target_files else target_lang)
+    if target_lang != DEFAULT_TARGET_LANG:
+        current_manifest["target_lang"] = target_lang
     glossary = load_glossary(Path(glossary_path)) if glossary_path else {}
     zh_refs = build_chinese_reference_map(input_path) if input_path.is_dir() else {}
     exclude = None if include_target_files else target_lang
@@ -3808,6 +3810,8 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
     cache_file.parent.mkdir(parents=True, exist_ok=True)
     cache = load_cache(cache_file) if cache_file.exists() else {}
     current_manifest = build_source_manifest_for_language(input_path, "simp_chinese")
+    if target_lang != DEFAULT_TARGET_LANG:
+        current_manifest["target_lang"] = target_lang
     glossary = load_glossary(Path(glossary_path)) if glossary_path else {}
 
     if input_path.is_file():

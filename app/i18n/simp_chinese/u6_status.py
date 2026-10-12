@@ -1,6 +1,8 @@
 """简体中文界面文本。"""
 
 STRINGS = {
+    'u6.preserve_usable_target_values': '保留现有可用的{target_name}译文。添加缺失键，并更新被判定为未翻译的现有键。写入前会备份整个本地化目录。',
+    'u6.target_overwrite_repaired': '已补全{target_name}的缺失和未翻译键，现有可用译文保持不变。\n写入文件数：{copied}\n备份：{backup_root}\n\n{validation}',
     "u6.english_external_overwrite_unavailable": "英语不能用于覆盖外部翻译模组。请使用覆盖原模组功能。",
     "u6.unsupported_overwrite_language": "{game}无法读取{target_name}，因此不会写入。",
     "u6.preserve_target_values": "保留现有{target_name}值，仅添加缺失的键。写入前会备份整个 localization。",

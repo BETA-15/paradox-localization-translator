@@ -30,6 +30,11 @@ def state():
     return result
 
 
+def existing_value(language):
+    return {'korean': '기존 번역', 'russian': 'Существующий перевод',
+            'simp_chinese': '现有翻译'}.get(language, 'Existing')
+
+
 def setup(tmp_path, monkeypatch, language):
     monkeypatch.setattr(main, 'BACKUP_ROOT', tmp_path / 'backups')
     source = tmp_path / 'source'
@@ -37,7 +42,7 @@ def setup(tmp_path, monkeypatch, language):
     output = tmp_path / 'output'
     write(source / 'localization/english/source_l_english.yml', 'english', {'kept': 'Original', 'added': 'New'})
     existing = external / f'localization/{language}/source_l_{language}.yml'
-    write(existing, language, {'kept': 'Existing'})
+    write(existing, language, {'kept': existing_value(language)})
     write(output / f'{language}/source_l_{language}.yml', language, {'kept': 'Changed', 'added': 'Translated', 'ignored': 'Ignore'})
     item = dict(target_lang=language, mod_root=str(source), input=str(source / 'localization'),
                 output=str(output), external_translation_path=str(external),
@@ -52,7 +57,7 @@ def test_target_overwrites_preserve_existing_values(tmp_path, monkeypatch, langu
     app, item, existing = setup(tmp_path, monkeypatch, language)
     if operation == 'source':
         existing = Path(item['mod_root']) / f'localization/{language}/source_l_{language}.yml'
-        write(existing, language, {'kept': 'Existing'})
+        write(existing, language, {'kept': existing_value(language)})
     before = existing.read_bytes()
     if operation == 'gap':
         ok, reason = main.App._perform_external_gap_overwrite(app, item, False, False)
@@ -64,7 +69,7 @@ def test_target_overwrites_preserve_existing_values(tmp_path, monkeypatch, langu
     else:
         ok, reason = main.App._perform_source_mod_overwrite(app, item, False, False)
     assert ok, reason
-    assert main.core.parse_localization_file(existing)[1]['kept'] == 'Existing'
+    assert main.core.parse_localization_file(existing)[1]['kept'] == existing_value(language)
     values = {}
     for path in main._generated_language_files(existing.parents[1], language):
         header, entries, _ = main.core.parse_localization_file(path)
@@ -154,7 +159,7 @@ def test_current_target_is_used_only_when_item_has_no_language(tmp_path, monkeyp
     item.pop('target_lang')
     ok, reason = main.App._perform_external_gap_overwrite(app, item, False, False)
     assert ok, reason
-    assert main.core.parse_localization_file(existing)[1] == {'kept': 'Existing'}
+    assert main.core.parse_localization_file(existing)[1] == {'kept': existing_value('korean')}
 
 
 @pytest.mark.parametrize('language', ['korean', 'russian', 'german', 'english'])

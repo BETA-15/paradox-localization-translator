@@ -157,16 +157,20 @@ def _record_written_target(backup_root, metadata, target_lang):
         core.save_json(backup_root / "backup_manifest.json", metadata)
 
 
-def _copy_target_output(src, dst, target_lang, existing_keys):
+def _copy_target_output(src, dst, target_lang, existing_keys, replaceable_files=None):
     if target_lang == core.DEFAULT_TARGET_LANG:
         shutil.copy2(src, dst)
         return True
     language, entries, _ = core.parse_localization_file(src)
     if language != target_lang:
         return False
+    updated = False
+    for key, path in (replaceable_files or {}).items():
+        if key in entries:
+            updated = core.update_localization_value(path, key, entries[key]) or updated
     missing = {key: value for key, value in entries.items() if key not in existing_keys}
     if not missing:
-        return False
+        return updated
     text = core.read_localization_text(dst) if dst.exists() else f"l_{target_lang}:\n"
     if not text.endswith("\n"):
         text += "\n"
@@ -184,6 +188,21 @@ def _existing_target_keys(root, target_lang):
         if language == target_lang:
             keys.update(entries)
     return keys
+
+
+def _replaceable_target_key_files(item, target_root, target_loc, target_lang):
+    if target_lang == core.DEFAULT_TARGET_LANG:
+        return {}
+    source_root = Path(item.get("mod_root") or item["input"])
+    coverage = core.analyze_external_translation_coverage(source_root, Path(target_root), target_lang=target_lang)
+    replaceable = {row["key"] for row in coverage.get("gaps", []) if row.get("kind") == "source_copy"}
+    files = {}
+    for path in _generated_language_files(target_loc, target_lang):
+        language, entries, _ = core.parse_localization_file(path)
+        if language == target_lang:
+            for key in replaceable.intersection(entries):
+                files[key] = path
+    return files
 
 
 def _relation_language_items(payload, field, target_lang, *, create=False):
@@ -7116,10 +7135,13 @@ class App(BaseTk):
                 except Exception:
                     continue
             backed = set(); updated = 0; added_values = {}
+            replaceable_files = _replaceable_target_key_files(item, target_root, target_loc, target_lang)
             for key, value in patch_values.items():
                 target = existing_key_file.get(key)
-                if target and target_lang != core.DEFAULT_TARGET_LANG:
+                if target and target_lang != core.DEFAULT_TARGET_LANG and key not in replaceable_files:
                     continue
+                if target_lang != core.DEFAULT_TARGET_LANG and target:
+                    target = replaceable_files[key]
                 if target:
                     if target not in backed and target.exists():
                         try:
@@ -7289,7 +7311,7 @@ class App(BaseTk):
             warning=(
                 i18n.t('u6.a_later_translation_mod_overrides_same', src_name=src_name, value=int(conflict.get('source_position', 0)) + 1, ext_name=ext_name, value_2=int(conflict.get('position', 0)) + 1, value_3=int(conflict.get('path_match_count', 0)), paths=paths, shared=shared, source_only=source_only, target_name=i18n.t("lang." + target_lang)))
             if target_lang != core.DEFAULT_TARGET_LANG:
-                warning += "\n\n" + i18n.t('u6.preserve_target_values', target_name=i18n.t('lang.' + target_lang))
+                warning += "\n\n" + i18n.t('u6.preserve_usable_target_values', target_name=i18n.t('lang.' + target_lang))
             if not messagebox.askyesno(i18n.t('u6.warning_overwrite_later_translation_mod', target_name=i18n.t("lang." + target_lang)),warning,icon="warning"):
                 return False,i18n.t("p0.reason.cancelled")
         stamp=datetime.now().strftime("%Y%m%d_%H%M%S_%f")
@@ -7298,19 +7320,20 @@ class App(BaseTk):
             state_label=i18n.t('u6.before_updating_same_name_files_in', target_name=i18n.t("lang." + target_lang)),stamp=stamp, target_lang=target_lang)
         _record_written_target(backup_root, _meta, target_lang)
         existing_keys = _existing_target_keys(ext_loc, target_lang) if target_lang != core.DEFAULT_TARGET_LANG else set()
+        replaceable_files = _replaceable_target_key_files(item, ext_root, ext_loc, target_lang)
         copied=0; replaced=0
         try:
             for src,dst,_rel in mappings:
                 if dst.exists(): replaced += 1
                 dst.parent.mkdir(parents=True,exist_ok=True)
-                copied += int(_copy_target_output(src, dst, target_lang, existing_keys))
+                copied += int(_copy_target_output(src, dst, target_lang, existing_keys, replaceable_files))
             coverage=core.analyze_external_translation_coverage(Path(item.get("mod_root") or ext_root),ext_root, target_lang=target_lang)
             validation=(i18n.t('u6.post_overwrite_check_no_gaps') if coverage.get("complete") else
                         i18n.t('u6.gaps_remain_after_overwrite', gap_reason=coverage.get('gap_reason', i18n.t('u6.translations_are_missing'))))
             self._invalidate_mod_status_cache_paths([ext_root])
             reason=(i18n.t('u6.updated_later_translation_mod_replaced_shared', copied=copied, replaced=replaced, shared=shared, source_only=source_only, validation=validation, target_name=i18n.t("lang." + target_lang)))
             if target_lang != core.DEFAULT_TARGET_LANG:
-                reason = i18n.t('u6.target_overwrite_preserved', copied=copied, backup_root=backup_root,
+                reason = i18n.t('u6.target_overwrite_repaired', copied=copied, backup_root=backup_root,
                                 validation=validation, target_name=i18n.t('lang.' + target_lang))
             if notify:
                 text = (i18n.t('u6.updated_later_translation_mod_target_files', ext_name=ext_name, copied=copied, replaced=replaced, backup_root=backup_root, validation=validation, target_name=i18n.t("lang." + target_lang))
@@ -7433,12 +7456,15 @@ class App(BaseTk):
         )
         _record_written_target(backup_root, backup_meta, target_lang)
         backed=set(); updated=0; added=0
+        replaceable_files = _replaceable_target_key_files(item, ext_root, ext_loc, target_lang)
         patch_file = ext_loc / core.remap_rel_dir(Path(), target_lang) / core.rename_for_target(Path("paradox_localization_translator_missing_l_japanese.yml"), target_lang, "japanese")
         try:
             for key, value in patch_values.items():
                 target = existing_key_file.get(key)
-                if not target or target_lang != core.DEFAULT_TARGET_LANG:
+                if not target or (target_lang != core.DEFAULT_TARGET_LANG and key not in replaceable_files):
                     continue
+                if target_lang != core.DEFAULT_TARGET_LANG:
+                    target = replaceable_files[key]
                 if target not in backed and target.exists():
                     rel=target.relative_to(ext_root)
                     bdst=backup_root / rel; bdst.parent.mkdir(parents=True,exist_ok=True)
@@ -7513,7 +7539,7 @@ class App(BaseTk):
             warning=(
                 i18n.t('u6.write_translated_files_directly_to_the', mod_name=mod_name, mod_root=mod_root, mappings_count=len(mappings), existing=existing, target_name=i18n.t("lang." + _overwrite_target_lang(self, item))))
             if target_lang != core.DEFAULT_TARGET_LANG:
-                warning += "\n\n" + i18n.t('u6.preserve_target_values', target_name=i18n.t('lang.' + target_lang))
+                warning += "\n\n" + i18n.t('u6.preserve_usable_target_values', target_name=i18n.t('lang.' + target_lang))
             if not messagebox.askyesno(i18n.t('u6.warning_overwrite_mod_directly'), warning, icon="warning"):
                 return False,i18n.t("p0.reason.cancelled")
             if not messagebox.askyesno(i18n.t('u6.final_confirmation'), i18n.t('u6.write_to_the_source_mod_this'), icon="warning"):
@@ -7526,22 +7552,25 @@ class App(BaseTk):
         )
         _record_written_target(backup_root, backup_meta, target_lang)
         existing_keys = _existing_target_keys(loc_root, target_lang) if target_lang != core.DEFAULT_TARGET_LANG else set()
+        replaceable_files = _replaceable_target_key_files(item, mod_root, loc_root, target_lang)
         copied=0; backed=0
         try:
             for src,dst,rel in mappings:
                 if dst.exists():
-                    bdst=backup_root / rel
-                    bdst.parent.mkdir(parents=True,exist_ok=True)
-                    shutil.copy2(dst,bdst); backed += 1
+                    if target_lang == core.DEFAULT_TARGET_LANG:
+                        bdst=backup_root / rel
+                        bdst.parent.mkdir(parents=True,exist_ok=True)
+                        shutil.copy2(dst,bdst)
+                    backed += 1
                 dst.parent.mkdir(parents=True,exist_ok=True)
-                copied += int(_copy_target_output(src, dst, target_lang, existing_keys))
+                copied += int(_copy_target_output(src, dst, target_lang, existing_keys, replaceable_files))
             if (post := core.analyze_mod_translation_status(mod_root, target_lang=target_lang)).get("gap_count", 0):
                 validation_text = i18n.t('u6.the_text_itself_has_gaps_2', value=post.get('gap_reason') or core.gap_reason_text(post.get('candidates', [])))
             else:
                 validation_text = i18n.t('u6.post_overwrite_check_no_gaps')
             reason = i18n.t('u6.files_written_backups', copied=copied, backed=backed, validation_text=validation_text)
             if target_lang != core.DEFAULT_TARGET_LANG:
-                reason = i18n.t('u6.target_overwrite_preserved', copied=copied, backup_root=backup_root,
+                reason = i18n.t('u6.target_overwrite_repaired', copied=copied, backup_root=backup_root,
                                 validation=validation_text, target_name=i18n.t('lang.' + target_lang))
             if notify:
                 text = (i18n.t('u6.overwrote_mod_with_translated_files_files', copied=copied, backed=backed, value=backup_root if backed else i18n.t('u6.no_existing_files'), validation_text=validation_text, target_name=i18n.t("lang." + _overwrite_target_lang(self, item)))
@@ -8230,12 +8259,17 @@ class App(BaseTk):
         reg = self._load_cache_registry()
         rows = [r for r in reg.get(sid, []) if Path(r.get("cache", "")).exists()]
         rows = [r for r in rows if r.get("cache") != str(cache)]
-        rows.append({"cache": str(cache), "input": item["input"], "output": item.get("output", ""),
-                     "mode": mode, "updated_at": datetime.now().isoformat(timespec="seconds")})
+        row = {"cache": str(cache), "input": item["input"], "output": item.get("output", ""),
+               "mode": mode, "updated_at": datetime.now().isoformat(timespec="seconds")}
+        target_lang = _overwrite_target_lang(self, item)
+        if target_lang != core.DEFAULT_TARGET_LANG:
+            row["target_lang"] = target_lang
+        rows.append(row)
         reg[sid] = rows[-20:]
         self._save_cache_registry(reg)
 
-    def _find_previous_cache(self, p: Path, exclude: Path | None = None, mode: str = "normal") -> Path | None:
+    def _find_previous_cache(self, p: Path, exclude: Path | None = None, mode: str = "normal",
+                             target_lang: str = core.DEFAULT_TARGET_LANG) -> Path | None:
         sid = self._source_id(p)
         candidates = []
         reg = self._load_cache_registry()
@@ -8246,14 +8280,34 @@ class App(BaseTk):
             if mode == "normal" and row_mode not in (None, "normal"):
                 continue
             cp = Path(row.get("cache", ""))
+            if target_lang != core.DEFAULT_TARGET_LANG:
+                manifest = core.load_source_manifest(cp)
+                recorded_lang = manifest.get("target_lang") or row.get("target_lang")
+                if recorded_lang:
+                    if recorded_lang != target_lang:
+                        continue
+                else:
+                    output = row.get("output")
+                    if not output or not Path(output).is_dir():
+                        continue
+                    try:
+                        output_languages = {core.parse_localization_file(path)[0]
+                                            for path in core.gather_yml_files(Path(output))}
+                    except Exception:
+                        continue
+                    if output_languages != {target_lang}:
+                        continue
             if cp.exists() and (cp.parent / core.SOURCE_MANIFEST_NAME).exists():
                 candidates.append(cp)
         # Registryが失われても、キャッシュフォルダ内のmanifestから復旧できる。
-        if mode == "normal":
+        if mode == "normal" or target_lang != core.DEFAULT_TARGET_LANG:
             for mf in CACHE_ROOT.glob(f"*/{core.SOURCE_MANIFEST_NAME}"):
                 try:
                     manifest = core.load_json(mf, {})
-                    if manifest.get("input") == sid and not manifest.get("language_filter"):
+                    language_matches = (target_lang == core.DEFAULT_TARGET_LANG or manifest.get("target_lang") == target_lang)
+                    mode_matches = (manifest.get("language_filter") == "simp_chinese" if mode == "chinese"
+                                    else not manifest.get("language_filter"))
+                    if manifest.get("input") == sid and mode_matches and language_matches:
                         cp = mf.parent / core.CACHE_FILE_NAME
                         if cp.exists(): candidates.append(cp)
                 except Exception:
@@ -8326,10 +8380,6 @@ class App(BaseTk):
                 result = core.analyze_mod_translation_status(Path(mod_root), preferred_source=source_language, target_lang=target_lang)
                 candidates = list(result.get("candidates", []))
                 status_label = result.get("status", "")
-            if target_lang != core.DEFAULT_TARGET_LANG:
-                target_root = ext_root if ext_root and ext_root.is_dir() else loc
-                existing_keys = _existing_target_keys(target_root, target_lang)
-                candidates = [candidate for candidate in candidates if candidate.get("key") not in existing_keys]
         except Exception as exc:
             record_error(i18n.t('u6.difference_translation_translation_status_gap_assessment'), exc, str(mod_root))
             candidates = list(item.get("status_gap_candidates", [])) if target_lang == core.DEFAULT_TARGET_LANG else []
@@ -8396,15 +8446,17 @@ class App(BaseTk):
             record_error(i18n.t('u3.diff_status_error'), exc, str(p))
             missing = {"count": 0, "details": [], "source_language": source_language, "status_gap_total": 0}
 
+        target_lang = _overwrite_target_lang(self, item)
         previous = (self._find_previous_cache(p, exclude=current_cache, mode=mode)
-                    if _overwrite_target_lang(self, item) == core.DEFAULT_TARGET_LANG else None)
+                    if target_lang == core.DEFAULT_TARGET_LANG else
+                    self._find_previous_cache(p, exclude=current_cache, mode=mode, target_lang=target_lang))
         old_manifest = core.load_source_manifest(previous) if previous else {}
         try:
             if mode == "chinese":
                 new_manifest = core.build_source_manifest_for_language(p, "simp_chinese")
             else:
                 use_repair = self.repair_var.get() if repair_enabled is None else bool(repair_enabled)
-                new_manifest = core.build_source_manifest(p, None if use_repair else core.DEFAULT_TARGET_LANG)
+                new_manifest = core.build_source_manifest(p, None if use_repair else target_lang)
         except Exception:
             return None
 

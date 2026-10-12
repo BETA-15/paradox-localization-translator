@@ -1,6 +1,8 @@
 """U6 翻訳状況・未翻訳監視・Mod 関連付け・上書き（turkish）。key の頭は単位の名前にする。"""
 
 STRINGS = {
+    'u6.preserve_usable_target_values': 'Kullanılabilir mevcut {target_name} çevirileri korunur. Eksik anahtarlar eklenir ve çevrilmemiş olduğu belirlenen mevcut anahtarlar güncellenir. Yazmadan önce yerelleştirme klasörünün tamamı yedeklenir.',
+    'u6.target_overwrite_repaired': 'Eksik ve çevrilmemiş {target_name} anahtarları tamamlandı; kullanılabilir mevcut çeviriler korundu.\nYazılan dosya sayısı: {copied}\nYedek: {backup_root}\n\n{validation}',
     'u6.english_external_overwrite_unavailable': 'İngilizce, harici çeviri moduna yazılamaz. Bunun yerine kaynak modun üzerine yazın.',
     'u6.unsupported_overwrite_language': '{game}, {target_name} dilini okuyamadığından dosya yazılmayacak.',
     'u6.preserve_target_values': 'Mevcut {target_name} değerleri korunur; yalnızca eksik anahtarlar eklenir. Yazmadan önce localization klasörünün tamamı yedeklenir.',
