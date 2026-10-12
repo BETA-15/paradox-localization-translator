@@ -2,6 +2,70 @@
 
 import tkinter as tk
 from tkinter import ttk
+from tkinter import font as tkfont
+
+
+def _tree_heading_columns(tree):
+    columns = [str(column) for column in tree.tk.splitlist(tree.cget("columns"))]
+    displayed = tuple(str(column) for column in tree.tk.splitlist(tree.cget("displaycolumns")))
+    if displayed != ("#all",):
+        columns = [columns[int(column)] if column.isdigit() else column
+                   for column in displayed]
+    if "tree" in map(str, tree.tk.splitlist(tree.cget("show"))):
+        columns.insert(0, "#0")
+    return columns
+
+
+def _tree_heading_scrollbar(tree, event=None):
+    if tree.cget("xscrollcommand") or tree.winfo_width() <= 1:
+        return
+    columns = _tree_heading_columns(tree)
+    if sum(int(tree.column(column)["width"]) for column in columns) <= tree.winfo_width():
+        return
+    manager = tree.winfo_manager()
+    if manager not in ("pack", "grid"):
+        return
+    scrollbar = ttk.Scrollbar(tree.master, orient="horizontal", command=tree.xview)
+    if manager == "pack":
+        scrollbar.pack(side="bottom", fill="x", before=tree)
+    else:
+        geometry = tree.grid_info()
+        scrollbar.grid(row=int(geometry["row"]) + int(geometry.get("rowspan", 1)),
+                       column=geometry["column"], columnspan=geometry.get("columnspan", 1),
+                       sticky="ew")
+    tree.configure(xscrollcommand=scrollbar.set)
+
+
+def fit_tree_headings(tree, padding=12, measure=None):
+    """Grow visible heading columns without reflowing their parent.
+
+    Inject measure for display-free tests. Existing horizontal scrollbars are
+    preserved; a packed/grid-managed table without one gets a bar on overflow.
+    Such a table should have its own parent with a free row below it for grid.
+    """
+    if "headings" not in map(str, tree.tk.splitlist(tree.cget("show"))):
+        return
+    if measure is None:
+        measure = tkfont.nametofont("TkHeadingFont", root=tree).measure
+    for column in _tree_heading_columns(tree):
+        text = tree.heading(column, "text")
+        if not text:
+            continue
+        required = int(measure(text)) + padding
+        current = tree.column(column)
+        options = {}
+        if required > int(current["width"]):
+            options.update(width=required, minwidth=max(int(current["minwidth"]), required))
+        elif tree.tk.getboolean(current["stretch"]) and required > int(current["minwidth"]):
+            options["minwidth"] = required
+        if options:
+            tree.column(column, **options)
+    if not tree.cget("xscrollcommand"):
+        if not getattr(tree, "_heading_scroll_binding", None):
+            tree._heading_scroll_binding = tree.bind("<Configure>",
+                                                     lambda event: _tree_heading_scrollbar(tree, event),
+                                                     add="+")
+        _tree_heading_scrollbar(tree)
 
 
 def scroll_column_height(viewport_height, requested_height):

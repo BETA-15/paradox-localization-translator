@@ -29,7 +29,7 @@ import i18n
 import i18n.help as i18n_help
 import i18n.rule_ids as i18n_rule_ids
 import ui_status
-from ui_layout import FlowRow, ScrollColumn, WrappingLabel, _autowrap, _wrapping_check, initial_pane_split
+from ui_layout import FlowRow, ScrollColumn, WrappingLabel, _autowrap, _wrapping_check, fit_tree_headings, initial_pane_split
 from ui_status import status_value, display_status
 import app_state
 
@@ -1732,6 +1732,7 @@ class App(BaseTk):
                 tree.heading(col, text=label + marker)
             except tk.TclError:
                 pass
+        fit_tree_headings(tree)
 
     def _enable_ctrl_multiselect(self, widget, max_items=None):
         """複数選択操作を全OSで Ctrl+クリック に統一する。
@@ -1864,6 +1865,7 @@ class App(BaseTk):
         sy=ttk.Scrollbar(queue_table,orient="vertical",command=self.queue_tree.yview)
         sx=ttk.Scrollbar(queue_table,orient="horizontal",command=self.queue_tree.xview)
         self.queue_tree.configure(yscrollcommand=sy.set,xscrollcommand=sx.set)
+        fit_tree_headings(self.queue_tree)
         sx.pack(side="bottom",fill="x")
         sy.pack(side="right",fill="y")
         self.queue_tree.pack(side="left",fill="both",expand=True)
@@ -1994,6 +1996,7 @@ class App(BaseTk):
         sy=ttk.Scrollbar(chinese_queue_table,orient="vertical",command=self.chinese_queue_tree.yview)
         sx=ttk.Scrollbar(chinese_queue_table,orient="horizontal",command=self.chinese_queue_tree.xview)
         self.chinese_queue_tree.configure(yscrollcommand=sy.set,xscrollcommand=sx.set)
+        fit_tree_headings(self.chinese_queue_tree)
         sx.pack(side="bottom",fill="x")
         sy.pack(side="right",fill="y")
         self.chinese_queue_tree.pack(side="left",fill="both",expand=True)
@@ -2548,6 +2551,7 @@ class App(BaseTk):
         sy = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
         sx = ttk.Scrollbar(frame, orient="horizontal", command=tree.xview)
         tree.configure(yscrollcommand=sy.set, xscrollcommand=sx.set)
+        fit_tree_headings(tree)
         tree.pack(side="top", fill="both", expand=True)
         sx.pack(side="bottom", fill="x")
         sy.pack(side="right", fill="y")
@@ -2671,6 +2675,7 @@ class App(BaseTk):
         rys=ttk.Scrollbar(left,command=self.review_tree.yview); self.review_tree.configure(yscrollcommand=rys.set)
         rxs=ttk.Scrollbar(left,orient="horizontal",command=self.review_tree.xview)
         self.review_tree.configure(xscrollcommand=rxs.set)
+        fit_tree_headings(self.review_tree)
         rxs.pack(side="bottom",fill="x"); rys.pack(side="right",fill="y")
         self.review_tree.pack(side="left",fill="both",expand=True)
 
@@ -2730,6 +2735,7 @@ class App(BaseTk):
         hint.pack(side="bottom", fill="x", pady=(3,0))
         xs=ttk.Scrollbar(left,orient="horizontal",command=self.diff_tree.xview)
         self.diff_tree.configure(xscrollcommand=xs.set)
+        fit_tree_headings(self.diff_tree)
         xs.pack(side="bottom",fill="x"); ys.pack(side="right",fill="y")
         self.diff_tree.pack(side="left", fill="both", expand=True)
 
@@ -2789,6 +2795,7 @@ class App(BaseTk):
         ys = ttk.Scrollbar(search_table, orient="vertical", command=self.search_tree.yview)
         xs = ttk.Scrollbar(search_table, orient="horizontal", command=self.search_tree.xview)
         self.search_tree.configure(yscrollcommand=ys.set, xscrollcommand=xs.set)
+        fit_tree_headings(self.search_tree)
         self.search_tree.grid(row=0, column=0, sticky="nsew")
         ys.grid(row=0, column=1, sticky="ns")
         xs.grid(row=1, column=0, sticky="ew")
@@ -2841,6 +2848,7 @@ class App(BaseTk):
         self._enable_tree_sort(self.glossary_tree)
         my=ttk.Scrollbar(manual,orient="vertical",command=self.glossary_tree.yview); mx=ttk.Scrollbar(manual,orient="horizontal",command=self.glossary_tree.xview)
         self.glossary_tree.configure(yscrollcommand=my.set,xscrollcommand=mx.set)
+        fit_tree_headings(self.glossary_tree)
         self.glossary_tree.pack(fill="both",expand=True); mx.pack(fill="x")
         self.glossary_tree.bind("<Double-1>",lambda e:self.edit_glossary_term())
 
@@ -2872,6 +2880,7 @@ class App(BaseTk):
         self._enable_tree_sort(self.auto_glossary_tree)
         gy=ttk.Scrollbar(generated,orient="vertical",command=self.auto_glossary_tree.yview); gx=ttk.Scrollbar(generated,orient="horizontal",command=self.auto_glossary_tree.xview)
         self.auto_glossary_tree.configure(yscrollcommand=gy.set,xscrollcommand=gx.set)
+        fit_tree_headings(self.auto_glossary_tree)
         self.auto_glossary_tree.pack(fill="both",expand=True); gx.pack(fill="x")
         self.auto_glossary_tree.bind("<Map>",lambda event:self.after_idle(self._refresh_auto_glossary_tree))
         self.glossary_note_var=tk.StringVar(value=i18n.t('u4.note_hint'))
@@ -3308,6 +3317,7 @@ class App(BaseTk):
         sx=ttk.Scrollbar(result_frame,orient="horizontal",command=self.monitor_tree.xview)
         self._enable_tree_sort(self.monitor_tree)
         self.monitor_tree.configure(yscrollcommand=sy.set,xscrollcommand=sx.set)
+        fit_tree_headings(self.monitor_tree)
         self.monitor_tree.grid(row=0,column=0,sticky="nsew")
         sy.grid(row=0,column=1,sticky="ns")
         sx.grid(row=1,column=0,sticky="ew")
@@ -3356,6 +3366,7 @@ class App(BaseTk):
         dsy=ttk.Scrollbar(treewrap,orient="vertical",command=self.discovered_mod_tree.yview)
         dsx=ttk.Scrollbar(treewrap,orient="horizontal",command=self.discovered_mod_tree.xview)
         self.discovered_mod_tree.configure(yscrollcommand=dsy.set,xscrollcommand=dsx.set)
+        fit_tree_headings(self.discovered_mod_tree)
         self.discovered_mod_tree.grid(row=0,column=0,sticky="nsew")
         dsy.grid(row=0,column=1,sticky="ns")
         dsx.grid(row=1,column=0,sticky="ew")
@@ -3414,6 +3425,7 @@ class App(BaseTk):
         sy=ttk.Scrollbar(tree_frame,orient="vertical",command=self.mod_status_tree.yview)
         sx=ttk.Scrollbar(tree_frame,orient="horizontal",command=self.mod_status_tree.xview)
         self.mod_status_tree.configure(yscrollcommand=sy.set, xscrollcommand=sx.set)
+        fit_tree_headings(self.mod_status_tree)
         # pack順の影響で縦バーが下端へ押し出されることがあったため、gridで位置を固定する。
         tree_frame.columnconfigure(0,weight=1)
         tree_frame.rowconfigure(0,weight=1)
@@ -3858,6 +3870,7 @@ class App(BaseTk):
             self.diagnostic_target_tree.heading(c,text=txt); self.diagnostic_target_tree.column(c,width=w,minwidth=w,stretch=False,anchor="w")
         sy=ttk.Scrollbar(tw,orient="vertical",command=self.diagnostic_target_tree.yview); sx=ttk.Scrollbar(tw,orient="horizontal",command=self.diagnostic_target_tree.xview)
         self.diagnostic_target_tree.configure(yscrollcommand=sy.set,xscrollcommand=sx.set)
+        fit_tree_headings(self.diagnostic_target_tree)
         tw.rowconfigure(0,weight=1); tw.columnconfigure(0,weight=1)
         self.diagnostic_target_tree.grid(row=0,column=0,sticky="nsew"); sy.grid(row=0,column=1,sticky="ns"); sx.grid(row=1,column=0,sticky="ew")
         tbtn=FlowRow(targets); tbtn.pack(side="bottom",fill="x",pady=(7,0))
@@ -3882,6 +3895,7 @@ class App(BaseTk):
             self.diagnostic_tree.heading(c,text=txt); self.diagnostic_tree.column(c,width=w,minwidth=w,stretch=False,anchor="w")
         sy2=ttk.Scrollbar(rw,orient="vertical",command=self.diagnostic_tree.yview); sx2=ttk.Scrollbar(rw,orient="horizontal",command=self.diagnostic_tree.xview)
         self.diagnostic_tree.configure(yscrollcommand=sy2.set,xscrollcommand=sx2.set)
+        fit_tree_headings(self.diagnostic_tree)
         rw.rowconfigure(0,weight=1); rw.columnconfigure(0,weight=1)
         self.diagnostic_tree.grid(row=0,column=0,sticky="nsew"); sy2.grid(row=0,column=1,sticky="ns"); sx2.grid(row=1,column=0,sticky="ew")
         self.diagnostic_tree.bind("<<TreeviewSelect>>", self._on_diagnostic_result_selected)
@@ -4311,6 +4325,7 @@ class App(BaseTk):
         sy=ttk.Scrollbar(treebox,orient='vertical',command=self.backup_restore_tree.yview)
         sx=ttk.Scrollbar(treebox,orient='horizontal',command=self.backup_restore_tree.xview)
         self.backup_restore_tree.configure(yscrollcommand=sy.set,xscrollcommand=sx.set)
+        fit_tree_headings(self.backup_restore_tree)
         treebox.rowconfigure(0,weight=1); treebox.columnconfigure(0,weight=1)
         self.backup_restore_tree.grid(row=0,column=0,sticky='nsew')
         sy.grid(row=0,column=1,sticky='ns')
@@ -6558,6 +6573,7 @@ class App(BaseTk):
         for c,txt,w in (("mod","Mod",240),("class",i18n.t('u6.manual_classification_2'),110),("sources",i18n.t('u6.linked_sources'),70),("path",i18n.t('u6.location_3'),360)):
             mt.heading(c,text=txt); mt.column(c,width=w,minwidth=w,stretch=False,anchor="w")
         msy=ttk.Scrollbar(lf,orient="vertical",command=mt.yview); msx=ttk.Scrollbar(lf,orient="horizontal",command=mt.xview); mt.configure(yscrollcommand=msy.set,xscrollcommand=msx.set)
+        fit_tree_headings(mt)
         lf.rowconfigure(0,weight=1); lf.columnconfigure(0,weight=1); mt.grid(row=0,column=0,sticky="nsew"); msy.grid(row=0,column=1,sticky="ns"); msx.grid(row=1,column=0,sticky="ew")
         mt_actions=ttk.Frame(lf); mt_actions.grid(row=2,column=0,columnspan=2,sticky="ew",pady=(7,0))
         role_var=tk.StringVar(value="auto"); current_path=tk.StringVar(value="")
@@ -6569,6 +6585,7 @@ class App(BaseTk):
         st=ttk.Treeview(srcbox,columns=("mod","path"),show="headings",selectmode="extended")
         st.heading("mod",text=i18n.t('u6.source_mod_4')); st.heading("path",text=i18n.t('u6.location_3')); st.column("mod",width=260,minwidth=260,stretch=False); st.column("path",width=480,minwidth=480,stretch=False)
         ssy=ttk.Scrollbar(srcbox,orient="vertical",command=st.yview); ssx=ttk.Scrollbar(srcbox,orient="horizontal",command=st.xview); st.configure(yscrollcommand=ssy.set,xscrollcommand=ssx.set)
+        fit_tree_headings(st)
         srcbox.rowconfigure(0,weight=1); srcbox.columnconfigure(0,weight=1); st.grid(row=0,column=0,sticky="nsew"); ssy.grid(row=0,column=1,sticky="ns"); ssx.grid(row=1,column=0,sticky="ew")
         src_actions=ttk.Frame(srcbox); src_actions.grid(row=2,column=0,columnspan=2,sticky="ew",pady=(7,0))
 
@@ -7995,7 +8012,8 @@ class App(BaseTk):
         self._enable_tree_sort(self.profile_tree)
         pscroll_x=ttk.Scrollbar(pf,orient="horizontal",command=self.profile_tree.xview)
         self.profile_tree.configure(xscrollcommand=pscroll_x.set)
-        self.profile_tree.pack(fill="both",expand=True); pscroll_x.pack(fill="x")
+        fit_tree_headings(self.profile_tree)
+        pscroll_x.pack(side="bottom",fill="x"); self.profile_tree.pack(fill="both",expand=True)
         self.profile_tree.bind("<Double-1>",lambda e:self.apply_profile_from_tree())
 
         bench=ttk.LabelFrame(right,text=i18n.t('u5.speed_comparison'),padding=8); bench.pack(fill="both",expand=True)
@@ -8013,11 +8031,14 @@ class App(BaseTk):
 
         cols=("provider","model","requests","avg","tps","fail")
         self.stats_tree=ttk.Treeview(bench,columns=cols,show="headings",height=16)
-        for c,txt,w in (("provider",i18n.t('u5.provider'),100),("model",i18n.t('u5.model'),330),("requests",i18n.t('u5.requests'),70),("avg",i18n.t('u5.average_seconds'),90),("tps","tokens/s",100),("fail",i18n.t('u5.failure_rate'),90)):
-            self.stats_tree.heading(c,text=txt); self.stats_tree.column(c,width=w,minwidth=w,stretch=False,anchor="center" if c not in ("model",) else "w")
+        for c,txt,w in (("provider",i18n.t('u5.provider'),100),("model",i18n.t('u5.model'),180),("requests",i18n.t('u5.requests'),70),("avg",i18n.t('u5.average_seconds'),90),("tps","tokens/s",100),("fail",i18n.t('u5.failure_rate'),90)):
+            # モデル名の列だけ伸び縮みさせ、ほかの列（右端の tokens/s・失敗率を含む）が枠に収まるようにする
+            self.stats_tree.heading(c,text=txt); self.stats_tree.column(c,width=w,minwidth=(140 if c=="model" else w),stretch=(c=="model"),anchor="center" if c not in ("model",) else "w")
         self._enable_tree_sort(self.stats_tree)
         sscroll_x=ttk.Scrollbar(bench,orient="horizontal",command=self.stats_tree.xview)
-        self.stats_tree.configure(xscrollcommand=sscroll_x.set); self.stats_tree.pack(fill="both",expand=True); sscroll_x.pack(fill="x")
+        # 横のスクロールバーを先に下へ置く（後に置くと、高さが足りないとき伸びる表に押し出されて見えなくなる）
+        self.stats_tree.configure(xscrollcommand=sscroll_x.set); sscroll_x.pack(side="bottom",fill="x"); self.stats_tree.pack(fill="both",expand=True)
+        fit_tree_headings(self.stats_tree)
 
         self.refresh_model_stats_ui(); self.refresh_profiles_ui()
 
@@ -8332,6 +8353,7 @@ class App(BaseTk):
                 pass
         for column, key in (("jpmod", 'u6.translation_mod'), ("jpmod_gaps", 'u6.translation_mod_gaps')):
             self.mod_status_tree.heading(column, text=i18n.t(key, target_name=i18n.t("lang." + target_lang)))
+        fit_tree_headings(self.mod_status_tree)
         self._set_mod_status_detail_text(i18n.t('u6.select_a_mod_to_see_research', target_name=i18n.t("lang." + target_lang)))
 
     def _refresh_glossary_import_language_labels(self):
@@ -11786,7 +11808,9 @@ class App(BaseTk):
             self.glossary_actual_path_var.set(i18n.t('u4.language_file', path=p))
         for tree_name in ("glossary_tree","auto_glossary_tree"):
             tree=getattr(self,tree_name,None)
-            if tree is not None and hasattr(tree,"heading"): tree.heading("dst",text=label)
+            if tree is not None and hasattr(tree,"heading"):
+                tree.heading("dst",text=label)
+                fit_tree_headings(tree)
         problem=core.glossary_file_problem(p)
         if problem:
             self._glossary_unsafe_path=p.resolve()

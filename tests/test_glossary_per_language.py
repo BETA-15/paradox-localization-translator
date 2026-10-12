@@ -8,6 +8,12 @@ import pytest
 import main
 
 
+@pytest.fixture(autouse=True)
+def display_free_heading_fit(monkeypatch):
+    """Persistence tests use row-only trees, not Tk widgets or fonts."""
+    monkeypatch.setattr(main, "fit_tree_headings", lambda tree: None)
+
+
 class Variable:
     def __init__(self, value=""):
         self.value = value
