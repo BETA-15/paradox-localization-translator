@@ -11,7 +11,7 @@ import help_doc_status as hs  # noqa: E402
 import i18n  # noqa: E402
 
 # 全文の訳が出そろっていなければならない言語（段階1の U8 で english、段階2で残りを足す）
-REQUIRED_LANGUAGES: tuple = ("english", "simp_chinese", "spanish", "polish", "braz_por", "turkish", "russian", "korean")
+REQUIRED_LANGUAGES: tuple = ("english", "simp_chinese", "spanish", "polish", "braz_por", "turkish", "russian", "korean", "french", "german")
 
 
 def test_japanese_original_reproduces_the_v0_12_manual_layout():
