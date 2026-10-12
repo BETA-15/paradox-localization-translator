@@ -12,6 +12,7 @@ import os
 import subprocess
 import sys
 from collections import Counter
+from string import Formatter
 from typing import Optional
 
 from . import (braz_por, english, french, german, japanese, korean, polish, russian, simp_chinese, spanish,
@@ -42,7 +43,31 @@ UNKNOWN = Counter()      # どの言語にも無かった key
 
 class _KeepMissing(dict):
     def __missing__(self, key):
-        return "{" + key + "}"
+        return _MissingField(key)
+
+
+class _MissingField:
+    def __init__(self, key):
+        self.key = key
+
+    def __format__(self, spec):
+        return "{" + self.key + (":" + spec if spec else "") + "}"
+
+    def __getattr__(self, name):
+        return _MissingField(self.key + "." + name)
+
+    def __getitem__(self, key):
+        return _MissingField(self.key + "[" + str(key) + "]")
+
+
+class _MissingFormatter(Formatter):
+    def convert_field(self, value, conversion):
+        if isinstance(value, _MissingField) and conversion:
+            return _MissingField(value.key + "!" + conversion)
+        return super().convert_field(value, conversion)
+
+
+_FORMATTER = _MissingFormatter()
 
 
 def strings(lang: str) -> dict:
@@ -82,7 +107,7 @@ def t(key: str, **fields) -> str:
         return key
     if not fields:
         return template
-    return template.format_map(_KeepMissing({k: v for k, v in fields.items()}))
+    return _FORMATTER.vformat(template, (), _KeepMissing(fields))
 
 
 def t_lang(lang: str, key: str, **fields) -> str:
@@ -90,7 +115,7 @@ def t_lang(lang: str, key: str, **fields) -> str:
     template = lookup(key, lang)
     if template is None:
         return key
-    return template.format_map(_KeepMissing(fields)) if fields else template
+    return _FORMATTER.vformat(template, (), _KeepMissing(fields)) if fields else template
 
 
 # ---------------------------------------------------------------- OS の言語

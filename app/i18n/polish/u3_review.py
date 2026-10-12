@@ -1,6 +1,7 @@
 """U3 QA/比較編集・差分・検索（polish）。key の頭は単位の名前にする。"""
 
 STRINGS = {
+    'u3.error': 'Błąd',
     'u3.choose_pair': 'Wybierz parę tekstu źródłowego i japońskiego tłumaczenia.',
     'u3.source_language': 'Język źródłowy',
     'u3.source_yaml': 'Źródłowy YAML',

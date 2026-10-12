@@ -132,6 +132,23 @@ def _current_target_lang(app):
     return _target_lang_from_choice(var.get()) if var is not None else core.DEFAULT_TARGET_LANG
 
 
+def _file_target_lang(path, fallback=core.DEFAULT_TARGET_LANG):
+    try:
+        language, _, _ = core.parse_localization_file(Path(path))
+        if language in core.TARGET_LANGUAGES:
+            return language
+    except (OSError, ValueError):
+        pass
+    return fallback
+
+
+def _editor_target_lang(app, editor):
+    path = getattr(app, editor + "_dst_var").get()
+    if path == getattr(app, editor + "_target_path", None):
+        return getattr(app, editor + "_target_lang", core.DEFAULT_TARGET_LANG)
+    return _file_target_lang(path, _current_target_lang(app))
+
+
 def _overwrite_target_lang(app, item):
     return _item_target_lang(item) if item.get("target_lang") else _current_target_lang(app)
 
@@ -2568,7 +2585,7 @@ class App(BaseTk):
         else:
             return
 
-        target_lang = _item_target_lang(item) if origin in ("normal", "chinese") else core.DEFAULT_TARGET_LANG
+        target_lang = _item_target_lang(item) if origin in ("normal", "chinese") else r.get("target_lang", core.DEFAULT_TARGET_LANG)
         pairs = self._collect_qa_diff_pairs(source_root, target_root, source_langs, target_lang=target_lang)
         if not pairs:
             messagebox.showinfo(APP_NAME, i18n.t('u3.pair_not_found', label=label))
@@ -2576,8 +2593,6 @@ class App(BaseTk):
         selected_pairs = self._choose_qa_diff_pairs(pairs, i18n.t('u3.choose_pair_from', label=label))
         if not selected_pairs:
             return
-        if origin == "chinese" and target_lang == "korean":
-            self._set_target_lang(target_lang, save=False)
         if destination == "review":
             self.notebook.select(self.tab_review)
             self.load_review_pairs(selected_pairs)
@@ -2791,15 +2806,15 @@ class App(BaseTk):
         self.glossary_base_import_btn=ttk.Button(gbar,text=i18n.t('u4.import_base'),command=self.import_glossary_from_base_game)
         self.glossary_base_import_btn.pack(side="left")
         self.glossary_import_menu=tk.Menu(gbar,tearoff=False)
-        self.glossary_import_menu.add_command(label=i18n.t('u4.target_import_yaml', target_name=i18n.t("lang." + _current_target_lang(self))),command=lambda:self.import_glossary_from_japanese_source("file"))
-        self.glossary_import_menu.add_command(label=i18n.t('u4.target_import_mod', target_name=i18n.t("lang." + _current_target_lang(self))),command=lambda:self.import_glossary_from_japanese_source("folder"))
-        self.glossary_jp_import_btn=ttk.Menubutton(gbar,text=i18n.t('u4.target_import_files', target_name=i18n.t("lang." + _current_target_lang(self))),menu=self.glossary_import_menu)
+        self.glossary_import_menu.add_command(label=i18n.t('u4.target_import_yaml', target_name=i18n.t("lang." + _glossary_language(self))),command=lambda:self.import_glossary_from_japanese_source("file"))
+        self.glossary_import_menu.add_command(label=i18n.t('u4.target_import_mod', target_name=i18n.t("lang." + _glossary_language(self))),command=lambda:self.import_glossary_from_japanese_source("folder"))
+        self.glossary_jp_import_btn=ttk.Menubutton(gbar,text=i18n.t('u4.target_import_files', target_name=i18n.t("lang." + _glossary_language(self))),menu=self.glossary_import_menu)
         self.glossary_jp_import_btn.pack(side="left",padx=(6,0))
-        self.glossary_base_help_label=ttk.Label(generated,text=i18n.t('u4.target_base_help', target_name=i18n.t("lang." + _current_target_lang(self))),foreground="#8a5a00",wraplength=560,justify="left")
+        self.glossary_base_help_label=ttk.Label(generated,text=i18n.t('u4.target_base_help', target_name=i18n.t("lang." + _glossary_language(self))),foreground="#8a5a00",wraplength=560,justify="left")
         self.glossary_base_help_label.pack(fill="x",anchor="w",pady=(0,4))
-        self.glossary_generated_help_label=ttk.Label(generated,text=i18n.t('u4.target_generated_help', target_name=i18n.t("lang." + _current_target_lang(self))),foreground="#666",wraplength=560,justify="left")
+        self.glossary_generated_help_label=ttk.Label(generated,text=i18n.t('u4.target_generated_help', target_name=i18n.t("lang." + _glossary_language(self))),foreground="#666",wraplength=560,justify="left")
         self.glossary_generated_help_label.pack(fill="x",anchor="w",pady=(0,4))
-        self.auto_glossary_drop_hint=ttk.Label(generated,text=(i18n.t('u4.target_drop_help', target_name=i18n.t("lang." + _current_target_lang(self))) if DND_AVAILABLE else i18n.t('u4.drop_unavailable')),foreground="#555")
+        self.auto_glossary_drop_hint=ttk.Label(generated,text=(i18n.t('u4.target_drop_help', target_name=i18n.t("lang." + _glossary_language(self))) if DND_AVAILABLE else i18n.t('u4.drop_unavailable')),foreground="#555")
         self.auto_glossary_drop_hint.pack(fill="x",anchor="w",pady=(0,6))
         self.auto_glossary_include_phrases_var=tk.BooleanVar(value=False)
         ttk.Checkbutton(generated,text=i18n.t('u4.include_phrases'),variable=self.auto_glossary_include_phrases_var).pack(anchor="w",pady=(0,4))
@@ -8235,7 +8250,7 @@ class App(BaseTk):
         self._set_mod_status_detail_text(i18n.t('u6.select_a_mod_to_see_research', target_name=i18n.t("lang." + target_lang)))
 
     def _refresh_glossary_import_language_labels(self):
-        target_name=i18n.t("lang." + _current_target_lang(self))
+        target_name=i18n.t("lang." + _glossary_language(self))
         menu=getattr(self,"glossary_import_menu",None)
         if menu is not None:
             menu.entryconfigure(0,label=i18n.t('u4.target_import_yaml',target_name=target_name))
@@ -10212,12 +10227,13 @@ class App(BaseTk):
     def load_diff_inspector(self):
         src=Path(self.diff_src_var.get()); dst=Path(self.diff_dst_var.get())
         if not src.exists() or not dst.exists():
-            messagebox.showerror(APP_NAME,i18n.t('u3.select_diff_files', target_name=i18n.t("lang." + _current_target_lang(self)))); return
+            messagebox.showerror(APP_NAME,i18n.t('u3.select_diff_files', target_name=i18n.t("lang." + _editor_target_lang(self, "diff")))); return
         if self.diff_load_worker and self.diff_load_worker.is_alive():
             self.diff_summary_var.set(i18n.t('u3.diff_background')); return
         self.diff_batch_contexts=[]
         self.diff_summary_var.set(i18n.t('u3.diff_background_hint'))
-        target_lang=_current_target_lang(self)
+        target_lang=_file_target_lang(dst, _editor_target_lang(self, "diff"))
+        self.diff_target_lang=target_lang; self.diff_target_path=str(dst)
         def work():
             try:
                 source_lang,source_entries,_=core.parse_localization_file(src)
@@ -10234,21 +10250,25 @@ class App(BaseTk):
             return
         if len(pairs)==1:
             self.diff_src_var.set(str(pairs[0]["source"])); self.diff_dst_var.set(str(pairs[0]["target"]))
+            self.diff_target_lang=_file_target_lang(pairs[0]["target"], pairs[0].get("target_language", core.DEFAULT_TARGET_LANG))
+            self.diff_target_path=str(pairs[0]["target"])
             self.load_diff_inspector(); return
         if self.diff_load_worker and self.diff_load_worker.is_alive():
             self.diff_summary_var.set(i18n.t('u3.diff_background')); return
         self.diff_src_var.set(str(pairs[0]["source"])); self.diff_dst_var.set(str(pairs[0]["target"]))
         self.diff_summary_var.set(i18n.t('u3.diff_batch_background', count=len(pairs)))
-        target_lang=_current_target_lang(self)
+        for pair in pairs:
+            pair["target_language"]=_file_target_lang(pair["target"], pair.get("target_language", core.DEFAULT_TARGET_LANG))
         def work():
             contexts=[]; errors=[]
             for pair in pairs:
                 try:
+                    target_lang=pair["target_language"]
                     lang,source,_=core.parse_localization_file(Path(pair["source"]))
                     _,target,_=core.parse_localization_file(Path(pair["target"]))
                     rows=core.compare_localization_entries(source,target,lang,target_lang)
                     contexts.append({"source_path":Path(pair["source"]),"target_path":Path(pair["target"]),"lang":lang,
-                                     "source_entries":source,"target_entries":target,"rows":list(rows or [])})
+                                     "source_entries":source,"target_entries":target,"rows":list(rows or []),"target_lang":target_lang})
                 except Exception as exc:
                     errors.append(f'{Path(pair.get("source","")).name}: {exc}')
             self.events.put(('diff_inspector_batch_loaded',(contexts,errors)))
@@ -10261,12 +10281,12 @@ class App(BaseTk):
         self.diff_rows=list(rows or []); self.diff_row_by_key={r['key']:r for r in self.diff_rows}
         for iid in self.diff_tree.get_children(): self.diff_tree.delete(iid)
         self.diff_tree_key_map={}
-        labels={'missing':i18n.t('u3.missing'),'untranslated':i18n.t('u3.untranslated'),'extra':i18n.t('u3.target_only', target_name=i18n.t("lang." + _current_target_lang(self))),'ok':i18n.t('u3.matched')}
+        labels={'missing':i18n.t('u3.missing'),'untranslated':i18n.t('u3.untranslated'),'extra':i18n.t('u3.target_only', target_name=i18n.t("lang." + _editor_target_lang(self, "diff"))),'ok':i18n.t('u3.matched')}
         counts={k:0 for k in labels}; parents={}
         for status in ('missing','untranslated','extra','ok'):
             parents[status]=self.diff_tree.insert('','end',iid=f'diff_group_{status}',text=labels[status],open=status!='ok',values=('',''),tags=(status,))
         for row in self.diff_rows: counts[row['status']]=counts.get(row['status'],0)+1
-        self.diff_summary_var.set(i18n.t('u3.diff_summary_rendering', missing=counts['missing'], untranslated=counts['untranslated'], extra=counts['extra'], ok=counts['ok'], target_name=i18n.t("lang." + _current_target_lang(self))))
+        self.diff_summary_var.set(i18n.t('u3.diff_summary_rendering', missing=counts['missing'], untranslated=counts['untranslated'], extra=counts['extra'], ok=counts['ok'], target_name=i18n.t("lang." + _editor_target_lang(self, "diff"))))
         self._populate_diff_rows_chunked(0,parents)
 
     def _populate_diff_rows_chunked(self, start, parents, chunk=400):
@@ -10279,13 +10299,14 @@ class App(BaseTk):
         else:
             counts={k:0 for k in ('missing','untranslated','extra','ok')}
             for row in self.diff_rows: counts[row['status']]=counts.get(row['status'],0)+1
-            self.diff_summary_var.set(i18n.t('u3.diff_summary', missing=counts['missing'], untranslated=counts['untranslated'], extra=counts['extra'], ok=counts['ok'], target_name=i18n.t("lang." + _current_target_lang(self))))
+            self.diff_summary_var.set(i18n.t('u3.diff_summary', missing=counts['missing'], untranslated=counts['untranslated'], extra=counts['extra'], ok=counts['ok'], target_name=i18n.t("lang." + _editor_target_lang(self, "diff"))))
 
     def _activate_diff_context(self, index):
         if not (0 <= index < len(self.diff_batch_contexts)):
             return
         c=self.diff_batch_contexts[index]
         self.diff_src_var.set(str(c["source_path"])); self.diff_dst_var.set(str(c["target_path"]))
+        self.diff_target_lang=c.get("target_lang", core.DEFAULT_TARGET_LANG); self.diff_target_path=str(c["target_path"])
         self.diff_source_lang=c["lang"]; self.diff_source_entries=c["source_entries"]; self.diff_target_entries=c["target_entries"]
         self.diff_rows=c["rows"]; self.diff_row_by_key={r['key']:r for r in self.diff_rows}
 
@@ -10297,7 +10318,7 @@ class App(BaseTk):
             if errors: messagebox.showerror(APP_NAME,i18n.t('u3.diff_no_files', value='\n'.join(errors[:20])))
             return
         self._activate_diff_context(0)
-        labels={'missing':i18n.t('u3.missing'),'untranslated':i18n.t('u3.untranslated'),'extra':i18n.t('u3.target_only', target_name=i18n.t("lang." + _current_target_lang(self))),'ok':i18n.t('u3.matched')}
+        labels={'missing':i18n.t('u3.missing'),'untranslated':i18n.t('u3.untranslated'),'extra':i18n.t('u3.target_only', target_name=i18n.t("lang." + _editor_target_lang(self, "diff"))),'ok':i18n.t('u3.matched')}
         parents={status:self.diff_tree.insert('','end',iid=f'diff_batch_group_{status}',text=label,open=status!='ok',values=('',''),tags=(status,)) for status,label in labels.items()}
         counts={k:0 for k in labels}; n=0
         for ci,c in enumerate(self.diff_batch_contexts):
@@ -10307,7 +10328,7 @@ class App(BaseTk):
                 self.diff_tree.insert(parents[status],'end',iid=iid,values=(file_label,row['key']),tags=(status,))
                 self.diff_tree_key_map[iid]=row['key']; self.diff_tree_record_map[iid]=(ci,row['key'])
         failed=len(errors or [])
-        self.diff_summary_var.set((i18n.t('u3.diff_batch_summary_failed', count=len(self.diff_batch_contexts), missing=counts["missing"], untranslated=counts["untranslated"], extra=counts["extra"], ok=counts["ok"], target_name=i18n.t("lang." + _current_target_lang(self)), failed=failed) if failed else i18n.t('u3.diff_batch_summary', count=len(self.diff_batch_contexts), missing=counts["missing"], untranslated=counts["untranslated"], extra=counts["extra"], ok=counts["ok"], target_name=i18n.t("lang." + _current_target_lang(self)))))
+        self.diff_summary_var.set((i18n.t('u3.diff_batch_summary_failed', count=len(self.diff_batch_contexts), missing=counts["missing"], untranslated=counts["untranslated"], extra=counts["extra"], ok=counts["ok"], target_name=i18n.t("lang." + _editor_target_lang(self, "diff")), failed=failed) if failed else i18n.t('u3.diff_batch_summary', count=len(self.diff_batch_contexts), missing=counts["missing"], untranslated=counts["untranslated"], extra=counts["extra"], ok=counts["ok"], target_name=i18n.t("lang." + _editor_target_lang(self, "diff")))))
         if failed:
             messagebox.showwarning(APP_NAME,i18n.t('u3.diff_batch_skipped', failed=failed, value='\n'.join((errors or [])[:20])))
 
@@ -10338,7 +10359,7 @@ class App(BaseTk):
         try:
             target=Path(self.diff_dst_var.get())
             self._backup_before_diff_write([str(target)])
-            core.upsert_localization_values(target, {key:value}, _current_target_lang(self))
+            core.upsert_localization_values(target, {key:value}, _editor_target_lang(self, "diff"))
             self._invalidate_status_after_diff_write([str(target), self.diff_src_var.get()])
             if len(self.diff_batch_contexts)>1:
                 pairs=[{"source":c["source_path"],"target":c["target_path"],"lang":c["lang"]} for c in self.diff_batch_contexts]
@@ -10422,7 +10443,7 @@ class App(BaseTk):
             keys = ([r["key"] for r in self.diff_rows if r["status"] in ("missing","untranslated") and r.get("source")]
                     if all_missing else [k for k in self._selected_diff_keys() if self.diff_row_by_key.get(k,{}).get("source")])
             single={"source_path":Path(self.diff_src_var.get()),"target_path":Path(self.diff_dst_var.get()),"lang":self.diff_source_lang or "english",
-                    "source_entries":self.diff_source_entries,"target_entries":self.diff_target_entries,"rows":self.diff_rows}
+                    "source_entries":self.diff_source_entries,"target_entries":self.diff_target_entries,"rows":self.diff_rows,"target_lang":_editor_target_lang(self, "diff")}
             tasks=[(0,key) for key in keys]
         contexts=self.diff_batch_contexts if len(self.diff_batch_contexts)>1 else [single]
         tasks=_dedupe_diff_translation_tasks(contexts,tasks)
@@ -10432,8 +10453,9 @@ class App(BaseTk):
         self.diff_controller = core.TranslationController(progress_callback=lambda p:self.events.put(("diff_translate_progress", p)))
         self.llm_operation = "差分翻訳"
         self.diff_message_var.set(i18n.t('u3.diff_translating', count=len(tasks)))
-        target_lang = _current_target_lang(self)
-        glossary_path = _existing_language_glossary(self.glossary_path_var.get().strip(),target_lang)
+        glossary_paths = {context.get("target_lang", core.DEFAULT_TARGET_LANG):
+                         _existing_language_glossary(self.glossary_path_var.get().strip(), context.get("target_lang", core.DEFAULT_TARGET_LANG))
+                         for context in contexts}
         diff_settings = {
             "normalize_spacing": _normalize_spacing_enabled(self),
             "url": self.url_var.get().strip(), "model": self.model_var.get().strip(),
@@ -10442,13 +10464,15 @@ class App(BaseTk):
         }
         def work():
             try:
-                glossary = core.load_glossary(Path(glossary_path)) if glossary_path else {}
+                glossaries = {language: core.load_glossary(Path(path)) if path else {} for language, path in glossary_paths.items()}
                 outputs = {}
                 spaces_removed = 0
                 untranslated = []
                 for i, (ci,key) in enumerate(tasks, 1):
                     if self.diff_controller.stop_event.is_set(): raise core.StopRequested()
                     context=contexts[ci]; source_lang=context["lang"]
+                    target_lang=context.get("target_lang", core.DEFAULT_TARGET_LANG)
+                    glossary=glossaries[target_lang]
                     self.events.put(("diff_translate_status", (i, len(tasks), f'{Path(context["source_path"]).name} / {key}')))
                     source_text=context["source_entries"][key]
                     problem=""
@@ -10477,7 +10501,8 @@ class App(BaseTk):
                     outputs.setdefault(str(context["target_path"]),{})[key]=translated
                 backups = self._backup_before_diff_write(list(outputs)) if outputs else []
                 for target_path,values in outputs.items():
-                    core.upsert_localization_values(Path(target_path),values,target_lang)
+                    language=next(context.get("target_lang", core.DEFAULT_TARGET_LANG) for context in contexts if str(context["target_path"]) == target_path)
+                    core.upsert_localization_values(Path(target_path),values,language)
                 if outputs:
                     self._invalidate_status_after_diff_write(
                         list(outputs) + [str(contexts[ci]["source_path"]) for ci,_key in tasks])
@@ -10795,7 +10820,7 @@ class App(BaseTk):
 
     def run_review_qa(self):
         if len(self.review_batch_contexts)>1:
-            pairs=[{"source":c["source_path"],"target":c["target_path"],"lang":c["lang"]} for c in self.review_batch_contexts]
+            pairs=[{"source":c["source_path"],"target":c["target_path"],"lang":c["lang"],"target_language":c.get("target_lang", core.DEFAULT_TARGET_LANG)} for c in self.review_batch_contexts]
             self._start_review_pairs_background(pairs)
             return
         self._start_review_background(load_files=not bool(self.review_target_entries))
@@ -10804,17 +10829,19 @@ class App(BaseTk):
         if self.review_worker and self.review_worker.is_alive():
             self.qa_summary_var.set(i18n.t('u3.qa_background')); return
         self._clear_pending_review_qa_log()
-        target_lang=_current_target_lang(self)
-        glossary_path=_existing_language_glossary(self.glossary_path_var.get(),target_lang)
+        pairs=[dict(pair, target_language=_file_target_lang(pair["target"], pair.get("target_language", core.DEFAULT_TARGET_LANG))) for pair in pairs]
+        glossary_paths={pair["target_language"]:_existing_language_glossary(self.glossary_path_var.get(),pair["target_language"]) for pair in pairs}
+        self.review_target_lang=pairs[0]["target_language"]; self.review_target_path=str(pairs[0]["target"])
         self.qa_summary_var.set(i18n.t('u3.qa_batch_background', count=len(pairs)))
         def work():
             contexts=[]; errors=[]
             try:
-                glossary=core.load_glossary(glossary_path) if glossary_path else {}
+                glossaries={language:core.load_glossary(path) if path else {} for language,path in glossary_paths.items()}
             except Exception as exc:
                 errors.append({"source_file":"","target_file":"","source_language":"","stage":"glossary_read","error_type":type(exc).__name__,"message":str(exc),"action":i18n.t('u3.cancel_qa')})
                 self.events.put(('review_qa_batch_loaded',(contexts,errors))); return
             for pair in pairs:
+                target_lang=pair["target_language"]; glossary=glossaries[target_lang]
                 source_path=Path(pair["source"]); target_path=Path(pair["target"]); lang=str(pair.get("lang") or "")
                 stage="source_read"
                 try:
@@ -10837,7 +10864,8 @@ class App(BaseTk):
         self._clear_pending_review_qa_log()
         dst=Path(self.review_dst_var.get()) if self.review_dst_var.get() else None
         src=Path(self.review_src_var.get()) if self.review_src_var.get() else None
-        target_lang=_current_target_lang(self)
+        target_lang=_editor_target_lang(self, "review")
+        self.review_target_lang=target_lang; self.review_target_path=str(dst or "")
         glossary_path=_existing_language_glossary(self.glossary_path_var.get(),target_lang)
         existing_target=dict(self.review_target_entries); existing_source=dict(self.review_source_entries); existing_lang=self.review_source_lang
         self.qa_summary_var.set(i18n.t('u3.qa_background_hint'))
@@ -10875,7 +10903,7 @@ class App(BaseTk):
         notices=sum(x['severity']=='notice' for x in self.review_issues)
         self.review_last_qa_contexts=[{"source_path":Path(self.review_src_var.get()) if self.review_src_var.get() else "",
                                       "target_path":Path(self.review_dst_var.get()) if self.review_dst_var.get() else "",
-                                      "lang":source_lang,"target_lang":_current_target_lang(self),
+                                      "lang":source_lang,"target_lang":_editor_target_lang(self, "review"),
                                       "source_entries":source_entries,"target_entries":target_entries,"issues":self.review_issues}]
         self.review_last_qa_errors=[]; self._set_review_qa_log_enabled(True)
         self._set_review_auto_repair_enabled(_qa_contexts_have_repairable_errors(self.review_last_qa_contexts))
@@ -10887,6 +10915,7 @@ class App(BaseTk):
             return
         c=self.review_batch_contexts[index]
         self.review_src_var.set(str(c["source_path"])); self.review_dst_var.set(str(c["target_path"]))
+        self.review_target_lang=c.get("target_lang", core.DEFAULT_TARGET_LANG); self.review_target_path=str(c["target_path"])
         self.review_source_lang=c["lang"]; self.review_source_entries=c["source_entries"]; self.review_target_entries=c["target_entries"]
         self.review_issues=c["issues"]; self.review_issue_by_key={}
         for issue in self.review_issues: self.review_issue_by_key.setdefault(issue['key'],[]).append(issue)
@@ -11008,7 +11037,7 @@ class App(BaseTk):
                     self.review_tree.selection_set(iid); self.review_tree.see(iid); break
 
     def save_review_glossary_term(self):
-        target_lang=_current_target_lang(self)
+        target_lang=_editor_target_lang(self, "review")
         key=self._selected_review_key()
         if not key:
             messagebox.showinfo(APP_NAME, i18n.t('u4.review_selection'))
@@ -11056,7 +11085,7 @@ class App(BaseTk):
         self.issue_text.set(i18n.t('u3.ai_proofreading'))
         self.llm_operation = i18n.t('u3.ai_typo_check')
         self.proofread_controller=core.TranslationController(progress_callback=lambda p:self.events.put(("proofread_progress",p)))
-        target_lang = _current_target_lang(self)
+        target_lang = _editor_target_lang(self, "review")
         glossary_path = _existing_language_glossary(self.glossary_path_var.get().strip(),target_lang)
         proofread_settings = {
             "url": self.url_var.get().strip(), "model": self.model_var.get().strip(),
@@ -11075,7 +11104,8 @@ class App(BaseTk):
         self.proofread_thread.start()
 
     def bulk_unify_review_terms(self):
-        if not _japanese_glossary_only(self): return
+        if _editor_target_lang(self, "review") != core.DEFAULT_TARGET_LANG:
+            messagebox.showinfo(APP_NAME,i18n.t('p0.this_feature_is_available_only')); return
         src = Path(self.review_src_var.get()) if self.review_src_var.get() else None
         dst = Path(self.review_dst_var.get()) if self.review_dst_var.get() else None
         if not src or not src.exists() or not dst or not dst.exists():
@@ -11139,7 +11169,7 @@ class App(BaseTk):
         return []
 
     def start_auto_glossary_generation(self, origin, target_lang=None):
-        target_lang=target_lang or _current_target_lang(self)
+        target_lang=target_lang or (_editor_target_lang(self, origin) if origin in ("review", "diff") else _current_target_lang(self))
         if origin == "chinese":
             # 中国語基準キューは項目ごとに翻訳先を持つ（日本語・韓国語）。選んだ項目の翻訳先の用語集に作る
             item_targets={_item_target_lang(item) for _index, item in self._selected_chinese_queue_entries()}
@@ -11302,7 +11332,7 @@ class App(BaseTk):
             self.auto_glossary_status_var.set(status)
 
     def _start_glossary_import_thread(self, worker, status=None, target_lang=None):
-        target_lang=target_lang or _current_target_lang(self)
+        target_lang=target_lang or _glossary_language(self)
         if self.auto_glossary_controller is not None:
             messagebox.showinfo(APP_NAME,i18n.t('u4.generation_busy_import'))
             return False
@@ -11348,7 +11378,7 @@ class App(BaseTk):
         return {"records":records,"japanese_keys":len(jp_entries),"japanese_files":jp_files,"english":counts.get("english",0),"chinese":counts.get("simp_chinese",0),"unmatched":unmatched,"source_files":source_files,"root":Path(root)}
 
     def _start_japanese_glossary_import(self, targets, source_kind, label, mode, target_lang=None):
-        target_lang=target_lang or _current_target_lang(self)
+        target_lang=target_lang or _glossary_language(self)
         targets=[Path(x) for x in targets if Path(x).exists()]
         if not targets:
             return
@@ -11385,7 +11415,7 @@ class App(BaseTk):
         self._start_glossary_import_thread(worker,target_lang=target_lang)
 
     def _start_japanese_base_fallback(self, targets, root, game, source_kind, label, mode, target_lang=None):
-        target_lang=target_lang or _current_target_lang(self)
+        target_lang=target_lang or _glossary_language(self)
         def worker():
             self.events.put(("glossary_import_status",i18n.t('u4.target_key_alignment', game=game, target_name=i18n.t("lang." + target_lang))))
             aligned=self._align_japanese_with_base_root(targets,Path(root),target_lang=target_lang)
@@ -11437,34 +11467,34 @@ class App(BaseTk):
         if not candidates:
             msg=i18n.t('u4.no_candidates')
             if stats:
-                msg = i18n.t("u4.target_no_candidates_stats", target_name=i18n.t("lang." + _current_target_lang(self)), japanese=stats.get('japanese_keys',0),
+                msg = i18n.t("u4.target_no_candidates_stats", target_name=i18n.t("lang." + _glossary_language(self)), japanese=stats.get('japanese_keys',0),
                              english=stats.get('english',0), chinese=stats.get('chinese',0), unmatched=stats.get('unmatched',0))
             messagebox.showinfo(APP_NAME,msg)
             return
-        result=core.save_auto_glossary_candidates(core.glossary_path_for_language(self.glossary_path_var.get() or DEFAULT_GLOSSARY,_current_target_lang(self)),candidates,preserve_existing=True)
+        result=core.save_auto_glossary_candidates(core.glossary_path_for_language(self.glossary_path_var.get() or DEFAULT_GLOSSARY,_glossary_language(self)),candidates,preserve_existing=True)
         self.load_glossary_ui(silent=True)
         if hasattr(self,"_refresh_auto_glossary_tree"): self._refresh_auto_glossary_tree()
         self.auto_glossary_status_var.set(i18n.t('u4.import_result', label=label, added=result.get('added',0), total=result.get('total',0)))
         lines=[i18n.t('u4.import_complete', label=label),i18n.t('u4.candidates', count=result.get('total',0)),i18n.t('u4.added', count=result.get('added',0))]
         if stats:
-            lines += ["",i18n.t('u4.target_keys', target_name=i18n.t("lang." + _current_target_lang(self)), count=stats.get('japanese_keys',0)),i18n.t('u4.english_matches', count=stats.get('english',0)),i18n.t('u4.chinese_matches', count=stats.get('chinese',0)),i18n.t('u4.unmatched', count=stats.get('unmatched',0))]
+            lines += ["",i18n.t('u4.target_keys', target_name=i18n.t("lang." + _glossary_language(self)), count=stats.get('japanese_keys',0)),i18n.t('u4.english_matches', count=stats.get('english',0)),i18n.t('u4.chinese_matches', count=stats.get('chinese',0)),i18n.t('u4.unmatched', count=stats.get('unmatched',0))]
             if stats.get('unmatched',0):
                 lines.append(i18n.t('u4.skipped_unmatched', count=stats.get('unmatched',0)))
         messagebox.showinfo(APP_NAME,"\n".join(lines))
 
     def _save_imported_glossary_pairs(self, pairs, source_kind, label, mode="common"):
         if not pairs:
-            messagebox.showinfo(APP_NAME,i18n.t('u4.target_no_pairs', target_name=i18n.t("lang." + _current_target_lang(self))))
+            messagebox.showinfo(APP_NAME,i18n.t('u4.target_no_pairs', target_name=i18n.t("lang." + _glossary_language(self))))
             return
         try:
-            candidates=core.build_import_glossary_candidates(pairs,source_kind=source_kind,mode=mode,target_lang=_current_target_lang(self))
+            candidates=core.build_import_glossary_candidates(pairs,source_kind=source_kind,mode=mode,target_lang=_glossary_language(self))
             self._save_imported_glossary_candidates(candidates,label)
         except Exception as exc:
             record_error(i18n.t('u4.import_context'),exc)
             messagebox.showerror(APP_NAME,str(exc))
 
     def _import_japanese_targets_with_fallback(self, targets, source_kind, label, target_lang=None):
-        target_lang=target_lang or _current_target_lang(self)
+        target_lang=target_lang or _glossary_language(self)
         targets=[Path(x) for x in targets if Path(x).exists()]
         if not targets:
             return
@@ -11477,7 +11507,7 @@ class App(BaseTk):
         self._start_japanese_glossary_import(targets,source_kind,label,mode,target_lang=target_lang)
 
     def import_glossary_from_base_game(self, target_lang=None):
-        target_lang=target_lang or _current_target_lang(self)
+        target_lang=target_lang or _glossary_language(self)
         if self.glossary_import_busy:
             messagebox.showinfo(APP_NAME,i18n.t('u4.import_busy'))
             return
@@ -11502,7 +11532,7 @@ class App(BaseTk):
         self._start_glossary_import_thread(worker,target_lang=target_lang,status=i18n.t('u4.base_started', game=game))
 
     def import_glossary_from_japanese_source(self, kind, target_lang=None):
-        target_lang=target_lang or _current_target_lang(self)
+        target_lang=target_lang or _glossary_language(self)
         if self.glossary_import_busy:
             messagebox.showinfo(APP_NAME,i18n.t('u4.import_busy'))
             return
@@ -11662,6 +11692,8 @@ class App(BaseTk):
         ttk.Button(dialog,text=i18n.t('u4.close'),command=dialog.destroy).pack(pady=8)
 
     def load_glossary_ui(self,silent=False):
+        if hasattr(self,"_refresh_glossary_import_language_labels"):
+            self._refresh_glossary_import_language_labels()
         p=_selected_glossary_path(self)
         label=i18n.t("lang." + _glossary_language(self))
         if hasattr(self,"glossary_actual_path_var"):
@@ -12279,8 +12311,8 @@ class App(BaseTk):
                         counts[c.get("kind","")]=counts.get(c.get("kind",""),0)+1
                         text=(c.get("target") or c.get("source") or "").replace("\n"," ")
                         fp=c.get("target_file") or c.get("source_file") or c.get("logical_file","")
-                        self.monitor_tree.insert("","end",iid=str(i),values=(c.get("kind",""),c.get("confidence",""),Path(fp).name if fp else "",c.get("key",""),text[:500]))
-                    summary=" / ".join(f"{k}: {v}" for k,v in counts.items())
+                        self.monitor_tree.insert("","end",iid=str(i),values=(ui_status.display_monitor_label(c.get("kind","")),ui_status.display_monitor_label(c.get("confidence","")),Path(fp).name if fp else "",c.get("key",""),text[:500]))
+                    summary=" / ".join(f"{ui_status.display_monitor_label(k)}: {v}" for k,v in counts.items())
                     self.monitor_summary_var.set(i18n.t('p0.untranslated_candidates_2', count=len(payload), value=f"　({summary})" if summary else ""))
                     self.monitor_status_var.set(i18n.t('p0.continuous_monitoring_last_checked', value=datetime.now().strftime('%H:%M:%S')))
                 elif kind=="monitor_stopped":
@@ -12308,7 +12340,7 @@ class App(BaseTk):
                     self._schedule_translation_status_state_save("status_append")
                     counts={}
                     for r in self.mod_research_results: counts[r.get("status","")]=counts.get(r.get("status",""),0)+1
-                    summary=" / ".join(f"{k}: {v}" for k,v in counts.items())
+                    summary=" / ".join(f"{display_status(k)}: {v}" for k,v in counts.items())
                     self.mod_status_summary_var.set(i18n.t('p0.scan_results_entries_2', count=len(self.mod_research_results), value=f"　{summary}" if summary else ""))
                 elif kind=="mod_research_progress":
                     i,total,name=payload
@@ -12324,7 +12356,7 @@ class App(BaseTk):
                     else:
                         counts={}
                         for r in self.mod_research_results: counts[r.get("status","")]=counts.get(r.get("status",""),0)+1
-                        summary=" / ".join(f"{k}: {v}" for k,v in counts.items())
+                        summary=" / ".join(f"{display_status(k)}: {v}" for k,v in counts.items())
                         self.mod_status_summary_var.set(i18n.t('p0.scan_complete_entries', count=len(self.mod_research_results), value=f"　{summary}" if summary else ""))
                     self._set_monitor_llm_idle(i18n.t('p0.discovery_llm_idle'),i18n.t('p0.mod_translation_status_scan_completed'))
                     self._save_translation_status_state("status_research_done")

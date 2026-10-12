@@ -113,7 +113,8 @@ def test_japanese_results_match_head(tmp_path):
 def worker_state(tmp_path, language):
     state = app_state(language)
     state.glossary_path_var = Variable(str(tmp_path / "glossary.json"))
-    state.glossary_lang_var = Variable(main._target_lang_choice("japanese"))
+    state.glossary_lang_var = Variable(main._target_lang_choice(language))
+    state.review_dst_var = Variable(str(tmp_path / language / f"terms_l_{language}.yml"))
     state.glossary_import_busy = False
     state.glossary_import_thread = None
     state.auto_glossary_controller = None
@@ -174,6 +175,7 @@ def test_ui_worker_uses_and_saves_captured_target(tmp_path, monkeypatch, languag
         main.App.start_auto_glossary_generation(state, "review")
     assert len(pending) == 1
     state.target_lang_var.set(main._target_lang_choice("german"))
+    state.glossary_lang_var.set(main._target_lang_choice("german"))
     pending[0]()
     events = []
     while not state.events.empty():
@@ -211,6 +213,7 @@ def test_language_selection_refreshes_import_labels(monkeypatch):
     labels = {}
     menu_labels = {}
     state = app_state("japanese")
+    state.glossary_lang_var = Variable(main._target_lang_choice("korean"))
     state.target_lang_choice_var = Variable("")
     state.glossary_import_menu = SimpleNamespace(
         entryconfigure=lambda index, **kwargs: menu_labels.update({index: kwargs["label"]}))

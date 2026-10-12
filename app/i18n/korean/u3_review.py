@@ -1,6 +1,7 @@
 """U3 QA / 비교 편집, 변경분 조사 및 검색 표시 문자열."""
 
 STRINGS = {
+    'u3.error': '오류',
     'u3.choose_pair': '사용할 원문과 일본어 번역의 쌍을 선택하세요.',
     'u3.source_language': '원문 언어',
     'u3.source_yaml': '원문 YAML',

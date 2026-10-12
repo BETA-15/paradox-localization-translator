@@ -10,6 +10,7 @@ from app.i18n.english.u3_review import STRINGS as ENGLISH
 
 
 ORIGINAL_CASES = [
+    ('u3.error', {}, 'エラー'),
     ('u3.choose_pair', {}, '使用する原文と日本語訳の組み合わせを選択してください。'),
     ('u3.source_language', {}, '原文言語'),
     ('u3.source_yaml', {}, '原文YAML'),

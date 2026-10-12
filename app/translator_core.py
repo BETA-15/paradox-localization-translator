@@ -5830,14 +5830,14 @@ def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "engl
         result["status"] = "対象なし"
         result["message_parts"] = [ui_status.message_part(
             'u9.mod_no_sources' if target_lang == "japanese" else 'u9.mod_no_other_sources',
-            mod_name=name, target_name=i18n.t("lang." + target_lang))]
+            mod_name=name, target_name=target_lang)]
         result["message"] = ui_status.build_message(result["message_parts"])
     elif japanese_files > 0 and japanese_keys and not candidates:
         result["status"] = "翻訳あり"
-        result["message_parts"] = [ui_status.message_part('u9.mod_translated.target', mod_name=name, target_name=i18n.t("lang." + target_lang))]
+        result["message_parts"] = [ui_status.message_part('u9.mod_translated.target', mod_name=name, target_name=target_lang)]
         result["message"] = ui_status.build_message(result["message_parts"])
         if external:
-            result["message_parts"].append(ui_status.message_part('u9.mod_external_also.target', translation_mod_name=external['mod'], target_name=i18n.t("lang." + target_lang)))
+            result["message_parts"].append(ui_status.message_part('u9.mod_external_also.target', translation_mod_name=external['mod'], target_name=target_lang))
             result["message"] = ui_status.build_message(result["message_parts"])
     elif external and external.get("complete"):
         result["status"] = "別Modで完全翻訳"
@@ -5846,30 +5846,30 @@ def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "engl
         # Once a separate translation mod covers the effective key set completely,
         # those source-side candidates are not real gaps and must not reach the LLM/UI.
         result["candidates"] = []
-        result["message_parts"] = [ui_status.message_part('u9.mod_external_complete.target', mod_name=name, translation_mod_name=external['mod'], target_name=i18n.t("lang." + target_lang))]
+        result["message_parts"] = [ui_status.message_part('u9.mod_external_complete.target', mod_name=name, translation_mod_name=external['mod'], target_name=target_lang)]
         result["message"] = ui_status.build_message(result["message_parts"])
     elif external:
         result["status"] = "別Mod翻訳・欠損"
         result["gap_count"] = int(external.get("gap_count", 0))
         result["candidates"] = list(external.get("gaps", []))
         gap_counts = gap_origin_counts(result["candidates"])
-        result["message_parts"] = [ui_status.message_part(("u9.mod_external_gaps_" + ("_".join(origin for origin in ("english_only", "chinese_only", "shared", "other") if gap_counts[origin]) or "none")) + ".target", name=name, mod=external["mod"], gap_count=result["gap_count"], **{origin: gap_counts[origin] for origin in ("english_only", "chinese_only", "shared", "other") if gap_counts[origin]}, target_name=i18n.t("lang." + target_lang))]
+        result["message_parts"] = [ui_status.message_part(("u9.mod_external_gaps_" + ("_".join(origin for origin in ("english_only", "chinese_only", "shared", "other") if gap_counts[origin]) or "none")) + ".target", name=name, mod=external["mod"], gap_count=result["gap_count"], **{origin: gap_counts[origin] for origin in ("english_only", "chinese_only", "shared", "other") if gap_counts[origin]}, target_name=target_lang)]
         result["message"] = ui_status.build_message(result["message_parts"])
     elif japanese_files == 0 or not japanese_keys:
         result["status"] = "翻訳なし"
-        result["message_parts"] = [ui_status.message_part('u9.mod_no_translation.target', mod_name=name, target_name=i18n.t("lang." + target_lang))]
+        result["message_parts"] = [ui_status.message_part('u9.mod_no_translation.target', mod_name=name, target_name=target_lang)]
         result["message"] = ui_status.build_message(result["message_parts"])
     elif candidates:
         result["status"] = "欠損あり"
         gap_counts = gap_origin_counts(candidates)
-        result["message_parts"] = [ui_status.message_part(("u9.mod_translation_gaps_" + ("_".join(origin for origin in ("english_only", "chinese_only", "shared", "other") if gap_counts[origin]) or "none")) + ".target", name=name, gap_count=len(candidates), **{origin: gap_counts[origin] for origin in ("english_only", "chinese_only", "shared", "other") if gap_counts[origin]}, target_name=i18n.t("lang." + target_lang))]
+        result["message_parts"] = [ui_status.message_part(("u9.mod_translation_gaps_" + ("_".join(origin for origin in ("english_only", "chinese_only", "shared", "other") if gap_counts[origin]) or "none")) + ".target", name=name, gap_count=len(candidates), **{origin: gap_counts[origin] for origin in ("english_only", "chinese_only", "shared", "other") if gap_counts[origin]}, target_name=target_lang)]
         result["message"] = ui_status.build_message(result["message_parts"])
     else:
         result["status"] = "翻訳あり"
-        result["message_parts"] = [ui_status.message_part('u9.mod_translated_fallback.target', mod_name=name, target_name=i18n.t("lang." + target_lang))]
+        result["message_parts"] = [ui_status.message_part('u9.mod_translated_fallback.target', mod_name=name, target_name=target_lang)]
         result["message"] = ui_status.build_message(result["message_parts"])
     if review_candidate and not external:
-        result["message_parts"].append(ui_status.message_part('u9.mod_review_candidate.target', mod_name=review_candidate.get('mod',''), score=float(review_candidate.get('score',0.0) or 0.0), target_name=i18n.t("lang." + target_lang)))
+        result["message_parts"].append(ui_status.message_part('u9.mod_review_candidate.target', mod_name=review_candidate.get('mod',''), score=float(review_candidate.get('score',0.0) or 0.0), target_name=target_lang))
         result["message"] = ui_status.build_message(result["message_parts"])
     warnings = translation_localization_warnings(
         format_profile,
@@ -5890,7 +5890,7 @@ def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "engl
 
 
 def _translation_status_language_notice(result: dict, mod_root: Path, *, target_lang: str = "japanese") -> dict:
-    target_name = i18n.t("lang." + target_lang)
+    target_name = target_lang
     for part in result.get("message_parts") or []:
         part["fields"]["target_name"] = target_name
     if result.get("external_check_skipped"):
@@ -5900,8 +5900,7 @@ def _translation_status_language_notice(result: dict, mod_root: Path, *, target_
         supported = GAME_LANGUAGES.get(game) or ()
         result["message_parts"].append(ui_status.message_part(
             "u9.unsupported_game_language", game=game, target_name=target_name, target_lang=target_lang,
-            supported_game=game, supported_languages=i18n.t("u9.game_language_separator").join(
-                i18n.t("lang." + language) for language in supported)))
+            supported_game=game, supported_languages=list(supported)))
     result["message"] = ui_status.build_message(result.get("message_parts"))
     return result
 
