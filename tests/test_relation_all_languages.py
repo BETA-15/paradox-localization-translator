@@ -219,10 +219,10 @@ def test_japanese_dual_source_and_qa_match_head(tmp_path, baseline):
 def test_target_templates_preserve_old_japanese_and_match_english_fields():
     workspace = Path(__file__).resolve().parents[1]
     for ui_language, needle, target_name in (("japanese", "日本語", "日本語"), ("english", "Japanese", "Japanese")):
-        contents = subprocess.run(["git", "show", f"HEAD:app/i18n/{ui_language}/u9_core.py"],
-                                  cwd=workspace, capture_output=True, text=True, check=True, timeout=20).stdout
-        old_strings = ast.literal_eval(ast.parse(contents).body[1].value)
+        # .target の key に日本語の名前を差し込むと、日本語だけの key（L4a の前からある key）と同じになる。
+        # （以前は HEAD と比べていたが、コミットした後は自分自身と比べることになるので、今の辞書の中で比べる）
         strings = i18n.strings(ui_language)
+        old_strings = strings
         target_keys = [key for key in strings if key.startswith("u9.") and key.endswith(".target")]
         assert target_keys
         for key in target_keys:

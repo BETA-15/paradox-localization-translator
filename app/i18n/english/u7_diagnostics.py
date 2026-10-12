@@ -98,7 +98,7 @@ STRINGS = {
     'u7.could_not_verify_backup_creation': 'Could not verify backup creation',
     'u7.no_translation_conflicts_need_bulk_choices': 'No translation conflicts need bulk choices. Diagnosed automatic integration targets are processed by “Repair with configured choices” on the left.',
     'u7.japanese_translation_mod_translation': 'Japanese translation mod translation',
-    'u7.source_japanese_translation_mod': 'Source + Japanese translation mod',
+    'u7.source_japanese_translation_mod': 'Automatic consolidation',
     'u7.full_diagnostics_are_already_running_in': 'Full diagnostics are already running in the background.',
     'u7.select_at_least_one_target_mod': 'Select at least one target mod in the Full diagnostics tab.',
     'u7.integration_targets_keys_translation_conflicts_unspecified': 'Integration targets: {integrations} keys / Translation conflicts: {unique_conflicts} / Unspecified: {unresolved}',
