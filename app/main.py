@@ -2537,16 +2537,17 @@ class App(BaseTk):
         if len(pairs) == 1:
             return [pairs[0]]
 
+        target_lang = pairs[0].get("target_language", core.DEFAULT_TARGET_LANG)
         result = {"value": []}
         win = tk.Toplevel(self)
         win.title(title)
         win.geometry("980x520")
         win.transient(self)
         win.grab_set()
-        ttk.Label(win, text=i18n.t('u3.choose_pair'), padding=(10,10,10,4)).pack(anchor="w")
+        ttk.Label(win, text=i18n.t('u3.choose_pair', target_name=i18n.t('lang.' + target_lang)), padding=(10,10,10,4)).pack(anchor="w")
         frame = ttk.Frame(win, padding=(10,0,10,8)); frame.pack(fill="both", expand=True)
         tree = ttk.Treeview(frame, columns=("lang","src","dst"), show="headings", selectmode="browse")
-        for c, label, width in (("lang",i18n.t('u3.source_language'),120),("src",i18n.t('u3.source_yaml'),390),("dst",i18n.t('u3.japanese_yaml'),390)):
+        for c, label, width in (("lang",i18n.t('u3.source_language'),120),("src",i18n.t('u3.source_yaml'),390),("dst",i18n.t('u3.japanese_yaml', target_name=i18n.t('lang.' + target_lang)),390)):
             tree.heading(c, text=label); tree.column(c, width=width, anchor="w")
         sy = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
         sx = ttk.Scrollbar(frame, orient="horizontal", command=tree.xview)
@@ -2621,7 +2622,7 @@ class App(BaseTk):
         target_lang = _item_target_lang(item) if origin in ("normal", "chinese") else r.get("target_lang", core.DEFAULT_TARGET_LANG)
         pairs = self._collect_qa_diff_pairs(source_root, target_root, source_langs, target_lang=target_lang)
         if not pairs:
-            messagebox.showinfo(APP_NAME, i18n.t('u3.pair_not_found', label=label))
+            messagebox.showinfo(APP_NAME, i18n.t('u3.pair_not_found', label=label, target_name=i18n.t('lang.' + target_lang)))
             return
         selected_pairs = self._choose_qa_diff_pairs(pairs, i18n.t('u3.choose_pair_from', label=label))
         if not selected_pairs:
@@ -3528,7 +3529,7 @@ class App(BaseTk):
             i18n.t('u6.candidate_keys_with_source_text_in'),
             i18n.t('u6.80_bundled_source_text_indicates_a', target_name=i18n.t("lang." + target_lang)),
             i18n.t('u6.50_candidate_keys_and_80_base', target_name=i18n.t("lang." + target_lang)),
-            i18n.t('u6.multi_mod_translations_use_a_separate'),
+            i18n.t('u6.multi_mod_translations_use_a_separate' if target_lang == 'japanese' else 'u6.multi_mod_translations_use_a_separate.language', target_name=i18n.t('lang.' + target_lang)),
             i18n.t('u6.structure_scores_names_and_dependencies_are'),
             i18n.t('u6.manual_translation_mod_source_mod_source', target_name=i18n.t("lang." + target_lang)),
             i18n.t('u6.legacy_japanese_translations_in_l_english', target_name=i18n.t("lang." + target_lang)),
@@ -3704,7 +3705,7 @@ class App(BaseTk):
                     (i18n.t('u6.effective_matching_source_mod_candidate', value=format(float(auto.get('effective_source_rate', 0) or 0) * 100, '.1f'), value_2=format(float(auto.get('effective_candidate_rate', 0) or 0) * 100, '.1f'))),
                     i18n.t('u6.candidate_english_chinese_localization', value=i18n.t('u6.yes') if paired_count else i18n.t('u6.no'), paired_count=paired_count, candidate_total=candidate_total),
                     (i18n.t('u6.candidate_source_text_comparison_matches_mismatches', value=int(auto.get('source_text_match_keys', 0) or 0), value_2=int(auto.get('source_text_mismatch_keys', 0) or 0))),
-                    i18n.t('u6.base_game_translation_70_gate', value='PASS' if float(auto.get('candidate_base_rate', 0) or 0) >= 0.7 else 'FAIL'),
+                    i18n.t('u6.base_game_translation_70_gate' if target_lang == 'japanese' else 'u6.base_game_translation_70_gate.language', target_name=i18n.t('lang.' + target_lang), value='PASS' if float(auto.get('candidate_base_rate', 0) or 0) >= 0.7 else 'FAIL'),
                     i18n.t('u6.non_base_game_20_gate', value='PASS' if float(auto.get('candidate_non_base_rate', 0) or 0) <= 0.2 else 'FAIL'),
                     (i18n.t('u6.40_relationship_gate_source_candidate_effective', value='PASS' if auto.get('effective_source_rate_pass') else 'FAIL', value_2='PASS' if auto.get('effective_candidate_rate_pass') else 'FAIL', value_3=int(auto.get('required_match_count', 0) or 0), value_4='PASS' if auto.get('effective_count_pass') else 'FAIL')),
                     i18n.t('u6.candidate_type', candidate_role_text=candidate_role_text),
@@ -3772,6 +3773,7 @@ class App(BaseTk):
         ttk.Button(bar,text=i18n.t('u6.close'),command=win.destroy).pack(side='right')
         token=id(win); self._judgement_log_window=(token,win,box,status,export_btn)
         target_lang = _current_target_lang(self)
+        self._judgement_log_target_lang = target_lang
         def work():
             try: self.events.put(('judgement_log_ready',(token,self._translation_judgement_log_text(target_lang=target_lang))))
             except Exception as exc: self.events.put(('judgement_log_error',(token,str(exc))))
@@ -3801,6 +3803,8 @@ class App(BaseTk):
     def export_relation_report(self):
         """元Modと日本語化Modの紐付けを一覧表（CSV と Markdown）に書き出し、ズレていそうなものに印を付ける。"""
         results=[dict(r) for r in (self.mod_research_results or []) if r.get("path")]
+        target_lang = _current_target_lang(self)
+        self._judgement_log_target_lang = target_lang
         if not results:
             messagebox.showinfo(APP_NAME,i18n.t('u6.no_translation_status_results_research_mods_2'))
             return None
@@ -5187,6 +5191,7 @@ class App(BaseTk):
                 i18n.t('u7.back_up_the_entire_localization_folder' if target_lang == 'japanese' else 'u7.back_up_the_entire_localization_folder.target', target_name=i18n.t('lang.' + target_lang))):
                 return
         self.diagnostic_generation += 1; generation=self.diagnostic_generation
+        self._diagnostic_target_lang = target_lang
         self.diagnostic_running_repair=bool(repair)
         if repair:
             self._set_diagnostic_repair_busy(True)
@@ -6484,6 +6489,7 @@ class App(BaseTk):
     def _annotate_translation_index_with_base_game_keys(self, rows):
         """Attach the owning game's vanilla key set to every Japanese candidate."""
         for row in rows or []:
+            target_lang = row.get("target_lang", core.DEFAULT_TARGET_LANG)
             try:
                 source_data, game = self._base_game_source_data_for_mod(Path(row.get("path", "")))
                 keys = set(source_data.get("english", {})) | set(source_data.get("simp_chinese", {}))
@@ -6494,7 +6500,7 @@ class App(BaseTk):
                 row["base_game_keys"] = set()
                 row["base_game_source_entries"] = {"english": {}, "simp_chinese": {}}
                 row["base_game_name"] = "ゲーム未特定"
-                record_error(i18n.t('u1.base_game_error'), exc, str(row.get("path", "")))
+                record_error(i18n.t('u1.base_game_error') if target_lang == 'japanese' else i18n.t('u1.base_game_error.language', target_name=i18n.t('lang.' + target_lang)), exc, str(row.get("path", "")))
         return rows
 
     def _build_stable_translation_mod_index(self, pool_roots, *, target_lang=None):
@@ -6702,7 +6708,7 @@ class App(BaseTk):
         self.mod_research_stop_event.clear()
         self.mod_research_stop_btn.config(state="normal")
         self.mod_status_summary_var.set(i18n.t('u3.research_progress', count=len(roots)))
-        self._set_monitor_scan_status(i18n.t('u3.research_start', count=len(roots)), i18n.t('u3.research_detail'))
+        self._set_monitor_scan_status(i18n.t('u3.research_start', count=len(roots)), i18n.t('u3.research_detail', target_name=i18n.t('lang.' + _current_target_lang(self))))
         if replace:
             # 調べ直すModの古い結果だけを除く。別の保管場所（ローカル／Workshop）の結果は残して一緒に見られるようにする。
             self.mod_status_search_var.set("")
@@ -6760,11 +6766,11 @@ class App(BaseTk):
                             result["gap_count"] = len(refined)
                             if refined:
                                 result["status"]=status_value("mod_external_gaps")
-                                result["message"]=i18n.t('u3.external_gaps', mod=result['mod'], external_translation_mod=result['external_translation_mod'], count=len(refined), value=core.gap_reason_text(refined, target_lang=target_lang))
+                                result["message"]=i18n.t('u3.external_gaps', target_name=i18n.t('lang.' + target_lang), mod=result['mod'], external_translation_mod=result['external_translation_mod'], count=len(refined), value=core.gap_reason_text(refined, target_lang=target_lang))
                             else:
                                 result["status"]=status_value("mod_external_complete")
                                 result["external_translation_complete"] = True
-                                result["message"]=i18n.t('u3.external_complete', mod=result['mod'], external_translation_mod=result['external_translation_mod'])
+                                result["message"]=i18n.t('u3.external_complete', target_name=i18n.t('lang.' + target_lang), mod=result['mod'], external_translation_mod=result['external_translation_mod'])
                         elif result.get("japanese_files",0)==0 or result.get("japanese_keys",0)==0:
                             if result.get("external_translation_complete"):
                                 result["status"]=status_value("mod_external_complete")
@@ -6772,7 +6778,7 @@ class App(BaseTk):
                                 result["status"]=status_value("mod_external_gaps")
                             else:
                                 result["status"]=status_value("mod_not_translated")
-                                result["message"]=i18n.t('u3.no_japanese', mod=result['mod'])
+                                result["message"]=i18n.t('u3.no_japanese', target_name=i18n.t('lang.' + target_lang), mod=result['mod'])
                         elif refined:
                             result["status"]=status_value("mod_gaps")
                             result["gap_count"] = len(refined)
@@ -7530,7 +7536,7 @@ class App(BaseTk):
         if not ext_root.is_dir() or not ext_loc.is_dir():
             return False,i18n.t('u6.cannot_identify_the_translation_mod_location', target_name=i18n.t("lang." + target_lang))
         if not gap_keys:
-            return False,i18n.t("p0.reason.no_gap_info")
+            return False,i18n.t("p0.reason.no_gap_info", target_name=i18n.t('lang.' + target_lang))
         generated = _generated_language_files(out_root, target_lang)
         translations = {}
         for fp in generated:
@@ -7831,7 +7837,7 @@ class App(BaseTk):
                         ok,reason=self._perform_full_translation_mod_overwrite(item,conflict_target,confirm=False,notify=False)
                     elif policy=='external' and item.get('external_translation_path') and _overwrite_target_lang(self, item) != "english":
                         ok,reason=self._perform_external_gap_overwrite(item,confirm=False,notify=False)
-                        if not ok and reason in {i18n.t("p0.reason.no_gap_info"),i18n.t("p0.reason.no_gap_translation")}:
+                        if not ok and reason in {i18n.t("p0.reason.no_gap_info", target_name=i18n.t('lang.' + _overwrite_target_lang(self, item))),i18n.t("p0.reason.no_gap_translation")}:
                             skipped+=1; details.append(i18n.t('u6.skipped', name=name, reason=reason)); continue
                     else:
                         ok,reason=self._perform_source_mod_overwrite(item,confirm=False,notify=False)
@@ -8832,7 +8838,7 @@ class App(BaseTk):
         if src and dst:
             self.load_review()
         elif files:
-            side = i18n.t('u3.japanese_yaml') if src else i18n.t('u3.source_yaml_languages')
+            side = i18n.t('u3.japanese_yaml', target_name=i18n.t('lang.japanese')) if src else i18n.t('u3.source_yaml_languages')
             self.qa_summary_var.set(i18n.t('u3.drop_other_side', side=side))
         else:
             messagebox.showinfo(APP_NAME,i18n.t('u3.review_drop_files'))
@@ -12194,15 +12200,15 @@ class App(BaseTk):
                     if state and state[0]==token and state[1].winfo_exists():
                         state[3].set(i18n.t('p0.detection_log_generation_error'))
                         state[2].delete('1.0','end'); state[2].insert('1.0',str(msg))
-                    record_error(i18n.t('p0.generate_translation_mod_detection_log'),detail=str(msg))
+                    record_error(i18n.t('p0.generate_translation_mod_detection_log', target_name=i18n.t('lang.' + getattr(self, '_judgement_log_target_lang', _current_target_lang(self)))),detail=str(msg))
                 elif kind=="judgement_log_exported":
                     self.judgement_log_thread=None
                     self.mod_status_summary_var.set(i18n.t('p0.detection_log_exported'))
-                    messagebox.showinfo(APP_NAME,i18n.t('p0.translation_mod_detection_log_exported', payload=payload))
+                    messagebox.showinfo(APP_NAME,i18n.t('p0.translation_mod_detection_log_exported', target_name=i18n.t('lang.' + getattr(self, '_judgement_log_target_lang', _current_target_lang(self))), payload=payload))
                 elif kind=="judgement_log_export_error":
                     self.judgement_log_thread=None
                     self.mod_status_summary_var.set(i18n.t('p0.detection_log_export_error'))
-                    record_error(i18n.t('p0.export_translation_mod_detection_log'),detail=str(payload))
+                    record_error(i18n.t('p0.export_translation_mod_detection_log', target_name=i18n.t('lang.' + getattr(self, '_judgement_log_target_lang', _current_target_lang(self)))),detail=str(payload))
                     messagebox.showerror(APP_NAME,i18n.t('p0.could_not_export_the_detection', payload=payload))
                 elif kind=="diff_inspector_loaded":
                     self._apply_diff_inspector_loaded(*payload)
@@ -12497,7 +12503,7 @@ class App(BaseTk):
                         self.diagnostic_summary_var.set(i18n.t('p0.choose_which_conflicting_version_to'))
                         self._save_diagnostic_state("choices_required")
                         if not self._closing: messagebox.showwarning(APP_NAME,
-                            i18n.t('p0.before_repair_choose_which_version', value=str(payload.get("message", ""))))
+                            i18n.t('p0.before_repair_choose_which_version', target_name=i18n.t('lang.' + getattr(self, '_diagnostic_target_lang', _current_target_lang(self))), value=str(payload.get("message", ""))))
                 elif kind=="diagnostic_done":
                     if int(payload.get("generation",-1))==self.diagnostic_generation:
                         self.diagnostic_thread=None

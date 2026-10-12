@@ -336,4 +336,6 @@ STRINGS = {
     'u9.missing_output.russian': 'No hay un archivo de salida correspondiente en ruso',
     'u9.missing_output.simp_chinese': 'No hay un archivo de salida correspondiente en chino simplificado',
     'u9.missing_output.turkish': 'No hay un archivo de salida correspondiente en turco',
+    'u9.legacy_base_unavailable.language': 'No se obtuvieron las claves del juego base; sin penalización por la excepción de corrección de la traducción en {target_name}',
+    'u9.relation_union_gate.language': 'Umbral de unión de traducciones integrales en {target_name}: cobertura de claves efectivas del candidato {percent:.1f}% → PASS',
 }

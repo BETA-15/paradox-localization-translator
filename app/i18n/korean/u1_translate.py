@@ -138,4 +138,5 @@ STRINGS = {
     'u1.transfer_selected': '선택 항목을 {target_queue} 대기열에 추가했습니다.\n추가: {added}개 / 건너뜀: {skipped}개',
     'u1.queue_retry': '재시도: {mod} ({pos}/{total})',
     'u1.queue_start': '시작: {mod} ({pos}/{total})',
+    'u1.base_game_error.language': '게임 본체 {target_name} 번역 수정 예외',
 }

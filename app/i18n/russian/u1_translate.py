@@ -138,4 +138,5 @@ STRINGS = {
     'u1.transfer_selected': 'В очередь «{target_queue}» добавлены выбранные элементы.\nДобавлено: {added} / Пропущено: {skipped}',
     'u1.queue_retry': 'Повторная попытка: {mod} ({pos}/{total})',
     'u1.queue_start': 'Начало: {mod} ({pos}/{total})',
+    'u1.base_game_error.language': 'Исключение для исправления перевода основной игры (язык: {target_name})',
 }

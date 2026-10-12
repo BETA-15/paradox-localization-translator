@@ -336,4 +336,6 @@ STRINGS = {
     "u9.missing_output.russian": "対応するロシア語の出力ファイルがありません",
     "u9.missing_output.simp_chinese": "対応する簡体字中国語の出力ファイルがありません",
     "u9.missing_output.turkish": "対応するトルコ語の出力ファイルがありません",
+    'u9.legacy_base_unavailable.language': 'ゲーム本体キーを取得できないため、本体{target_name}訳修正例外の減点なし',
+    'u9.relation_union_gate.language': '総合{target_name}訳集合ゲート: 候補有効キー和集合率 {percent:.1f}% → PASS',
 }

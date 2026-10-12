@@ -207,6 +207,11 @@ def restore_ui_language():
     i18n.set_ui_language(previous)
 
 
+ORIGINAL_CASES.append([
+    "u1.base_game_error.language", {"target_name": "日本語"}, "本体日本語訳修正例外"
+])
+
+
 @pytest.mark.parametrize("key,fields,expected", ORIGINAL_CASES)
 def test_original_japanese_display(key, fields, expected):
     i18n.set_ui_language("japanese")

@@ -4866,7 +4866,7 @@ def _translation_mod_weight_legacy(source_name: str, source_keys: set, row: dict
                 i18n.t('u9.legacy_base_no_penalty.target', percent=base_game_match_ratio*100, matched=base_game_match_n, total=len(ja_keys), target_name=i18n.t("lang." + target_lang))
             )
     else:
-        reasons.append(i18n.t('u9.legacy_base_unavailable'))
+        reasons.append(i18n.t('u9.legacy_base_unavailable' if target_lang == 'japanese' else 'u9.legacy_base_unavailable.language', target_name=i18n.t('lang.' + target_lang)))
     if pure_japanese_relation_gate and not ordinary_gate:
         reasons.append(
             i18n.t('u9.legacy_exception_gate.target', percent=precision*100, matched=overlap_n, target_name=i18n.t("lang." + target_lang))
@@ -5391,7 +5391,7 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict,
     )
     if multi_relation_gate:
         reasons.append(
-            i18n.t('u9.relation_union_gate', percent=float(row.get('multi_translation_union_coverage', 0.0))*100)
+                i18n.t('u9.relation_union_gate' if target_lang == 'japanese' else 'u9.relation_union_gate.language', target_name=i18n.t('lang.' + target_lang), percent=float(row.get('multi_translation_union_coverage', 0.0))*100)
         )
     if not translation_shape_gate:
         reasons.append(i18n.t('u9.relation_standalone_excluded.target', target_name=i18n.t("lang." + target_lang)))

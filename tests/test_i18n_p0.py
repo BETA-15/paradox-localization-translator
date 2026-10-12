@@ -126,10 +126,8 @@ FIXED_ORIGINALS = [
     ('p0.background_restore_of_the_translation', '翻訳状況キャッシュバックグラウンド復元'),
     ('p0.background_restore_of_the_full', '総合診断キャッシュバックグラウンド復元'),
     ('p0.detection_log_generation_error', '判定ログ生成エラー'),
-    ('p0.generate_translation_mod_detection_log', '日本語化Mod判定ログ生成'),
     ('p0.detection_log_exported', '判定ログ書き出し完了'),
     ('p0.detection_log_export_error', '判定ログ書き出しエラー'),
-    ('p0.export_translation_mod_detection_log', '日本語化Mod判定ログ書き出し'),
     ('p0.difference_analysis_error', '差分解析エラー'),
     ('p0.background_difference_scan', '差分調査バックグラウンド解析'),
     ('p0.qa_analysis_error', 'QA解析エラー'),
@@ -192,6 +190,9 @@ FIXED_ORIGINALS = [
 ]
 
 DYNAMIC_ORIGINALS = [
+    ('p0.generate_translation_mod_detection_log', {'target_name': '日本語'}, "'日本語化Mod判定ログ生成'"),
+    ('p0.export_translation_mod_detection_log', {'target_name': '日本語'}, "'日本語化Mod判定ログ書き出し'"),
+
     ('p0.no_mods_match', {'query': 'Example'}, "f'検索条件「{query}」に一致するModはありません'"),
     ('p0.provider', {'display': 'Example'}, "f'プロバイダ: {display}'"),
     ('p0.endpoint', {'endpoint': 'Example'}, "f'接続先: {endpoint}'"),
@@ -219,7 +220,7 @@ DYNAMIC_ORIGINALS = [
     ('p0.monitor_llm_connected_models', {'value': 'Example', 'count': 7}, "f'監視用LLM: {value} 接続済み / {count}モデル'"),
     ('p0.cannot_connect_to', {'p': 'Example'}, "f'{p}に接続できません'"),
     ('p0.monitor_llm', {'msg': 'Example'}, "'監視用LLM: ' + msg"),
-    ('p0.translation_mod_detection_log_exported', {'payload': 'Example'}, "f'日本語化Mod判定ログを書き出しました。\\n\\n{payload}'"),
+    ('p0.translation_mod_detection_log_exported', {'payload': 'Example', 'target_name': '日本語'}, "f'日本語化Mod判定ログを書き出しました。\\n\\n{payload}'"),
     ('p0.could_not_export_the_detection', {'payload': 'Example'}, "f'判定ログの書き出しに失敗しました。\\n{payload}'"),
     ('p0.bulk_overwrite_2', {'pos': 7, 'total': 7, 'name': 'Example'}, "f'一括上書き中… {pos}/{total} — {name}'"),
     ('p0.restored_target_pre_restore_backup', {'target': 'Example', 'safety_root': 'Example'}, "f'復元しました。\\n\\n対象: {target}\\n復元前退避: {safety_root}\\n\\n翻訳状況は次回の再調査で再判定されます。'"),
@@ -262,7 +263,7 @@ DYNAMIC_ORIGINALS = [
     ('p0.scan_complete_entries', {'count': 7, 'value': 'Example'}, "f'調査完了: {count}件' + value"),
     ('p0.mod_translation_status_scan_error', {'payload': 'Example'}, "'Mod翻訳状況の調査エラー: ' + payload"),
     ('p0.diagnostic_progress', {'phase': 'Example', 'done': 7, 'total': 7, 'mod': 'Example'}, "f'{phase}中: {done}/{total} — {mod}'"),
-    ('p0.before_repair_choose_which_version', {'value': 'Example'}, "'修復前に本体 / 日本語化Modの重複キーについて優先先の指定が必要です。\\n\\n' + value + '\\n\\n総合診断の『本体/日本語化Mod重複』行を選択し、\\n『本体を残す』または『日本語化Modを残す』を設定してください。\\n設定後、左側の『設定した内容で修復を実行』を押してください。複数行や一括指定も使用できます。'"),
+    ('p0.before_repair_choose_which_version', {'value': 'Example', 'target_name': '日本語'}, "'修復前に本体 / 日本語化Modの重複キーについて優先先の指定が必要です。\\n\\n' + value + '\\n\\n総合診断の『本体/日本語化Mod重複』行を選択し、\\n『本体を残す』または『日本語化Modを残す』を設定してください。\\n設定後、左側の『設定した内容で修復を実行』を押してください。複数行や一括指定も使用できます。'"),
     ('p0.repair_complete_summary', {'count': 7, 'issues': 7}, "'修復・再診断完了' + f': {count} Mod / 要確認 {issues}件'"),
     ('p0.diagnostics_complete_summary', {'count': 7, 'issues': 7}, "'診断完了' + f': {count} Mod / 要確認 {issues}件'"),
     ('p0.post_repair_diagnostics_are_shown', {'value': 'Example'}, "value + '\\n\\n修復後の診断結果を一覧へ表示しています。'"),

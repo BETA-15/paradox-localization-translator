@@ -336,4 +336,6 @@ STRINGS = {
     "u9.missing_output.russian": "没有对应的俄语输出文件",
     "u9.missing_output.simp_chinese": "没有对应的简体中文输出文件",
     "u9.missing_output.turkish": "没有对应的土耳其语输出文件",
+    'u9.legacy_base_unavailable.language': '无法获取游戏本体键，因此不对本体{target_name}翻译修正例外扣分',
+    'u9.relation_union_gate.language': '综合{target_name}翻译并集门槛：候选有效键并集覆盖率 {percent:.1f}% → PASS',
 }

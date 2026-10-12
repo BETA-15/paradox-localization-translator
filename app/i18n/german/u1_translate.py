@@ -138,4 +138,5 @@ STRINGS = {
     'u1.transfer_selected': 'Ausgewählte Einträge zur Warteschlange {target_queue} hinzugefügt.\nHinzugefügt: {added} / Übersprungen: {skipped}',
     'u1.queue_retry': 'Erneuter Versuch: {mod} ({pos}/{total})',
     'u1.queue_start': 'Start: {mod} ({pos}/{total})',
+    'u1.base_game_error.language': 'Ausnahme für Korrekturen der Basisspielübersetzung ({target_name})',
 }

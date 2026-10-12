@@ -422,4 +422,6 @@ STRINGS = {
     'u6.no_untranslated_mod_research_review_is': '未翻訳Modの探索・精査は実行されていません',
     'u6.stop_requested': '探索停止要求済み',
     'u6.stops_safely_after_the_current_research': '現在の探索用LLM応答が終わり次第、安全に停止します',
+    'u6.multi_mod_translations_use_a_separate.language': '  ・総合{target_name}訳は2つ以上の元Modで各200件以上、候補有効キー和集合率70%以上を別ゲートとして使用',
+    'u6.base_game_translation_70_gate.language': '  本体{target_name}訳70%判定: {value}',
 }

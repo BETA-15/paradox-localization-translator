@@ -422,4 +422,6 @@ STRINGS = {
     'u6.no_untranslated_mod_research_review_is': '진행 중인 미번역 모드 조사/검토 없음',
     'u6.stop_requested': '중지 요청됨',
     'u6.stops_safely_after_the_current_research': '현재 조사용 LLM 응답 후 안전하게 중지합니다',
+    'u6.multi_mod_translations_use_a_separate.language': '  · 종합 {target_name} 번역은 원본 모드 2개 이상에서 각각 200개 이상의 키와 후보 유효 키 합집합의 70% 이상 일치율을 별도 기준으로 사용',
+    'u6.base_game_translation_70_gate.language': '  게임 본체 {target_name} 번역 70% 판정: {value}',
 }

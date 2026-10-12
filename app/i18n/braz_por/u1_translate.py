@@ -138,4 +138,5 @@ STRINGS = {
     'u1.transfer_selected': 'Os itens selecionados foram adicionados à fila {target_queue}.\nAdicionados: {added} / Ignorados: {skipped}',
     'u1.queue_retry': 'Nova tentativa: {mod} ({pos}/{total})',
     'u1.queue_start': 'Início: {mod} ({pos}/{total})',
+    'u1.base_game_error.language': 'Exceção de correção da tradução do jogo base em {target_name}',
 }
