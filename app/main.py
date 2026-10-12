@@ -29,6 +29,7 @@ import i18n
 import i18n.help as i18n_help
 import i18n.rule_ids as i18n_rule_ids
 import ui_status
+from ui_layout import FlowRow, WrappingLabel, _autowrap, _wrapping_check, initial_pane_split
 from ui_status import status_value, display_status
 import app_state
 
@@ -1165,7 +1166,9 @@ class App(BaseTk):
         initial_w = min(initial_w, max(960, screen_w - 36))
         initial_h = min(initial_h, max(700, screen_h - 96))
         self.geometry(f"{initial_w}x{initial_h}")
-        self.minsize(1040, 700)
+        # v0.13.0：11言語の画面で文字が切れない最小の幅（1180、測る道具 tools/measure_ui_overflow.py で全言語 0 件）。
+        # 画面がそれより狭いときは画面の幅に合わせる。
+        self.minsize(min(1180, max(960, screen_w - 36)), 700)
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
         self.events = queue.Queue()
@@ -1583,23 +1586,28 @@ class App(BaseTk):
 
         # v0.8.8: 上部ステータスも縦積みをやめ、左右2ブロックにして高さを節約。
         llm_row = ttk.Frame(self, padding=(10,2,10,2)); llm_row.pack(fill="x")
+        # 左右の2つの枠は同じ幅に固定する（文の折り返しで枠の幅が変わると、左右で幅を取り合って画面が固まった）
+        llm_row.columnconfigure(0, weight=1, uniform="llm_banner")
+        llm_row.columnconfigure(1, weight=1, uniform="llm_banner")
         self.llm_banner = tk.Frame(llm_row, bg="#e5e7eb", padx=9, pady=5)
-        self.llm_banner.pack(side="left", fill="x", expand=True, padx=(0,4))
+        self.llm_banner.grid(row=0, column=0, sticky="nsew", padx=(0,4))
         self.llm_status_label = tk.Label(self.llm_banner, textvariable=self.llm_status_var, bg="#e5e7eb", fg="#222222", font=("", 11, "bold"))
         self.llm_status_label.pack(side="left")
-        self.llm_detail_label = tk.Label(self.llm_banner, textvariable=self.llm_detail_var, bg="#e5e7eb", fg="#444444")
-        self.llm_detail_label.pack(side="left", padx=(8,0))
+        self.llm_detail_label = tk.Label(self.llm_banner, textvariable=self.llm_detail_var, bg="#e5e7eb", fg="#444444", wraplength=100, justify="left")
+        _autowrap(self.llm_detail_label)
+        self.llm_detail_label.pack(side="left",fill="x",expand=True,padx=(8,0))
         self.llm_stop_btn = ttk.Button(self.llm_banner, text=i18n.t('p0.stop_translation_llm'), command=self.stop_current_llm, state="disabled")
-        self.llm_stop_btn.pack(side="right")
+        self.llm_stop_btn.pack(side="right",before=self.llm_status_label)
 
         self.monitor_llm_banner = tk.Frame(llm_row, bg="#dbeafe", padx=9, pady=5)
-        self.monitor_llm_banner.pack(side="left", fill="x", expand=True, padx=(4,0))
+        self.monitor_llm_banner.grid(row=0, column=1, sticky="nsew", padx=(4,0))
         self.monitor_llm_status_label = tk.Label(self.monitor_llm_banner, textvariable=self.monitor_llm_status_var, bg="#dbeafe", fg="#1e3a8a", font=("", 10, "bold"))
         self.monitor_llm_status_label.pack(side="left")
-        self.monitor_llm_detail_label = tk.Label(self.monitor_llm_banner, textvariable=self.monitor_llm_detail_var, bg="#dbeafe", fg="#1e3a8a")
-        self.monitor_llm_detail_label.pack(side="left", padx=(8,0))
+        self.monitor_llm_detail_label = tk.Label(self.monitor_llm_banner, textvariable=self.monitor_llm_detail_var, bg="#dbeafe", fg="#1e3a8a", wraplength=100, justify="left")
+        _autowrap(self.monitor_llm_detail_label)
+        self.monitor_llm_detail_label.pack(side="left",fill="x",expand=True,padx=(8,0))
         self.monitor_llm_stop_btn = ttk.Button(self.monitor_llm_banner, text=i18n.t('p0.stop_discovery_llm'), command=self.stop_monitor_llm, state="disabled")
-        self.monitor_llm_stop_btn.pack(side="right")
+        self.monitor_llm_stop_btn.pack(side="right",before=self.monitor_llm_status_label)
 
         # 実際にLLMから返ってきた最新応答を、そのまま確認するための読み取り専用欄。
         # 翻訳用と探索用を分離し、処理が本当に進んでいるか目視できるようにする。
@@ -1777,10 +1785,11 @@ class App(BaseTk):
         main=ttk.Panedwindow(t,orient="horizontal"); main.pack(fill="both",expand=True)
         left=ttk.Frame(main,padding=(0,0,6,0)); right=ttk.Frame(main,padding=(6,0,0,0))
         main.add(left,weight=2); main.add(right,weight=3)
+        initial_pane_split(main, 2, 3)
 
         intro=ttk.LabelFrame(left,text=i18n.t('u1.normal_translation'),padding=9); intro.pack(fill="x")
-        ttk.Label(intro,text=(i18n.t('u1.intro', target_name=i18n.t("lang." + _current_target_lang(self)))),
-                  wraplength=430,foreground="#333",justify="left").pack(fill="x")
+        WrappingLabel(intro,text=(i18n.t('u1.intro', target_name=i18n.t("lang." + _current_target_lang(self)))),
+                  foreground="#333",justify="left").pack(fill="x")
 
         langbox=ttk.LabelFrame(left,text=i18n.t('u1.target_language'),padding=9); langbox.pack(fill="x",pady=(5,0)); langbox.columnconfigure(1,weight=1)
         ttk.Label(langbox,text=i18n.t('u1.target')).grid(row=0,column=0,sticky="w")
@@ -1788,11 +1797,11 @@ class App(BaseTk):
                                             values=[_target_lang_choice(x) for x in core.TARGET_LANGUAGES])
         self.target_lang_combo.grid(row=0,column=1,sticky="w",padx=(6,0))
         self.target_lang_combo.bind("<<ComboboxSelected>>",lambda _e:self._set_target_lang(_target_lang_from_choice(self.target_lang_choice_var.get())))
-        ttk.Label(langbox,text=i18n.t('u1.target_note'),foreground="#555",wraplength=430,justify="left").grid(row=1,column=0,columnspan=2,sticky="w",pady=(4,0))
-        ttk.Label(langbox,text=target_lang_note(),foreground="#8a5a00",wraplength=430,justify="left").grid(row=2,column=0,columnspan=2,sticky="w",pady=(4,0))
+        WrappingLabel(langbox,text=i18n.t('u1.target_note'),foreground="#555",justify="left").grid(row=1,column=0,columnspan=2,sticky="w",pady=(4,0))
+        WrappingLabel(langbox,text=target_lang_note(),foreground="#8a5a00",justify="left").grid(row=2,column=0,columnspan=2,sticky="w",pady=(4,0))
 
         src=ttk.LabelFrame(left,text=i18n.t('u1.input_output'),padding=9); src.pack(fill="x",pady=(5,0)); src.columnconfigure(0,weight=1)
-        ttk.Label(src,text=i18n.t('u1.input_folder')).grid(row=0,column=0,sticky="w")
+        WrappingLabel(src,text=i18n.t('u1.input_folder')).grid(row=0,column=0,sticky="w")
         self.normal_input_entry=ttk.Entry(src,textvariable=self.normal_input_var,state="readonly")
         self.normal_input_entry.grid(row=1,column=0,sticky="ew",pady=(3,0))
         pickbar=ttk.Frame(src); pickbar.grid(row=2,column=0,sticky="ew",pady=(5,0))
@@ -1801,42 +1810,42 @@ class App(BaseTk):
         normal_add_menu.add_command(label=i18n.t('u1.add_folder'),command=self.add_folder)
         self.add_menu_button=ttk.Menubutton(pickbar,text=i18n.t('u1.add'),menu=normal_add_menu)
         self.add_menu_button.pack(side="left")
-        ttk.Label(pickbar,text=i18n.t('u1.add_note'),foreground="#666").pack(side="left",padx=(8,0))
-        ttk.Label(src,textvariable=self.normal_status_var,foreground="#555",wraplength=430,justify="left").grid(row=3,column=0,sticky="w",pady=(4,0))
+        WrappingLabel(pickbar,text=i18n.t('u1.add_note'),foreground="#666").pack(side="left",fill="x",expand=True,padx=(8,0))
+        WrappingLabel(src,textvariable=self.normal_status_var,foreground="#555",justify="left").grid(row=3,column=0,sticky="w",pady=(4,0))
         ttk.Separator(src,orient="horizontal").grid(row=4,column=0,sticky="ew",pady=5)
         ttk.Label(src,text=i18n.t('u1.output_root')).grid(row=5,column=0,sticky="w")
         self.normal_output_entry=ttk.Entry(src,textvariable=self.normal_output_var)
         self.normal_output_entry.grid(row=6,column=0,sticky="ew",pady=(3,0))
-        outbar=ttk.Frame(src); outbar.grid(row=7,column=0,sticky="ew",pady=(5,0))
+        outbar=FlowRow(src); outbar.grid(row=7,column=0,sticky="ew",pady=(5,0))
         self.normal_pick_output_btn=ttk.Button(outbar,text=i18n.t('u1.select'),command=self.pick_normal_output)
-        self.normal_pick_output_btn.pack(side="left")
-        ttk.Button(outbar,text=i18n.t('u1.open'),command=lambda:self._open_path(Path(self.normal_output_var.get()))).pack(side="left",padx=(5,0))
+        outbar.add(self.normal_pick_output_btn, side="left")
+        outbar.add(ttk.Button(outbar,text=i18n.t('u1.open'),command=lambda:self._open_path(Path(self.normal_output_var.get()))), side="left",padx=(5,0))
 
         settings=ttk.LabelFrame(left,text=i18n.t('u1.shared_models'),padding=9); settings.pack(fill="x",pady=(5,0))
-        ttk.Label(settings,text=i18n.t('u1.shared_models_note'),wraplength=430,justify="left").pack(anchor="w")
+        WrappingLabel(settings,text=i18n.t('u1.shared_models_note'),justify="left").pack(anchor="w")
         ttk.Button(settings,text=i18n.t('u1.open_models'),command=lambda:self.notebook.select(self.tab_models)).pack(anchor="w",pady=(6,0))
-        ttk.Checkbutton(settings,text=i18n.t('u1.auto_qa'),variable=self.autoqa_var,command=self._save_llm_preferences).pack(anchor="w",pady=(7,0))
-        ttk.Label(settings,text=i18n.t('u1.qa_note'),foreground="#555",wraplength=430,justify="left").pack(anchor="w",pady=(5,0))
+        _wrapping_check(settings,text=i18n.t('u1.auto_qa'),variable=self.autoqa_var,command=self._save_llm_preferences).pack(anchor="w",pady=(7,0))
+        WrappingLabel(settings,text=i18n.t('u1.qa_note'),foreground="#555",justify="left").pack(anchor="w",pady=(5,0))
 
         qbox=ttk.LabelFrame(right,text=i18n.t('u1.normal_queue'),padding=8); qbox.pack(fill="both",expand=True)
-        qbar=ttk.Frame(qbox); qbar.pack(fill="x",pady=(0,5))
-        self.normal_remove_btn=ttk.Button(qbar,text=i18n.t('u1.remove_selected'),command=self.remove_queue); self.normal_remove_btn.pack(side="left")
-        self.normal_clear_btn=ttk.Button(qbar,text=i18n.t('u1.clear_queue'),command=self.clear_queue); self.normal_clear_btn.pack(side="left",padx=(5,0))
-        self.normal_change_output_btn=ttk.Button(qbar,text=i18n.t('u1.change_output'),command=self.change_output); self.normal_change_output_btn.pack(side="left",padx=(10,0))
-        ttk.Button(qbar,text=i18n.t('u1.view_cache'),command=self.view_selected_cache).pack(side="left",padx=(5,0))
-        self.normal_import_cache_btn=ttk.Button(qbar,text=i18n.t('u1.add_cache'),command=self.import_cache_to_selected); self.normal_import_cache_btn.pack(side="left",padx=(5,0))
+        qbar=FlowRow(qbox); qbar.pack(fill="x",pady=(0,5))
+        self.normal_remove_btn=ttk.Button(qbar,text=i18n.t('u1.remove_selected'),command=self.remove_queue); qbar.add(self.normal_remove_btn, side="left")
+        self.normal_clear_btn=ttk.Button(qbar,text=i18n.t('u1.clear_queue'),command=self.clear_queue); qbar.add(self.normal_clear_btn, side="left",padx=(5,0))
+        self.normal_change_output_btn=ttk.Button(qbar,text=i18n.t('u1.change_output'),command=self.change_output); qbar.add(self.normal_change_output_btn, side="left",padx=(10,0))
+        qbar.add(ttk.Button(qbar,text=i18n.t('u1.view_cache'),command=self.view_selected_cache), side="left",padx=(5,0))
+        self.normal_import_cache_btn=ttk.Button(qbar,text=i18n.t('u1.add_cache'),command=self.import_cache_to_selected); qbar.add(self.normal_import_cache_btn, side="left",padx=(5,0))
 
-        qbar2=ttk.Frame(qbox); qbar2.pack(fill="x",pady=(0,5))
-        self.normal_overwrite_btn=ttk.Button(qbar2,text=i18n.t('u1.overwrite_selected'),command=self.overwrite_selected_translation_to_mod); self.normal_overwrite_btn.pack(side="left")
-        self.normal_qa_btn=ttk.Button(qbar2,text=i18n.t('u1.qa_selected'),command=self.run_selected_translation_qa); self.normal_qa_btn.pack(side="left",padx=(6,0))
-        self.normal_glossary_btn=ttk.Button(qbar2,text=i18n.t('u1.create_glossary'),command=lambda:self.start_auto_glossary_generation("normal")); self.normal_glossary_btn.pack(side="left",padx=(6,0))
-        self.normal_send_qa_btn=ttk.Button(qbar2,text=i18n.t('u1.open_qa'),command=lambda:self._send_pair_to_qa_or_diff("normal","review")); self.normal_send_qa_btn.pack(side="left",padx=(6,0))
-        self.normal_send_diff_btn=ttk.Button(qbar2,text=i18n.t('u1.open_diff'),command=lambda:self._send_pair_to_qa_or_diff("normal","diff")); self.normal_send_diff_btn.pack(side="left",padx=(6,0))
-        self.normal_transfer_btn=ttk.Button(qbar,text=i18n.t('u1.transfer_chinese'),command=lambda:self.transfer_selected_queue_to_opposite("normal",False)); self.normal_transfer_btn.pack(side="left",padx=(10,0))
-        self.normal_transfer_missing_btn=ttk.Button(qbar2,text=i18n.t('u1.queue_chinese_missing'),command=lambda:self.transfer_selected_queue_to_opposite("normal",True)); self.normal_transfer_missing_btn.pack(side="left",padx=(6,0))
-        ttk.Label(qbox,text=i18n.t('u1.overwrite_note'),foreground="#8a5a00",wraplength=900,justify="left").pack(fill="x",anchor="w",pady=(0,5))
+        qbar2=FlowRow(qbox); qbar2.pack(fill="x",pady=(0,5))
+        self.normal_overwrite_btn=ttk.Button(qbar2,text=i18n.t('u1.overwrite_selected'),command=self.overwrite_selected_translation_to_mod); qbar2.add(self.normal_overwrite_btn, side="left")
+        self.normal_qa_btn=ttk.Button(qbar2,text=i18n.t('u1.qa_selected'),command=self.run_selected_translation_qa); qbar2.add(self.normal_qa_btn, side="left",padx=(6,0))
+        self.normal_glossary_btn=ttk.Button(qbar2,text=i18n.t('u1.create_glossary'),command=lambda:self.start_auto_glossary_generation("normal")); qbar2.add(self.normal_glossary_btn, side="left",padx=(6,0))
+        self.normal_send_qa_btn=ttk.Button(qbar2,text=i18n.t('u1.open_qa'),command=lambda:self._send_pair_to_qa_or_diff("normal","review")); qbar2.add(self.normal_send_qa_btn, side="left",padx=(6,0))
+        self.normal_send_diff_btn=ttk.Button(qbar2,text=i18n.t('u1.open_diff'),command=lambda:self._send_pair_to_qa_or_diff("normal","diff")); qbar2.add(self.normal_send_diff_btn, side="left",padx=(6,0))
+        self.normal_transfer_btn=ttk.Button(qbar,text=i18n.t('u1.transfer_chinese'),command=lambda:self.transfer_selected_queue_to_opposite("normal",False)); qbar.add(self.normal_transfer_btn, side="left",padx=(10,0))
+        self.normal_transfer_missing_btn=ttk.Button(qbar2,text=i18n.t('u1.queue_chinese_missing'),command=lambda:self.transfer_selected_queue_to_opposite("normal",True)); qbar2.add(self.normal_transfer_missing_btn, side="left",padx=(6,0))
+        WrappingLabel(qbox,text=i18n.t('u1.overwrite_note'),foreground="#8a5a00",justify="left").pack(fill="x",anchor="w",pady=(0,5))
 
-        self.drop_hint=ttk.Label(qbox,textvariable=self.dnd_status_var,foreground="#666")
+        self.drop_hint=WrappingLabel(qbox,textvariable=self.dnd_status_var,foreground="#666")
         self.drop_hint.pack(fill="x",pady=(0,5))
         cols=("mod","input","output","status")
         queue_table=ttk.Frame(qbox)
@@ -1871,18 +1880,18 @@ class App(BaseTk):
         else:
             self.dnd_status_var.set(i18n.t('u1.dnd_disabled'))
 
-        actions=ttk.Frame(right); actions.pack(fill="x",pady=(7,0))
-        self.start_btn=ttk.Button(actions,text=i18n.t('u1.start_translation'),command=self.start_queue); self.start_btn.pack(side="left")
-        self.pause_btn=ttk.Button(actions,text=i18n.t('u1.pause'),command=self.toggle_pause,state="disabled"); self.pause_btn.pack(side="left",padx=(6,0))
-        self.stop_btn=ttk.Button(actions,text=i18n.t('u1.save_stop'),command=self.save_and_stop,state="disabled"); self.stop_btn.pack(side="left",padx=(6,0))
-        ttk.Button(actions,text=i18n.t('u1.open_output'),command=self.open_selected_output).pack(side="left",padx=(6,0))
-        ttk.Label(actions,textvariable=self.progress_text).pack(side="right")
+        actions=FlowRow(right); actions.pack(fill="x",pady=(7,0))
+        self.start_btn=ttk.Button(actions,text=i18n.t('u1.start_translation'),command=self.start_queue); actions.add(self.start_btn, side="left")
+        self.pause_btn=ttk.Button(actions,text=i18n.t('u1.pause'),command=self.toggle_pause,state="disabled"); actions.add(self.pause_btn, side="left",padx=(6,0))
+        self.stop_btn=ttk.Button(actions,text=i18n.t('u1.save_stop'),command=self.save_and_stop,state="disabled"); actions.add(self.stop_btn, side="left",padx=(6,0))
+        actions.add(ttk.Button(actions,text=i18n.t('u1.open_output'),command=self.open_selected_output), side="left",padx=(6,0))
+        WrappingLabel(right,textvariable=self.progress_text).pack(side='top')
         self.progress=ttk.Progressbar(right,mode="determinate",maximum=100); self.progress.pack(fill="x",pady=(6,7))
 
         logbox=ttk.LabelFrame(right,text=i18n.t('u1.normal_log'),padding=6); logbox.pack(fill="both",expand=True)
-        lbar=ttk.Frame(logbox); lbar.pack(fill="x",pady=(0,4))
-        ttk.Button(lbar,text=i18n.t('u1.open_errors'),command=lambda:self._open_path(LOG_ROOT)).pack(side="left")
-        ttk.Button(lbar,text=i18n.t('u1.collect_diagnostics'),command=self.collect_error_logs).pack(side="left",padx=(5,0))
+        lbar=FlowRow(logbox); lbar.pack(fill="x",pady=(0,4))
+        lbar.add(ttk.Button(lbar,text=i18n.t('u1.open_errors'),command=lambda:self._open_path(LOG_ROOT)), side="left")
+        lbar.add(ttk.Button(lbar,text=i18n.t('u1.collect_diagnostics'),command=self.collect_error_logs), side="left",padx=(5,0))
         self.log=tk.Text(logbox,height=6,wrap="word",state="disabled")
         lsy=ttk.Scrollbar(logbox,command=self.log.yview); self.log.configure(yscrollcommand=lsy.set)
         self.log.pack(side="left",fill="both",expand=True); lsy.pack(side="right",fill="y")
@@ -1896,23 +1905,24 @@ class App(BaseTk):
         main=ttk.Panedwindow(t,orient="horizontal"); main.pack(fill="both",expand=True)
         left=ttk.Frame(main,padding=(0,0,6,0)); right=ttk.Frame(main,padding=(6,0,0,0))
         main.add(left,weight=2); main.add(right,weight=3)
+        initial_pane_split(main, 2, 3)
 
         intro=ttk.LabelFrame(left,text=i18n.t("u2.intro_title", target_name=i18n.t("lang." + core.DEFAULT_TARGET_LANG)),padding=9); intro.pack(fill="x")
         self.chinese_intro_frame = intro
-        self.chinese_intro_label = ttk.Label(intro,text=(i18n.t("u2.intro_description", target_name=i18n.t("lang." + core.DEFAULT_TARGET_LANG))),
-                  wraplength=430,foreground="#333",justify="left")
+        self.chinese_intro_label = WrappingLabel(intro,text=(i18n.t("u2.intro_description", target_name=i18n.t("lang." + core.DEFAULT_TARGET_LANG))),
+                  foreground="#333",justify="left")
         self.chinese_intro_label.pack(fill="x")
-        ttk.Label(intro, text=i18n.t("u2.target_language")).pack(anchor="w")
+        WrappingLabel(intro, text=i18n.t("u2.target_language")).pack(anchor="w")
         self.chinese_target_combo = ttk.Combobox(intro, state="readonly", textvariable=self.chinese_target_display_var,
                                                 values=[i18n.t("lang." + language) for language in core.TARGET_LANGUAGES])
         self.chinese_target_combo.pack(fill="x")
         self.chinese_target_combo.bind("<<ComboboxSelected>>", self._select_chinese_target_language)
-        ttk.Label(intro, text=i18n.t("u2.supported_targets_reason"), wraplength=430).pack(fill="x")
-        self.chinese_korean_hint = ttk.Label(intro, text="", wraplength=430, justify="left")
+        WrappingLabel(intro, text=i18n.t("u2.supported_targets_reason")).pack(fill="x")
+        self.chinese_korean_hint = WrappingLabel(intro, text="",  justify="left")
         self.chinese_korean_hint.pack(fill="x")
 
         src=ttk.LabelFrame(left,text=i18n.t("u2.input_output"),padding=9); src.pack(fill="x",pady=(5,0)); src.columnconfigure(0,weight=1)
-        ttk.Label(src,text=i18n.t("u2.chinese_input")).grid(row=0,column=0,sticky="w")
+        WrappingLabel(src,text=i18n.t("u2.chinese_input")).grid(row=0,column=0,sticky="ew")
         self.chinese_input_entry=ttk.Entry(src,textvariable=self.chinese_input_var,state="readonly"); self.chinese_input_entry.grid(row=1,column=0,sticky="ew",pady=(3,0))
         pickbar=ttk.Frame(src); pickbar.grid(row=2,column=0,sticky="ew",pady=(5,0))
         chinese_add_menu=tk.Menu(pickbar,tearoff=False)
@@ -1920,42 +1930,42 @@ class App(BaseTk):
         chinese_add_menu.add_command(label=i18n.t("u2.add_localization"),command=self.pick_chinese_folder)
         self.chinese_add_menu_button=ttk.Menubutton(pickbar,text=i18n.t("u2.add"),menu=chinese_add_menu)
         self.chinese_add_menu_button.pack(side="left")
-        ttk.Label(pickbar,text=i18n.t("u2.selection_hint"),foreground="#666").pack(side="left",padx=(8,0))
-        ttk.Label(src,textvariable=self.chinese_status_var,foreground="#555",wraplength=430,justify="left").grid(row=3,column=0,sticky="w",pady=(4,0))
+        WrappingLabel(pickbar,text=i18n.t("u2.selection_hint"),foreground="#666").pack(side="left",fill="x",expand=True,padx=(8,0))
+        WrappingLabel(src,textvariable=self.chinese_status_var,foreground="#555",justify="left").grid(row=3,column=0,sticky="w",pady=(4,0))
         ttk.Separator(src,orient="horizontal").grid(row=4,column=0,sticky="ew",pady=5)
         ttk.Label(src,text=i18n.t("u2.output_root")).grid(row=5,column=0,sticky="w")
         self.chinese_output_entry=ttk.Entry(src,textvariable=self.chinese_output_var)
         self.chinese_output_entry.grid(row=6,column=0,sticky="ew",pady=(3,0))
-        outbar=ttk.Frame(src); outbar.grid(row=7,column=0,sticky="ew",pady=(5,0))
+        outbar=FlowRow(src); outbar.grid(row=7,column=0,sticky="ew",pady=(5,0))
         self.chinese_pick_output_btn=ttk.Button(outbar,text=i18n.t("u2.select"),command=self.pick_chinese_output)
-        self.chinese_pick_output_btn.pack(side="left")
-        ttk.Button(outbar,text=i18n.t("u2.open"),command=lambda:self._open_path(Path(self.chinese_output_var.get()))).pack(side="left",padx=(5,0))
+        outbar.add(self.chinese_pick_output_btn, side="left")
+        outbar.add(ttk.Button(outbar,text=i18n.t("u2.open"),command=lambda:self._open_path(Path(self.chinese_output_var.get()))), side="left",padx=(5,0))
 
         settings=ttk.LabelFrame(left,text=i18n.t("u2.shared_settings"),padding=9); settings.pack(fill="x",pady=(5,0))
-        ttk.Label(settings,text=i18n.t("u2.shared_settings_hint"),wraplength=430,justify="left").pack(anchor="w")
+        WrappingLabel(settings,text=i18n.t("u2.shared_settings_hint"),justify="left").pack(anchor="w")
         ttk.Button(settings,text=i18n.t("u2.open_settings"),command=lambda:self.notebook.select(self.tab_models)).pack(anchor="w",pady=(6,0))
-        self.chinese_vocabulary_label = ttk.Label(settings,text=i18n.t("u2.vocabulary_hint"),foreground="#7a4b00",wraplength=430)
+        self.chinese_vocabulary_label = WrappingLabel(settings,text=i18n.t("u2.vocabulary_hint"),foreground="#7a4b00")
         self.chinese_vocabulary_label.pack(anchor="w",pady=(6,0))
-        ttk.Checkbutton(settings,text=i18n.t("u2.autoqa"),variable=self.chinese_autoqa_var,command=self._save_llm_preferences).pack(anchor="w",pady=(7,0))
-        ttk.Label(settings,text=i18n.t("u2.autoqa_hint"),foreground="#555",wraplength=430,justify="left").pack(anchor="w",pady=(5,0))
+        _wrapping_check(settings,text=i18n.t("u2.autoqa"),variable=self.chinese_autoqa_var,command=self._save_llm_preferences).pack(anchor="w",pady=(7,0))
+        WrappingLabel(settings,text=i18n.t("u2.autoqa_hint"),foreground="#555",justify="left").pack(anchor="w",pady=(5,0))
 
         qbox=ttk.LabelFrame(right,text=i18n.t("u2.queue_title"),padding=8); qbox.pack(fill="both",expand=True)
-        qbar=ttk.Frame(qbox); qbar.pack(fill="x",pady=(0,5))
-        self.chinese_remove_btn=ttk.Button(qbar,text=i18n.t("u2.remove_selected"),command=self.remove_chinese_queue_selected); self.chinese_remove_btn.pack(side="left")
-        self.chinese_clear_btn=ttk.Button(qbar,text=i18n.t("u2.clear_all"),command=self.clear_chinese_queue); self.chinese_clear_btn.pack(side="left",padx=(5,0))
-        self.chinese_change_output_btn=ttk.Button(qbar,text=i18n.t("u2.change_output"),command=self.change_chinese_output_for_selected); self.chinese_change_output_btn.pack(side="left",padx=(10,0))
-        ttk.Button(qbar,text=i18n.t("u2.view_cache"),command=self.view_selected_chinese_cache).pack(side="left",padx=(5,0))
-        self.chinese_import_cache_btn=ttk.Button(qbar,text=i18n.t("u2.add_cache"),command=self.import_cache_to_selected_chinese); self.chinese_import_cache_btn.pack(side="left",padx=(5,0))
+        qbar=FlowRow(qbox); qbar.pack(fill="x",pady=(0,5))
+        self.chinese_remove_btn=ttk.Button(qbar,text=i18n.t("u2.remove_selected"),command=self.remove_chinese_queue_selected); qbar.add(self.chinese_remove_btn, side="left")
+        self.chinese_clear_btn=ttk.Button(qbar,text=i18n.t("u2.clear_all"),command=self.clear_chinese_queue); qbar.add(self.chinese_clear_btn, side="left",padx=(5,0))
+        self.chinese_change_output_btn=ttk.Button(qbar,text=i18n.t("u2.change_output"),command=self.change_chinese_output_for_selected); qbar.add(self.chinese_change_output_btn, side="left",padx=(10,0))
+        qbar.add(ttk.Button(qbar,text=i18n.t("u2.view_cache"),command=self.view_selected_chinese_cache), side="left",padx=(5,0))
+        self.chinese_import_cache_btn=ttk.Button(qbar,text=i18n.t("u2.add_cache"),command=self.import_cache_to_selected_chinese); qbar.add(self.chinese_import_cache_btn, side="left",padx=(5,0))
 
-        qbar2=ttk.Frame(qbox); qbar2.pack(fill="x",pady=(0,5))
-        self.chinese_overwrite_btn=ttk.Button(qbar2,text=i18n.t("u2.overwrite_selected"),command=self.overwrite_selected_chinese_translation); self.chinese_overwrite_btn.pack(side="left")
-        self.chinese_qa_btn=ttk.Button(qbar2,text=i18n.t("u2.qa_selected"),command=self.run_selected_chinese_qa); self.chinese_qa_btn.pack(side="left",padx=(6,0))
-        self.chinese_glossary_btn=ttk.Button(qbar2,text=i18n.t("u2.auto_glossary"),command=lambda:self.start_auto_glossary_generation("chinese")); self.chinese_glossary_btn.pack(side="left",padx=(6,0))
-        self.chinese_send_qa_btn=ttk.Button(qbar2,text=i18n.t("u2.send_to_qa"),command=lambda:self._send_pair_to_qa_or_diff("chinese","review")); self.chinese_send_qa_btn.pack(side="left",padx=(6,0))
-        self.chinese_send_diff_btn=ttk.Button(qbar2,text=i18n.t("u2.send_to_diff"),command=lambda:self._send_pair_to_qa_or_diff("chinese","diff")); self.chinese_send_diff_btn.pack(side="left",padx=(6,0))
-        self.chinese_transfer_btn=ttk.Button(qbar,text=i18n.t("u2.send_to_normal"),command=lambda:self.transfer_selected_queue_to_opposite("chinese",False)); self.chinese_transfer_btn.pack(side="left",padx=(10,0))
-        self.chinese_transfer_missing_btn=ttk.Button(qbar2,text=i18n.t("u2.queue_missing_english"),command=lambda:self.transfer_selected_queue_to_opposite("chinese",True)); self.chinese_transfer_missing_btn.pack(side="left",padx=(6,0))
-        ttk.Label(qbox,text=i18n.t("u2.overwrite_hint"),foreground="#8a5a00",wraplength=900,justify="left").pack(fill="x",anchor="w",pady=(0,5))
+        qbar2=FlowRow(qbox); qbar2.pack(fill="x",pady=(0,5))
+        self.chinese_overwrite_btn=ttk.Button(qbar2,text=i18n.t("u2.overwrite_selected"),command=self.overwrite_selected_chinese_translation); qbar2.add(self.chinese_overwrite_btn, side="left")
+        self.chinese_qa_btn=ttk.Button(qbar2,text=i18n.t("u2.qa_selected"),command=self.run_selected_chinese_qa); qbar2.add(self.chinese_qa_btn, side="left",padx=(6,0))
+        self.chinese_glossary_btn=ttk.Button(qbar2,text=i18n.t("u2.auto_glossary"),command=lambda:self.start_auto_glossary_generation("chinese")); qbar2.add(self.chinese_glossary_btn, side="left",padx=(6,0))
+        self.chinese_send_qa_btn=ttk.Button(qbar2,text=i18n.t("u2.send_to_qa"),command=lambda:self._send_pair_to_qa_or_diff("chinese","review")); qbar2.add(self.chinese_send_qa_btn, side="left",padx=(6,0))
+        self.chinese_send_diff_btn=ttk.Button(qbar2,text=i18n.t("u2.send_to_diff"),command=lambda:self._send_pair_to_qa_or_diff("chinese","diff")); qbar2.add(self.chinese_send_diff_btn, side="left",padx=(6,0))
+        self.chinese_transfer_btn=ttk.Button(qbar,text=i18n.t("u2.send_to_normal"),command=lambda:self.transfer_selected_queue_to_opposite("chinese",False)); qbar.add(self.chinese_transfer_btn, side="left",padx=(10,0))
+        self.chinese_transfer_missing_btn=ttk.Button(qbar2,text=i18n.t("u2.queue_missing_english"),command=lambda:self.transfer_selected_queue_to_opposite("chinese",True)); qbar2.add(self.chinese_transfer_missing_btn, side="left",padx=(6,0))
+        WrappingLabel(qbox,text=i18n.t("u2.overwrite_hint"),foreground="#8a5a00",justify="left").pack(fill="x",anchor="w",pady=(0,5))
         cols=("mod","input","output","status","target")
         chinese_queue_table=ttk.Frame(qbox)
         chinese_queue_table.pack(fill="both",expand=True)
@@ -1982,18 +1992,18 @@ class App(BaseTk):
         ]
         self._cross_queue_controls.extend([self.chinese_transfer_btn,self.chinese_transfer_missing_btn])
 
-        actions=ttk.Frame(right); actions.pack(fill="x",pady=(7,0))
-        self.chinese_start_btn=ttk.Button(actions,text=i18n.t("u2.start"),command=self.start_chinese_basis_translation); self.chinese_start_btn.pack(side="left")
-        self.chinese_pause_btn=ttk.Button(actions,text=i18n.t("u2.pause"),command=self.toggle_chinese_pause,state="disabled"); self.chinese_pause_btn.pack(side="left",padx=(6,0))
-        self.chinese_stop_btn=ttk.Button(actions,text=i18n.t("u2.save_stop"),command=self.save_and_stop_chinese_translation,state="disabled"); self.chinese_stop_btn.pack(side="left",padx=(6,0))
-        ttk.Button(actions,text=i18n.t("u2.open_output"),command=self.open_selected_chinese_output).pack(side="left",padx=(6,0))
-        ttk.Label(actions,textvariable=self.chinese_progress_var).pack(side="right")
+        actions=FlowRow(right); actions.pack(fill="x",pady=(7,0))
+        self.chinese_start_btn=ttk.Button(actions,text=i18n.t("u2.start"),command=self.start_chinese_basis_translation); actions.add(self.chinese_start_btn, side="left")
+        self.chinese_pause_btn=ttk.Button(actions,text=i18n.t("u2.pause"),command=self.toggle_chinese_pause,state="disabled"); actions.add(self.chinese_pause_btn, side="left",padx=(6,0))
+        self.chinese_stop_btn=ttk.Button(actions,text=i18n.t("u2.save_stop"),command=self.save_and_stop_chinese_translation,state="disabled"); actions.add(self.chinese_stop_btn, side="left",padx=(6,0))
+        actions.add(ttk.Button(actions,text=i18n.t("u2.open_output"),command=self.open_selected_chinese_output), side="left",padx=(6,0))
+        WrappingLabel(right,textvariable=self.chinese_progress_var).pack(side='top')
         self.chinese_progress=ttk.Progressbar(right,mode="determinate",maximum=100); self.chinese_progress.pack(fill="x",pady=(6,7))
 
         logbox=ttk.LabelFrame(right,text=i18n.t("u2.log_title"),padding=6); logbox.pack(fill="both",expand=True)
-        lbar=ttk.Frame(logbox); lbar.pack(fill="x",pady=(0,4))
-        ttk.Button(lbar,text=i18n.t("u2.open_error_log"),command=lambda:self._open_path(LOG_ROOT)).pack(side="left")
-        ttk.Button(lbar,text=i18n.t("u2.collect_logs"),command=self.collect_error_logs).pack(side="left",padx=(5,0))
+        lbar=FlowRow(logbox); lbar.pack(fill="x",pady=(0,4))
+        lbar.add(ttk.Button(lbar,text=i18n.t("u2.open_error_log"),command=lambda:self._open_path(LOG_ROOT)), side="left")
+        lbar.add(ttk.Button(lbar,text=i18n.t("u2.collect_logs"),command=self.collect_error_logs), side="left",padx=(5,0))
         self.chinese_log=tk.Text(logbox,height=6,wrap="word",state="disabled")
         y=ttk.Scrollbar(logbox,command=self.chinese_log.yview); self.chinese_log.configure(yscrollcommand=y.set)
         self.chinese_log.pack(side="left",fill="both",expand=True); y.pack(side="right",fill="y")
@@ -2613,45 +2623,49 @@ class App(BaseTk):
         self.review_dst_entry.grid(row=1,column=1,sticky="ew",padx=6,pady=(5,0))
         ttk.Button(pf,text=i18n.t('u3.choose'),command=lambda:self.pick_review_file(self.review_dst_var)).grid(row=1,column=2,pady=(5,0))
         ttk.Button(pf,text=i18n.t('u3.load_comparison'),command=self.load_review).grid(row=0,column=3,rowspan=2,padx=(8,0))
-        self.review_drop_hint=ttk.Label(pf,text=i18n.t('u3.drop_pair', target_name=i18n.t("lang." + _current_target_lang(self))) if DND_AVAILABLE else i18n.t('u3.dnd_unavailable'),foreground="#555")
+        self.review_drop_hint=WrappingLabel(pf,text=i18n.t('u3.drop_pair', target_name=i18n.t("lang." + _current_target_lang(self))) if DND_AVAILABLE else i18n.t('u3.dnd_unavailable'),foreground="#555")
         self.review_drop_hint.grid(row=2,column=0,columnspan=4,sticky="ew",pady=(7,0))
-        qa=ttk.Frame(t); qa.pack(fill="x",pady=(8,5))
-        ttk.Button(qa,text=i18n.t('u3.rerun_qa'),command=self.run_review_qa).pack(side="left")
+        qa=FlowRow(t); qa.pack(fill="x",pady=(8,5))
+        qa.add(ttk.Button(qa,text=i18n.t('u3.rerun_qa'),command=self.run_review_qa), side="left")
         self.review_auto_repair_btn=ttk.Button(qa,text=i18n.t('u3.backup_auto_repair'),command=self.run_review_auto_repair,state="disabled")
-        self.review_auto_repair_btn.pack(side="left",padx=(6,0))
+        qa.add(self.review_auto_repair_btn, side="left",padx=(6,0))
         self.review_export_log_btn=ttk.Button(qa,text=i18n.t('u3.export_qa_log'),command=self.export_review_qa_log,state="disabled")
-        self.review_export_log_btn.pack(side="left",padx=(6,0))
-        ttk.Button(qa,text=i18n.t('u3.issues_only'),command=lambda:self.populate_review(True)).pack(side="left",padx=(6,0))
-        ttk.Button(qa,text=i18n.t('u3.all_keys'),command=lambda:self.populate_review(False)).pack(side="left",padx=(6,0))
-        ttk.Button(qa,text=i18n.t('u3.unify_terms'),command=self.bulk_unify_review_terms).pack(side="left",padx=(8,0))
-        ttk.Button(qa,text=i18n.t('u3.create_glossary'),command=lambda:self.start_auto_glossary_generation("review")).pack(side="left",padx=(8,0))
-        ttk.Button(qa,text=i18n.t('u3.apply_settings'),command=self.apply_translation_settings_everywhere).pack(side="left",padx=(10,0))
-        ttk.Label(qa,text=i18n.t('u3.proofread_hint'),foreground="#666").pack(side="left",padx=(12,0))
-        ttk.Label(qa,textvariable=self.qa_summary_var).pack(side="right")
+        qa.add(self.review_export_log_btn, side="left",padx=(6,0))
+        qa.add(ttk.Button(qa,text=i18n.t('u3.issues_only'),command=lambda:self.populate_review(True)), side="left",padx=(6,0))
+        qa.add(ttk.Button(qa,text=i18n.t('u3.all_keys'),command=lambda:self.populate_review(False)), side="left",padx=(6,0))
+        qa.add(ttk.Button(qa,text=i18n.t('u3.unify_terms'),command=self.bulk_unify_review_terms), side="left",padx=(8,0))
+        qa.add(ttk.Button(qa,text=i18n.t('u3.create_glossary'),command=lambda:self.start_auto_glossary_generation("review")), side="left",padx=(8,0))
+        qa.add(ttk.Button(qa,text=i18n.t('u3.apply_settings'),command=self.apply_translation_settings_everywhere), side="left",padx=(10,0))
+        WrappingLabel(t,text=i18n.t('u3.proofread_hint'),foreground="#666").pack(side='top',padx=(12,0))
+        WrappingLabel(t,textvariable=self.qa_summary_var).pack(side='top')
 
         paned=ttk.Panedwindow(t,orient="horizontal"); paned.pack(fill="both",expand=True)
         left=ttk.Frame(paned); right=ttk.Frame(paned); paned.add(left,weight=2); paned.add(right,weight=3)
+        initial_pane_split(paned, 2, 3)
         self.review_tree=ttk.Treeview(left,columns=("type","file","key"),show="tree headings")
-        self.review_tree.heading("#0",text=i18n.t('u3.severity_category')); self.review_tree.column("#0",width=150)
-        self.review_tree.heading("type",text=i18n.t('u3.type')); self.review_tree.column("type",width=130)
-        self.review_tree.heading("file",text=i18n.t('u3.file')); self.review_tree.column("file",width=220)
-        self.review_tree.heading("key",text=i18n.t('u3.key')); self.review_tree.column("key",width=300)
+        self.review_tree.heading("#0",text=i18n.t('u3.severity_category')); self.review_tree.column("#0",width=150,minwidth=150,stretch=False)
+        self.review_tree.heading("type",text=i18n.t('u3.type')); self.review_tree.column("type",width=130,minwidth=130,stretch=False)
+        self.review_tree.heading("file",text=i18n.t('u3.file')); self.review_tree.column("file",width=220,minwidth=220,stretch=False)
+        self.review_tree.heading("key",text=i18n.t('u3.key')); self.review_tree.column("key",width=300,minwidth=300,stretch=False)
         self.review_tree.bind("<<TreeviewSelect>>",self.on_review_select)
         self._enable_tree_sort(self.review_tree, recursive=True)
         rys=ttk.Scrollbar(left,command=self.review_tree.yview); self.review_tree.configure(yscrollcommand=rys.set)
-        self.review_tree.pack(side="left",fill="both",expand=True); rys.pack(side="right",fill="y")
+        rxs=ttk.Scrollbar(left,orient="horizontal",command=self.review_tree.xview)
+        self.review_tree.configure(xscrollcommand=rxs.set)
+        rxs.pack(side="bottom",fill="x"); rys.pack(side="right",fill="y")
+        self.review_tree.pack(side="left",fill="both",expand=True)
 
         ttk.Label(right,text=i18n.t('u3.english_chinese_source')).pack(anchor="w")
         self.src_text=tk.Text(right,height=7,wrap="word"); self.src_text.pack(fill="x",pady=(2,8))
         ttk.Label(right,text=i18n.t('u3.editable_translation')).pack(anchor="w")
         self.dst_text=tk.Text(right,height=10,wrap="word"); self.dst_text.pack(fill="both",expand=True,pady=(2,6))
         self.issue_text=tk.StringVar(value="")
-        ttk.Label(right,textvariable=self.issue_text,wraplength=550).pack(fill="x",pady=(0,6))
-        eb=ttk.Frame(right); eb.pack(fill="x")
-        ttk.Button(eb,text=i18n.t('u3.save_translation_file', target_name=i18n.t("lang." + _current_target_lang(self))),command=self.save_review_value).pack(side="left")
-        ttk.Button(eb,text=i18n.t('u3.save_glossary'),command=self.save_review_glossary_term).pack(side="left",padx=(6,0))
-        ttk.Button(eb,text=i18n.t('u3.ai_proofread'),command=self.ai_proofread_selected).pack(side="left",padx=(6,0))
-        ttk.Button(eb,text=i18n.t('u3.restore_source'),command=self.restore_source_to_target).pack(side="left",padx=(6,0))
+        WrappingLabel(right,textvariable=self.issue_text).pack(fill="x",pady=(0,6))
+        eb=FlowRow(right); eb.pack(fill="x")
+        eb.add(ttk.Button(eb,text=i18n.t('u3.save_translation_file', target_name=i18n.t("lang." + _current_target_lang(self))),command=self.save_review_value), side="left")
+        eb.add(ttk.Button(eb,text=i18n.t('u3.save_glossary'),command=self.save_review_glossary_term), side="left",padx=(6,0))
+        eb.add(ttk.Button(eb,text=i18n.t('u3.ai_proofread'),command=self.ai_proofread_selected), side="left",padx=(6,0))
+        eb.add(ttk.Button(eb,text=i18n.t('u3.restore_source'),command=self.restore_source_to_target), side="left",padx=(6,0))
         self._register_dnd_widgets([pf,self.review_src_entry,self.review_dst_entry,self.review_drop_hint,self.review_tree,self.src_text,self.dst_text],self.on_review_drop_paths)
 
     def _build_diff_tab(self):
@@ -2667,25 +2681,26 @@ class App(BaseTk):
         self.diff_dst_entry.grid(row=1, column=1, sticky="ew", padx=6, pady=(5,0))
         ttk.Button(pf, text=i18n.t('u3.choose'), command=lambda:self.pick_review_file(self.diff_dst_var)).grid(row=1, column=2, pady=(5,0))
         ttk.Button(pf, text=i18n.t('u3.inspect_diff'), command=self.load_diff_inspector).grid(row=0, column=3, rowspan=2, padx=(8,0))
-        self.diff_drop_hint=ttk.Label(pf,text=i18n.t('u3.drop_pair', target_name=i18n.t("lang." + _current_target_lang(self))) if DND_AVAILABLE else i18n.t('u3.dnd_unavailable'),foreground="#555")
+        self.diff_drop_hint=WrappingLabel(pf,text=i18n.t('u3.drop_pair', target_name=i18n.t("lang." + _current_target_lang(self))) if DND_AVAILABLE else i18n.t('u3.dnd_unavailable'),foreground="#555")
         self.diff_drop_hint.grid(row=2,column=0,columnspan=4,sticky="ew",pady=(7,0))
 
-        bar = ttk.Frame(t); bar.pack(fill="x", pady=(8,5))
-        ttk.Button(bar, text=i18n.t('u3.translate_selected'), command=lambda:self.translate_diff_items(False)).pack(side="left")
-        ttk.Button(bar, text=i18n.t('u3.translate_missing'), command=lambda:self.translate_diff_items(True)).pack(side="left", padx=(6,0))
-        ttk.Button(bar, text=i18n.t('u3.save_selected'), command=self.save_diff_value).pack(side="left", padx=(6,0))
-        ttk.Button(bar,text=i18n.t('u3.create_glossary'),command=lambda:self.start_auto_glossary_generation("diff")).pack(side="left",padx=(8,0))
-        ttk.Button(bar,text=i18n.t('u3.apply_settings'),command=self.apply_translation_settings_everywhere).pack(side="left",padx=(10,0))
-        ttk.Label(bar,text=i18n.t('u3.diff_hint'),foreground="#666").pack(side="left",padx=(12,0))
-        ttk.Label(bar, textvariable=self.diff_summary_var).pack(side="right")
+        bar = FlowRow(t); bar.pack(fill="x", pady=(8,5))
+        bar.add(ttk.Button(bar, text=i18n.t('u3.translate_selected'), command=lambda:self.translate_diff_items(False)), side="left")
+        bar.add(ttk.Button(bar, text=i18n.t('u3.translate_missing'), command=lambda:self.translate_diff_items(True)), side="left", padx=(6,0))
+        bar.add(ttk.Button(bar, text=i18n.t('u3.save_selected'), command=self.save_diff_value), side="left", padx=(6,0))
+        bar.add(ttk.Button(bar,text=i18n.t('u3.create_glossary'),command=lambda:self.start_auto_glossary_generation("diff")), side="left",padx=(8,0))
+        bar.add(ttk.Button(bar,text=i18n.t('u3.apply_settings'),command=self.apply_translation_settings_everywhere), side="left",padx=(10,0))
+        WrappingLabel(t,text=i18n.t('u3.diff_hint'),foreground="#666").pack(side='top',padx=(12,0))
+        WrappingLabel(t, textvariable=self.diff_summary_var).pack(side='top')
 
         paned = ttk.Panedwindow(t, orient="horizontal"); paned.pack(fill="both", expand=True)
         left = ttk.Frame(paned); right = ttk.Frame(paned); paned.add(left, weight=2); paned.add(right, weight=3)
+        initial_pane_split(paned, 2, 3)
         self.diff_tree = ttk.Treeview(left, columns=("file","key"), show="tree headings", selectmode="extended")
         self._enable_ctrl_multiselect(self.diff_tree)
-        self.diff_tree.heading("#0", text=i18n.t('u3.status')); self.diff_tree.column("#0", width=150)
-        self.diff_tree.heading("file", text=i18n.t('u3.file')); self.diff_tree.column("file", width=220)
-        self.diff_tree.heading("key", text=i18n.t('u3.key')); self.diff_tree.column("key", width=360)
+        self.diff_tree.heading("#0", text=i18n.t('u3.status')); self.diff_tree.column("#0", width=150,minwidth=150,stretch=False)
+        self.diff_tree.heading("file", text=i18n.t('u3.file')); self.diff_tree.column("file", width=220,minwidth=220,stretch=False)
+        self.diff_tree.heading("key", text=i18n.t('u3.key')); self.diff_tree.column("key", width=360,minwidth=360,stretch=False)
         self.diff_tree.tag_configure("missing", background="#fee2e2")
         self.diff_tree.tag_configure("untranslated", background="#fef3c7")
         self.diff_tree.tag_configure("extra", background="#e0e7ff")
@@ -2694,7 +2709,10 @@ class App(BaseTk):
         ys = ttk.Scrollbar(left, command=self.diff_tree.yview); self.diff_tree.configure(yscrollcommand=ys.set)
         hint = ttk.Label(left, text=i18n.t('u3.multi_select_hint'), foreground="#666")
         hint.pack(side="bottom", fill="x", pady=(3,0))
-        self.diff_tree.pack(side="left", fill="both", expand=True); ys.pack(side="right", fill="y")
+        xs=ttk.Scrollbar(left,orient="horizontal",command=self.diff_tree.xview)
+        self.diff_tree.configure(xscrollcommand=xs.set)
+        xs.pack(side="bottom",fill="x"); ys.pack(side="right",fill="y")
+        self.diff_tree.pack(side="left", fill="both", expand=True)
 
         compare = ttk.Panedwindow(right, orient="horizontal"); compare.pack(fill="both", expand=True)
         srcf = ttk.Frame(compare); dstf = ttk.Frame(compare); compare.add(srcf, weight=1); compare.add(dstf, weight=1)
@@ -2703,7 +2721,7 @@ class App(BaseTk):
         ttk.Label(dstf, text=i18n.t('u3.editable_target', target_name=i18n.t("lang." + _current_target_lang(self)))).pack(anchor="w")
         self.diff_dst_text = tk.Text(dstf, wrap="word"); self.diff_dst_text.pack(fill="both", expand=True, padx=(4,0), pady=(2,0))
         self.diff_message_var = tk.StringVar(value="")
-        ttk.Label(right, textvariable=self.diff_message_var, wraplength=650).pack(fill="x", pady=(4,0))
+        WrappingLabel(right, textvariable=self.diff_message_var).pack(fill="x", pady=(4,0))
         self._register_dnd_widgets([pf,self.diff_src_entry,self.diff_dst_entry,self.diff_drop_hint,self.diff_tree,self.diff_src_text,self.diff_dst_text],self.on_diff_drop_paths)
 
     def _build_search_tab(self):
@@ -2719,7 +2737,7 @@ class App(BaseTk):
         ent = ttk.Entry(top, textvariable=self.search_query_var); ent.grid(row=1, column=1, sticky="ew", padx=6, pady=(6,0)); ent.bind("<Return>", lambda e:self.run_translation_search())
         ttk.Button(top, text=i18n.t('u3.search'), command=self.run_translation_search).grid(row=1, column=2, sticky="ew", pady=(6,0))
         ttk.Button(top, text=i18n.t('u3.clear_results'), command=self.clear_translation_search_results).grid(row=1, column=3, sticky="ew", padx=(6,0), pady=(6,0))
-        ttk.Label(top, text=i18n.t('u3.search_hint'), foreground="#666").grid(row=2, column=0, columnspan=4, sticky="w", pady=(6,0))
+        WrappingLabel(top, text=i18n.t('u3.search_hint'), foreground="#666").grid(row=2, column=0, columnspan=4, sticky="w", pady=(6,0))
 
         target = ttk.LabelFrame(t, text=i18n.t('u3.search_mods'), padding=6); target.pack(fill="x", pady=(6,0))
         target.columnconfigure(0, weight=1)
@@ -2729,12 +2747,12 @@ class App(BaseTk):
         smy=ttk.Scrollbar(listframe, orient="vertical", command=self.search_mod_list.yview); self.search_mod_list.configure(yscrollcommand=smy.set)
         self.search_mod_list.grid(row=0,column=0,sticky="ew"); smy.grid(row=0,column=1,sticky="ns")
         self.search_mod_list.bind("<<ListboxSelect>>", lambda e:self._remember_translation_search_mod_selection())
-        buttons=ttk.Frame(target); buttons.grid(row=0,column=1,sticky="ns",padx=(8,0))
-        ttk.Button(buttons,text=i18n.t('u3.refresh_mods'),command=self.refresh_translation_search_mods).pack(fill="x")
-        ttk.Button(buttons,text=i18n.t('u3.select_all'),command=self._select_all_translation_search_mods).pack(fill="x",pady=(4,0))
-        ttk.Button(buttons,text=i18n.t('u3.deselect_all'),command=self._clear_translation_search_mod_selection).pack(fill="x",pady=(4,0))
+        buttons=FlowRow(target); buttons.grid(row=0,column=1,sticky="ns",padx=(8,0))
+        buttons.add(ttk.Button(buttons,text=i18n.t('u3.refresh_mods'),command=self.refresh_translation_search_mods), fill="x")
+        buttons.add(ttk.Button(buttons,text=i18n.t('u3.select_all'),command=self._select_all_translation_search_mods), fill="x",pady=(4,0))
+        buttons.add(ttk.Button(buttons,text=i18n.t('u3.deselect_all'),command=self._clear_translation_search_mod_selection), fill="x",pady=(4,0))
         ttk.Label(target,textvariable=self.search_mod_status_var,foreground="#555").grid(row=1,column=1,sticky="sw",padx=(8,0))
-        ttk.Label(target,text=i18n.t('u3.search_scope'),foreground="#666").grid(row=2,column=0,columnspan=2,sticky="w",pady=(4,0))
+        WrappingLabel(target,text=i18n.t('u3.search_scope'),foreground="#666").grid(row=2,column=0,columnspan=2,sticky="w",pady=(4,0))
 
         ttk.Label(t, textvariable=self.search_summary_var).pack(anchor="w", pady=(7,4))
         paned = ttk.Panedwindow(t, orient="horizontal"); paned.pack(fill="both", expand=True)
@@ -2756,7 +2774,7 @@ class App(BaseTk):
         ys.grid(row=0, column=1, sticky="ns")
         xs.grid(row=1, column=0, sticky="ew")
         self.search_selected_var = tk.StringVar(value=i18n.t('u3.select_result'))
-        ttk.Label(right, textvariable=self.search_selected_var, wraplength=420).pack(fill="x", anchor="w")
+        WrappingLabel(right, textvariable=self.search_selected_var).pack(fill="x", anchor="w")
         self.search_edit_text = tk.Text(right, wrap="word"); self.search_edit_text.pack(fill="both", expand=True, pady=(6,6))
         ttk.Button(right, text=i18n.t('u3.save_japanese'), command=self.save_search_value).pack(anchor="w")
         self.after_idle(self.refresh_translation_search_mods)
@@ -2769,7 +2787,7 @@ class App(BaseTk):
                                     values=[_target_lang_choice(lang) for lang in core.TARGET_LANGUAGES],state="readonly")
         language_choice.pack(side="left",padx=6)
         language_choice.bind("<<ComboboxSelected>>",lambda event:self.load_glossary_ui(silent=True))
-        ttk.Label(t,textvariable=self.glossary_actual_path_var).pack(fill="x",pady=(0,6))
+        WrappingLabel(t,textvariable=self.glossary_actual_path_var).pack(fill="x",pady=(0,6))
         self.glossary_path_var.trace_add("write",lambda *args:self.glossary_actual_path_var.set(
             i18n.t('u4.language_file', path=_selected_glossary_path(self))))
         top=ttk.LabelFrame(t,text=i18n.t('u4.settings'),padding=8); top.pack(fill="x",pady=(0,6))
@@ -2777,63 +2795,65 @@ class App(BaseTk):
         ttk.Entry(top,textvariable=self.glossary_path_var).pack(side="left",fill="x",expand=True,padx=6)
         ttk.Button(top,text=i18n.t('u4.load'),command=lambda:self._run_glossary_action(self.load_glossary_ui)).pack(side="left")
         ttk.Button(top,text=i18n.t('u4.save'),command=lambda:self._run_glossary_action(self.save_glossary_ui)).pack(side="left",padx=(6,0))
-        ttk.Label(top,textvariable=self.auto_glossary_status_var,foreground="#555").pack(side="right",padx=(8,0))
+        WrappingLabel(top,textvariable=self.auto_glossary_status_var,foreground="#555").pack(side="right",padx=(8,0))
 
-        import_bar=ttk.Frame(t); import_bar.pack(fill="x",pady=(0,6))
-        ttk.Button(import_bar,text=i18n.t('u4.paratranz_import'),
-                   command=lambda:self._run_glossary_action(self.import_paratranz_glossary)).pack(side="left")
-        ttk.Button(import_bar,text=i18n.t('u4.view_rules'),command=self.show_glossary_notation_rules).pack(side="left",padx=6)
+        import_bar=FlowRow(t); import_bar.pack(fill="x",pady=(0,6))
+        import_bar.add(ttk.Button(import_bar,text=i18n.t('u4.paratranz_import'),
+                   command=lambda:self._run_glossary_action(self.import_paratranz_glossary)), side="left")
+        import_bar.add(ttk.Button(import_bar,text=i18n.t('u4.view_rules'),command=self.show_glossary_notation_rules), side="left",padx=6)
         panes=ttk.Panedwindow(t,orient="horizontal"); panes.pack(fill="both",expand=True)
         manual=ttk.LabelFrame(panes,text=i18n.t('u4.manual_terms'),padding=8)
         generated=ttk.LabelFrame(panes,text=i18n.t('u4.generated_terms'),padding=8)
         panes.add(manual,weight=1); panes.add(generated,weight=1)
+        initial_pane_split(panes, 1, 1)
 
-        mbar=ttk.Frame(manual); mbar.pack(fill="x",pady=(0,6))
-        ttk.Button(mbar,text=i18n.t('u4.add_term'),command=lambda:self._run_glossary_action(self.add_glossary_term)).pack(side="left")
-        ttk.Button(mbar,text=i18n.t('u4.edit_selected'),command=lambda:self._run_glossary_action(self.edit_glossary_term)).pack(side="left",padx=(6,0))
-        ttk.Button(mbar,text=i18n.t('u4.delete_selected'),command=lambda:self._run_glossary_action(self.delete_glossary_term)).pack(side="left",padx=(6,0))
-        ttk.Label(manual,text=i18n.t('u4.manual_help', target_name=i18n.t("lang." + _glossary_language(self))),foreground="#666",wraplength=520,justify="left").pack(fill="x",anchor="w",pady=(0,6))
+        mbar=FlowRow(manual); mbar.pack(fill="x",pady=(0,6))
+        mbar.add(ttk.Button(mbar,text=i18n.t('u4.add_term'),command=lambda:self._run_glossary_action(self.add_glossary_term)), side="left")
+        mbar.add(ttk.Button(mbar,text=i18n.t('u4.edit_selected'),command=lambda:self._run_glossary_action(self.edit_glossary_term)), side="left",padx=(6,0))
+        mbar.add(ttk.Button(mbar,text=i18n.t('u4.delete_selected'),command=lambda:self._run_glossary_action(self.delete_glossary_term)), side="left",padx=(6,0))
+        self.glossary_manual_help_label=WrappingLabel(manual,text=i18n.t('u4.manual_help', target_name=i18n.t("lang." + _glossary_language(self))),foreground="#666",justify="left")
+        self.glossary_manual_help_label.pack(fill="x",anchor="w",pady=(0,6))
         self.glossary_tree=ttk.Treeview(manual,columns=("src","dst"),show="headings")
         self.glossary_tree.heading("src",text=i18n.t('u4.source')); self.glossary_tree.heading("dst",text=i18n.t('u4.target_heading', target_name=i18n.t("lang." + _glossary_language(self))))
-        self.glossary_tree.column("src",width=260,stretch=True); self.glossary_tree.column("dst",width=300,stretch=True)
+        self.glossary_tree.column("src",width=260,minwidth=260,stretch=False); self.glossary_tree.column("dst",width=300,minwidth=300,stretch=False)
         self._enable_tree_sort(self.glossary_tree)
         my=ttk.Scrollbar(manual,orient="vertical",command=self.glossary_tree.yview); mx=ttk.Scrollbar(manual,orient="horizontal",command=self.glossary_tree.xview)
         self.glossary_tree.configure(yscrollcommand=my.set,xscrollcommand=mx.set)
         self.glossary_tree.pack(fill="both",expand=True); mx.pack(fill="x")
         self.glossary_tree.bind("<Double-1>",lambda e:self.edit_glossary_term())
 
-        gbar=ttk.Frame(generated); gbar.pack(fill="x",pady=(0,6))
+        gbar=FlowRow(generated); gbar.pack(fill="x",pady=(0,6))
         self.glossary_base_import_btn=ttk.Button(gbar,text=i18n.t('u4.import_base'),command=self.import_glossary_from_base_game)
-        self.glossary_base_import_btn.pack(side="left")
+        gbar.add(self.glossary_base_import_btn, side="left")
         self.glossary_import_menu=tk.Menu(gbar,tearoff=False)
         self.glossary_import_menu.add_command(label=i18n.t('u4.target_import_yaml', target_name=i18n.t("lang." + _glossary_language(self))),command=lambda:self.import_glossary_from_japanese_source("file"))
         self.glossary_import_menu.add_command(label=i18n.t('u4.target_import_mod', target_name=i18n.t("lang." + _glossary_language(self))),command=lambda:self.import_glossary_from_japanese_source("folder"))
         self.glossary_jp_import_btn=ttk.Menubutton(gbar,text=i18n.t('u4.target_import_files', target_name=i18n.t("lang." + _glossary_language(self))),menu=self.glossary_import_menu)
-        self.glossary_jp_import_btn.pack(side="left",padx=(6,0))
-        self.glossary_base_help_label=ttk.Label(generated,text=i18n.t('u4.target_base_help', target_name=i18n.t("lang." + _glossary_language(self))),foreground="#8a5a00",wraplength=560,justify="left")
+        gbar.add(self.glossary_jp_import_btn, side="left",padx=(6,0))
+        self.glossary_base_help_label=WrappingLabel(generated,text=i18n.t('u4.target_base_help', target_name=i18n.t("lang." + _glossary_language(self))),foreground="#8a5a00",justify="left")
         self.glossary_base_help_label.pack(fill="x",anchor="w",pady=(0,4))
-        self.glossary_generated_help_label=ttk.Label(generated,text=i18n.t('u4.target_generated_help', target_name=i18n.t("lang." + _glossary_language(self))),foreground="#666",wraplength=560,justify="left")
+        self.glossary_generated_help_label=WrappingLabel(generated,text=i18n.t('u4.target_generated_help', target_name=i18n.t("lang." + _glossary_language(self))),foreground="#666",justify="left")
         self.glossary_generated_help_label.pack(fill="x",anchor="w",pady=(0,4))
         self.auto_glossary_drop_hint=ttk.Label(generated,text=(i18n.t('u4.target_drop_help', target_name=i18n.t("lang." + _glossary_language(self))) if DND_AVAILABLE else i18n.t('u4.drop_unavailable')),foreground="#555")
         self.auto_glossary_drop_hint.pack(fill="x",anchor="w",pady=(0,6))
         self.auto_glossary_include_phrases_var=tk.BooleanVar(value=False)
-        ttk.Checkbutton(generated,text=i18n.t('u4.include_phrases'),variable=self.auto_glossary_include_phrases_var).pack(anchor="w",pady=(0,4))
-        filters=ttk.Frame(generated); filters.pack(fill="x",pady=(0,6))
+        _wrapping_check(generated,text=i18n.t('u4.include_phrases'),variable=self.auto_glossary_include_phrases_var).pack(anchor="w",pady=(0,4))
+        filters=FlowRow(generated); filters.pack(fill="x",pady=(0,6))
         self.auto_glossary_kind_filter_vars={}
         for term_kind,label in (("proper",i18n.t('u4.proper')),("term",i18n.t('u4.term')),("phrase",i18n.t('u4.phrase'))):
             variable=tk.BooleanVar(value=True)
             self.auto_glossary_kind_filter_vars[term_kind]=variable
-            ttk.Checkbutton(filters,text=label,variable=variable,command=self._refresh_auto_glossary_tree).pack(side="left",padx=(0,8))
+            filters.add(ttk.Checkbutton(filters,text=label,variable=variable,command=self._refresh_auto_glossary_tree), side="left",padx=(0,8))
         self.auto_glossary_tree=ttk.Treeview(generated,columns=("src","dst","kind","term_kind"),show="headings")
         for c,label,w in (("src",i18n.t('u4.source'),250),("dst",i18n.t('u4.target_heading', target_name=i18n.t("lang." + _glossary_language(self))),280),("kind",i18n.t('u4.origin'),140),("term_kind",i18n.t('u4.kind'),90)):
-            self.auto_glossary_tree.heading(c,text=label); self.auto_glossary_tree.column(c,width=w,stretch=True)
+            self.auto_glossary_tree.heading(c,text=label); self.auto_glossary_tree.column(c,width=w,minwidth=w,stretch=False)
         self._enable_tree_sort(self.auto_glossary_tree)
         gy=ttk.Scrollbar(generated,orient="vertical",command=self.auto_glossary_tree.yview); gx=ttk.Scrollbar(generated,orient="horizontal",command=self.auto_glossary_tree.xview)
         self.auto_glossary_tree.configure(yscrollcommand=gy.set,xscrollcommand=gx.set)
         self.auto_glossary_tree.pack(fill="both",expand=True); gx.pack(fill="x")
         self.auto_glossary_tree.bind("<Map>",lambda event:self.after_idle(self._refresh_auto_glossary_tree))
         self.glossary_note_var=tk.StringVar(value=i18n.t('u4.note_hint'))
-        ttk.Label(t,textvariable=self.glossary_note_var,wraplength=1000,justify="left").pack(fill="x",pady=6)
+        WrappingLabel(t,textvariable=self.glossary_note_var,justify="left").pack(fill="x",pady=6)
         for tree in (self.glossary_tree,self.auto_glossary_tree):
             tree.bind("<<TreeviewSelect>>",lambda event:self.show_selected_glossary_note(event.widget))
         if DND_AVAILABLE:
@@ -2876,7 +2896,7 @@ class App(BaseTk):
         ttk.Button(box, text=i18n.t('u5.open_folder'), command=lambda:self._open_path(DATA_ROOT)).grid(row=0, column=3, padx=(6,0))
         ttk.Button(box, text=i18n.t('u5.open_error_logs'), command=lambda:self._open_path(LOG_ROOT)).grid(row=2, column=2, pady=(10,0))
         ttk.Button(box, text=i18n.t('u5.collect_logs'), command=self.collect_error_logs).grid(row=2, column=3, padx=(6,0), pady=(10,0))
-        ttk.Label(box, text=i18n.t('u5.storage_note'), wraplength=920, foreground="#555").grid(row=1, column=0, columnspan=4, sticky="w", pady=(10,0))
+        WrappingLabel(box, text=i18n.t('u5.storage_note'),  foreground="#555").grid(row=1, column=0, columnspan=4, sticky="w", pady=(10,0))
 
         close_box = ttk.LabelFrame(t, text=i18n.t('u5.close_behavior'), padding=12)
         close_box.pack(fill="x", pady=(12,0))
@@ -2886,9 +2906,9 @@ class App(BaseTk):
         close_combo.grid(row=0, column=1, sticky="w", padx=(8,12))
         ttk.Label(close_box, text=i18n.t('u5.close_recommendation'), foreground="#555").grid(row=0,column=2,sticky="w")
         ttk.Button(close_box, text=i18n.t('u5.save_setting'), command=self.save_close_behavior_settings).grid(row=0,column=3,padx=(12,0))
-        ttk.Label(close_box, text=(
+        WrappingLabel(close_box, text=(
             i18n.t('u5.close_help')
-        ), foreground="#555", wraplength=1100, justify="left").grid(row=1,column=0,columnspan=4,sticky="w",pady=(5,0))
+        ), foreground="#555",  justify="left").grid(row=1,column=0,columnspan=4,sticky="w",pady=(5,0))
 
         structure = ttk.LabelFrame(t, text=i18n.t('u5.folder_structure'), padding=12)
         structure.pack(fill="both", expand=True, pady=(12,0))
@@ -2984,12 +3004,12 @@ class App(BaseTk):
         frame = ttk.Frame(dlg, padding=18)
         frame.pack(fill="both", expand=True)
         ttk.Label(frame, text=i18n.t('p0.the_close_button_was_pressed'), font=("", 14, "bold")).pack(anchor="w")
-        ttk.Label(
+        WrappingLabel(
             frame,
             text=(
                 i18n.t('p0.minimize_the_window_or_quit')
             ),
-            justify="left", wraplength=560
+            justify="left"
         ).pack(anchor="w", pady=(10, 10))
         if active_translation or active_monitor:
             running = []
@@ -3209,8 +3229,8 @@ class App(BaseTk):
 
         target = ttk.LabelFrame(left, text=i18n.t('u6.monitor_targets'), padding=8)
         target.pack(fill="x", pady=(0,8))
-        ttk.Label(target, textvariable=self.monitor_target_summary_var, wraplength=470, justify="left").pack(anchor="w")
-        ttk.Label(target, text=i18n.t('u6.add_or_change_targets_and_research'), foreground="#666", wraplength=470, justify="left").pack(anchor="w", pady=(5,0))
+        WrappingLabel(target, textvariable=self.monitor_target_summary_var,  justify="left").pack(anchor="w")
+        WrappingLabel(target, text=i18n.t('u6.add_or_change_targets_and_research'), foreground="#666",  justify="left").pack(anchor="w", pady=(5,0))
         ttk.Button(target, text=i18n.t('u6.open_translation_status'), command=lambda:self.notebook.select(self.tab_status)).pack(anchor="w", pady=(7,0))
 
         cfg = ttk.LabelFrame(left, text=i18n.t('u6.untranslated_monitor_settings'), padding=8)
@@ -3236,32 +3256,32 @@ class App(BaseTk):
         self.monitor_model_combo.grid(row=5, column=1, columnspan=2, sticky="ew", padx=6, pady=(5,0))
         ttk.Label(cfg, text=i18n.t('u6.api_key')).grid(row=6, column=0, sticky="w", pady=(5,0))
         ttk.Entry(cfg, textvariable=self.monitor_api_key_var, show="•").grid(row=6, column=1, columnspan=2, sticky="ew", padx=6, pady=(5,0))
-        ttk.Label(cfg, textvariable=self.monitor_connection_var, foreground="#555", wraplength=460, justify="left").grid(row=7, column=0, columnspan=3, sticky="w", pady=(5,0))
-        ttk.Checkbutton(cfg, text=i18n.t('u6.review_ambiguous_candidates_with_a_lightweight'), variable=self.monitor_use_llm_var).grid(row=8, column=0, columnspan=3, sticky="w", pady=(5,0))
-        ttk.Checkbutton(cfg, text=i18n.t('u6.also_search_other_mods_for_japanese', target_name=i18n.t("lang." + 'japanese')), variable=self.monitor_check_translation_mods_var).grid(row=9, column=0, columnspan=3, sticky="w", pady=(3,0))
-        ttk.Label(cfg, text=i18n.t('u6.use_a_small_model_3b_8b'), foreground="#8a4b00", wraplength=460, justify="left").grid(row=10, column=0, columnspan=3, sticky="w", pady=(5,0))
+        WrappingLabel(cfg, textvariable=self.monitor_connection_var, foreground="#555",  justify="left").grid(row=7, column=0, columnspan=3, sticky="w", pady=(5,0))
+        _wrapping_check(cfg, text=i18n.t('u6.review_ambiguous_candidates_with_a_lightweight'), variable=self.monitor_use_llm_var).grid(row=8, column=0, columnspan=3, sticky="w", pady=(5,0))
+        _wrapping_check(cfg, text=i18n.t('u6.also_search_other_mods_for_japanese', target_name=i18n.t("lang." + _current_target_lang(self))), variable=self.monitor_check_translation_mods_var).grid(row=9, column=0, columnspan=3, sticky="ew", pady=(3,0))
+        WrappingLabel(cfg, text=i18n.t('u6.use_a_small_model_3b_8b'), foreground="#8a4b00",  justify="left").grid(row=10, column=0, columnspan=3, sticky="w", pady=(5,0))
 
         controls = ttk.LabelFrame(left, text=i18n.t('u6.monitor_controls'), padding=8)
         controls.pack(fill="x")
-        r1=ttk.Frame(controls); r1.pack(fill="x")
+        r1=FlowRow(controls); r1.pack(fill="x")
         self.monitor_toggle_btn = ttk.Button(r1, text=i18n.t('u6.start_continuous_monitoring'), command=self.toggle_monitor)
-        self.monitor_toggle_btn.pack(side="left")
-        ttk.Button(r1, text=i18n.t('u6.research_again'), command=self.research_monitor_targets).pack(side="left", padx=(6,0))
+        r1.add(self.monitor_toggle_btn, side="left")
+        r1.add(ttk.Button(r1, text=i18n.t('u6.research_again'), command=self.research_monitor_targets), side="left", padx=(6,0))
         self.mod_research_stop_btn = ttk.Button(r1, text=i18n.t('u6.stop_research'), command=self.stop_mod_research, state="disabled")
-        self.mod_research_stop_btn.pack(side="left", padx=(6,0))
-        ttk.Label(controls, textvariable=self.monitor_status_var, wraplength=460, justify="left").pack(anchor="w", pady=(6,0))
+        r1.add(self.mod_research_stop_btn, side="left", padx=(6,0))
+        WrappingLabel(controls, textvariable=self.monitor_status_var,  justify="left").pack(anchor="w", pady=(6,0))
 
-        result_top = ttk.Frame(right); result_top.pack(fill="x", pady=(0,6))
-        ttk.Label(result_top, text=i18n.t('u6.untranslated_candidates'), font=("", 12, "bold")).pack(side="left")
-        ttk.Label(result_top, textvariable=self.monitor_summary_var, font=("", 11, "bold")).pack(side="left", padx=(12,0))
-        ttk.Button(result_top, text=i18n.t('u6.clear_candidates'), command=self.clear_monitor_results).pack(side="right")
-        ttk.Button(result_top, text=i18n.t('u6.save_csv'), command=self.export_monitor_csv).pack(side="right", padx=(0,6))
+        result_top = FlowRow(right); result_top.pack(fill="x", pady=(0,6))
+        result_top.add(ttk.Label(result_top, text=i18n.t('u6.untranslated_candidates'), font=("", 12, "bold")), side="left")
+        result_top.add(ttk.Label(result_top, textvariable=self.monitor_summary_var, font=("", 11, "bold")), side="left", padx=(12,0))
+        result_top.add(ttk.Button(result_top, text=i18n.t('u6.clear_candidates'), command=self.clear_monitor_results), side="right")
+        result_top.add(ttk.Button(result_top, text=i18n.t('u6.save_csv'), command=self.export_monitor_csv), side="right", padx=(0,6))
 
         result_frame = ttk.Frame(right); result_frame.pack(fill="both", expand=True)
         cols=("kind","confidence","file","key","text")
         self.monitor_tree=ttk.Treeview(result_frame, columns=cols, show="headings", height=18)
         for c,txt,w in (("kind",i18n.t('u6.type'),130),("confidence",i18n.t('u6.assessment'),75),("file",i18n.t('u6.file'),280),("key",i18n.t('u6.key'),280),("text",i18n.t('u6.content'),450)):
-            self.monitor_tree.heading(c,text=txt); self.monitor_tree.column(c,width=w,anchor="w")
+            self.monitor_tree.heading(c,text=txt); self.monitor_tree.column(c,width=w,minwidth=w,stretch=False,anchor="w")
         sy=ttk.Scrollbar(result_frame,orient="vertical",command=self.monitor_tree.yview)
         sx=ttk.Scrollbar(result_frame,orient="horizontal",command=self.monitor_tree.xview)
         self._enable_tree_sort(self.monitor_tree)
@@ -3272,14 +3292,16 @@ class App(BaseTk):
         result_frame.rowconfigure(0,weight=1); result_frame.columnconfigure(0,weight=1)
 
         note = ttk.LabelFrame(right, text=i18n.t('u6.how_it_works'), padding=6); note.pack(fill="x", pady=(6,0))
-        ttk.Label(note, text=i18n.t('u6.while_idle_only_yaml_modification_times'), wraplength=650, justify="left").pack(anchor="w")
+        WrappingLabel(note, text=i18n.t('u6.while_idle_only_yaml_modification_times'),  justify="left").pack(anchor="w")
 
     def _build_status_tab(self):
         t = self.tab_status
         top = ttk.Frame(t); top.pack(fill="x", pady=(0,6))
         ttk.Label(top, text=i18n.t('u6.japanese_translation_status_by_mod', target_name=i18n.t("lang." + _current_target_lang(self))), font=("", 13, "bold")).pack(side="left")
         ttk.Label(top, text=_relation_scope_text(_current_target_lang(self)), foreground="#8a5a00").pack(side="left", padx=(8,0))
-        ttk.Label(top, textvariable=self.mod_status_summary_var).pack(side="right")
+        # 集計の文は長くなる（言語によっては見出しの横に収まらない）ので、見出しの下の行の右に置く
+        summary_row = ttk.Frame(t); summary_row.pack(fill="x", pady=(0,4))
+        ttk.Label(summary_row, textvariable=self.mod_status_summary_var).pack(side="right")
 
         # フルHDでも縦方向が苦しくなりにくいよう、左に設定系、右に結果系を置く。
         body = ttk.Panedwindow(t, orient="horizontal")
@@ -3288,16 +3310,17 @@ class App(BaseTk):
         right_outer, right, self.status_right_canvas, self.status_right_scrollbar = self._make_vertical_scroll_area(body)
         body.add(left_outer, weight=2)
         body.add(right_outer, weight=5)
+        initial_pane_split(body, 2, 3)
 
         discovery = ttk.LabelFrame(left, text=i18n.t('u6.game_mod_location'), padding=6); discovery.pack(fill="x", pady=(0,6))
-        dbar1 = ttk.Frame(discovery); dbar1.pack(fill="x", pady=(0,5))
-        ttk.Button(dbar1, text=i18n.t('u6.detect_game_mod_locations'), command=self.discover_mod_locations).pack(side="left")
-        ttk.Button(dbar1, text=i18n.t('u6.research_mods_in_selected_locations'), command=self.research_selected_discovered_location).pack(side="left", padx=(6,0))
-        ttk.Label(dbar1, textvariable=self.mod_discovery_status_var).pack(side="right")
-        dbar2 = ttk.Frame(discovery); dbar2.pack(fill="x", pady=(0,5))
-        ttk.Checkbutton(dbar2, text=i18n.t('u6.multi_select_mode'), variable=self.discovery_multi_select_var).pack(side="left")
-        ttk.Button(dbar2, text=i18n.t('u6.select_all'), command=self.select_all_discovered_locations).pack(side="left", padx=(6,0))
-        ttk.Button(dbar2, text=i18n.t('u6.deselect_all'), command=lambda:self.discovered_mod_tree.selection_remove(self.discovered_mod_tree.selection())).pack(side="left", padx=(6,0))
+        dbar1 = FlowRow(discovery); dbar1.pack(fill="x", pady=(0,5))
+        dbar1.add(ttk.Button(dbar1, text=i18n.t('u6.detect_game_mod_locations'), command=self.discover_mod_locations), side="left")
+        dbar1.add(ttk.Button(dbar1, text=i18n.t('u6.research_mods_in_selected_locations'), command=self.research_selected_discovered_location), side="left", padx=(6,0))
+        WrappingLabel(discovery, textvariable=self.mod_discovery_status_var).pack(side='top')
+        dbar2 = FlowRow(discovery); dbar2.pack(fill="x", pady=(0,5))
+        dbar2.add(ttk.Checkbutton(dbar2, text=i18n.t('u6.multi_select_mode'), variable=self.discovery_multi_select_var), side="left")
+        dbar2.add(ttk.Button(dbar2, text=i18n.t('u6.select_all'), command=self.select_all_discovered_locations), side="left", padx=(6,0))
+        dbar2.add(ttk.Button(dbar2, text=i18n.t('u6.deselect_all'), command=lambda:self.discovered_mod_tree.selection_remove(self.discovered_mod_tree.selection())), side="left", padx=(6,0))
         cols=("game","kind","mods","path")
         treewrap = ttk.Frame(discovery); treewrap.pack(fill="both", expand=True)
         self.discovered_mod_tree=ttk.Treeview(treewrap, columns=cols, show="headings", height=6, selectmode="extended")
@@ -3315,7 +3338,7 @@ class App(BaseTk):
         dsy.grid(row=0,column=1,sticky="ns")
         dsx.grid(row=1,column=0,sticky="ew")
         treewrap.rowconfigure(0,weight=1); treewrap.columnconfigure(0,weight=1)
-        ttk.Label(discovery, text=i18n.t('u6.ctrl_click_to_select_multiple_locations'), foreground="#666", wraplength=330, justify="left").pack(anchor="w", pady=(4,0))
+        WrappingLabel(discovery, text=i18n.t('u6.ctrl_click_to_select_multiple_locations'), foreground="#666",  justify="left").pack(anchor="w", pady=(4,0))
 
         search = ttk.LabelFrame(left, text=i18n.t('u6.search_assessed_mods'), padding=6); search.pack(fill="x", pady=(0,6))
         ttk.Label(search, text=i18n.t('u6.mod_name')).grid(row=0, column=0, sticky="w")
@@ -3325,11 +3348,11 @@ class App(BaseTk):
         search_entry.bind("<KeyRelease>", self._schedule_mod_status_search)
         ttk.Button(search, text=i18n.t('u6.search'), command=self.search_mod_status).grid(row=0, column=2)
         ttk.Button(search, text=i18n.t('u6.clear'), command=self.clear_mod_status_search).grid(row=0, column=3, padx=(6,0))
-        ttk.Label(search, textvariable=self.mod_status_search_result_var, foreground="#555", wraplength=300, justify="left").grid(row=1, column=0, columnspan=4, sticky="w", pady=(6,0))
+        WrappingLabel(search, textvariable=self.mod_status_search_result_var, foreground="#555",  justify="left").grid(row=1, column=0, columnspan=4, sticky="w", pady=(6,0))
         search.columnconfigure(1, weight=1)
 
         relation = ttk.LabelFrame(left, text=i18n.t('u6.mod_classification_and_linking'), padding=6); relation.pack(fill="x", pady=(0,6))
-        ttk.Label(relation, text=i18n.t('u6.set_translation_mod_source_mod_exceptions', target_name=i18n.t("lang." + _current_target_lang(self))), foreground="#555", wraplength=320, justify="left").pack(anchor="w")
+        WrappingLabel(relation, text=i18n.t('u6.set_translation_mod_source_mod_exceptions', target_name=i18n.t("lang." + _current_target_lang(self))), foreground="#555",  justify="left").pack(anchor="w")
         ttk.Button(relation, text=i18n.t('u6.open_mod_classification_and_linking'), command=lambda:self._open_mod_relation_dialog("status")).pack(anchor="w", pady=(6,0))
 
         # 翻訳状況タブから探索専用LLMをそのまま変更・適用できる。
@@ -3342,17 +3365,17 @@ class App(BaseTk):
         ttk.Label(moncfg,text=i18n.t('u6.model')).grid(row=2,column=0,sticky="w", pady=(6,0))
         self.status_monitor_model_combo=ttk.Combobox(moncfg,textvariable=self.monitor_model_var,state="normal",width=24)
         self.status_monitor_model_combo.grid(row=2,column=1,columnspan=2,sticky="ew",padx=(5,8), pady=(6,0))
-        btnrow = ttk.Frame(moncfg); btnrow.grid(row=3,column=0,columnspan=3,sticky="ew", pady=(8,0))
-        ttk.Button(btnrow,text=i18n.t('u6.reload_model_list'),command=self.refresh_monitor_models).pack(side="left")
-        ttk.Button(btnrow,text=i18n.t('u6.apply_research_settings'),command=self.apply_monitor_settings).pack(side="left", padx=(6,0))
+        btnrow = FlowRow(moncfg); btnrow.grid(row=3,column=0,columnspan=3,sticky="ew", pady=(8,0))
+        btnrow.add(ttk.Button(btnrow,text=i18n.t('u6.reload_model_list'),command=self.refresh_monitor_models), side="left")
+        btnrow.add(ttk.Button(btnrow,text=i18n.t('u6.apply_research_settings'),command=self.apply_monitor_settings), side="left", padx=(6,0))
         moncfg.columnconfigure(1,weight=1); moncfg.columnconfigure(2,weight=1)
-        ttk.Label(moncfg,text=i18n.t('u6.reloading_only_retrieves_the_model_list'),foreground="#a35a00",wraplength=320,justify="left").grid(row=4,column=0,columnspan=3,sticky="w",pady=(6,0))
+        WrappingLabel(moncfg,text=i18n.t('u6.reloading_only_retrieves_the_model_list'),foreground="#a35a00",justify="left").grid(row=4,column=0,columnspan=3,sticky="w",pady=(6,0))
 
         info = ttk.LabelFrame(left, text=i18n.t('u6.assessment_details'), padding=6); info.pack(fill="x", pady=(0,6))
-        ttk.Label(info,text=i18n.t('u6.check_source_mods_and_separate_translation', target_name=i18n.t("lang." + _current_target_lang(self))),justify="left",wraplength=320).pack(anchor="w")
+        WrappingLabel(info,text=i18n.t('u6.check_source_mods_and_separate_translation', target_name=i18n.t("lang." + _current_target_lang(self))),justify="left").pack(anchor="w")
 
         guide = ttk.LabelFrame(left, text=i18n.t('u6.selection_and_actions'), padding=6); guide.pack(fill="both", expand=True)
-        ttk.Label(guide, text=i18n.t('u6.tip_hold_ctrl_to_select_multiple'), foreground="#666", justify="left", wraplength=320).pack(anchor="w")
+        WrappingLabel(guide, text=i18n.t('u6.tip_hold_ctrl_to_select_multiple'), foreground="#666", justify="left").pack(anchor="w")
 
         ttk.Label(right, textvariable=self.mod_status_game_filter_var, foreground="#315b8a").pack(fill="x", pady=(0,4))
         content = ttk.Panedwindow(right, orient="vertical"); content.pack(fill="x", expand=False)
@@ -3386,34 +3409,34 @@ class App(BaseTk):
         self.mod_status_detail.configure(state="disabled")
 
         bottom=ttk.Frame(right); bottom.pack(fill="x", pady=(4,0))
-        bottom1=ttk.Frame(bottom); bottom1.pack(fill="x")
-        bottom2=ttk.Frame(bottom); bottom2.pack(fill="x", pady=(4,0))
+        bottom1=FlowRow(bottom); bottom1.pack(fill="x")
+        bottom2=FlowRow(bottom); bottom2.pack(fill="x", pady=(4,0))
         self.status_selection_action_buttons=[]
         self.status_research_selected_btn=ttk.Button(bottom1,text=i18n.t('u6.research_selected_mods_only'),command=self.research_selected_status_mods,state="disabled")
-        self.status_research_selected_btn.pack(side="left"); self.status_selection_action_buttons.append(self.status_research_selected_btn)
+        bottom1.add(self.status_research_selected_btn, side="left"); self.status_selection_action_buttons.append(self.status_research_selected_btn)
         self.status_normal_queue_btn=ttk.Button(bottom1,text=i18n.t('u6.add_to_translation_queue'),command=lambda:self.queue_selected_mod_from_status(start_now=False),state="disabled")
-        self.status_normal_queue_btn.pack(side="left",padx=(6,0)); self.status_selection_action_buttons.append(self.status_normal_queue_btn)
+        bottom1.add(self.status_normal_queue_btn, side="left",padx=(6,0)); self.status_selection_action_buttons.append(self.status_normal_queue_btn)
         self.status_chinese_queue_btn = ttk.Button(bottom1,text=i18n.t('u6.add_to_chinese_based_queue'),command=self.queue_selected_mods_to_chinese_basis,state="disabled")
-        self.status_chinese_queue_btn.pack(side="left",padx=(6,0)); self.status_selection_action_buttons.append(self.status_chinese_queue_btn)
+        bottom1.add(self.status_chinese_queue_btn, side="left",padx=(6,0)); self.status_selection_action_buttons.append(self.status_chinese_queue_btn)
         self.status_except_normal_btn=ttk.Button(bottom1,text=i18n.t('u6.add_to_translation_queue_excluding_selected'),command=self.queue_all_except_selected_mods,state="disabled")
-        self.status_except_normal_btn.pack(side="left",padx=(6,0)); self.status_selection_action_buttons.append(self.status_except_normal_btn)
+        bottom1.add(self.status_except_normal_btn, side="left",padx=(6,0)); self.status_selection_action_buttons.append(self.status_except_normal_btn)
         self.status_except_chinese_btn=ttk.Button(bottom1,text=i18n.t('u6.add_to_chinese_based_queue_excluding'),command=self.queue_all_except_selected_mods_chinese,state="disabled")
-        self.status_except_chinese_btn.pack(side="left",padx=(6,0)); self.status_selection_action_buttons.append(self.status_except_chinese_btn)
+        bottom1.add(self.status_except_chinese_btn, side="left",padx=(6,0)); self.status_selection_action_buttons.append(self.status_except_chinese_btn)
 
         self.status_qa_btn=ttk.Button(bottom2,text=i18n.t('u6.open_qa_comparison_editor'),command=lambda:self._send_pair_to_qa_or_diff("status","review"),state="disabled")
-        self.status_qa_btn.pack(side="left"); self.status_selection_action_buttons.append(self.status_qa_btn)
+        bottom2.add(self.status_qa_btn, side="left"); self.status_selection_action_buttons.append(self.status_qa_btn)
         self.status_diff_btn=ttk.Button(bottom2,text=i18n.t('u6.open_difference_research'),command=lambda:self._send_pair_to_qa_or_diff("status","diff"),state="disabled")
-        self.status_diff_btn.pack(side="left",padx=(6,0)); self.status_selection_action_buttons.append(self.status_diff_btn)
+        bottom2.add(self.status_diff_btn, side="left",padx=(6,0)); self.status_selection_action_buttons.append(self.status_diff_btn)
         self.status_overwrite_btn = ttk.Button(bottom2,text=i18n.t('u6.overwrite_mod_with_completed_translation', target_name=i18n.t("lang." + _current_target_lang(self))),command=self.overwrite_selected_status_mod,state="disabled")
-        self.status_overwrite_btn.pack(side="left",padx=(6,0)); self.status_selection_action_buttons.append(self.status_overwrite_btn)
-        ttk.Separator(bottom2,orient="vertical").pack(side="left",fill="y",padx=8)
-        ttk.Button(bottom2,text=i18n.t('u6.show_assessment_log'),command=self.show_translation_judgement_log).pack(side="left")
-        ttk.Button(bottom2,text=i18n.t('u6.export_assessment_log'),command=self.export_translation_judgement_log).pack(side="left",padx=(6,0))
-        ttk.Button(bottom2,text=i18n.t('u6.export_link_report'),command=self.export_relation_report).pack(side="left",padx=(6,0))
-        ttk.Separator(bottom2,orient="vertical").pack(side="left",fill="y",padx=8)
-        ttk.Button(bottom2,text=i18n.t('u6.clear_results'),command=self.clear_mod_status_results).pack(side="left")
-        ttk.Button(bottom2,text=i18n.t('u6.reload_cache'),command=self._restore_cached_mod_status).pack(side="left",padx=(6,0))
-        ttk.Button(bottom2,text=i18n.t('u6.save_csv'),command=self.export_mod_status_csv).pack(side="left",padx=(6,0))
+        bottom2.add(self.status_overwrite_btn, side="left",padx=(6,0)); self.status_selection_action_buttons.append(self.status_overwrite_btn)
+        bottom2.add(ttk.Separator(bottom2,orient="vertical"), side="left",fill="y",padx=8)
+        bottom2.add(ttk.Button(bottom2,text=i18n.t('u6.show_assessment_log'),command=self.show_translation_judgement_log), side="left")
+        bottom2.add(ttk.Button(bottom2,text=i18n.t('u6.export_assessment_log'),command=self.export_translation_judgement_log), side="left",padx=(6,0))
+        bottom2.add(ttk.Button(bottom2,text=i18n.t('u6.export_link_report'),command=self.export_relation_report), side="left",padx=(6,0))
+        bottom2.add(ttk.Separator(bottom2,orient="vertical"), side="left",fill="y",padx=8)
+        bottom2.add(ttk.Button(bottom2,text=i18n.t('u6.clear_results'),command=self.clear_mod_status_results), side="left")
+        bottom2.add(ttk.Button(bottom2,text=i18n.t('u6.reload_cache'),command=self._restore_cached_mod_status), side="left",padx=(6,0))
+        bottom2.add(ttk.Button(bottom2,text=i18n.t('u6.save_csv'),command=self.export_mod_status_csv), side="left",padx=(6,0))
 
     def _translation_judgement_log_text(self, *, target_lang=None):
         """Build a human-readable audit snapshot of Japanese-Mod judgement state."""
@@ -3791,17 +3814,20 @@ class App(BaseTk):
         t = self.tab_diagnostic
         head = ttk.Frame(t); head.pack(fill="x")
         ttk.Label(head, text=i18n.t('u7.full_diagnostics_check_localization_contamination_missing'), font=("", 14, "bold")).pack(side="left")
-        ttk.Label(head, textvariable=self.diagnostic_summary_var).pack(side="right")
-        ttk.Label(t, text=(
+        # 状態の文は見出しの横に収まらない言語があるので、見出しの下の行の右に置く
+        diagnostic_summary_row = ttk.Frame(t); diagnostic_summary_row.pack(fill="x")
+        ttk.Label(diagnostic_summary_row, textvariable=self.diagnostic_summary_var).pack(side="right")
+        WrappingLabel(t, text=(
             i18n.t('u7.using_english_simplified_chinese_source_keys' if _current_target_lang(self) == 'japanese' else 'u7.using_english_simplified_chinese_source_keys.target', target_name=i18n.t('lang.' + _current_target_lang(self)))
-        ), foreground="#555", wraplength=1100, justify="left").pack(fill="x", pady=(6,8))
+        ), foreground="#555",  justify="left").pack(fill="x", pady=(6,8))
 
         pane = ttk.Panedwindow(t, orient="horizontal"); pane.pack(fill="both", expand=True)
         left = ttk.Frame(pane); right = ttk.Frame(pane)
         pane.add(left, weight=2); pane.add(right, weight=5)
+        initial_pane_split(pane, 2, 3)
 
         targets = ttk.LabelFrame(left, text=i18n.t('u7.diagnostic_targets_from_translation_status'), padding=6); targets.pack(fill="both", expand=True)
-        ttk.Label(targets, textvariable=self.diagnostic_target_var, foreground="#555").pack(anchor="w")
+        WrappingLabel(targets, textvariable=self.diagnostic_target_var, foreground="#555").pack(anchor="w")
         tw = ttk.Frame(targets); tw.pack(fill="both", expand=True, pady=(6,0))
         self.diagnostic_target_tree = ttk.Treeview(tw, columns=("mod","status","path"), show="headings", selectmode="extended", height=18)
         self._enable_ctrl_multiselect(self.diagnostic_target_tree)
@@ -3811,16 +3837,16 @@ class App(BaseTk):
         self.diagnostic_target_tree.configure(yscrollcommand=sy.set,xscrollcommand=sx.set)
         tw.rowconfigure(0,weight=1); tw.columnconfigure(0,weight=1)
         self.diagnostic_target_tree.grid(row=0,column=0,sticky="nsew"); sy.grid(row=0,column=1,sticky="ns"); sx.grid(row=1,column=0,sticky="ew")
-        tbtn=ttk.Frame(targets); tbtn.pack(fill="x",pady=(7,0))
-        self.diagnostic_refresh_btn=ttk.Button(tbtn,text=i18n.t('u7.reload_from_translation_status'),command=self._refresh_diagnostic_targets); self.diagnostic_refresh_btn.pack(side="left")
-        self.diagnostic_select_all_btn=ttk.Button(tbtn,text=i18n.t('u7.select_all'),command=self._select_all_diagnostic_targets); self.diagnostic_select_all_btn.pack(side="left",padx=(6,0))
-        self.diagnostic_clear_selection_btn=ttk.Button(tbtn,text=i18n.t('u7.deselect_all'),command=self._clear_diagnostic_target_selection); self.diagnostic_clear_selection_btn.pack(side="left",padx=(6,0))
-        self.diagnostic_relation_btn=ttk.Button(tbtn,text=i18n.t('u7.mod_classification_and_relations'),command=lambda:self._open_mod_relation_dialog("diagnostic")); self.diagnostic_relation_btn.pack(side="left",padx=(6,0))
+        tbtn=FlowRow(targets); tbtn.pack(fill="x",pady=(7,0))
+        self.diagnostic_refresh_btn=ttk.Button(tbtn,text=i18n.t('u7.reload_from_translation_status'),command=self._refresh_diagnostic_targets); tbtn.add(self.diagnostic_refresh_btn, side="left")
+        self.diagnostic_select_all_btn=ttk.Button(tbtn,text=i18n.t('u7.select_all'),command=self._select_all_diagnostic_targets); tbtn.add(self.diagnostic_select_all_btn, side="left",padx=(6,0))
+        self.diagnostic_clear_selection_btn=ttk.Button(tbtn,text=i18n.t('u7.deselect_all'),command=self._clear_diagnostic_target_selection); tbtn.add(self.diagnostic_clear_selection_btn, side="left",padx=(6,0))
+        self.diagnostic_relation_btn=ttk.Button(tbtn,text=i18n.t('u7.mod_classification_and_relations'),command=lambda:self._open_mod_relation_dialog("diagnostic")); tbtn.add(self.diagnostic_relation_btn, side="left",padx=(6,0))
 
         actions = ttk.LabelFrame(left, text=i18n.t('u7.actions'), padding=6); actions.pack(fill="x", pady=(8,0))
         self.diagnostic_scan_btn=ttk.Button(actions,text=i18n.t('u7.diagnose_selected_mods'),command=lambda:self._start_localization_diagnostic(False)); self.diagnostic_scan_btn.pack(fill="x")
         self.diagnostic_repair_btn=ttk.Button(actions,text=i18n.t('u7.repair_with_configured_choices'),command=lambda:self._start_localization_diagnostic(True)); self.diagnostic_repair_btn.pack(fill="x",pady=(6,0))
-        ttk.Label(actions,text=i18n.t('u7.repair_backup_location_documents_paradox_localization'),foreground="#666",wraplength=340,justify="left").pack(anchor="w",pady=(7,0))
+        WrappingLabel(actions,text=i18n.t('u7.repair_backup_location_documents_paradox_localization'),foreground="#666",justify="left").pack(anchor="w",pady=(7,0))
 
         resultbox=ttk.LabelFrame(right,text=i18n.t('u7.diagnostic_results'),padding=6); resultbox.pack(fill="both",expand=True)
         rw=ttk.Frame(resultbox); rw.pack(fill="both",expand=True)
@@ -3835,25 +3861,25 @@ class App(BaseTk):
         self.diagnostic_tree.grid(row=0,column=0,sticky="nsew"); sy2.grid(row=0,column=1,sticky="ns"); sx2.grid(row=1,column=0,sticky="ew")
         self.diagnostic_tree.bind("<<TreeviewSelect>>", self._on_diagnostic_result_selected)
         self._enable_tree_sort(self.diagnostic_tree)
-        conflict_bar=ttk.Frame(resultbox); conflict_bar.pack(fill="x",pady=(7,0))
-        ttk.Label(conflict_bar,text=i18n.t('u7.choose_translations_only_for_conflicts')).pack(side="left")
-        self.diagnostic_keep_source_btn=ttk.Button(conflict_bar,text=i18n.t('u7.use_source_mod_translation_for_selected'),command=lambda:self._set_diagnostic_conflict_choice("source")); self.diagnostic_keep_source_btn.pack(side="left",padx=(8,0))
-        self.diagnostic_keep_translation_btn=ttk.Button(conflict_bar,text=i18n.t('u7.use_japanese_translation_mod_translation_for' if _current_target_lang(self) == 'japanese' else 'u7.use_japanese_translation_mod_translation_for.target', target_name=i18n.t('lang.' + _current_target_lang(self))),command=lambda:self._set_diagnostic_conflict_choice("translation")); self.diagnostic_keep_translation_btn.pack(side="left",padx=(6,0))
-        self.diagnostic_auto_choice_btn=ttk.Button(conflict_bar,text=i18n.t('u7.auto_organize_selected_conflicts'),command=lambda:self._set_diagnostic_conflict_choice("auto")); self.diagnostic_auto_choice_btn.pack(side="left",padx=(6,0))
-        self.diagnostic_clear_choice_btn=ttk.Button(conflict_bar,text=i18n.t('u7.clear_selected_conflict_choices'),command=lambda:self._set_diagnostic_conflict_choice(None)); self.diagnostic_clear_choice_btn.pack(side="left",padx=(6,0))
-        conflict_bar2=ttk.Frame(resultbox); conflict_bar2.pack(fill="x",pady=(5,0))
+        conflict_bar=FlowRow(resultbox); conflict_bar.pack(fill="x",pady=(7,0))
+        WrappingLabel(resultbox,text=i18n.t('u7.choose_translations_only_for_conflicts')).pack(side='top')
+        self.diagnostic_keep_source_btn=ttk.Button(conflict_bar,text=i18n.t('u7.use_source_mod_translation_for_selected'),command=lambda:self._set_diagnostic_conflict_choice("source")); conflict_bar.add(self.diagnostic_keep_source_btn, side="left",padx=(8,0))
+        self.diagnostic_keep_translation_btn=ttk.Button(conflict_bar,text=i18n.t('u7.use_japanese_translation_mod_translation_for' if _current_target_lang(self) == 'japanese' else 'u7.use_japanese_translation_mod_translation_for.target', target_name=i18n.t('lang.' + _current_target_lang(self))),command=lambda:self._set_diagnostic_conflict_choice("translation")); conflict_bar.add(self.diagnostic_keep_translation_btn, side="left",padx=(6,0))
+        self.diagnostic_auto_choice_btn=ttk.Button(conflict_bar,text=i18n.t('u7.auto_organize_selected_conflicts'),command=lambda:self._set_diagnostic_conflict_choice("auto")); conflict_bar.add(self.diagnostic_auto_choice_btn, side="left",padx=(6,0))
+        self.diagnostic_clear_choice_btn=ttk.Button(conflict_bar,text=i18n.t('u7.clear_selected_conflict_choices'),command=lambda:self._set_diagnostic_conflict_choice(None)); conflict_bar.add(self.diagnostic_clear_choice_btn, side="left",padx=(6,0))
+        conflict_bar2=FlowRow(resultbox); conflict_bar2.pack(fill="x",pady=(5,0))
         self.diagnostic_integration_status_var = tk.StringVar(value=i18n.t('u7.integration_targets_not_diagnosed'))
-        ttk.Label(conflict_bar2,textvariable=self.diagnostic_integration_status_var, foreground="#555").pack(side="left")
-        ttk.Label(conflict_bar2,text=i18n.t('u7.all_conflicts')).pack(side="left")
-        self.diagnostic_all_source_btn=ttk.Button(conflict_bar2,text=i18n.t('u7.use_source_translation_for_all_conflicts'),command=lambda:self._set_all_diagnostic_conflict_choices("source")); self.diagnostic_all_source_btn.pack(side="left",padx=(8,0))
-        self.diagnostic_all_translation_btn=ttk.Button(conflict_bar2,text=i18n.t('u7.use_japanese_translation_mod_translation_for_2' if _current_target_lang(self) == 'japanese' else 'u7.use_japanese_translation_mod_translation_for_2.target', target_name=i18n.t('lang.' + _current_target_lang(self))),command=lambda:self._set_all_diagnostic_conflict_choices("translation")); self.diagnostic_all_translation_btn.pack(side="left",padx=(6,0))
-        self.diagnostic_all_auto_btn=ttk.Button(conflict_bar2,text=i18n.t('u7.auto_organize_all_conflicts'),command=lambda:self._set_all_diagnostic_conflict_choices("auto")); self.diagnostic_all_auto_btn.pack(side="left",padx=(6,0))
+        WrappingLabel(resultbox,textvariable=self.diagnostic_integration_status_var, foreground="#555").pack(side='top')
+        WrappingLabel(resultbox,text=i18n.t('u7.all_conflicts')).pack(side='top')
+        self.diagnostic_all_source_btn=ttk.Button(conflict_bar2,text=i18n.t('u7.use_source_translation_for_all_conflicts'),command=lambda:self._set_all_diagnostic_conflict_choices("source")); conflict_bar2.add(self.diagnostic_all_source_btn, side="left",padx=(8,0))
+        self.diagnostic_all_translation_btn=ttk.Button(conflict_bar2,text=i18n.t('u7.use_japanese_translation_mod_translation_for_2' if _current_target_lang(self) == 'japanese' else 'u7.use_japanese_translation_mod_translation_for_2.target', target_name=i18n.t('lang.' + _current_target_lang(self))),command=lambda:self._set_all_diagnostic_conflict_choices("translation")); conflict_bar2.add(self.diagnostic_all_translation_btn, side="left",padx=(6,0))
+        self.diagnostic_all_auto_btn=ttk.Button(conflict_bar2,text=i18n.t('u7.auto_organize_all_conflicts'),command=lambda:self._set_all_diagnostic_conflict_choices("auto")); conflict_bar2.add(self.diagnostic_all_auto_btn, side="left",padx=(6,0))
         conflict_bar3=ttk.Frame(resultbox); conflict_bar3.pack(fill="x",pady=(4,0))
         self.diagnostic_conflict_help_var = tk.StringVar(value=i18n.t('u7.actions_needed_for_repair_will_appear'))
-        ttk.Label(conflict_bar3,textvariable=self.diagnostic_conflict_help_var, foreground="#555",wraplength=1000,justify="left").pack(side="left",fill="x",expand=True)
+        WrappingLabel(conflict_bar3,textvariable=self.diagnostic_conflict_help_var, foreground="#555",justify="left").pack(side="left",fill="x",expand=True)
         conflict_bar4=ttk.Frame(resultbox); conflict_bar4.pack(fill="x",pady=(3,0))
         self.diagnostic_exception_status_var = tk.StringVar(value=i18n.t('u7.auto_organize_manual_settings_in_mod'))
-        ttk.Label(conflict_bar4,textvariable=self.diagnostic_exception_status_var, foreground="#555",wraplength=1000,justify="left").pack(side="left",fill="x",expand=True)
+        WrappingLabel(conflict_bar4,textvariable=self.diagnostic_exception_status_var, foreground="#555",justify="left").pack(side="left",fill="x",expand=True)
         detail=ttk.LabelFrame(right,text=i18n.t('u7.details_repair_log'),padding=6); detail.pack(fill="both",expand=True,pady=(8,0))
         self.diagnostic_detail=tk.Text(detail,height=9,wrap="word",state="disabled")
         dsy=ttk.Scrollbar(detail,orient="vertical",command=self.diagnostic_detail.yview); self.diagnostic_detail.configure(yscrollcommand=dsy.set)
@@ -4199,9 +4225,9 @@ class App(BaseTk):
         head=ttk.Frame(t); head.pack(fill='x')
         ttk.Label(head,text=i18n.t('u7.backup_restoration_roll_back_by_game'),font=('',14,'bold')).pack(side='left')
         ttk.Label(head,textvariable=self.backup_restore_summary_var).pack(side='right')
-        ttk.Label(t,text=(
+        WrappingLabel(t,text=(
             i18n.t('u7.select_a_game_and_mod_on')
-        ),foreground='#555',wraplength=1150,justify='left').pack(fill='x',pady=(6,8))
+        ),foreground='#555',justify='left').pack(fill='x',pady=(6,8))
 
         # 2ブロック構成: 左=対象選択、右=履歴/復元
         panes=ttk.Panedwindow(t,orient='horizontal')
@@ -4211,6 +4237,7 @@ class App(BaseTk):
         right=ttk.LabelFrame(panes,text=i18n.t('u7.select_backup_history_and_restore'),padding=8)
         panes.add(left,weight=1)
         panes.add(right,weight=3)
+        initial_pane_split(panes, 1, 3)
 
         ttk.Label(left,text=i18n.t('u7.game')).pack(anchor='w')
         self.backup_restore_game_combo=ttk.Combobox(left,textvariable=self.backup_restore_game_var,state='readonly')
@@ -4219,10 +4246,11 @@ class App(BaseTk):
 
         ttk.Label(left,text=i18n.t('u7.search_2')).pack(anchor='w')
         searchrow=ttk.Frame(left); searchrow.pack(fill='x',pady=(3,8))
-        self.backup_restore_search_entry=ttk.Entry(searchrow,textvariable=self.backup_restore_search_var)
+        # ボタンを先に置いて幅を確保し、検索欄は残りの幅を使う（狭い枠でボタンの文字が切れていた）
+        ttk.Button(searchrow,text=i18n.t('u7.clear'),command=self._clear_backup_restore_search).pack(side='right',padx=(6,0))
+        self.backup_restore_search_entry=ttk.Entry(searchrow,textvariable=self.backup_restore_search_var,width=8)
         self.backup_restore_search_entry.pack(side='left',fill='x',expand=True)
         self.backup_restore_search_entry.bind('<KeyRelease>',self._on_backup_restore_search_changed)
-        ttk.Button(searchrow,text=i18n.t('u7.clear'),command=self._clear_backup_restore_search).pack(side='left',padx=(6,0))
 
         ttk.Label(left,text=i18n.t('u7.mod_list')).pack(anchor='w')
         modbox=ttk.Frame(left); modbox.pack(fill='both',expand=True,pady=(3,8))
@@ -4267,17 +4295,9 @@ class App(BaseTk):
 
         detail=ttk.LabelFrame(right,text=i18n.t('u7.selected_backup_details'),padding=6)
         detail.pack(fill='x',pady=(8,0))
-        self.backup_restore_detail_label=ttk.Label(detail,textvariable=self.backup_restore_detail_var,foreground='#555',wraplength=760,justify='left')
+        self.backup_restore_detail_label=WrappingLabel(detail,textvariable=self.backup_restore_detail_var,foreground='#555',justify='left')
         self.backup_restore_detail_label.pack(anchor='w',fill='x')
-        right.bind('<Configure>',self._on_backup_restore_right_resize)
         self.backup_restore_summary_var.set(i18n.t('u7.waiting_to_load_backups_in_the'))
-
-    def _on_backup_restore_right_resize(self, event=None):
-        if hasattr(self,'backup_restore_detail_label') and event is not None:
-            try:
-                self.backup_restore_detail_label.configure(wraplength=max(360,event.width-40))
-            except Exception:
-                pass
 
     def _on_backup_restore_tree_shift_wheel(self, event):
         if not hasattr(self,'backup_restore_tree'):
@@ -6503,7 +6523,7 @@ class App(BaseTk):
             return
         win=tk.Toplevel(self); win.title(i18n.t('u6.mod_classification_and_linking')); win.geometry("1050x650"); win.transient(self)
         outer=ttk.Frame(win,padding=10); outer.pack(fill="both",expand=True)
-        ttk.Label(outer,text=i18n.t('u6.manual_exceptions_override_automatic_assessment_translation', target_name=i18n.t("lang." + 'japanese')),foreground="#555").pack(fill="x",pady=(0,8))
+        WrappingLabel(outer,text=i18n.t('u6.manual_exceptions_override_automatic_assessment_translation', target_name=i18n.t("lang." + _current_target_lang(self))),foreground="#555").pack(fill="x",pady=(0,8))
         pane=ttk.Panedwindow(outer,orient="horizontal"); pane.pack(fill="both",expand=True)
         lf=ttk.LabelFrame(pane,text="Mod",padding=6); rf=ttk.Frame(pane); pane.add(lf,weight=3); pane.add(rf,weight=4)
         mt=ttk.Treeview(lf,columns=("mod","class","sources","path"),show="headings",selectmode="browse")
@@ -6514,9 +6534,9 @@ class App(BaseTk):
         mt_actions=ttk.Frame(lf); mt_actions.grid(row=2,column=0,columnspan=2,sticky="ew",pady=(7,0))
         role_var=tk.StringVar(value="auto"); current_path=tk.StringVar(value="")
         rolebox=ttk.LabelFrame(rf,text=i18n.t('u6.classification'),padding=8); rolebox.pack(fill="x")
-        for text,val in ((i18n.t('u6.automatic_assessment'),"auto"),(i18n.t('u6.this_is_a_translation_mod', target_name=i18n.t("lang." + 'japanese')),"translation"),(i18n.t('u6.this_is_a_source_mod'),"source")):
+        for text,val in ((i18n.t('u6.automatic_assessment'),"auto"),(i18n.t('u6.this_is_a_translation_mod', target_name=i18n.t("lang." + _current_target_lang(self))),"translation"),(i18n.t('u6.this_is_a_source_mod'),"source")):
             ttk.Radiobutton(rolebox,text=text,value=val,variable=role_var).pack(anchor="w",pady=2)
-        ttk.Label(rolebox,text=i18n.t('u6.marking_a_mod_as_a_translation', target_name=i18n.t("lang." + 'japanese')),foreground="#666",wraplength=520,justify="left").pack(anchor="w",pady=(6,0))
+        WrappingLabel(rolebox,text=i18n.t('u6.marking_a_mod_as_a_translation', target_name=i18n.t("lang." + _current_target_lang(self))),foreground="#666",justify="left").pack(anchor="w",pady=(6,0))
         srcbox=ttk.LabelFrame(rf,text=i18n.t('u6.linked_source_mods_multi_select'),padding=8); srcbox.pack(fill="both",expand=True,pady=(8,0))
         st=ttk.Treeview(srcbox,columns=("mod","path"),show="headings",selectmode="extended")
         st.heading("mod",text=i18n.t('u6.source_mod_4')); st.heading("path",text=i18n.t('u6.location_3')); st.column("mod",width=260,minwidth=260,stretch=False); st.column("path",width=480,minwidth=480,stretch=False)
@@ -6552,7 +6572,7 @@ class App(BaseTk):
         ttk.Button(src_actions,text=i18n.t('u6.deselect_linked_source_mods'),command=clear_source_selection).pack(side="left")
         iid_by_path={}; row_by_iid={}
         for row in rows:
-            ov=self._mod_relation_override(Path(row["path"])); role=ov.get("role","auto"); label={"auto":i18n.t('u6.automatic'),"translation":i18n.t('u6.translation_mod', target_name=i18n.t("lang." + 'japanese')),"source":i18n.t('u6.source_mod_3')}.get(role,i18n.t('u6.automatic'))
+            ov=self._mod_relation_override(Path(row["path"])); role=ov.get("role","auto"); label={"auto":i18n.t('u6.automatic'),"translation":i18n.t('u6.translation_mod', target_name=i18n.t("lang." + _current_target_lang(self))),"source":i18n.t('u6.source_mod_3')}.get(role,i18n.t('u6.automatic'))
             iid=mt.insert("","end",values=(row["mod"],label,len(ov.get("source_paths") or []),row["path"])); iid_by_path[row["path"]]=iid; row_by_iid[iid]=row
         def clear_mod_selection(*_):
             sel=mt.selection()
@@ -6618,7 +6638,7 @@ class App(BaseTk):
             self._set_mod_relation_override(Path(raw),role_var.get(),sources)
             iid=iid_by_path.get(raw)
             if iid:
-                row=row_by_iid[iid]; label={"auto":i18n.t('u6.automatic'),"translation":i18n.t('u6.translation_mod', target_name=i18n.t("lang." + 'japanese')),"source":i18n.t('u6.source_mod_3')}.get(role_var.get(),i18n.t('u6.automatic'))
+                row=row_by_iid[iid]; label={"auto":i18n.t('u6.automatic'),"translation":i18n.t('u6.translation_mod', target_name=i18n.t("lang." + _current_target_lang(self))),"source":i18n.t('u6.source_mod_3')}.get(role_var.get(),i18n.t('u6.automatic'))
                 mt.item(iid,values=(row["mod"],label,len(sources),row["path"]))
             self._invalidate_mod_status_cache_paths([r["path"] for r in rows])
             self._refresh_diagnostic_targets()
@@ -7873,6 +7893,7 @@ class App(BaseTk):
         right=ttk.Frame(body)
         body.add(left_outer, weight=2)
         body.add(right, weight=3)
+        initial_pane_split(body, 2, 3)
 
         # 左側は共通設定が増えたためスクロール可能にする。
         canvas=tk.Canvas(left_outer,highlightthickness=0,borderwidth=0)
@@ -7892,22 +7913,22 @@ class App(BaseTk):
         ttk.Label(conn,text="API URL").grid(row=1,column=0,sticky="w",pady=(6,0))
         ttk.Entry(conn,textvariable=self.url_var).grid(row=1,column=1,sticky="ew",padx=6,pady=(6,0))
         ttk.Button(conn,text=i18n.t('u5.refresh_connection'),command=self.refresh_models).grid(row=2,column=0,columnspan=2,sticky="ew",pady=(6,0))
-        ttk.Label(conn,textvariable=self.connection_var).grid(row=3,column=0,columnspan=2,sticky="w",pady=(7,0))
+        WrappingLabel(conn,textvariable=self.connection_var).grid(row=3,column=0,columnspan=2,sticky="ew",pady=(7,0))
         ttk.Label(conn,text=i18n.t('u5.model')).grid(row=4,column=0,sticky="w",pady=(6,0))
         self.model_combo=ttk.Combobox(conn,textvariable=self.model_var,state="normal")
         self.model_combo.grid(row=4,column=1,sticky="ew",padx=6,pady=(6,0))
         ttk.Label(conn,text=i18n.t('u5.api_key')).grid(row=5,column=0,sticky="w",pady=(6,0))
         ttk.Entry(conn,textvariable=self.api_key_var,show="•").grid(row=5,column=1,sticky="ew",padx=6,pady=(6,0))
-        ttk.Label(conn,text=i18n.t('u5.api_key_note'),foreground="#666",wraplength=430,justify="left").grid(row=6,column=0,columnspan=2,sticky="w",pady=(4,0))
+        WrappingLabel(conn,text=i18n.t('u5.api_key_note'),foreground="#666",justify="left").grid(row=6,column=0,columnspan=2,sticky="w",pady=(4,0))
 
         common=ttk.LabelFrame(left,text=i18n.t('u5.common_settings'),padding=8); common.pack(fill="x",pady=(10,0))
         common.columnconfigure(1,weight=1)
         ttk.Label(common,text=i18n.t('u5.game_preset')).grid(row=0,column=0,sticky="w")
         ttk.Combobox(common,textvariable=self.preset_var,values=list(core.GAME_PRESETS),state="readonly",width=15).grid(row=0,column=1,sticky="ew",padx=(6,0))
-        ttk.Checkbutton(common,text=i18n.t('u5.repair_existing', target_name=i18n.t('lang.' + _current_target_lang(self))),variable=self.repair_var,command=self._save_llm_preferences).grid(row=1,column=0,columnspan=2,sticky="w",pady=(6,0))
-        ttk.Checkbutton(common,text=i18n.t('u5.auto_qa'),variable=self.autoqa_var,command=self._save_llm_preferences).grid(row=2,column=0,columnspan=2,sticky="w",pady=(4,0))
-        ttk.Checkbutton(common,text=i18n.t('u5.chinese_auto_qa'),variable=self.chinese_autoqa_var,command=self._save_llm_preferences).grid(row=3,column=0,columnspan=2,sticky="w",pady=(4,0))
-        ttk.Checkbutton(common,text=i18n.t('u5.normalize_spacing'),variable=self.normalize_spacing_var,command=self._save_llm_preferences).grid(row=11,column=0,columnspan=2,sticky="w",pady=(4,0))
+        _wrapping_check(common,text=i18n.t('u5.repair_existing', target_name=i18n.t('lang.' + _current_target_lang(self))),variable=self.repair_var,command=self._save_llm_preferences).grid(row=1,column=0,columnspan=2,sticky="w",pady=(6,0))
+        _wrapping_check(common,text=i18n.t('u5.auto_qa'),variable=self.autoqa_var,command=self._save_llm_preferences).grid(row=2,column=0,columnspan=2,sticky="w",pady=(4,0))
+        _wrapping_check(common,text=i18n.t('u5.chinese_auto_qa'),variable=self.chinese_autoqa_var,command=self._save_llm_preferences).grid(row=3,column=0,columnspan=2,sticky="w",pady=(4,0))
+        _wrapping_check(common,text=i18n.t('u5.normalize_spacing'),variable=self.normalize_spacing_var,command=self._save_llm_preferences).grid(row=12,column=0,columnspan=2,sticky="ew",pady=(4,0))
         ttk.Label(common,text=i18n.t('u5.batch')).grid(row=4,column=0,sticky="w",pady=(7,0))
         ttk.Spinbox(common,from_=1,to=500,textvariable=self.batch_var,width=8,command=self._save_llm_preferences).grid(row=4,column=1,sticky="w",padx=(6,0),pady=(7,0))
         ttk.Label(common,text=i18n.t('u5.workers')).grid(row=5,column=0,sticky="w",pady=(5,0))
@@ -7919,7 +7940,7 @@ class App(BaseTk):
         ttk.Label(common,text=i18n.t('u5.glossary')).grid(row=8,column=0,sticky="w",pady=(7,0))
         ttk.Entry(common,textvariable=self.glossary_path_var).grid(row=8,column=1,sticky="ew",padx=(6,0),pady=(7,0))
         ttk.Button(common,text=i18n.t('u5.choose_glossary'),command=self.pick_glossary).grid(row=9,column=0,columnspan=2,sticky="ew",pady=(5,0))
-        ttk.Label(common,text=i18n.t('u5.batch_recommendation'),foreground="#8a5a00").grid(row=10,column=0,columnspan=2,sticky="w",pady=(5,0))
+        WrappingLabel(common,text=i18n.t('u5.batch_recommendation'),foreground="#8a5a00").grid(row=10,column=0,columnspan=2,sticky="w",pady=(5,0))
         self.apply_current_translation_btn=ttk.Button(common,text=i18n.t('u5.apply_current_settings'),command=self.apply_settings_to_current_translation)
         self.apply_current_translation_btn.grid(row=11,column=0,columnspan=2,sticky="ew",pady=(7,0))
 
@@ -7927,16 +7948,16 @@ class App(BaseTk):
         profsel.columnconfigure(0,weight=1)
         self.profile_combo=ttk.Combobox(profsel,textvariable=self.profile_var,state="readonly")
         self.profile_combo.grid(row=0,column=0,sticky="ew")
-        pbar=ttk.Frame(profsel); pbar.grid(row=1,column=0,sticky="ew",pady=(6,0))
-        ttk.Button(pbar,text=i18n.t('u5.apply'),command=self.apply_selected_profile).pack(side="left")
-        ttk.Button(pbar,text=i18n.t('u5.delete'),command=self.delete_selected_profile_combo).pack(side="left",padx=(5,0))
-        ttk.Button(pbar,text=i18n.t('u5.save_current_settings'),command=self.save_current_profile).pack(side="left",padx=(5,0))
+        pbar=FlowRow(profsel); pbar.grid(row=1,column=0,sticky="ew",pady=(6,0))
+        pbar.add(ttk.Button(pbar,text=i18n.t('u5.apply'),command=self.apply_selected_profile), side="left")
+        pbar.add(ttk.Button(pbar,text=i18n.t('u5.delete'),command=self.delete_selected_profile_combo), side="left",padx=(5,0))
+        pbar.add(ttk.Button(pbar,text=i18n.t('u5.save_current_settings'),command=self.save_current_profile), side="left",padx=(5,0))
 
         pf=ttk.LabelFrame(left,text=i18n.t('u5.saved_profiles'),padding=8); pf.pack(fill="both",expand=True,pady=(10,0))
-        pb=ttk.Frame(pf); pb.pack(fill="x",pady=(0,6))
-        ttk.Button(pb,text=i18n.t('u5.save_profile'),command=self.save_current_profile).pack(side="left")
-        ttk.Button(pb,text=i18n.t('u5.apply_selected'),command=self.apply_profile_from_tree).pack(side="left",padx=(6,0))
-        ttk.Button(pb,text=i18n.t('u5.delete_selected'),command=self.delete_profile).pack(side="left",padx=(6,0))
+        pb=FlowRow(pf); pb.pack(fill="x",pady=(0,6))
+        pb.add(ttk.Button(pb,text=i18n.t('u5.save_profile'),command=self.save_current_profile), side="left")
+        pb.add(ttk.Button(pb,text=i18n.t('u5.apply_selected'),command=self.apply_profile_from_tree), side="left",padx=(6,0))
+        pb.add(ttk.Button(pb,text=i18n.t('u5.delete_selected'),command=self.delete_profile), side="left",padx=(6,0))
         self.profile_tree=ttk.Treeview(pf,columns=("name","label","provider","model","batch","workers"),show="headings",height=7)
         # 列幅は表示領域に合わせて縮ませず固定する。必要幅を超えた分は
         # 下部の横スクロールバーで確認する。
@@ -7950,22 +7971,22 @@ class App(BaseTk):
         self.profile_tree.bind("<Double-1>",lambda e:self.apply_profile_from_tree())
 
         bench=ttk.LabelFrame(right,text=i18n.t('u5.speed_comparison'),padding=8); bench.pack(fill="both",expand=True)
-        bar=ttk.Frame(bench); bar.pack(fill="x",pady=(0,6))
-        ttk.Button(bar,text=i18n.t('u5.benchmark_current'),command=self.benchmark_selected_model).pack(side="left")
-        ttk.Button(bar,text=i18n.t('u5.benchmark_selected'),command=self.benchmark_selected_models).pack(side="left",padx=(6,0))
-        self.benchmark_stop_btn=ttk.Button(bar,text=i18n.t('u5.stop_benchmark'),command=self.stop_benchmark,state="disabled"); self.benchmark_stop_btn.pack(side="left",padx=(6,0))
-        ttk.Button(bar,text=i18n.t('u5.clear_stats'),command=self.clear_model_stats).pack(side="left",padx=(6,0))
-        self.benchmark_status_var=tk.StringVar(value=""); ttk.Label(bar,textvariable=self.benchmark_status_var).pack(side="right")
+        bar=FlowRow(bench); bar.pack(fill="x",pady=(0,6))
+        bar.add(ttk.Button(bar,text=i18n.t('u5.benchmark_current'),command=self.benchmark_selected_model), side="left")
+        bar.add(ttk.Button(bar,text=i18n.t('u5.benchmark_selected'),command=self.benchmark_selected_models), side="left",padx=(6,0))
+        self.benchmark_stop_btn=ttk.Button(bar,text=i18n.t('u5.stop_benchmark'),command=self.stop_benchmark,state="disabled"); bar.add(self.benchmark_stop_btn, side="left",padx=(6,0))
+        bar.add(ttk.Button(bar,text=i18n.t('u5.clear_stats'),command=self.clear_model_stats), side="left",padx=(6,0))
+        self.benchmark_status_var=tk.StringVar(value=""); WrappingLabel(bench,textvariable=self.benchmark_status_var).pack(side='top')
 
         select_box=ttk.LabelFrame(bench,text=i18n.t('u5.choose_models'),padding=6); select_box.pack(fill="x",pady=(0,8))
-        ttk.Label(select_box,text=i18n.t('u5.multiselect_note'),foreground="#666").pack(anchor="w",pady=(0,4))
+        WrappingLabel(select_box,text=i18n.t('u5.multiselect_note'),foreground="#666").pack(anchor="w",pady=(0,4))
         self.benchmark_model_list=tk.Listbox(select_box,selectmode=tk.EXTENDED,exportselection=False,height=6)
         self._enable_ctrl_multiselect(self.benchmark_model_list,max_items=5); self.benchmark_model_list.pack(fill="x"); self.benchmark_model_list.bind("<<ListboxSelect>>",self._limit_benchmark_selection)
 
         cols=("provider","model","requests","avg","tps","fail")
         self.stats_tree=ttk.Treeview(bench,columns=cols,show="headings",height=16)
         for c,txt,w in (("provider",i18n.t('u5.provider'),100),("model",i18n.t('u5.model'),330),("requests",i18n.t('u5.requests'),70),("avg",i18n.t('u5.average_seconds'),90),("tps","tokens/s",100),("fail",i18n.t('u5.failure_rate'),90)):
-            self.stats_tree.heading(c,text=txt); self.stats_tree.column(c,width=w,anchor="center" if c not in ("model",) else "w")
+            self.stats_tree.heading(c,text=txt); self.stats_tree.column(c,width=w,minwidth=w,stretch=False,anchor="center" if c not in ("model",) else "w")
         self._enable_tree_sort(self.stats_tree)
         sscroll_x=ttk.Scrollbar(bench,orient="horizontal",command=self.stats_tree.xview)
         self.stats_tree.configure(xscrollcommand=sscroll_x.set); self.stats_tree.pack(fill="both",expand=True); sscroll_x.pack(fill="x")
@@ -8186,6 +8207,7 @@ class App(BaseTk):
             self._save_translation_status_state("target_language_changed")
         self.target_lang_var.set(lang)
         self.target_lang_choice_var.set(_target_lang_choice(lang))
+        App._refresh_target_language_labels(self, previous, lang)
         self._refresh_glossary_import_language_labels()
         if previous != lang and hasattr(self, "monitor_stop_event"):
             monitoring = bool(getattr(self, "monitor_thread", None) and self.monitor_thread.is_alive())
@@ -8212,6 +8234,41 @@ class App(BaseTk):
             self._restore_cached_mod_status()
         if save:
             self._save_llm_preferences()
+
+    def _refresh_target_language_labels(self, previous, target_lang):
+        keys = (
+            'u1.intro', 'u3.drop_pair', 'u3.save_translation_file',
+            'u3.diff_files', 'u3.target_language', 'u3.editable_target',
+            'u5.repair_existing', 'u6.also_search_other_mods_for_japanese',
+            'u6.overwrite_mod_with_completed_translation',
+        )
+        replacements = {
+            i18n.t(key, target_name=i18n.t('lang.' + previous)):
+            i18n.t(key, target_name=i18n.t('lang.' + target_lang))
+            for key in keys
+        }
+        diagnostic_key = 'u7.using_english_simplified_chinese_source_keys'
+        replacements[i18n.t(diagnostic_key if previous == 'japanese' else diagnostic_key + '.target',
+                             target_name=i18n.t('lang.' + previous))] = i18n.t(
+            diagnostic_key if target_lang == 'japanese' else diagnostic_key + '.target',
+            target_name=i18n.t('lang.' + target_lang))
+        pending = [getattr(self, name, None) for name in (
+            'tab_translate', 'tab_review', 'tab_diff', 'tab_models',
+            'tab_monitor', 'tab_status', 'tab_diagnostic',
+        )]
+        while pending:
+            widget = pending.pop()
+            if widget is None:
+                continue
+            pending.extend(widget.winfo_children())
+            try:
+                text = widget.cget('text')
+                if text in replacements:
+                    widget.configure(text=replacements[text])
+                    if isinstance(widget.master, FlowRow):
+                        widget.master.request_layout()
+            except tk.TclError:
+                pass
 
     def _restart_monitor_after_language_change(self, generation):
         if generation != getattr(self, "_monitor_restart_generation", None):
@@ -8256,6 +8313,7 @@ class App(BaseTk):
             menu.entryconfigure(0,label=i18n.t('u4.target_import_yaml',target_name=target_name))
             menu.entryconfigure(1,label=i18n.t('u4.target_import_mod',target_name=target_name))
         for name,key in (("glossary_jp_import_btn","u4.target_import_files"),
+                         ("glossary_manual_help_label","u4.manual_help"),
                          ("glossary_base_help_label","u4.target_base_help"),
                          ("glossary_generated_help_label","u4.target_generated_help")):
             widget=getattr(self,name,None)
@@ -8815,7 +8873,7 @@ class App(BaseTk):
         win.title(i18n.t('u5.cache_title', filename=Path(item['input']).name))
         win.geometry("900x600")
         top = ttk.Frame(win, padding=8); top.pack(fill="x")
-        ttk.Label(top, text=i18n.t('u5.cache_path', cache_path=cache_path), wraplength=700).pack(side="left", fill="x", expand=True)
+        WrappingLabel(top, text=i18n.t('u5.cache_path', cache_path=cache_path)).pack(side="left", fill="x", expand=True)
         ttk.Label(top, text=i18n.t('u5.entry_count', count=len(cache))).pack(side="right", padx=(8,0))
         bar = ttk.Frame(win, padding=(8,0,8,6)); bar.pack(fill="x")
         ttk.Button(bar, text=i18n.t('u5.open_storage'), command=lambda:self._open_path(cache_path.parent)).pack(side="left")
@@ -10123,7 +10181,7 @@ class App(BaseTk):
         tk.Label(header,text="⚠  "+info["heading"],bg="#b91c1c",fg="white",font=("",20,"bold")).pack(anchor="w")
         body=ttk.Frame(win,padding=22); body.pack(fill="both",expand=True)
         ttk.Label(body,text=i18n.t('u5.cannot_start', context=context),font=("",13,"bold")).pack(anchor="w",pady=(0,12))
-        ttk.Label(body,text=info["message"],justify="left",wraplength=660).pack(anchor="w",fill="x")
+        WrappingLabel(body,text=info["message"],justify="left").pack(anchor="w",fill="x")
         buttons=ttk.Frame(body); buttons.pack(side="bottom",fill="x",pady=(18,0))
         def retry():
             self._close_llm_connection_alert(reset_key=True)
@@ -11308,10 +11366,10 @@ class App(BaseTk):
         ttk.Label(frm,text=i18n.t('u4.choose_scope'),font=("TkDefaultFont",10,"bold")).pack(anchor="w")
         var=tk.StringVar(value="common")
         ttk.Radiobutton(frm,text=i18n.t('u4.common_only'),variable=var,value="common").pack(anchor="w",pady=(10,0))
-        ttk.Label(frm,text=i18n.t('u4.common_help'),wraplength=560,justify="left",foreground="#555").pack(anchor="w",padx=(22,0),pady=(2,6))
+        WrappingLabel(frm,text=i18n.t('u4.common_help'),justify="left",foreground="#555").pack(anchor="w",padx=(22,0),pady=(2,6))
         ttk.Radiobutton(frm,text=i18n.t('u4.import_all'),variable=var,value="all").pack(anchor="w")
-        ttk.Label(frm,text=i18n.t('u4.all_help'),wraplength=560,justify="left",foreground="#555").pack(anchor="w",padx=(22,0),pady=(2,8))
-        ttk.Label(frm,text=i18n.t('u4.target_import_help', target_name=i18n.t("lang." + _current_target_lang(self))),wraplength=560,justify="left",foreground="#8a5a00").pack(anchor="w",pady=(4,8))
+        WrappingLabel(frm,text=i18n.t('u4.all_help'),justify="left",foreground="#555").pack(anchor="w",padx=(22,0),pady=(2,8))
+        WrappingLabel(frm,text=i18n.t('u4.target_import_help', target_name=i18n.t("lang." + _current_target_lang(self))),justify="left",foreground="#8a5a00").pack(anchor="w",pady=(4,8))
         row=ttk.Frame(frm); row.pack(fill="x",pady=(4,0))
         def ok(): result["mode"]=var.get(); win.destroy()
         ttk.Button(row,text=i18n.t('u4.cancel'),command=win.destroy).pack(side="right")
@@ -11655,8 +11713,8 @@ class App(BaseTk):
             path=core.glossary_path_for_language(self.glossary_path_var.get() or DEFAULT_GLOSSARY,_target_lang_from_choice(language.get()))
             destination.set(i18n.t('u4.destination', path=path))
         language.trace_add("write",update_destination); update_destination()
-        ttk.Label(dialog,textvariable=destination,wraplength=820).pack(fill="x",padx=8)
-        ttk.Label(dialog,text=i18n.t('u4.replace_help'),wraplength=820).pack(fill="x",padx=8)
+        WrappingLabel(dialog,textvariable=destination).pack(fill="x",padx=8)
+        WrappingLabel(dialog,text=i18n.t('u4.replace_help')).pack(fill="x",padx=8)
         def import_selected():
             path=core.glossary_path_for_language(self.glossary_path_var.get() or DEFAULT_GLOSSARY,_target_lang_from_choice(language.get()))
             try:
