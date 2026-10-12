@@ -8,6 +8,116 @@ import i18n
 from ui_layout import FlowRow, WrappingCheck, _autowrap, flow_rows, initial_pane_split, pane_split, wrap_width
 
 
+@pytest.mark.parametrize("viewport,requested,expected", [
+    (800, 300, 800), (300, 800, 800), (400, 400, 400), (0, 0, 1),
+])
+def test_scroll_column_uses_viewport_or_requested_height(viewport, requested, expected):
+    from ui_layout import scroll_column_height
+    assert scroll_column_height(viewport, requested) == expected
+
+
+def test_scrollbar_appears_when_content_grows_without_a_resize():
+    from ui_layout import scroll_column_scrollbar
+    assert scroll_column_scrollbar(500, 400, False, None) == (False, None)
+    assert scroll_column_scrollbar(500, 600, False, None) == (True, 500)
+
+
+def test_scrollbar_does_not_oscillate_when_its_width_reflows_content():
+    from ui_layout import scroll_column_scrollbar
+    visible, anchor = scroll_column_scrollbar(500, 510, False, None)
+    for requested in [480, 520] * 50:
+        visible, anchor = scroll_column_scrollbar(500, requested, visible, anchor)
+        assert (visible, anchor) == (True, 500)
+    assert scroll_column_scrollbar(531, 480, visible, anchor) == (True, 500)
+    assert scroll_column_scrollbar(532, 480, visible, anchor) == (False, None)
+
+
+def test_scrollbar_stays_when_resized_content_still_needs_scrolling():
+    from ui_layout import scroll_column_scrollbar
+    assert scroll_column_scrollbar(600, 650, True, 500) == (True, 500)
+    assert scroll_column_scrollbar(532, 530, True, 500) == (True, 500)
+    assert scroll_column_scrollbar(532, 524, True, 500) == (False, None)
+
+
+def test_scroll_column_still_grows_after_scrollbar_is_latched():
+    from ui_layout import scroll_column_height
+    for requested in [100, 400, 900, 1200]:
+        assert scroll_column_height(300, requested) >= requested
+
+
+def test_scroll_column_adapter_fixes_width_and_updates_only_changed_geometry():
+    from ui_layout import ScrollColumn
+    updates = []
+    bars = []
+    canvas = SimpleNamespace(
+        winfo_width=lambda: 340, winfo_height=lambda: 300,
+        itemconfigure=lambda window, **options: updates.append((window, options)),
+        configure=lambda **options: updates.append(options),
+        yview_moveto=lambda position: updates.append(position),
+    )
+    column = SimpleNamespace(
+        canvas=canvas, content=SimpleNamespace(winfo_reqheight=lambda: 600),
+        scrollbar=SimpleNamespace(grid=lambda: bars.append(True), grid_remove=lambda: bars.append(False)),
+        _window_id=1, _bar_visible=False, _shown_height=None,
+        _layout_pending=True, _last_geometry=None,
+    )
+    ScrollColumn._layout(column)
+    assert updates == [(1, {"width": 340, "height": 600}), {"scrollregion": (0, 0, 340, 600)}]
+    assert bars == [True]
+    ScrollColumn._layout(column)
+    assert len(updates) == 2
+    assert bars == [True]
+    canvas.winfo_height = lambda: 800
+    ScrollColumn._layout(column)
+    assert updates[-3:] == [(1, {"width": 340, "height": 800}),
+                            {"scrollregion": (0, 0, 340, 800)}, 0]
+    assert bars == [True, False]
+
+
+@pytest.mark.parametrize("delta,button,expected", [(120, None, -1), (-240, None, 2),
+                                                    (1, None, -1), (-1, None, 1),
+                                                    (0, 4, -1), (0, 5, 1)])
+def test_scroll_column_wheel_handles_platform_events(delta, button, expected):
+    from ui_layout import ScrollColumn
+    calls = []
+    column = SimpleNamespace(
+        _bar_visible=True, content=SimpleNamespace(winfo_height=lambda: 600),
+        canvas=SimpleNamespace(winfo_height=lambda: 300,
+                               yview_scroll=lambda *args: calls.append(args)),
+    )
+    event = SimpleNamespace(delta=delta, num=button, state=0)
+    assert ScrollColumn._on_mousewheel(column, event) == "break"
+    assert calls == [(expected, "units")]
+    event.state = 1
+    assert ScrollColumn._on_mousewheel(column, event) is None
+    column._bar_visible = False
+    event.state = 0
+    assert ScrollColumn._on_mousewheel(column, event) is None
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("method_name,columns", [
+    ("_build_translate_tab", ["right_outer"]),
+    ("_build_chinese_tab", ["right_outer"]),
+    ("_build_glossary_tab", ["manual_outer", "generated_outer"]),
+    ("_build_diagnostic_tab", ["left_outer", "right_outer"]),
+])
+def test_table_columns_use_shared_scroll_adapter_and_four_row_minimum(method_name, columns):
+    source = Path(__file__).resolve().parents[1] / "app" / "main.py"
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    method = next(node for node in ast.walk(tree)
+                  if isinstance(node, ast.FunctionDef) and node.name == method_name)
+    adapters = [node for node in ast.walk(method) if isinstance(node, ast.Assign)
+                and isinstance(node.value, ast.Call) and ast.unparse(node.value.func) == "ScrollColumn"]
+    assert [ast.unparse(node.targets[0]) for node in adapters] == columns
+    tables = [node for node in ast.walk(method) if isinstance(node, ast.Call)
+              and ast.unparse(node.func) == "ttk.Treeview"]
+    assert tables
+    for table in tables:
+        height = next(keyword.value for keyword in table.keywords if keyword.arg == "height")
+        assert ast.literal_eval(height) >= 4
+
+
 @pytest.mark.parametrize("width,padding,expected", [
     (430, 18, 412), (166, 18, 148), (342, 16, 326),
     (1, 18, 1), (0, 0, 1), (20, 40, 1),

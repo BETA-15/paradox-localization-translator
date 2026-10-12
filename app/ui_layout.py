@@ -1,6 +1,129 @@
 """Width-aware Tk adapters with display-independent layout calculations."""
 
+import tkinter as tk
 from tkinter import ttk
+
+
+def scroll_column_height(viewport_height, requested_height):
+    """Keep the natural minimum, expanding to fill a taller viewport."""
+    return max(1, int(viewport_height), int(requested_height))
+
+
+def scroll_column_scrollbar(viewport_height, requested_height, visible, shown_height,
+                            resize_threshold=32, spare_height=8):
+    """Latch overflow until a taller viewport provides stable spare room.
+
+    Content reflow alone cannot hide the bar: removing its width could otherwise
+    rewrap labels and buttons and immediately require the bar again.
+    """
+    viewport_height = max(1, int(viewport_height))
+    if not visible:
+        if requested_height > viewport_height:
+            return True, viewport_height
+        return False, None
+    if (shown_height is not None
+            and viewport_height >= shown_height + resize_threshold
+            and requested_height <= viewport_height - spare_height):
+        return False, None
+    return True, shown_height
+
+
+class ScrollColumn(ttk.Frame):
+    """A width-constrained column that expands or scrolls at its natural height."""
+
+    def __init__(self, parent, background=None, **options):
+        super().__init__(parent, **options)
+        canvas_options = {"background": background} if background is not None else {}
+        self.canvas = tk.Canvas(self, width=1, height=1, highlightthickness=0,
+                                borderwidth=0, **canvas_options)
+        self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.content = ttk.Frame(self.canvas)
+        self._window_id = self.canvas.create_window((0, 0), window=self.content, anchor="nw")
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=1)
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+        self.scrollbar.grid(row=0, column=1, sticky="ns")
+        self.scrollbar.grid_remove()
+        self._bar_visible = False
+        self._shown_height = None
+        self._layout_pending = None
+        self._last_geometry = None
+        # bind の名前（tag）は「.」で始めない（窓の名前とみなされて起動で落ちた）
+        self._wheel_tag = "ScrollColumn" + str(self).replace(".", "_")
+        self.bind_class(self._wheel_tag, "<MouseWheel>", self._on_mousewheel)
+        self.bind_class(self._wheel_tag, "<Button-4>", self._on_mousewheel)
+        self.bind_class(self._wheel_tag, "<Button-5>", self._on_mousewheel)
+        self.bind_class(self._wheel_tag, "<Configure>", self.request_layout)
+        self.canvas.bind("<Configure>", self.request_layout, add="+")
+        self.content.bind("<Configure>", self.request_layout, add="+")
+        self._toplevel = self.winfo_toplevel()
+        self._map_binding = self._toplevel.bind("<Map>", self._on_map, add="+")
+
+    def _on_map(self, event):
+        if event.widget is self or str(event.widget).startswith(str(self) + "."):
+            self._bind_wheel(event.widget)
+            self.request_layout()
+
+    def _bind_wheel(self, widget):
+        tags = widget.bindtags()
+        if self._wheel_tag not in tags:
+            widget.bindtags((self._wheel_tag,) + tags)
+        for child in widget.winfo_children():
+            self._bind_wheel(child)
+
+    def request_layout(self, event=None):
+        if self._layout_pending is None:
+            self._layout_pending = self.after_idle(self._layout)
+
+    def _layout(self):
+        self._layout_pending = None
+        width = self.canvas.winfo_width()
+        viewport_height = self.canvas.winfo_height()
+        if width <= 1 or viewport_height <= 1:
+            return
+        requested_height = self.content.winfo_reqheight()
+        height = scroll_column_height(viewport_height, requested_height)
+        visible, shown_height = scroll_column_scrollbar(
+            viewport_height, requested_height, self._bar_visible, self._shown_height)
+        if visible != self._bar_visible:
+            self._bar_visible = visible
+            self._shown_height = shown_height
+            if visible:
+                self.scrollbar.grid()
+            else:
+                self.scrollbar.grid_remove()
+        geometry = (width, height)
+        if geometry != self._last_geometry:
+            self._last_geometry = geometry
+            self.canvas.itemconfigure(self._window_id, width=width, height=height)
+            self.canvas.configure(scrollregion=(0, 0, width, height))
+        if height <= viewport_height:
+            self.canvas.yview_moveto(0)
+
+    def _on_mousewheel(self, event):
+        if not self._bar_visible or self.content.winfo_height() <= self.canvas.winfo_height():
+            return
+        if getattr(event, "state", 0) & 1:
+            return
+        button = getattr(event, "num", None)
+        delta = getattr(event, "delta", 0)
+        if button in (4, 5):
+            units = -1 if button == 4 else 1
+        elif delta:
+            units = -int(delta / 120) if abs(delta) >= 120 else (-1 if delta > 0 else 1)
+        else:
+            return
+        self.canvas.yview_scroll(units, "units")
+        return "break"
+
+    def destroy(self):
+        if self._layout_pending is not None:
+            self.after_cancel(self._layout_pending)
+        self._toplevel.unbind("<Map>", self._map_binding)
+        for sequence in ("<MouseWheel>", "<Button-4>", "<Button-5>", "<Configure>"):
+            self.unbind_class(self._wheel_tag, sequence)
+        super().destroy()
 
 
 def wrap_width(width, padding=0):

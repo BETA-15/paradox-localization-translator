@@ -34,7 +34,7 @@ ORIGINAL_KEYS = (
     'p0.tab.diagnostic', 'p0.restore_backup', 'p0.tab.settings', 'p0.help',
 )
 TAB_PADDING = 20
-MAX_WIDTH = 1400
+MAX_WIDTH = 1140  # ウィンドウの最小の幅 1180 で、タブの並びに使える幅
 
 
 def measure_tab_widths():

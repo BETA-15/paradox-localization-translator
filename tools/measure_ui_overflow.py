@@ -7,6 +7,7 @@
   置かれた幅（winfo_width）より大きいもの（文字が切れている）。
 - outside：部品の右端が、囲んでいる枠（祖先のどれか）の右端より外に出ているもの（枠の外で見えない）。
 - below：部品の下端が、囲んでいる枠の下端より下に出ているもの（縦に送れる所の中は数えない）。
+- squeezed：一覧の表（Treeview）が縮みすぎて、見出しと3行が見えないもの（縦に送れる所の中は数えない）。
 --shots を付けると、言語・タブごとの画面写真を DIR/<言語>/<番号>_<タブ>.png に保存する（macOS の screencapture）。
 データの置き場所は一時フォルダにし、利用者の設定・キャッシュに触らない。
 """
@@ -68,10 +69,24 @@ def scan(widget, issues: list, tab_name: str) -> None:
     for child in widget.winfo_children():
         try:
             if not child.winfo_ismapped():
+                # 置き場所の高さが 0 になった表は、画面から外される（見えない）。親が見えているなら数える
+                if child.winfo_class() == "Treeview" and child.winfo_manager() and widget.winfo_ismapped():
+                    issues.append({"tab": tab_name, "kind": "squeezed", "class": "Treeview",
+                                   "text": ",".join(str(c) for c in child.cget("columns"))[:80], "need": 1, "have": 0})
                 continue
             cls = child.winfo_class()
             text = _text(child)
             width = child.winfo_width()
+            if cls == "Treeview":  # 縦に送れる所の中でも、表そのものの高さは見る
+                # 一覧の表が縮みすぎて、行がほとんど見えないもの（見出し＋3行より低い）
+                try:
+                    row_height = int(child.tk.call("ttk::style", "lookup", "Treeview", "-rowheight") or 20)
+                except Exception:
+                    row_height = 20
+                if child.winfo_height() < row_height * 4 + 4:
+                    issues.append({"tab": tab_name, "kind": "squeezed", "class": cls,
+                                   "text": ",".join(str(c) for c in child.cget("columns"))[:80],
+                                   "need": row_height * 4 + 4, "have": child.winfo_height()})
             if cls in TEXT_CLASSES and text.strip():
                 req = child.winfo_reqwidth()
                 if req > width + TOLERANCE:
