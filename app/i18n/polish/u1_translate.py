@@ -51,7 +51,7 @@ STRINGS = {
     'u1.normal_log': 'Dziennik zwykłego tłumaczenia',
     'u1.open_errors': 'Otwórz dziennik błędów',
     'u1.collect_diagnostics': 'Zbierz dzienniki diagnostyczne',
-    'u1.base_game_error': 'Błąd poprawiania japońskiego tłumaczenia gry',
+    'u1.base_game_error': 'Błąd poprawiania tłumaczenia gry',
     'u1.select_status_mod': 'Wybierz co najmniej jeden mod na liście Stan tłumaczenia.',
     'u1.queued_after_current': 'Dodano {count} modów na koniec kolejki. Zostaną przetworzone po zakończeniu bieżącego tłumaczenia.',
     'u1.selected_mods_added': 'Dodano {count} wybranych modów do kolejki zwykłego tłumaczenia.',

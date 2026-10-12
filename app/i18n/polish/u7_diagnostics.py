@@ -98,7 +98,7 @@ STRINGS = {
     'u7.could_not_verify_backup_creation': 'Nie udało się potwierdzić utworzenia kopii zapasowej',
     'u7.no_translation_conflicts_need_bulk_choices': 'Brak konfliktów tłumaczenia wymagających zbiorczego wyboru. Zdiagnozowane cele automatycznej integracji są przetwarzane przez 『Uruchom naprawę z tymi ustawieniami』 po lewej.',
     'u7.japanese_translation_mod_translation': 'Tłumaczenie japońskiego moda tłumaczącego',
-    'u7.source_japanese_translation_mod': 'Automatyczne porządkowanie',
+    'u7.source_japanese_translation_mod': 'Automatyczne scalanie',
     'u7.full_diagnostics_are_already_running_in': 'Pełna diagnostyka już trwa w tle.',
     'u7.select_at_least_one_target_mod': 'Wybierz co najmniej jeden mod docelowy na karcie Pełna diagnostyka.',
     'u7.integration_targets_keys_translation_conflicts_unspecified': 'Cele integracji: {integrations} kluczy / Konflikty tłumaczenia: {unique_conflicts} / Nieokreślone: {unresolved}',

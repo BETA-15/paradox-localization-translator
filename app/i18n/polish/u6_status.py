@@ -166,7 +166,7 @@ STRINGS = {
     'u6.effective_matching_source_mod_candidate': '  Skuteczne dopasowanie: mod źródłowy {value}% / kandydat {value_2}%',
     'u6.candidate_english_chinese_localization': '  Angielska / chińska lokalizacja kandydata: {value} ({paired_count}/{candidate_total})',
     'u6.candidate_source_text_comparison_matches_mismatches': '  Porównanie źródła kandydata: zgodne {value} / niezgodne {value_2}',
-    'u6.base_game_translation_70_gate': '  Próg 70% tłumaczenia gry na japoński: {value}',
+    'u6.base_game_translation_70_gate': '  Próg 70% tłumaczenia gry: {value}',
     'u6.non_base_game_20_gate': '  Próg 20% kluczy spoza gry: {value}',
     'u6.40_relationship_gate_source_candidate_effective': '  Próg powiązania 40%: źródło {value} / kandydat {value_2} / skuteczne dopasowanie {value_3} kluczy {value_4}',
     'u6.candidate_type': '  Rodzaj kandydata: {candidate_role_text}',

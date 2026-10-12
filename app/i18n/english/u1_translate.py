@@ -51,7 +51,7 @@ STRINGS = {
     "u1.normal_log": "Normal translation log",
     "u1.open_errors": "Open error log",
     "u1.collect_diagnostics": "Collect diagnostic logs",
-    "u1.base_game_error": "Base-game Japanese translation correction error",
+    "u1.base_game_error": 'Base-game translation correction error',
     "u1.select_status_mod": "Select at least one Mod in Translation status.",
     "u1.queued_after_current": "Added {count} Mods to the end of the queue. They will run after the current translation finishes.",
     "u1.selected_mods_added": "Added {count} selected Mods to the normal translation queue.",

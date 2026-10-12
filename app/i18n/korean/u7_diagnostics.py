@@ -98,7 +98,7 @@ STRINGS = {
     'u7.could_not_verify_backup_creation': '백업 생성을 확인하지 못했습니다',
     'u7.no_translation_conflicts_need_bulk_choices': '일괄 선택이 필요한 번역 충돌이 없습니다. 진단된 자동 통합 대상은 왼쪽의 『설정한 내용으로 복구 실행』에서 처리합니다.',
     'u7.japanese_translation_mod_translation': '일본어 번역 모드의 번역',
-    'u7.source_japanese_translation_mod': '자동 정리',
+    'u7.source_japanese_translation_mod': '자동 통합',
     'u7.full_diagnostics_are_already_running_in': '이미 백그라운드에서 종합 진단을 실행하고 있습니다.',
     'u7.select_at_least_one_target_mod': '종합 진단 탭에서 대상 모드를 하나 이상 선택하세요.',
     'u7.integration_targets_keys_translation_conflicts_unspecified': '통합 대상: 키 {integrations}개 / 번역 충돌: {unique_conflicts}건 / 미지정: {unresolved}건',

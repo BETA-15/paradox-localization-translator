@@ -51,7 +51,7 @@ STRINGS = {
     'u1.normal_log': '일반 번역 로그',
     'u1.open_errors': '오류 로그 열기',
     'u1.collect_diagnostics': '진단 로그 수집',
-    'u1.base_game_error': '기본 게임 일본어 번역 수정 오류',
+    'u1.base_game_error': '기본 게임 번역 수정 오류',
     'u1.select_status_mod': '번역 현황 목록에서 모드를 하나 이상 선택하세요.',
     'u1.queued_after_current': '모드 {count}개를 대기열 끝에 추가했습니다. 현재 번역이 완료되면 이어서 처리합니다.',
     'u1.selected_mods_added': '선택한 모드 {count}개를 일반 번역 대기열에 추가했습니다.',

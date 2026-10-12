@@ -98,7 +98,7 @@ STRINGS = {
     'u7.could_not_verify_backup_creation': 'Не удалось подтвердить создание резервной копии',
     'u7.no_translation_conflicts_need_bulk_choices': 'Нет конфликтов перевода, требующих массового выбора. Объекты автоматического объединения, определённые диагностикой, обрабатываются командой『Выполнить исправление с этими настройками』слева.',
     'u7.japanese_translation_mod_translation': 'Перевод мода перевода на японский',
-    'u7.source_japanese_translation_mod': 'Автоматическое упорядочивание',
+    'u7.source_japanese_translation_mod': 'Автоматическое объединение',
     'u7.full_diagnostics_are_already_running_in': 'Полная диагностика уже выполняется в фоновом режиме.',
     'u7.select_at_least_one_target_mod': 'Выберите хотя бы один целевой мод на вкладке «Полная диагностика».',
     'u7.integration_targets_keys_translation_conflicts_unspecified': 'Объектов объединения: {integrations} ключей / Конфликтов перевода: {unique_conflicts} / Без решения: {unresolved}',

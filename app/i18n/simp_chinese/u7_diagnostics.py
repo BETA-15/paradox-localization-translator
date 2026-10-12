@@ -98,7 +98,7 @@ STRINGS = {
     "u7.could_not_verify_backup_creation": "无法确认备份已创建",
     "u7.no_translation_conflicts_need_bulk_choices": "没有需要批量指定的译文冲突。已诊断的自动整合目标将通过左侧的『按当前设置执行修复』处理。",
     "u7.japanese_translation_mod_translation": "日语翻译模组译文",
-    "u7.source_japanese_translation_mod": "自动整理",
+    "u7.source_japanese_translation_mod": '自动整合',
     "u7.full_diagnostics_are_already_running_in": "正在后台执行综合诊断。",
     "u7.select_at_least_one_target_mod": "请在综合诊断标签页选择至少一个目标模组。",
     "u7.integration_targets_keys_translation_conflicts_unspecified": "整合目标：{integrations} 个键 / 译文冲突：{unique_conflicts} / 未指定：{unresolved}",

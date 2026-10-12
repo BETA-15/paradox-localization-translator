@@ -98,7 +98,7 @@ STRINGS = {
     'u7.could_not_verify_backup_creation': 'Erstellung der Sicherung konnte nicht bestätigt werden',
     'u7.no_translation_conflicts_need_bulk_choices': 'Keine Übersetzungskonflikte erfordern eine Sammelauswahl. Diagnostizierte automatische Integrationsziele werden links mit „Mit festgelegten Optionen reparieren“ verarbeitet.',
     'u7.japanese_translation_mod_translation': 'Übersetzung des japanischen Übersetzungsmods',
-    'u7.source_japanese_translation_mod': 'Automatisch ordnen',
+    'u7.source_japanese_translation_mod': 'Automatisch zusammenführen',
     'u7.full_diagnostics_are_already_running_in': 'Gesamtdiagnose läuft bereits im Hintergrund.',
     'u7.select_at_least_one_target_mod': 'Im Reiter Gesamtdiagnose mindestens eine Zielmod auswählen.',
     'u7.integration_targets_keys_translation_conflicts_unspecified': 'Integrationsziele: {integrations} Schlüssel / Übersetzungskonflikte: {unique_conflicts} / Nicht festgelegt: {unresolved}',

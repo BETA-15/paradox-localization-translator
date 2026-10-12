@@ -51,7 +51,7 @@ STRINGS = {
     'u1.normal_log': 'Protokoll der normalen Übersetzung',
     'u1.open_errors': 'Fehlerprotokoll öffnen',
     'u1.collect_diagnostics': 'Diagnoseprotokolle sammeln',
-    'u1.base_game_error': 'Fehler bei der Korrektur der japanischen Übersetzung des Hauptspiels',
+    'u1.base_game_error': 'Fehler bei der Korrektur der Hauptspiel-Übersetzung',
     'u1.select_status_mod': 'Mindestens eine Mod unter Übersetzungsstatus auswählen.',
     'u1.queued_after_current': '{count} Mods am Ende der Warteschlange hinzugefügt. Sie werden nach der laufenden Übersetzung verarbeitet.',
     'u1.selected_mods_added': '{count} ausgewählte Mods zur Warteschlange für normale Übersetzung hinzugefügt.',

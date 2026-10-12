@@ -98,7 +98,7 @@ STRINGS = {
     'u7.could_not_verify_backup_creation': 'Yedek oluşturulduğu doğrulanamadı',
     'u7.no_translation_conflicts_need_bulk_choices': 'Toplu tercih gerektiren çeviri çakışması yok. Tanılanmış otomatik birleştirme hedefleri soldaki 『Bu ayarlarla onarımı çalıştır』 ile işlenir.',
     'u7.japanese_translation_mod_translation': 'Japonca çeviri modu çevirisi',
-    'u7.source_japanese_translation_mod': 'Otomatik düzenleme',
+    'u7.source_japanese_translation_mod': 'Otomatik birleştirme',
     'u7.full_diagnostics_are_already_running_in': 'Kapsamlı tanılama zaten arka planda sürüyor.',
     'u7.select_at_least_one_target_mod': 'Kapsamlı tanılama sekmesinden en az bir hedef mod seçin.',
     'u7.integration_targets_keys_translation_conflicts_unspecified': 'Birleştirme hedefi: {integrations} anahtar / Çeviri çakışması: {unique_conflicts} / Belirtilmemiş: {unresolved}',

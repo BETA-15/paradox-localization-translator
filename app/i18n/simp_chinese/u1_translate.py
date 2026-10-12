@@ -51,7 +51,7 @@ STRINGS = {
     "u1.normal_log": "常规翻译日志",
     "u1.open_errors": "打开错误日志",
     "u1.collect_diagnostics": "收集诊断日志",
-    "u1.base_game_error": "游戏本体日语译文修正异常",
+    "u1.base_game_error": '游戏本体译文修正异常',
     "u1.select_status_mod": "请从翻译状况列表中选择至少一个模组。",
     "u1.queued_after_current": "已将 {count} 个模组添加到队列末尾。当前翻译完成后会继续处理。",
     "u1.selected_mods_added": "已将选中的 {count} 个模组加入常规翻译队列。",

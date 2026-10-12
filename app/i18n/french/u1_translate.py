@@ -51,7 +51,7 @@ STRINGS = {
     'u1.normal_log': 'Journal de traduction normale',
     'u1.open_errors': 'Ouvrir le journal d’erreurs',
     'u1.collect_diagnostics': 'Collecter les journaux de diagnostic',
-    'u1.base_game_error': 'Erreur de correction de la traduction japonaise du jeu de base',
+    'u1.base_game_error': 'Erreur de correction de la traduction du jeu de base',
     'u1.select_status_mod': 'Sélectionnez au moins un mod dans État de la traduction.',
     'u1.queued_after_current': '{count} mods ajoutés à la fin de la file d’attente. Ils seront traités après la traduction en cours.',
     'u1.selected_mods_added': '{count} mods sélectionnés ajoutés à la file d’attente de traduction normale.',
