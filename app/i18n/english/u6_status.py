@@ -1,6 +1,8 @@
 """U6 翻訳状況-未翻訳監視-Mod 関連付け-上書き（english）。key の頭は単位の名前にする。"""
 
 STRINGS = {
+    'u6.preserve_usable_target_values': 'Usable existing {target_name} translations are preserved. Missing keys are added, and existing keys identified as untranslated are updated. The entire localization directory is backed up before writing.',
+    'u6.target_overwrite_repaired': 'Filled missing and untranslated {target_name} keys; usable existing translations are preserved.\nFiles written: {copied}\nBackup: {backup_root}\n\n{validation}',
     'u6.english_external_overwrite_unavailable': 'English cannot be written to an external translation Mod. Write to the source Mod instead.',
     'u6.unsupported_overwrite_language': '{game} cannot read {target_name}; no files will be written.',
     'u6.preserve_target_values': 'Existing {target_name} values are preserved; only absent keys are added. The entire localization directory is backed up before writing.',

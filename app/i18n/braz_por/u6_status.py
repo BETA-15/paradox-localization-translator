@@ -1,6 +1,8 @@
 """U6 翻訳状況・未翻訳監視・Mod 関連付け・上書き（braz_por）。key の頭は単位の名前にする。"""
 
 STRINGS = {
+    'u6.preserve_usable_target_values': 'As traduções existentes válidas em {target_name} são preservadas. As chaves ausentes são adicionadas e as chaves existentes identificadas como não traduzidas são atualizadas. Todo o diretório de localização é copiado para backup antes da gravação.',
+    'u6.target_overwrite_repaired': 'Chaves ausentes e não traduzidas em {target_name} preenchidas; traduções existentes válidas preservadas.\nArquivos gravados: {copied}\nBackup: {backup_root}\n\n{validation}',
     'u6.english_external_overwrite_unavailable': 'O inglês não pode ser gravado em um mod de tradução externo. Use a sobrescrita no mod original.',
     'u6.unsupported_overwrite_language': '{game} não consegue ler {target_name}; nenhum arquivo será gravado.',
     'u6.preserve_target_values': 'Os valores existentes em {target_name} serão preservados; apenas as chaves ausentes serão adicionadas. Será feito um backup de toda a pasta localization antes da gravação.',

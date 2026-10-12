@@ -1,6 +1,8 @@
 """Traduction française — surveillance et état de la traduction."""
 
 STRINGS = {
+    'u6.preserve_usable_target_values': 'Les traductions existantes utilisables en {target_name} sont conservées. Les clés manquantes sont ajoutées et les clés existantes identifiées comme non traduites sont mises à jour. Toute la localisation est sauvegardée avant écriture.',
+    'u6.target_overwrite_repaired': 'Clés manquantes et non traduites en {target_name} complétées ; traductions existantes utilisables conservées.\nFichiers écrits : {copied}\nSauvegarde : {backup_root}\n\n{validation}',
     'u6.english_external_overwrite_unavailable': 'L’anglais ne peut pas être écrit dans un mod de traduction externe. Écrivez plutôt dans le mod d’origine.',
     'u6.unsupported_overwrite_language': '{game} ne peut pas lire {target_name} ; aucun fichier ne sera écrit.',
     'u6.preserve_target_values': 'Les valeurs existantes en {target_name} sont conservées ; seules les clés absentes sont ajoutées. Toute la localisation est sauvegardée avant écriture.',

@@ -1,6 +1,8 @@
 """U6 翻訳状況・未翻訳監視・Mod 関連付け・上書き（japanese）。key の頭は単位の名前にする。"""
 
 STRINGS = {
+    'u6.preserve_usable_target_values': '使える既存の{target_name}訳は維持し、欠損キーを追加して、未翻訳と判定された既存キーを更新します。書き込み前にlocalization全体をバックアップします。',
+    'u6.target_overwrite_repaired': '{target_name}の欠損・未翻訳キーを補完しました。使える既存訳は維持しています。\n書き込みファイル数: {copied}\nバックアップ: {backup_root}\n\n{validation}',
     'u6.english_external_overwrite_unavailable': '英語は外部翻訳Modへの上書き対象ではありません。元Modへの上書きを使ってください。',
     'u6.unsupported_overwrite_language': '{game}は{target_name}を読めないため、書き込みません。',
     'u6.preserve_target_values': '既存の{target_name}の値は保持し、足りないキーだけを追加します。書き込み前にlocalization全体をバックアップします。',

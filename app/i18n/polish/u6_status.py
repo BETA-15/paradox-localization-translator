@@ -1,6 +1,8 @@
 """U6 翻訳状況・未翻訳監視・Mod 関連付け・上書き（polish）。key の頭は単位の名前にする。"""
 
 STRINGS = {
+    'u6.preserve_usable_target_values': 'Poprawne istniejące tłumaczenia w języku {target_name} zostaną zachowane. Brakujące klucze zostaną dodane, a istniejące klucze uznane za nieprzetłumaczone zostaną zaktualizowane. Przed zapisem zostanie utworzona kopia zapasowa całego katalogu lokalizacji.',
+    'u6.target_overwrite_repaired': 'Uzupełniono brakujące i nieprzetłumaczone klucze w języku {target_name}; poprawne istniejące tłumaczenia zachowano.\nZapisane pliki: {copied}\nKopia zapasowa: {backup_root}\n\n{validation}',
     'u6.english_external_overwrite_unavailable': 'Angielskiego nie można zapisać do zewnętrznego moda tłumaczącego. Użyj nadpisania moda źródłowego.',
     'u6.unsupported_overwrite_language': '{game} nie odczytuje języka {target_name}; pliki nie zostaną zapisane.',
     'u6.preserve_target_values': 'Istniejące wartości w języku {target_name} są zachowywane; dodawane są tylko brakujące klucze. Przed zapisem tworzona jest kopia zapasowa całego localization.',
