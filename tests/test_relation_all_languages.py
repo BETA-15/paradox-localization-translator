@@ -81,7 +81,7 @@ def test_target_only_translation_links_correct_source(tmp_path, language):
     assert result["target_lang"] == language
     assert not core.find_external_japanese_translation(other, index, target_lang=language)
     assert ui_status.build_message(result["message_parts"]) == result["message"]
-    assert all(part["fields"]["target_name"] == i18n.t("lang." + language)
+    assert all(part["fields"]["target_name"] == language
                for part in result["message_parts"])
     report = core.build_relation_report([result], target_lang=language)
     markdown = core.relation_report_markdown(report, target_lang=language)

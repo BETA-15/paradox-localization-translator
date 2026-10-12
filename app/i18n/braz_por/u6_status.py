@@ -1,6 +1,16 @@
 """U6 翻訳状況・未翻訳監視・Mod 関連付け・上書き（braz_por）。key の頭は単位の名前にする。"""
 
 STRINGS = {
+    'u6.monitor.english_missing': 'Chave exclusiva do inglês ausente',
+    'u6.monitor.chinese_missing': 'Chave exclusiva do chinês ausente',
+    'u6.monitor.japanese_missing': 'Chave japonesa ausente',
+    'u6.monitor.foreign_remaining': 'Texto em inglês/outro idioma restante',
+    'u6.monitor.confirmed': 'Confirmado',
+    'u6.monitor.review': 'Precisa de revisão',
+    'u6.monitor.high': 'Alta',
+    'u6.monitor.missing_key': 'Chave ausente',
+    'u6.monitor.source_copy': 'Texto original copiado',
+    'u6.monitor.foreign_text': 'Texto em outro idioma',
     'u6.english_external_overwrite_unavailable': 'O inglês não pode ser gravado em um mod de tradução externo. Use a sobrescrita no mod original.',
     'u6.unsupported_overwrite_language': '{game} não consegue ler {target_name}; nenhum arquivo será gravado.',
     'u6.preserve_target_values': 'Os valores existentes em {target_name} serão preservados; apenas as chaves ausentes serão adicionadas. Será feito um backup de toda a pasta localization antes da gravação.',

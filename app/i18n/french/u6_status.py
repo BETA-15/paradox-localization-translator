@@ -1,6 +1,16 @@
 """Traduction française — surveillance et état de la traduction."""
 
 STRINGS = {
+    'u6.monitor.english_missing': 'Clé propre à l’anglais manquante',
+    'u6.monitor.chinese_missing': 'Clé propre au chinois manquante',
+    'u6.monitor.japanese_missing': 'Clé japonaise manquante',
+    'u6.monitor.foreign_remaining': 'Texte anglais/étranger restant',
+    'u6.monitor.confirmed': 'Confirmé',
+    'u6.monitor.review': 'À vérifier',
+    'u6.monitor.high': 'Élevée',
+    'u6.monitor.missing_key': 'Clé manquante',
+    'u6.monitor.source_copy': 'Texte source recopié',
+    'u6.monitor.foreign_text': 'Texte étranger',
     'u6.english_external_overwrite_unavailable': 'L’anglais ne peut pas être écrit dans un mod de traduction externe. Écrivez plutôt dans le mod d’origine.',
     'u6.unsupported_overwrite_language': '{game} ne peut pas lire {target_name} ; aucun fichier ne sera écrit.',
     'u6.preserve_target_values': 'Les valeurs existantes en {target_name} sont conservées ; seules les clés absentes sont ajoutées. Toute la localisation est sauvegardée avant écriture.',

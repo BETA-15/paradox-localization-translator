@@ -175,7 +175,15 @@ def build_message(parts) -> str:
     texts = []
     for part in parts or []:
         if isinstance(part, dict) and part.get("id"):
-            fields = part.get("fields") if isinstance(part.get("fields"), dict) else {}
+            fields = dict(part["fields"]) if isinstance(part.get("fields"), dict) else {}
+            target_name = fields.get("target_name")
+            if isinstance(target_name, str) and target_name in i18n.UI_LANGUAGES:
+                fields["target_name"] = i18n.t("lang." + target_name)
+            supported = fields.get("supported_languages")
+            if isinstance(supported, (list, tuple)):
+                fields["supported_languages"] = i18n.t("u9.game_language_separator").join(
+                    i18n.t("lang." + language) if language in i18n.UI_LANGUAGES else str(language)
+                    for language in supported)
             texts.append(i18n.t(str(part["id"]), **fields))
     return MESSAGE_PART_JOINER.join(text for text in texts if text).strip()
 
@@ -190,6 +198,25 @@ def display_message(result) -> str:
         if text:
             return text
     return str(result.get("message") or "")
+
+
+MONITOR_LABELS = {
+    "英語固有キー欠損": "u6.monitor.english_missing",
+    "中国語固有キー欠損": "u6.monitor.chinese_missing",
+    "日本語キーなし": "u6.monitor.japanese_missing",
+    "英語/外国語残り": "u6.monitor.foreign_remaining",
+    "確定": "u6.monitor.confirmed",
+    "要確認": "u6.monitor.review",
+    "高": "u6.monitor.high",
+    "missing_key": "u6.monitor.missing_key",
+    "source_copy": "u6.monitor.source_copy",
+    "foreign_text": "u6.monitor.foreign_text",
+}
+
+
+def display_monitor_label(value: str) -> str:
+    key = MONITOR_LABELS.get(value)
+    return i18n.t(key) if key else value
 
 
 DIAGNOSTIC_KINDS = {

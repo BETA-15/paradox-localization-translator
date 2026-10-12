@@ -1,6 +1,16 @@
 """U6 翻訳状況・未翻訳監視・Mod 関連付け・上書き（polish）。key の頭は単位の名前にする。"""
 
 STRINGS = {
+    'u6.monitor.english_missing': 'Brak klucza występującego tylko w angielskim',
+    'u6.monitor.chinese_missing': 'Brak klucza występującego tylko w chińskim',
+    'u6.monitor.japanese_missing': 'Brak japońskiego klucza',
+    'u6.monitor.foreign_remaining': 'Pozostał tekst angielski/obcojęzyczny',
+    'u6.monitor.confirmed': 'Potwierdzone',
+    'u6.monitor.review': 'Wymaga sprawdzenia',
+    'u6.monitor.high': 'Wysoka',
+    'u6.monitor.missing_key': 'Brak klucza',
+    'u6.monitor.source_copy': 'Skopiowany tekst źródłowy',
+    'u6.monitor.foreign_text': 'Tekst obcojęzyczny',
     'u6.english_external_overwrite_unavailable': 'Angielskiego nie można zapisać do zewnętrznego moda tłumaczącego. Użyj nadpisania moda źródłowego.',
     'u6.unsupported_overwrite_language': '{game} nie odczytuje języka {target_name}; pliki nie zostaną zapisane.',
     'u6.preserve_target_values': 'Istniejące wartości w języku {target_name} są zachowywane; dodawane są tylko brakujące klucze. Przed zapisem tworzona jest kopia zapasowa całego localization.',

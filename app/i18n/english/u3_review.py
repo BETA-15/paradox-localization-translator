@@ -1,6 +1,7 @@
 """U3 QA / comparison editor, diff inspector, and search display strings."""
 
 STRINGS = {
+    'u3.error': 'Error',
     'u3.choose_pair': 'Select the source and Japanese translation pair to use.',
     'u3.source_language': 'Source language',
     'u3.source_yaml': 'Source YAML',

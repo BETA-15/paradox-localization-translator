@@ -428,7 +428,7 @@ def test_analyze_missing_localization_rebuilds(monkeypatch, tmp_path):
     monkeypatch.setattr(core, "detect_mod_name", lambda path: "Test Mod")
     result = core.analyze_mod_translation_status(tmp_path)
     assert result["message"] == "Test Modのlocalizationフォルダを確認できませんでした。"
-    assert result["message_parts"] == [ui_status.message_part("u9.mod_localization_missing", mod_name="Test Mod", target_name="日本語")]
+    assert result["message_parts"] == [ui_status.message_part("u9.mod_localization_missing", mod_name="Test Mod", target_name="japanese")]
     i18n.set_ui_language("english")
     assert ui_status.display_message(result) == "Could not find Test Mod’s localization folder."
 
@@ -1393,20 +1393,20 @@ def test_analyzed_gap_messages_preserve_original_and_rebuild(monkeypatch, tmp_pa
     assert result["message"] == expected
     assert ui_status.build_message(result["message_parts"]) == expected
     fields = result["message_parts"][0]["fields"]
-    assert fields["target_name"] == "日本語"
+    assert fields["target_name"] == "japanese"
     assert all(isinstance(value, int) or value in ("Test Mod", "Add-on")
                for key, value in fields.items() if key != "target_name")
     saved = json.loads(json.dumps(result))
     i18n.set_ui_language("english")
     english_reasons = {
-        "english_only": "1 English-only keys requiring 日本語 translation are missing",
-        "chinese_only": "1 Simplified-Chinese-only keys requiring 日本語 translation are missing",
+        "english_only": "1 English-only keys requiring Japanese translation are missing",
+        "chinese_only": "1 Simplified-Chinese-only keys requiring Japanese translation are missing",
         "shared": "1 shared English/Simplified Chinese keys are missing or untranslated",
         "other": "1 other translation gaps",
     }
     english_details = " / ".join(english_reasons[origin] for index, origin in enumerate(origins) if mask & (1 << index))
     english_expected = (
-        f"Test Mod has a 日本語 translation mod, “Add-on”, but translations have gaps ({len(candidates)}). {english_details}."
+        f"Test Mod has a Japanese translation mod, “Add-on”, but translations have gaps ({len(candidates)}). {english_details}."
         if external else f"Test Mod has translation gaps ({len(candidates)}). {english_details}."
     )
     assert ui_status.display_message(saved) == english_expected

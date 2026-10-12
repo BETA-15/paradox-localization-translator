@@ -1,6 +1,16 @@
 """U6 翻訳状況・未翻訳監視・Mod 関連付け・上書き（german）。key の頭は単位の名前にする。"""
 
 STRINGS = {
+    'u6.monitor.english_missing': 'Englischspezifischer Schlüssel fehlt',
+    'u6.monitor.chinese_missing': 'Chinesischspezifischer Schlüssel fehlt',
+    'u6.monitor.japanese_missing': 'Japanischer Schlüssel fehlt',
+    'u6.monitor.foreign_remaining': 'Englischer/fremdsprachiger Text verbleibt',
+    'u6.monitor.confirmed': 'Bestätigt',
+    'u6.monitor.review': 'Prüfung erforderlich',
+    'u6.monitor.high': 'Hoch',
+    'u6.monitor.missing_key': 'Fehlender Schlüssel',
+    'u6.monitor.source_copy': 'Kopierter Ausgangstext',
+    'u6.monitor.foreign_text': 'Fremdsprachiger Text',
     'u6.english_external_overwrite_unavailable': 'Englisch kann nicht in einen externen Übersetzungsmod geschrieben werden. Schreiben Sie stattdessen in den Ursprungsmod.',
     'u6.unsupported_overwrite_language': '{game} kann {target_name} nicht lesen; es werden keine Dateien geschrieben.',
     'u6.preserve_target_values': 'Vorhandene Werte für {target_name} bleiben erhalten; nur fehlende Schlüssel werden ergänzt. Vor dem Schreiben wird der gesamte Ordner localization gesichert.',

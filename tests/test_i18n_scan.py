@@ -146,6 +146,45 @@ def test_widget_labels_are_never_japanese_literals():
 COMPLETE_LANGUAGES = ("japanese", "english", "braz_por", "russian", "korean", "french", "turkish", "german", "polish", "simp_chinese", "spanish")
 
 
+def _literal_message_keys(node):
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return {node.value}
+    if isinstance(node, ast.IfExp):
+        return _literal_message_keys(node.body) | _literal_message_keys(node.orelse)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left, right = _literal_message_keys(node.left), _literal_message_keys(node.right)
+        return {prefix + suffix for prefix in left for suffix in right}
+    return set()
+
+
+def test_literal_message_keys_exist_in_japanese_dictionary():
+    known = i18n.strings("japanese")
+    missing = []
+    for name in ("main.py", "translator_core.py", "ui_status.py"):
+        tree = ast.parse((ROOT / "app" / name).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            is_translation = (isinstance(node.func, ast.Attribute)
+                              and isinstance(node.func.value, ast.Name)
+                              and node.func.value.id == "i18n" and node.func.attr == "t")
+            is_part = ((isinstance(node.func, ast.Attribute) and node.func.attr == "message_part")
+                       or (isinstance(node.func, ast.Name) and node.func.id == "message_part"))
+            if not (is_translation or is_part):
+                continue
+            argument = node.args[0] if node.args else next((field.value for field in node.keywords if field.arg == "key"), None)
+            for key in _literal_message_keys(argument):
+                if key not in known:
+                    missing.append(f"{name}:{node.lineno}: {key}")
+    assert not missing, "\n".join(missing)
+
+
+def test_key_scan_includes_conditional_literals_not_dynamic_prefixes():
+    assert _literal_message_keys(ast.parse("'u3.error' if failed else 'u3.missing'", mode="eval").body) == {"u3.error", "u3.missing"}
+    assert _literal_message_keys(ast.parse("'u3.' + 'error'", mode="eval").body) == {"u3.error"}
+    assert not _literal_message_keys(ast.parse("'lang.' + language", mode="eval").body)
+
+
 def test_complete_languages_have_every_key():
     ja = set(i18n.strings("japanese"))
     for lang in COMPLETE_LANGUAGES:

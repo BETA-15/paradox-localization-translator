@@ -1,6 +1,16 @@
 """U6 翻訳状況・未翻訳監視・Mod 関連付け・上書き（russian）。key の頭は単位の名前にする。"""
 
 STRINGS = {
+    'u6.monitor.english_missing': 'Отсутствует ключ, уникальный для английского',
+    'u6.monitor.chinese_missing': 'Отсутствует ключ, уникальный для китайского',
+    'u6.monitor.japanese_missing': 'Отсутствует японский ключ',
+    'u6.monitor.foreign_remaining': 'Остался английский/иностранный текст',
+    'u6.monitor.confirmed': 'Подтверждено',
+    'u6.monitor.review': 'Требуется проверка',
+    'u6.monitor.high': 'Высокая',
+    'u6.monitor.missing_key': 'Отсутствующий ключ',
+    'u6.monitor.source_copy': 'Скопированный исходный текст',
+    'u6.monitor.foreign_text': 'Иностранный текст',
     'u6.english_external_overwrite_unavailable': 'Английский перевод нельзя записать во внешний мод перевода. Используйте перезапись исходного мода.',
     'u6.unsupported_overwrite_language': '{game} не поддерживает {target_name}, поэтому запись не выполняется.',
     'u6.preserve_target_values': 'Существующие значения на языке {target_name} сохраняются; добавляются только недостающие ключи. Перед записью создаётся резервная копия всей папки localization.',

@@ -32,6 +32,21 @@ def test_unknown_language_falls_back_to_english():
     assert i18n.set_ui_language("klingon") == "english"
 
 
+def test_missing_numeric_fields_preserve_the_placeholder(monkeypatch):
+    monkeypatch.setitem(i18n.strings("japanese"), "test.numeric", "{known:.1f} / {missing:.2f} / {count:03d}")
+    expected = "50.0 / {missing:.2f} / {count:03d}"
+    assert i18n.t("test.numeric", known=50) == expected
+    assert i18n.t_lang("japanese", "test.numeric", known=50) == expected
+    assert "{candidate_percent:.1f}" in i18n.t("u9.relation_weighted", level="candidate", source_percent=50)
+
+
+def test_missing_converted_and_nested_fields_preserve_placeholders(monkeypatch):
+    template = "{known} / {missing!s:.2f} / {object.count:03d} / {items[0]:.1f}"
+    monkeypatch.setitem(i18n.strings("japanese"), "test.missing", template)
+    assert i18n.t("test.missing", known=1) == template.replace("{known}", "1")
+    assert i18n.t_lang("japanese", "test.missing", known=1) == template.replace("{known}", "1")
+
+
 def test_every_language_package_has_every_unit_and_help_doc():
     for lang in i18n.UI_LANGUAGES:
         assert isinstance(i18n.strings(lang), dict)

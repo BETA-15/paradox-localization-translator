@@ -1,6 +1,7 @@
 """U3 QA/比較編集・差分・検索（turkish）。key の頭は単位の名前にする。"""
 
 STRINGS = {
+    'u3.error': 'Hata',
     'u3.choose_pair': 'Kullanılacak kaynak metin ve Japonca çeviri çiftini seçin.',
     'u3.source_language': 'Kaynak dil',
     'u3.source_yaml': 'Kaynak YAML',

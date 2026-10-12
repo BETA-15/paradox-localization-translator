@@ -1,6 +1,16 @@
 """简体中文界面文本。"""
 
 STRINGS = {
+    'u6.monitor.english_missing': '缺少英语独有键',
+    'u6.monitor.chinese_missing': '缺少中文独有键',
+    'u6.monitor.japanese_missing': '缺少日语键',
+    'u6.monitor.foreign_remaining': '残留英语/外语文本',
+    'u6.monitor.confirmed': '已确认',
+    'u6.monitor.review': '需检查',
+    'u6.monitor.high': '高',
+    'u6.monitor.missing_key': '缺少键',
+    'u6.monitor.source_copy': '复制的原文',
+    'u6.monitor.foreign_text': '外语文本',
     "u6.english_external_overwrite_unavailable": "英语不能用于覆盖外部翻译模组。请使用覆盖原模组功能。",
     "u6.unsupported_overwrite_language": "{game}无法读取{target_name}，因此不会写入。",
     "u6.preserve_target_values": "保留现有{target_name}值，仅添加缺失的键。写入前会备份整个 localization。",

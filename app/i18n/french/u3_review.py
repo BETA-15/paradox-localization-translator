@@ -1,6 +1,7 @@
 """Traduction française — QA, comparaison et recherche."""
 
 STRINGS = {
+    'u3.error': 'Erreur',
     'u3.choose_pair': 'Sélectionnez la paire de texte source et de traduction japonaise à utiliser.',
     'u3.source_language': 'Langue source',
     'u3.source_yaml': 'YAML source',

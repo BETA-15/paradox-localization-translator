@@ -1,6 +1,16 @@
 """U6 翻訳状況・未翻訳監視・Mod 関連付け・上書き（turkish）。key の頭は単位の名前にする。"""
 
 STRINGS = {
+    'u6.monitor.english_missing': 'Yalnızca İngilizcede bulunan anahtar eksik',
+    'u6.monitor.chinese_missing': 'Yalnızca Çincede bulunan anahtar eksik',
+    'u6.monitor.japanese_missing': 'Japonca anahtar eksik',
+    'u6.monitor.foreign_remaining': 'İngilizce/yabancı dilde metin kalmış',
+    'u6.monitor.confirmed': 'Doğrulandı',
+    'u6.monitor.review': 'İncelenmeli',
+    'u6.monitor.high': 'Yüksek',
+    'u6.monitor.missing_key': 'Eksik anahtar',
+    'u6.monitor.source_copy': 'Kopyalanmış kaynak metin',
+    'u6.monitor.foreign_text': 'Yabancı dilde metin',
     'u6.english_external_overwrite_unavailable': 'İngilizce, harici çeviri moduna yazılamaz. Bunun yerine kaynak modun üzerine yazın.',
     'u6.unsupported_overwrite_language': '{game}, {target_name} dilini okuyamadığından dosya yazılmayacak.',
     'u6.preserve_target_values': 'Mevcut {target_name} değerleri korunur; yalnızca eksik anahtarlar eklenir. Yazmadan önce localization klasörünün tamamı yedeklenir.',

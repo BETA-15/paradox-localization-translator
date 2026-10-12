@@ -1,6 +1,7 @@
 """简体中文界面文本。"""
 
 STRINGS = {
+    'u3.error': '错误',
     "u3.choose_pair": "请选择要使用的原文与日语译文组合。",
     "u3.source_language": "原文语言",
     "u3.source_yaml": "原文 YAML",

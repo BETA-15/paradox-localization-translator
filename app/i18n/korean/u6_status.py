@@ -1,6 +1,16 @@
 """U6 翻訳状況・未翻訳監視・Mod 関連付け・上書き（korean）。key の頭は単位の名前にする。"""
 
 STRINGS = {
+    'u6.monitor.english_missing': '영어 전용 키 누락',
+    'u6.monitor.chinese_missing': '중국어 전용 키 누락',
+    'u6.monitor.japanese_missing': '일본어 키 없음',
+    'u6.monitor.foreign_remaining': '영어/외국어 텍스트 남음',
+    'u6.monitor.confirmed': '확정',
+    'u6.monitor.review': '검토 필요',
+    'u6.monitor.high': '높음',
+    'u6.monitor.missing_key': '키 누락',
+    'u6.monitor.source_copy': '원문 복사',
+    'u6.monitor.foreign_text': '외국어 텍스트',
     'u6.english_external_overwrite_unavailable': '영어는 외부 번역 모드에 덮어쓸 수 없습니다. 원본 모드에 덮어쓰기를 사용하세요.',
     'u6.unsupported_overwrite_language': '{game}에서 {target_name}를 읽을 수 없어 파일을 쓰지 않습니다.',
     'u6.preserve_target_values': '기존 {target_name} 값은 유지하고 없는 키만 추가합니다. 쓰기 전에 localization 디렉터리 전체를 백업합니다.',

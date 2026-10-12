@@ -892,6 +892,8 @@ def test_production_calls_preserve_interpolation_expressions():
             bindings = dict(bindings, target_name='i18n.t("lang." + _current_target_lang(self))')
             if key in {"u4.japanese_yaml", "u4.japanese_mod"}:
                 bindings["target_name"] = 'i18n.t("lang." + _glossary_language(self))'
+            if owner in {"App._build_glossary_tab", "App._save_imported_glossary_candidates", "App._save_imported_glossary_pairs"}:
+                bindings["target_name"] = 'i18n.t("lang." + _glossary_language(self))'
             if key in {"u4.checking_japanese", "u4.choose_japanese_yaml", "u4.choose_japanese_mod",
                        "u4.japanese_yaml_import", "u4.japanese_mod_import"}:
                 bindings["target_name"] = 'i18n.t("lang." + target_lang)'
