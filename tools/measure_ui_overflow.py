@@ -7,7 +7,9 @@
   置かれた幅（winfo_width）より大きいもの（文字が切れている）。
 - outside：部品の右端が、囲んでいる枠（祖先のどれか）の右端より外に出ているもの（枠の外で見えない）。
 - below：部品の下端が、囲んでいる枠の下端より下に出ているもの（縦に送れる所の中は数えない）。
-- squeezed：一覧の表（Treeview）が縮みすぎて、見出しと3行が見えないもの（縦に送れる所の中は数えない）。
+- squeezed：一覧の表（Treeview）が縮みすぎて、見出しと3行が見えないもの。
+- columns_cut：表の列の幅の合計が表の幅より大きく、横に送れない（右の列が切れる）もの。
+- heading_cut：表の列の見出しの文が、列の幅より長いもの（見出しが切れる）。
 --shots を付けると、言語・タブごとの画面写真を DIR/<言語>/<番号>_<タブ>.png に保存する（macOS の screencapture）。
 データの置き場所は一時フォルダにし、利用者の設定・キャッシュに触らない。
 """
@@ -77,6 +79,29 @@ def scan(widget, issues: list, tab_name: str) -> None:
             cls = child.winfo_class()
             text = _text(child)
             width = child.winfo_width()
+            if cls == "Treeview" and width > 1:
+                # 列の幅の合計が表の幅より大きく、横に送れない（横のスクロールバーが無い）なら、右の列が切れている
+                try:
+                    display = [str(c) for c in (child.cget("displaycolumns") or ())]
+                    shown = list(child.cget("columns")) if (not display or display == ["#all"]) else display
+                    total = sum(int(child.column(c, "width")) for c in shown)
+                    if "tree" in str(child.cget("show")):
+                        total += int(child.column("#0", "width"))
+                    # 見出しの文が列の幅より長い（見出しが切れる）
+                    from tkinter import font as tkfont
+                    heading_font = tkfont.nametofont("TkHeadingFont")
+                    for c in shown:
+                        heading = str(child.heading(c, "text") or "")
+                        need = heading_font.measure(heading) + 12
+                        have = int(child.column(c, "width"))
+                        if heading and need > have + TOLERANCE:
+                            issues.append({"tab": tab_name, "kind": "heading_cut", "class": cls, "text": heading[:80],
+                                           "need": need, "have": have})
+                    if total > width + TOLERANCE and not str(child.cget("xscrollcommand")).strip():
+                        issues.append({"tab": tab_name, "kind": "columns_cut", "class": cls,
+                                       "text": ",".join(str(c) for c in shown)[:80], "need": total, "have": width})
+                except Exception:
+                    pass
             if cls == "Treeview":  # 縦に送れる所の中でも、表そのものの高さは見る
                 # 一覧の表が縮みすぎて、行がほとんど見えないもの（見出し＋3行より低い）
                 try:
