@@ -138,4 +138,5 @@ STRINGS = {
     'u1.transfer_selected': 'Dodano wybrane pozycje do kolejki {target_queue}.\nDodano: {added} / Pominięto: {skipped}',
     'u1.queue_retry': 'Ponowna próba: {mod} ({pos}/{total})',
     'u1.queue_start': 'Rozpoczęcie: {mod} ({pos}/{total})',
+    'u1.base_game_error.language': 'Wyjątek korekty tłumaczenia gry podstawowej (język: {target_name})',
 }

@@ -336,4 +336,6 @@ STRINGS = {
     'u9.missing_output.russian': 'Brak odpowiadającego pliku wyjściowego w wersji rosyjskiej',
     'u9.missing_output.simp_chinese': 'Brak odpowiadającego pliku wyjściowego w wersji chińskiej uproszczonej',
     'u9.missing_output.turkish': 'Brak odpowiadającego pliku wyjściowego w wersji tureckiej',
+    'u9.legacy_base_unavailable.language': 'Nie uzyskano kluczy gry podstawowej; brak kary za wyjątek korekty tłumaczenia (język: {target_name})',
+    'u9.relation_union_gate.language': 'Próg sumy zbiorów tłumaczeń zbiorczych (język: {target_name}): pokrycie efektywnych kluczy kandydata {percent:.1f}% → PASS',
 }

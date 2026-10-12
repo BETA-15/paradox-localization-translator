@@ -359,6 +359,12 @@ def restore_ui_language():
     i18n.set_ui_language(previous)
 
 
+SNAPSHOTS.extend([
+    ["u9.legacy_base_unavailable.language", "ゲーム本体キーを取得できないため、本体日本語訳修正例外の減点なし", {"target_name": "日本語"}],
+    ["u9.relation_union_gate.language", "総合日本語訳集合ゲート: 候補有効キー和集合率 70.0% → PASS", {"target_name": "日本語", "percent": 70.0}],
+])
+
+
 @pytest.mark.parametrize("key,expected,fields", SNAPSHOTS, ids=[row[0] for row in SNAPSHOTS])
 def test_japanese_original_strings(key, expected, fields):
     assert i18n.t(key, **fields) == expected

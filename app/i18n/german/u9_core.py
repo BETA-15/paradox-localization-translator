@@ -336,4 +336,6 @@ STRINGS = {
     'u9.missing_output.russian': 'Keine passende Ausgabedatei für Russisch',
     'u9.missing_output.simp_chinese': 'Keine passende Ausgabedatei für vereinfachtes Chinesisch',
     'u9.missing_output.turkish': 'Keine passende Ausgabedatei für Türkisch',
+    'u9.legacy_base_unavailable.language': 'Basisspielschlüssel nicht verfügbar; kein Abzug für die Korrekturausnahme der Basisspielübersetzung ({target_name})',
+    'u9.relation_union_gate.language': 'Vereinigungsschwelle für Gesamtübersetzungen ({target_name}): Abdeckung effektiver Kandidatenschlüssel {percent:.1f}% → PASS',
 }

@@ -138,4 +138,5 @@ STRINGS = {
     'u1.transfer_selected': 'Seçilen öğeler {target_queue} kuyruğuna eklendi.\nEklenen: {added} / Atlanan: {skipped}',
     'u1.queue_retry': 'Yeniden deneme: {mod} ({pos}/{total})',
     'u1.queue_start': 'Başlat: {mod} ({pos}/{total})',
+    'u1.base_game_error.language': 'Temel oyun {target_name} çeviri düzeltme istisnası',
 }

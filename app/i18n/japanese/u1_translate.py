@@ -138,4 +138,5 @@ STRINGS = {
     "u1.transfer_selected": "選択項目を{target_queue}キューへ追加しました。\n追加: {added}件 / スキップ: {skipped}件",
     "u1.queue_retry": "再試行: {mod} ({pos}/{total})",
     "u1.queue_start": "開始: {mod} ({pos}/{total})",
+    'u1.base_game_error.language': '本体{target_name}訳修正例外',
 }

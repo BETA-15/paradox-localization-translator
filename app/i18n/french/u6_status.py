@@ -422,4 +422,6 @@ STRINGS = {
     'u6.no_untranslated_mod_research_review_is': 'Aucune exploration ni aucun examen de mods non traduits en cours',
     'u6.stop_requested': 'Arrêt de l’exploration demandé',
     'u6.stops_safely_after_the_current_research': 'Arrêt sûr dès la fin de la réponse du LLM d’exploration en cours',
+    'u6.multi_mod_translations_use_a_separate.language': '  · Les traductions globales en {target_name} utilisent un seuil distinct : au moins 200 clés pour chacun d’au moins deux mods sources et une couverture d’au moins 70 % de l’union des clés effectives du candidat',
+    'u6.base_game_translation_70_gate.language': '  Test à 70 % de traduction du jeu de base en {target_name} : {value}',
 }

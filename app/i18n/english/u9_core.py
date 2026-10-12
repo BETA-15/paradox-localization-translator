@@ -336,4 +336,6 @@ STRINGS = {
     "u9.missing_output.russian": "No corresponding Russian output file",
     "u9.missing_output.simp_chinese": "No corresponding Simplified Chinese output file",
     "u9.missing_output.turkish": "No corresponding Turkish output file",
+    'u9.legacy_base_unavailable.language': 'No base-game keys available; no penalty for the base-game {target_name} translation correction exception',
+    'u9.relation_union_gate.language': 'Comprehensive {target_name} translation union gate: coverage of effective candidate key union {percent:.1f}% → PASS',
 }

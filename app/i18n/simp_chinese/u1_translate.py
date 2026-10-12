@@ -138,4 +138,5 @@ STRINGS = {
     "u1.transfer_selected": "已将所选项目加入{target_queue}队列。\n添加：{added} 项 / 跳过：{skipped} 项",
     "u1.queue_retry": "重试：{mod} ({pos}/{total})",
     "u1.queue_start": "开始：{mod} ({pos}/{total})",
+    'u1.base_game_error.language': '游戏本体{target_name}翻译修正例外',
 }

@@ -336,4 +336,6 @@ STRINGS = {
     "u9.missing_output.russian": "대응하는 러시아어 출력 파일 없음",
     "u9.missing_output.simp_chinese": "대응하는 중국어 간체 출력 파일 없음",
     "u9.missing_output.turkish": "대응하는 튀르키예어 출력 파일 없음",
+    'u9.legacy_base_unavailable.language': '게임 본체 키를 가져올 수 없어 본체 {target_name} 번역 수정 예외에 대한 감점 없음',
+    'u9.relation_union_gate.language': '종합 {target_name} 번역 합집합 기준: 후보 유효 키 합집합 일치율 {percent:.1f}% → PASS',
 }

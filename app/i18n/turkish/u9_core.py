@@ -336,4 +336,6 @@ STRINGS = {
     'u9.missing_output.russian': 'Karşılık gelen Rusça çıktı dosyası yok',
     'u9.missing_output.simp_chinese': 'Karşılık gelen Basitleştirilmiş Çince çıktı dosyası yok',
     'u9.missing_output.turkish': 'Karşılık gelen Türkçe çıktı dosyası yok',
+    'u9.legacy_base_unavailable.language': 'Temel oyun anahtarları alınamadı; {target_name} çeviri düzeltme istisnası için puan kesintisi yok',
+    'u9.relation_union_gate.language': 'Kapsamlı {target_name} çeviri birleşim eşiği: aday etkin anahtar birleşimi kapsaması %{percent:.1f} → PASS',
 }
