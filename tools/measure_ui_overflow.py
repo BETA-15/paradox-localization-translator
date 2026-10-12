@@ -6,6 +6,7 @@
 - clipped：文字を持つ部品（Label・Button・Checkbutton・Radiobutton・Menubutton）で、必要な幅（winfo_reqwidth）が
   置かれた幅（winfo_width）より大きいもの（文字が切れている）。
 - outside：部品の右端が、囲んでいる枠（祖先のどれか）の右端より外に出ているもの（枠の外で見えない）。
+- below：部品の下端が、囲んでいる枠の下端より下に出ているもの（縦に送れる所の中は数えない）。
 --shots を付けると、言語・タブごとの画面写真を DIR/<言語>/<番号>_<タブ>.png に保存する（macOS の screencapture）。
 データの置き場所は一時フォルダにし、利用者の設定・キャッシュに触らない。
 """
@@ -46,6 +47,23 @@ def _visible_right(widget) -> int:
     return right
 
 
+def _visible_bottom(widget):
+    """祖先の枠のうち、いちばん上にある下端。縦に送れる所（Canvas の中）にあるなら None（下に続くのは正しい）。"""
+    bottom = None
+    parent = widget.master
+    while parent is not None:
+        try:
+            if parent.winfo_class() == "Canvas":
+                return None
+            if parent.winfo_ismapped() and parent.winfo_height() > 1:
+                edge = parent.winfo_rooty() + parent.winfo_height()
+                bottom = edge if bottom is None else min(bottom, edge)
+        except Exception:
+            break
+        parent = getattr(parent, "master", None)
+    return bottom
+
+
 def scan(widget, issues: list, tab_name: str) -> None:
     for child in widget.winfo_children():
         try:
@@ -59,6 +77,12 @@ def scan(widget, issues: list, tab_name: str) -> None:
                 if req > width + TOLERANCE:
                     issues.append({"tab": tab_name, "kind": "clipped", "class": cls, "text": text[:80],
                                    "need": req, "have": width})
+                visible_bottom = _visible_bottom(child)
+                if visible_bottom is not None and child.winfo_height() > 1:
+                    bottom = child.winfo_rooty() + child.winfo_height()
+                    if bottom > visible_bottom + TOLERANCE:
+                        issues.append({"tab": tab_name, "kind": "below", "class": cls, "text": text[:80],
+                                       "need": bottom - child.winfo_rooty(), "have": max(0, visible_bottom - child.winfo_rooty())})
                 parent = child.master
                 if parent is not None and parent.winfo_width() > 1:
                     right = child.winfo_rootx() + width
@@ -71,9 +95,22 @@ def scan(widget, issues: list, tab_name: str) -> None:
         scan(child, issues, tab_name)
 
 
+WINID_HELPER = os.environ.get("PLT_WINID_HELPER", "")  # pid から窓の番号を出す小さな道具（あれば窓ごと写す）
+
+
 def screenshot(app, path: Path) -> bool:
     path.parent.mkdir(parents=True, exist_ok=True)
     app.update()
+    if WINID_HELPER and Path(WINID_HELPER).exists():
+        # 窓の番号で写す（ほかの窓に隠れていても、画面が2つあっても、その窓だけが写る）
+        try:
+            win = subprocess.run([WINID_HELPER, str(os.getpid())], capture_output=True, text=True, timeout=10).stdout.strip()
+            if win and win != "0":
+                r = subprocess.run(["screencapture", "-x", "-o", f"-l{win}", str(path)], timeout=20, capture_output=True)
+                if r.returncode == 0 and path.exists():
+                    return True
+        except Exception:
+            pass
     x, y, w, h = app.winfo_rootx(), app.winfo_rooty(), app.winfo_width(), app.winfo_height()
     try:
         r = subprocess.run(["screencapture", "-x", "-R", f"{x},{y},{w},{h}", str(path)], timeout=20,
@@ -98,8 +135,13 @@ def measure(languages, size: str, shots: Path | None) -> dict:
     for lang in languages:
         main.APP_PREFS_PATH.write_text(json.dumps({"ui_language": lang}), encoding="utf-8")
         app = main.App()
-        if size:
-            app.geometry(size)
+        # 写真がほかの窓と重ならないよう、画面の左上に置いて前に出す
+        app.geometry(f"{size}+0+30" if size else "+0+30")
+        app.lift()
+        try:
+            app.attributes("-topmost", True)
+        except Exception:
+            pass
         app.update()
         issues: list = []
         top_children = [w for w in app.winfo_children() if w is not app.notebook]

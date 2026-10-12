@@ -111,13 +111,14 @@ def target_lang_note():
 
 
 def _target_lang_choice(lang):
-    """翻訳先の選択欄に出す文字（例: フランス語（l_french））。"""
-    return f"{core.target_language_label(lang)}（l_{lang}）"
+    """翻訳先の選択欄に出す文字（例: フランス語（l_french））。言語名は画面の言語で（日本語の画面は今までと同じ）。"""
+    return f"{i18n.t('lang.' + lang)}（l_{lang}）"
 
 
 def _target_lang_from_choice(text):
     for lang in core.TARGET_LANGUAGES:
-        if text == _target_lang_choice(lang) or text == lang:
+        # 画面の言語の名前のほか、v0.12 までの日本語の名前（保存した選択）も読む
+        if text in (_target_lang_choice(lang), f"{core.target_language_label(lang)}（l_{lang}）", lang):
             return lang
     return core.DEFAULT_TARGET_LANG
 
@@ -8827,7 +8828,7 @@ class App(BaseTk):
             inp=Path(item.get("input", ""))
             label=item.get("mod_name") or (inp.stem if inp.is_file() else inp.name) or i18n.t('u1.unnamed_item')
             if _item_target_lang(item) != core.DEFAULT_TARGET_LANG:
-                label=f"［{core.target_language_label(_item_target_lang(item))}］{label}"
+                label=f"［{i18n.t('lang.' + _item_target_lang(item))}］{label}"
             self.queue_tree.insert("", "end", iid=str(i), values=(
                 label,
                 self._queue_display_path(item.get("input", "")),
