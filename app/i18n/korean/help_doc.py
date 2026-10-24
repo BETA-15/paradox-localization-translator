@@ -2,7 +2,7 @@
 
 HELP_TITLE = "Paradox Localization Translator 사용법"
 
-STALE_NOTICE = "（이 절은 아직 최신 버전에 맞게 수정되지 않았습니다. 일부 내용이 오래되었을 수 있습니다.）"
+STALE_NOTICE = '(이 절은 아직 최신 버전에 맞게 수정되지 않았습니다. 일부 내용이 오래되었을 수 있습니다.)'
 
 HELP_SECTIONS = [
     ('intro', 'Paradox Localization Translator 상세 가이드\n\n'),
@@ -381,7 +381,7 @@ OS, 앱 버전, 모델 정보, 오류 로그 등을 진단 ZIP으로 묶습니�
 도구는 무료이며 누구나 모든 기능을 사용할 수 있습니다(MIT 라이선스).
 
 '''),
-    ('support', '【기부 및 후원】\n개발을 응원해 주실 분은 GitHub Sponsors에서 기부하실 수 있습니다:\nhttps://github.com/sponsors/BETA-15\n모든 기능은 계속 무료이며, 기부로 사용할 수 있는 기능이 늘어나지는 않습니다(특전은 없고 감사의 마음만 전합니다).\n기부금은 株式会社ＶＦソフトウェア (VF Software)가 받으며, 개발에 드는 시간과 비용에 사용합니다.\n\n'),
+    ('support', '【기부 및 후원】\n개발을 응원해 주실 분은 GitHub Sponsors에서 기부하실 수 있습니다:\nhttps://github.com/sponsors/BETA-15\n모든 기능은 계속 무료이며, 기부로 사용할 수 있는 기능이 늘어나지는 않습니다(특전은 없고 감사의 마음만 전합니다).\n기부금은 VF Software Co., Ltd.가 받으며, 개발에 드는 시간과 비용에 사용합니다.\n\n'),
     ('publishing', '''【번역한 모드를 공개할 때의 부탁】
 • 원본 모드 제작자의 허락을 받아 주세요. 다른 사람의 모드 번역을 Steam Workshop 등에 공개할 때는 원작자에게 연락하여 허락을 받는 것이 관례입니다.
 • 무료로 공개해 주세요. Paradox Interactive 이용 약관에 따르면 모드 등 사용자가 만든 콘텐츠를 유료 접근 제한 뒤에 둘 수 없습니다(들인 시간에 대한 기부를 받는 것은 허용됩니다).

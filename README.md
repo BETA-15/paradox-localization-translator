@@ -29,7 +29,7 @@ v0.13.0 から、**画面の表示も11言語**から選べます（設定タブ
 - すべての機能は無料のままです。寄付で使える機能が増えることはありません（特典はなく、お礼だけです）。
 - 受け取りは株式会社ＶＦソフトウェアで、ご支援は開発の時間と費用に充てます。
 
-*If you would like to support development, you can donate via [GitHub Sponsors](https://github.com/sponsors/BETA-15). All features remain free, and donations do not unlock anything extra; donations are received by 株式会社ＶＦソフトウェア (VF Software) and go toward the time and costs of development.*
+*If you would like to support development, you can donate via [GitHub Sponsors](https://github.com/sponsors/BETA-15). All features remain free, and donations do not unlock anything extra; donations are received by VF Software Co., Ltd. and go toward the time and costs of development.*
 
 ## 翻訳した Mod を公開するときのお願い
 

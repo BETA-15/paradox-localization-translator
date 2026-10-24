@@ -106,7 +106,7 @@ STRINGS = {
     'u1.queue_item_lost': 'Um item da fila de tradução normal foi perdido durante o processamento',
     'u1.glossary_file': 'Glossário: {name}',
     'u1.no_glossary': 'Não há Glossário para este idioma',
-    'u1.translation_target': 'Idioma de destino: {target_name}（{glossary}）',
+    'u1.translation_target': 'Idioma de destino: {target_name} ({glossary})',
     'u1.processing_result': 'Resultado do processamento: {mod} / Arquivos {processed} / Tarefas de LLM {jobs} / Falhas {failed} / Ignorados {skipped} / Avisos {warnings}',
     'u1.spaces_removed': 'Espaços ASCII removidos: {count}',
     'u1.auto_qa_result': 'QA e correção automáticos: erros {errors} / avisos {warnings} / observações {notices} / correções {repaired}',

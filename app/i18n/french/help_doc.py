@@ -2,7 +2,7 @@
 
 HELP_TITLE = "Paradox Localization Translator — Mode d’emploi"
 
-STALE_NOTICE = "（Cette section n’a pas encore été mise à jour pour la dernière version. Certains passages sont obsolètes. Consultez la version anglaise pour les informations les plus récentes.）"
+STALE_NOTICE = '(Cette section n’a pas encore été mise à jour pour la dernière version. Certains passages sont obsolètes. Consultez la version anglaise pour les informations les plus récentes.)'
 
 HELP_SECTIONS = [
     ('intro', 'Paradox Localization Translator — Guide détaillé\n\n'),
@@ -380,7 +380,7 @@ Cet outil non officiel est développé par un particulier et n’est pas affili�
 L’outil est gratuit et toutes ses fonctions sont accessibles à tous (licence MIT).
 
 '''),
-    ('support', '【Dons et soutien】\nSi vous souhaitez soutenir le développement, vous pouvez faire un don via GitHub Sponsors :\nhttps://github.com/sponsors/BETA-15\nToutes les fonctions restent gratuites, et un don ne débloque aucune fonction supplémentaire (pas de contrepartie, seulement nos remerciements).\nLes dons sont reçus par 株式会社ＶＦソフトウェア (VF Software) et servent à couvrir le temps et les frais de développement.\n\n'),
+    ('support', '【Dons et soutien】\nSi vous souhaitez soutenir le développement, vous pouvez faire un don via GitHub Sponsors :\nhttps://github.com/sponsors/BETA-15\nToutes les fonctions restent gratuites, et un don ne débloque aucune fonction supplémentaire (pas de contrepartie, seulement nos remerciements).\nLes dons sont reçus par VF Software Co., Ltd. et servent à couvrir le temps et les frais de développement.\n\n'),
     ('publishing', '''【Recommandations pour publier un mod traduit】
 • Obtenez l’autorisation de l’auteur du mod d’origine. Avant de publier la traduction du mod d’une autre personne sur Steam Workshop ou ailleurs, il est d’usage de contacter l’auteur original et d’obtenir son accord.
 • Publiez gratuitement. Les conditions d’utilisation de Paradox Interactive n’autorisent pas à placer les contenus créés par les utilisateurs, tels que les mods, derrière un accès payant (les dons en reconnaissance du temps consacré sont autorisés).

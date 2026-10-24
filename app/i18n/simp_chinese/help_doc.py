@@ -382,7 +382,7 @@ Paradox Localization Translator/
 本工具免费，任何人均可使用全部功能（MIT 许可证）。
 
 '''),
-    ('support', '【捐赠与支持】\n如果您愿意支持开发，可以通过 GitHub Sponsors 捐赠：\nhttps://github.com/sponsors/BETA-15\n所有功能仍然免费，捐赠不会解锁额外功能（没有回报，只有我们的感谢）。\n捐款由株式会社ＶＦソフトウェア (VF Software)接收，用于开发所需的时间和费用。\n\n'),
+    ('support', '【捐赠与支持】\n如果您愿意支持开发，可以通过 GitHub Sponsors 捐赠：\nhttps://github.com/sponsors/BETA-15\n所有功能仍然免费，捐赠不会解锁额外功能（没有回报，只有我们的感谢）。\n捐款由 VF Software Co., Ltd. 接收，用于开发所需的时间和费用。\n\n'),
     ('publishing', '''【发布已翻译模组时的注意事项】
 • 请取得原模组作者的许可。在 Steam Workshop 等平台发布他人模组的翻译时，通常应先联系原作者并取得许可。
 • 请免费发布。Paradox Interactive 的使用条款不允许将模组等用户生成内容置于付费墙之后（允许接受对所投入时间的捐赠）。

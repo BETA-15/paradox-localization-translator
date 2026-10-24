@@ -2,7 +2,7 @@
 
 HELP_TITLE = "Paradox Localization Translator — Guía de uso"
 
-STALE_NOTICE = "（Esta sección aún no se ha actualizado a la versión más reciente. Parte de su contenido puede estar desactualizado; consulta la versión inglesa para conocer las últimas novedades.）"
+STALE_NOTICE = '(Esta sección aún no se ha actualizado a la versión más reciente. Parte de su contenido puede estar desactualizado; consulta la versión inglesa para conocer las últimas novedades.)'
 
 HELP_SECTIONS = [
     ('intro', 'Guía detallada de Paradox Localization Translator\n\n'),
@@ -380,7 +380,7 @@ Esta es una herramienta no oficial desarrollada por una persona, sin relación c
 La herramienta es gratuita y cualquiera puede usar todas sus funciones (licencia MIT).
 
 '''),
-    ('support', '【Donaciones y apoyo】\nSi quieres apoyar el desarrollo, puedes donar a través de GitHub Sponsors:\nhttps://github.com/sponsors/BETA-15\nTodas las funciones siguen siendo gratuitas y donar no desbloquea funciones adicionales (no hay recompensas, solo nuestro agradecimiento).\nLas donaciones las recibe 株式会社ＶＦソフトウェア (VF Software) y se destinan al tiempo y los gastos del desarrollo.\n\n'),
+    ('support', '【Donaciones y apoyo】\nSi quieres apoyar el desarrollo, puedes donar a través de GitHub Sponsors:\nhttps://github.com/sponsors/BETA-15\nTodas las funciones siguen siendo gratuitas y donar no desbloquea funciones adicionales (no hay recompensas, solo nuestro agradecimiento).\nLas donaciones las recibe VF Software Co., Ltd. y se destinan al tiempo y los gastos del desarrollo.\n\n'),
     ('publishing', '''【Recomendaciones al publicar un mod traducido】
 • Obtén el permiso del autor del mod original. Al publicar una traducción del mod de otra persona en Steam Workshop u otros sitios, la práctica habitual es contactar con el autor original y pedirle permiso.
 • Publícalo gratuitamente. Las condiciones de uso de Paradox Interactive no permiten ofrecer mods u otros contenidos creados por usuarios tras una barrera de pago; sí permiten aceptar donaciones por el tiempo dedicado.

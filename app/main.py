@@ -8302,11 +8302,13 @@ class App(BaseTk):
             i18n.t(key, target_name=i18n.t('lang.' + target_lang))
             for key in keys
         }
-        diagnostic_key = 'u7.using_english_simplified_chinese_source_keys'
-        replacements[i18n.t(diagnostic_key if previous == 'japanese' else diagnostic_key + '.target',
-                             target_name=i18n.t('lang.' + previous))] = i18n.t(
-            diagnostic_key if target_lang == 'japanese' else diagnostic_key + '.target',
-            target_name=i18n.t('lang.' + target_lang))
+        for diagnostic_key in ('u7.using_english_simplified_chinese_source_keys',
+                               'u7.use_japanese_translation_mod_translation_for',
+                               'u7.use_japanese_translation_mod_translation_for_2'):
+            replacements[i18n.t(diagnostic_key if previous == 'japanese' else diagnostic_key + '.target',
+                                 target_name=i18n.t('lang.' + previous))] = i18n.t(
+                diagnostic_key if target_lang == 'japanese' else diagnostic_key + '.target',
+                target_name=i18n.t('lang.' + target_lang))
         pending = [getattr(self, name, None) for name in (
             'tab_translate', 'tab_review', 'tab_diff', 'tab_models',
             'tab_monitor', 'tab_status', 'tab_diagnostic',

@@ -534,6 +534,37 @@ def test_target_dependent_labels_refresh_without_changing_settings(ui_language):
         i18n.set_ui_language(previous_ui)
 
 
+
+@pytest.mark.parametrize("ui_language", ["japanese", "korean", "german"])
+def test_diagnostic_buttons_follow_the_target_language(ui_language):
+    """総合診断の「…の訳を採用」のボタンは、翻訳先を切り替えても古い言語名のまま残っていた（v0.13.0 候補）。"""
+    source = Path(__file__).resolve().parents[1] / "app" / "main.py"
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    method = next(node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)
+                  and node.name == "_refresh_target_language_labels")
+    scope = {"i18n": i18n, "tk": SimpleNamespace(TclError=RuntimeError), "FlowRow": FlowRow}
+    exec(compile(ast.Module(body=[method], type_ignores=[]), str(source), "exec"), scope)
+
+    def text(key, target):
+        return i18n.t(key if target == 'japanese' else key + '.target', target_name=i18n.t('lang.' + target))
+
+    previous_ui = i18n.get_ui_language()
+    try:
+        i18n.set_ui_language(ui_language)
+        keys = ['u7.using_english_simplified_chinese_source_keys',
+                'u7.use_japanese_translation_mod_translation_for',
+                'u7.use_japanese_translation_mod_translation_for_2']
+        widgets = [FakeWidget(text=text(key, 'japanese')) for key in keys]
+        state = SimpleNamespace(tab_diagnostic=FakeWidget(children=widgets))
+        previous = 'japanese'
+        for target in ('korean', 'french', 'japanese'):
+            scope['_refresh_target_language_labels'](state, previous, target)
+            for key, widget in zip(keys, widgets):
+                assert widget.cget('text') == text(key, target)
+            previous = target
+    finally:
+        i18n.set_ui_language(previous_ui)
+
 def test_wraplength_does_not_creep_when_the_parent_shrinks_to_fit():
     """閉じるときの確認の窓で、折り返しを狭める → 窓が縮む → … が止まらず画面が固まった（v0.13.0 候補）。"""
     from ui_layout import next_wraplength

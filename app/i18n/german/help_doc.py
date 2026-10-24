@@ -2,7 +2,7 @@
 
 HELP_TITLE = "Paradox Localization Translator — Anleitung"
 
-STALE_NOTICE = "（Dieser Abschnitt wurde noch nicht an die neueste Version angepasst. Einige Angaben sind veraltet. Die aktuellen Informationen finden Sie in der englischen Fassung.）"
+STALE_NOTICE = '(Dieser Abschnitt wurde noch nicht an die neueste Version angepasst. Einige Angaben sind veraltet. Die aktuellen Informationen finden Sie in der englischen Fassung.)'
 
 HELP_SECTIONS = [
     ('intro', 'Paradox Localization Translator — Ausführliche Anleitung\n\n'),
@@ -166,7 +166,7 @@ Wichtigste Prüfungen:
 • Unstimmigkeiten bei Klammern und Satzzeichen
 
 Wenn Sie eine problematische Zeile auswählen, werden Original und Übersetzung nebeneinander angezeigt.
-Sie können das Feld ［Übersetzung（bearbeitbar）］ direkt bearbeiten und speichern. Manche Fälle von vermischten Zeichenarten, mit dem Original identischen Werten und verbliebenem Englisch werden als Hinweise angezeigt. Prüfen Sie den Inhalt und korrigieren Sie ihn bei Bedarf.
+Sie können das Feld ［Übersetzung (bearbeitbar)］ direkt bearbeiten und speichern. Manche Fälle von vermischten Zeichenarten, mit dem Original identischen Werten und verbliebenem Englisch werden als Hinweise angezeigt. Prüfen Sie den Inhalt und korrigieren Sie ihn bei Bedarf.
 Die KI-Korrektur verwendet die aktuellen Einstellungen des Übersetzungs-LLM. Klicken Sie nach Einstellungsänderungen auf ［Aktuelle Übersetzungseinstellungen anwenden］.
 
 '''),
@@ -380,7 +380,7 @@ Dieses inoffizielle Werkzeug wird von einer Privatperson entwickelt und steht in
 Das Werkzeug ist kostenlos und alle Funktionen stehen jedem zur Verfügung (MIT-Lizenz).
 
 '''),
-    ('support', '【Spenden und Unterstützung】\nWenn Sie die Entwicklung unterstützen möchten, können Sie über GitHub Sponsors spenden:\nhttps://github.com/sponsors/BETA-15\nAlle Funktionen bleiben kostenlos, und eine Spende schaltet keine zusätzlichen Funktionen frei (keine Gegenleistung, nur unser Dank).\nEmpfänger der Spenden ist 株式会社ＶＦソフトウェア (VF Software); sie werden für die Zeit und die Kosten der Entwicklung verwendet.\n\n'),
+    ('support', '【Spenden und Unterstützung】\nWenn Sie die Entwicklung unterstützen möchten, können Sie über GitHub Sponsors spenden:\nhttps://github.com/sponsors/BETA-15\nAlle Funktionen bleiben kostenlos, und eine Spende schaltet keine zusätzlichen Funktionen frei (keine Gegenleistung, nur unser Dank).\nEmpfänger der Spenden ist VF Software Co., Ltd.; sie werden für die Zeit und die Kosten der Entwicklung verwendet.\n\n'),
     ('publishing', '''【Bitten zur Veröffentlichung übersetzter Mods】
 • Holen Sie die Erlaubnis des Autors des Ursprungsmods ein. Wenn Sie die Übersetzung eines fremden Mods auf Steam Workshop oder anderswo veröffentlichen möchten, ist es üblich, den ursprünglichen Autor zu kontaktieren und um Erlaubnis zu bitten.
 • Veröffentlichen Sie die Übersetzung kostenlos. Nach den Nutzungsbedingungen von Paradox Interactive dürfen von Nutzern erstellte Inhalte wie Mods nicht hinter einer Bezahlschranke angeboten werden (Spenden als Anerkennung für die aufgewendete Zeit sind erlaubt).

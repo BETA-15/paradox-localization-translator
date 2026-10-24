@@ -382,7 +382,7 @@ Bu araç, bir kişi tarafından geliştirilen resmî olmayan bir araçtır ve Pa
 Araç ücretsizdir ve tüm özelliklerini herkes kullanabilir (MIT lisansı).
 
 '''),
-    ('support', '【Bağış ve destek】\nGeliştirmeyi desteklemek isterseniz GitHub Sponsors üzerinden bağış yapabilirsiniz:\nhttps://github.com/sponsors/BETA-15\nTüm özellikler ücretsiz kalır ve bağış yapmak ek bir özelliğin kilidini açmaz (ödül yoktur, yalnızca teşekkürümüz vardır).\nBağışları 株式会社ＶＦソフトウェア (VF Software) alır ve geliştirmenin zamanı ile masraflarına harcar.\n\n'),
+    ('support', '【Bağış ve destek】\nGeliştirmeyi desteklemek isterseniz GitHub Sponsors üzerinden bağış yapabilirsiniz:\nhttps://github.com/sponsors/BETA-15\nTüm özellikler ücretsiz kalır ve bağış yapmak ek bir özelliğin kilidini açmaz (ödül yoktur, yalnızca teşekkürümüz vardır).\nBağışları VF Software Co., Ltd. alır ve geliştirmenin zamanı ile masraflarına harcar.\n\n'),
     ('publishing', '''【Çevirdiğiniz modları yayımlarken dikkat etmeniz gerekenler】
 • Kaynak modun yazarından izin alın. Başkasının modunun çevirisini Steam Workshop gibi yerlerde yayımlarken asıl yazara ulaşarak izin almak yerleşik bir uygulamadır.
 • Ücretsiz yayımlayın. Paradox Interactive'in kullanım koşulları, modlar gibi kullanıcı tarafından oluşturulan içeriklerin ücretli erişimin arkasına konulmasına izin vermez (harcanan zaman karşılığında bağış kabul edilebilir).

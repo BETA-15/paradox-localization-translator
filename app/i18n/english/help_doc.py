@@ -380,7 +380,7 @@ This is an unofficial tool developed by an individual and is not affiliated with
 The tool is free, and all features are available to everyone (MIT license).
 
 '''),
-    ('support', '【Donations and support】\nIf you would like to support development, you can donate through GitHub Sponsors:\nhttps://github.com/sponsors/BETA-15\nAll features stay free, and donating does not unlock any extra features (there are no rewards, only our thanks).\nDonations are received by 株式会社ＶＦソフトウェア (VF Software) and go toward the time and costs of development.\n\n'),
+    ('support', '【Donations and support】\nIf you would like to support development, you can donate through GitHub Sponsors:\nhttps://github.com/sponsors/BETA-15\nAll features stay free, and donating does not unlock any extra features (there are no rewards, only our thanks).\nDonations are received by VF Software Co., Ltd. and go toward the time and costs of development.\n\n'),
     ('publishing', '''【When publishing a translated mod】
 - Obtain permission from the source mod's author. When publishing a translation of someone else's mod on Steam Workshop or a similar platform, it is customary to contact the original author and obtain permission.
 - Publish it for free. Paradox Interactive's terms of use do not allow user-created content such as mods to be placed behind a paywall (donations for the time spent are allowed).

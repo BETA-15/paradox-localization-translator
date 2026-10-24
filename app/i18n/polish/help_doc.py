@@ -2,7 +2,7 @@
 
 HELP_TITLE = "Paradox Localization Translator — Instrukcja obsługi"
 
-STALE_NOTICE = "（Ta sekcja nie została jeszcze dostosowana do najnowszej wersji. Część informacji może być nieaktualna; najnowsze informacje znajdziesz w wersji angielskiej.）"
+STALE_NOTICE = '(Ta sekcja nie została jeszcze dostosowana do najnowszej wersji. Część informacji może być nieaktualna; najnowsze informacje znajdziesz w wersji angielskiej.)'
 
 HELP_SECTIONS = [
     ('intro', 'Szczegółowy przewodnik po Paradox Localization Translator\n\n'),
@@ -380,7 +380,7 @@ To nieoficjalne narzędzie rozwijane przez osobę prywatną, niezwiązane z firm
 Narzędzie jest bezpłatne, a wszystkie jego funkcje są dostępne dla każdego (licencja MIT).
 
 '''),
-    ('support', '【Darowizny i wsparcie】\nJeśli chcesz wesprzeć rozwój, możesz przekazać darowiznę przez GitHub Sponsors:\nhttps://github.com/sponsors/BETA-15\nWszystkie funkcje pozostają bezpłatne, a darowizna nie odblokowuje żadnych dodatkowych funkcji (nie ma nagród, tylko nasze podziękowania).\nDarowizny otrzymuje 株式会社ＶＦソフトウェア (VF Software) i przeznacza je na czas i koszty rozwoju.\n\n'),
+    ('support', '【Darowizny i wsparcie】\nJeśli chcesz wesprzeć rozwój, możesz przekazać darowiznę przez GitHub Sponsors:\nhttps://github.com/sponsors/BETA-15\nWszystkie funkcje pozostają bezpłatne, a darowizna nie odblokowuje żadnych dodatkowych funkcji (nie ma nagród, tylko nasze podziękowania).\nDarowizny otrzymuje VF Software Co., Ltd. i przeznacza je na czas i koszty rozwoju.\n\n'),
     ('publishing', '''【Zalecenia dotyczące publikowania przetłumaczonych modów】
 • Uzyskaj zgodę autora moda źródłowego. Przy publikowaniu tłumaczenia cudzego moda w Steam Workshop lub podobnych serwisach przyjętą praktyką jest skontaktowanie się z pierwotnym autorem i poproszenie o zgodę.
 • Udostępniaj tłumaczenie bezpłatnie. Warunki korzystania z Paradox Interactive nie pozwalają umieszczać modów ani innych treści tworzonych przez użytkowników za barierą płatnego dostępu; dozwolone jest przyjmowanie darowizn za poświęcony czas.
