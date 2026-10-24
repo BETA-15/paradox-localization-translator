@@ -15,6 +15,7 @@
 - 不具合の報告のため、QA のログの JSON に ui_language を足した（schema 2 のまま）。診断の ZIP に rule_ids_ja.txt（rule_id と日本語の説明）と、diagnostics.json に ui_language を入れた。
 - 日本語の画面の文の直し（著者の判断）：欠損があるのに理由を分類できないときの「…欠損があります（N件）。 欠損なし。」を「理由は分類できませんでした。」に、紐付けの条件の説明を実装どおり「共通キー{min_keys}以上、かつ元Mod側か候補側のどちらかで40%以上」に、L4〜L6 で使えるようになった機能の「日本語のみ」の案内を今の動きに合わせた。
 - 日本語の結果は変わらない：この Mac の4ゲーム・393 Mod（Steam Workshop とローカル Mod）で、紐付けの報告・翻訳状況・差分の調べと、+JP: Kaiserreich・COS の QA（473ファイル）を v0.12.0 と比べ、差は0件（文を直した所を除く）。比べる道具は tools/compare_japanese_baseline.py。翻訳のキャッシュのキーと LLM への指示文（日本語）は v0.12 と同じ。
+- 寄付のページ（GitHub Sponsors、https://github.com/sponsors/BETA-15）を README と使い方タブの説明書（11言語）に載せ、.github/FUNDING.yml を足した。すべての機能は無料のままで、寄付で機能が増えることはない。受け取りは株式会社ＶＦソフトウェア。
 - 開発用の道具：tools/compare_japanese_baseline.py（日本語の基準との比べ。Steam Workshop の更新で中身が変わった Mod を知らせる）、tools/make_fake_translation_mod.py（作り物の翻訳 Mod）、tools/i18n_scan.py・tools/help_doc_status.py、tools/measure_tab_widths.py。
 
 ## v0.12.1

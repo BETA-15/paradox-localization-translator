@@ -382,10 +382,11 @@ Paradox Localization Translator/
 本工具免费，任何人均可使用全部功能（MIT 许可证）。
 
 '''),
+    ('support', '【捐赠与支持】\n如果您愿意支持开发，可以通过 GitHub Sponsors 捐赠：\nhttps://github.com/sponsors/BETA-15\n所有功能仍然免费，捐赠不会解锁额外功能（没有回报，只有我们的感谢）。\n捐款由株式会社ＶＦソフトウェア (VF Software)接收，用于开发所需的时间和费用。\n\n'),
     ('publishing', '''【发布已翻译模组时的注意事项】
 • 请取得原模组作者的许可。在 Steam Workshop 等平台发布他人模组的翻译时，通常应先联系原作者并取得许可。
 • 请免费发布。Paradox Interactive 的使用条款不允许将模组等用户生成内容置于付费墙之后（允许接受对所投入时间的捐赠）。
 • 如果包含机器翻译，请在说明中注明，以便用户自行判断。
 '''),
 ]
-SOURCE_HASHES = {'intro': 'dc0e64262c52', 's00_overview': '57e3f61ee91f', 's01_requirements': 'f6c2c4898718', 's02_first_checks': 'ad4282fa15f0', 's03_translate_queue': '38ceaa862083', 's04_batch_workers': '0ad57aad8db6', 's05_llm_settings': 'f50d5592d09b', 's06_cache': '053b8fd863bd', 's07_review': 'effd2b2c02b3', 's08_diff': '047b909759cf', 's09_search': '331764e4826a', 's10_glossary': 'f3d3a966a4a3', 's11_models': '101883be6b22', 's12_monitor': 'b317e0f4bc37', 's13_status': '7273a7c98ae2', 's14_data_folder': '5e1b34c6fa85', 's15_logs_diagnostics': '78e7512742d6', 's16_close_button': 'bf95d994339e', 's17_safety': 'a3ae50ab1c28', 's18_common_uses': '054ef2c9de07', 'unofficial': '4f1fb69113b7', 'publishing': '13a1da9a3844'}
+SOURCE_HASHES = {'intro': 'dc0e64262c52', 's00_overview': '57e3f61ee91f', 's01_requirements': 'f6c2c4898718', 's02_first_checks': 'ad4282fa15f0', 's03_translate_queue': '38ceaa862083', 's04_batch_workers': '0ad57aad8db6', 's05_llm_settings': 'f50d5592d09b', 's06_cache': '053b8fd863bd', 's07_review': 'effd2b2c02b3', 's08_diff': '047b909759cf', 's09_search': '331764e4826a', 's10_glossary': 'f3d3a966a4a3', 's11_models': '101883be6b22', 's12_monitor': 'b317e0f4bc37', 's13_status': '7273a7c98ae2', 's14_data_folder': '5e1b34c6fa85', 's15_logs_diagnostics': '78e7512742d6', 's16_close_button': 'bf95d994339e', 's17_safety': 'a3ae50ab1c28', 's18_common_uses': '054ef2c9de07', 'unofficial': '4f1fb69113b7', 'support': '17cde2812921', 'publishing': '13a1da9a3844'}

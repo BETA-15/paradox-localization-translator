@@ -381,10 +381,11 @@ OS, 앱 버전, 모델 정보, 오류 로그 등을 진단 ZIP으로 묶습니�
 도구는 무료이며 누구나 모든 기능을 사용할 수 있습니다(MIT 라이선스).
 
 '''),
+    ('support', '【기부 및 후원】\n개발을 응원해 주실 분은 GitHub Sponsors에서 기부하실 수 있습니다:\nhttps://github.com/sponsors/BETA-15\n모든 기능은 계속 무료이며, 기부로 사용할 수 있는 기능이 늘어나지는 않습니다(특전은 없고 감사의 마음만 전합니다).\n기부금은 株式会社ＶＦソフトウェア (VF Software)가 받으며, 개발에 드는 시간과 비용에 사용합니다.\n\n'),
     ('publishing', '''【번역한 모드를 공개할 때의 부탁】
 • 원본 모드 제작자의 허락을 받아 주세요. 다른 사람의 모드 번역을 Steam Workshop 등에 공개할 때는 원작자에게 연락하여 허락을 받는 것이 관례입니다.
 • 무료로 공개해 주세요. Paradox Interactive 이용 약관에 따르면 모드 등 사용자가 만든 콘텐츠를 유료 접근 제한 뒤에 둘 수 없습니다(들인 시간에 대한 기부를 받는 것은 허용됩니다).
 • 기계 번역이 포함되어 있다면 설명에 명시해 두면 사용자가 판단하기 쉬워집니다.
 '''),
 ]
-SOURCE_HASHES = {'intro': 'dc0e64262c52', 's00_overview': '57e3f61ee91f', 's01_requirements': 'f6c2c4898718', 's02_first_checks': 'ad4282fa15f0', 's03_translate_queue': '38ceaa862083', 's04_batch_workers': '0ad57aad8db6', 's05_llm_settings': 'f50d5592d09b', 's06_cache': '053b8fd863bd', 's07_review': 'effd2b2c02b3', 's08_diff': '047b909759cf', 's09_search': '331764e4826a', 's10_glossary': 'f3d3a966a4a3', 's11_models': '101883be6b22', 's12_monitor': 'b317e0f4bc37', 's13_status': '7273a7c98ae2', 's14_data_folder': '5e1b34c6fa85', 's15_logs_diagnostics': '78e7512742d6', 's16_close_button': 'bf95d994339e', 's17_safety': 'a3ae50ab1c28', 's18_common_uses': '054ef2c9de07', 'unofficial': '4f1fb69113b7', 'publishing': '13a1da9a3844'}
+SOURCE_HASHES = {'intro': 'dc0e64262c52', 's00_overview': '57e3f61ee91f', 's01_requirements': 'f6c2c4898718', 's02_first_checks': 'ad4282fa15f0', 's03_translate_queue': '38ceaa862083', 's04_batch_workers': '0ad57aad8db6', 's05_llm_settings': 'f50d5592d09b', 's06_cache': '053b8fd863bd', 's07_review': 'effd2b2c02b3', 's08_diff': '047b909759cf', 's09_search': '331764e4826a', 's10_glossary': 'f3d3a966a4a3', 's11_models': '101883be6b22', 's12_monitor': 'b317e0f4bc37', 's13_status': '7273a7c98ae2', 's14_data_folder': '5e1b34c6fa85', 's15_logs_diagnostics': '78e7512742d6', 's16_close_button': 'bf95d994339e', 's17_safety': 'a3ae50ab1c28', 's18_common_uses': '054ef2c9de07', 'unofficial': '4f1fb69113b7', 'support': '17cde2812921', 'publishing': '13a1da9a3844'}

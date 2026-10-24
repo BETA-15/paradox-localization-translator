@@ -22,6 +22,15 @@ v0.13.0 から、**画面の表示も11言語**から選べます（設定タブ
 
 ツールは無料で、すべての機能を誰でも使えます（MIT ライセンス）。
 
+## 寄付・ご支援
+
+開発を応援してくださる方は、**[GitHub Sponsors](https://github.com/sponsors/BETA-15)** から寄付できます。
+
+- すべての機能は無料のままです。寄付で使える機能が増えることはありません（特典はなく、お礼だけです）。
+- 受け取りは株式会社ＶＦソフトウェアで、ご支援は開発の時間と費用に充てます。
+
+*If you would like to support development, you can donate via [GitHub Sponsors](https://github.com/sponsors/BETA-15). All features remain free, and donations do not unlock anything extra; donations are received by 株式会社ＶＦソフトウェア (VF Software) and go toward the time and costs of development.*
+
 ## 翻訳した Mod を公開するときのお願い
 
 - **元の Mod の作者の許可を取ってください。** 他の人が作った Mod の翻訳を Steam Workshop などで公開するときは、原作者に連絡して許可をもらうのが慣習です。Steam の利用規約でも、投稿者は投稿する内容の権利を持っている必要があります。
