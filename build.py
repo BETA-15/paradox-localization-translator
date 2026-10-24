@@ -127,7 +127,7 @@ def build_page(lang: dict, built: list[dict], en: dict) -> str:
     code = lang["code"]
     texts = json.loads((ROOT / "i18n" / f"{code}.json").read_text(encoding="utf-8"))
     t = lambda path: get(texts, en, code, path)  # noqa: E731
-    root = "../" if lang["slug"] else ""
+    root = "../" if lang["slug"] else "./"
 
     ctx: dict[str, str] = {}
     for key in ("base_url", "repo_url", "release_url", "author_url"):
