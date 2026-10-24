@@ -127,7 +127,7 @@
   },
   "donate": {
     "title": "Support development",
-    "text": "The tool is and will stay free, with every feature available to everyone. If it saved you time, you can support the time spent building it through GitHub Sponsors. Donations do not unlock anything.",
+    "text": "Donations go through GitHub Sponsors and are received by VF Software Co., Ltd. They support the development time and costs of all of our work, including this tool. Every feature stays free for everyone, and donating does not unlock anything.",
     "button": "Sponsor on GitHub"
   },
   "faq": {

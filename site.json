@@ -9,8 +9,8 @@
     "macos": "https://github.com/BETA-15/paradox-localization-translator/releases/latest/download/ParadoxLocalizationTranslator-macOS.zip",
     "linux": "https://github.com/BETA-15/paradox-localization-translator/releases/latest/download/ParadoxLocalizationTranslator"
   },
-  "donate": false,
-  "sponsor_url": "",
+  "donate": true,
+  "sponsor_url": "https://github.com/sponsors/BETA-15",
 
   "languages": [
     {"code": "en", "slug": "", "hreflang": "en", "game": "l_english", "name": "English"},
