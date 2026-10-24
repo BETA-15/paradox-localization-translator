@@ -16,7 +16,7 @@
   "hero": {
     "eyebrow": "Para mods de juegos de gran estrategia de Paradox",
     "title": "Traduce mods a **tu idioma** con un LLM local o una IA en la nube.",
-    "lead": "Una herramienta de escritorio gratuita para creadores de mods y jugadores. Traduce los archivos de localización de mods de Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris, Europa Universalis IV y V e Imperator: Rome a cualquiera de los 11 idiomas que admiten los juegos, mantiene intactos los códigos de formato del juego y te ayuda a encontrar y corregir lo que aún no está traducido.",
+    "lead": "Una herramienta de escritorio gratuita para creadores de mods y jugadores. Traduce los archivos de localización de mods de Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris, Europa Universalis IV y V e Imperator: Rome a cualquiera de los 11 idiomas que admiten los juegos, mantiene intactos los códigos de formato del juego y te ayuda a encontrar y corregir lo que aún no está traducido. La propia aplicación también está disponible en esos mismos 11 idiomas.",
     "download": "Descargar gratis",
     "platforms": "Windows · macOS · Linux — no requiere Python",
     "badges": [
@@ -42,12 +42,12 @@
         "text": "Encuentra las líneas que quedaron sin traducir y traduce solo esas. Cada tarea conserva su propia caché: cuando se actualiza un mod, se reutilizan las líneas ya traducidas y solo se envían a la IA las nuevas o modificadas."
       },
       {
-        "title": "Encuentra mods de traducción existentes (japonés)",
-        "text": "Para el japonés, comprueba si otro mod ya traduce un mod y si esa traducción está completa. Las líneas que faltan se pueden añadir al mod de traducción en lugar de al original, con una copia de seguridad y una confirmación previas."
+        "title": "Encuentra mods de traducción existentes",
+        "text": "Comprueba si otro mod ya traduce un mod a tu idioma y si esa traducción está completa. Las líneas que faltan se pueden añadir al mod de traducción en lugar de al original, con una copia de seguridad y una confirmación previas."
       },
       {
         "title": "Revisa y mejora",
-        "text": "Compara el original y la traducción en paralelo, ejecuta controles de calidad, busca y corrige cualquier línea directamente y mantén un glosario por idioma para que los nombres y los términos sean coherentes."
+        "text": "Compara el original y la traducción en paralelo, ejecuta controles de calidad, busca y corrige cualquier línea directamente y mantén un glosario por idioma —o créalo automáticamente— para que los nombres y los términos sean coherentes."
       },
       {
         "title": "Elige tu IA",
@@ -62,7 +62,7 @@
     "items": {
       "translate": "Cola y progreso de traducción",
       "qa": "Control de calidad y edición en paralelo",
-      "survey": "Análisis del estado de traducción de los mods (solo japonés)",
+      "survey": "Análisis del estado de traducción de los mods",
       "model": "Ajustes del modelo y de conexión"
     }
   },
@@ -139,7 +139,11 @@
       },
       {
         "q": "¿Todas las funciones sirven para todos los idiomas?",
-        "a": "La traducción, la corrección de líneas sin traducir, el control de calidad, la búsqueda y los glosarios funcionan para los 11 idiomas. Por ahora, el análisis de mods, la detección y vinculación de mods de traducción, la traducción solo de actualizaciones, la traducción a partir del chino y la creación automática de glosarios solo están disponibles para el japonés. Los controles de calidad son más sencillos para los demás idiomas: el coreano, el ruso y el chino simplificado se comprueban según su sistema de escritura; entre idiomas que usan el alfabeto latino, solo se señalan las líneas idénticas al original."
+        "a": "Sí. La traducción, la corrección, el control de calidad, la búsqueda, los glosarios (incluida su creación automática), el análisis de mods, la detección de mods de traducción y la traducción solo de actualizaciones funcionan para los 11 idiomas de destino. La interfaz también está disponible en los 11. Hay algunas limitaciones: si el idioma de destino es el inglés, no se buscan coincidencias con mods de traducción externos, porque la mayoría de los mods ya incluyen inglés; la vinculación de mods de traducción en idiomas distintos del japonés se ha probado menos, así que revisa el mod vinculado antes de sobrescribirlo; la traducción a partir del chino está disponible para japonés y coreano."
+      },
+      {
+        "q": "¿Cómo cambio el idioma de la aplicación?",
+        "a": "Ve a «Ajustes» → «Idioma de la interfaz». El cambio se aplica después de reiniciar la aplicación. La primera vez, la aplicación usa el idioma del sistema (o inglés si tu idioma no es uno de los 11 admitidos)."
       },
       {
         "q": "macOS dice que no se puede abrir la aplicación.",

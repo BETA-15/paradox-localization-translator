@@ -16,7 +16,7 @@
   "hero": {
     "eyebrow": "For Paradox grand strategy mods",
     "title": "Translate mods into **your language** — with a local LLM or a cloud AI.",
-    "lead": "A free desktop tool for modders and players. It translates mod localisation files for Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris, Europa Universalis IV and V, and Imperator: Rome into any of the 11 languages the games support, keeps the game's formatting codes intact, and helps you find and fix what is still untranslated.",
+    "lead": "A free desktop tool for modders and players. It translates mod localisation files for Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris, Europa Universalis IV and V, and Imperator: Rome into any of the 11 languages the games support, keeps the game's formatting codes intact, and helps you find and fix what is still untranslated. The app itself is available in the same 11 languages.",
     "download": "Download for free",
     "platforms": "Windows · macOS · Linux — no Python needed",
     "badges": [
@@ -42,12 +42,12 @@
         "text": "Finds lines that were left untranslated and translates only those. Each job keeps its own cache: when a mod updates, lines that were already translated are reused, so only new or changed lines go to the AI."
       },
       {
-        "title": "Finds existing translation mods (Japanese)",
-        "text": "For Japanese, it checks whether another mod already translates a mod, and whether that translation is complete. Missing lines can be added to the translation mod instead of the original — with a backup and a confirmation first."
+        "title": "Finds existing translation mods",
+        "text": "Checks whether another mod already translates a mod into your language, and whether that translation is complete. Missing lines can be added to the translation mod instead of the original — with a backup and a confirmation first."
       },
       {
         "title": "Check and polish",
-        "text": "Compare source and translation side by side, run quality checks, search and fix any line directly, and keep a glossary for each language so names and terms stay consistent."
+        "text": "Compare source and translation side by side, run quality checks, search and fix any line directly, and keep a glossary for each language — or build one automatically — so names and terms stay consistent."
       },
       {
         "title": "Your choice of AI",
@@ -62,7 +62,7 @@
     "items": {
       "translate": "Translation queue and progress",
       "qa": "Side-by-side QA and editing",
-      "survey": "Mod translation status survey (Japanese only)",
+      "survey": "Mod translation status survey",
       "model": "Model and connection settings"
     }
   },
@@ -139,7 +139,11 @@
       },
       {
         "q": "Does every feature work for every language?",
-        "a": "Translation, repair of untranslated lines, QA, search and glossaries work for all 11 languages. Mod survey, translation-mod detection and linking, update-only translation, Chinese-based translation and automatic glossary building are Japanese only for now. Quality checks are simpler for other languages: Korean, Russian and Simplified Chinese are checked by script; between Latin-script languages, only lines identical to the source are flagged."
+        "a": "Yes. Translation, repair, QA, search, glossaries (including automatic building), the mod survey, translation-mod detection and update-only translation work for all 11 target languages, and the interface is available in all 11 as well. A few limits: with English as the target, outside translation mods are not matched, because most mods already contain English; linking translation mods in languages other than Japanese has been tested less, so check the linked mod before overwriting; Chinese-based translation is available for Japanese and Korean."
+      },
+      {
+        "q": "How do I change the app's language?",
+        "a": "Go to Settings → “Display language”. The change takes effect after you restart the app. The first time, the app follows your system language (English if your language is not one of the 11)."
       },
       {
         "q": "macOS says the app cannot be opened.",

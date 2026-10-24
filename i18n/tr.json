@@ -16,7 +16,7 @@
   "hero": {
     "eyebrow": "Paradox büyük strateji oyunlarının modları için",
     "title": "Modları **kendi dilinize** çevirin — yerel bir LLM veya bulut tabanlı yapay zekâyla.",
-    "lead": "Mod yapımcıları ve oyuncular için ücretsiz bir masaüstü aracı. Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris, Europa Universalis IV ve V ile Imperator: Rome modlarının yerelleştirme dosyalarını oyunların desteklediği 11 dilden herhangi birine çevirir, oyunun biçimlendirme kodlarını korur ve henüz çevrilmemiş kısımları bulup düzeltmenize yardımcı olur.",
+    "lead": "Mod yapımcıları ve oyuncular için ücretsiz bir masaüstü aracı. Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris, Europa Universalis IV ve V ile Imperator: Rome modlarının yerelleştirme dosyalarını oyunların desteklediği 11 dilden herhangi birine çevirir, oyunun biçimlendirme kodlarını korur ve henüz çevrilmemiş kısımları bulup düzeltmenize yardımcı olur. Uygulamanın kendisi de aynı 11 dilde kullanılabilir.",
     "download": "Ücretsiz indirin",
     "platforms": "Windows · macOS · Linux — Python gerekmez",
     "badges": [
@@ -42,12 +42,12 @@
         "text": "Çevrilmeden kalan satırları bulur ve yalnızca onları çevirir. Her işin kendi önbelleği vardır: bir mod güncellendiğinde, daha önce çevrilen satırlar yeniden kullanılır. Böylece yapay zekâya yalnızca yeni veya değişen satırlar gönderilir."
       },
       {
-        "title": "Mevcut çeviri modlarını bulur (Japonca)",
-        "text": "Japonca için, bir modu zaten çeviren başka bir mod olup olmadığını ve bu çevirinin tamamlanıp tamamlanmadığını kontrol eder. Eksik satırlar, önce yedek alınıp onayınız istenerek, asıl mod yerine çeviri moduna eklenebilir."
+        "title": "Mevcut çeviri modlarını bulur",
+        "text": "Bir modu sizin dilinize zaten çeviren başka bir mod olup olmadığını ve bu çevirinin tamamlanıp tamamlanmadığını kontrol eder. Eksik satırlar, önce yedek alınıp onayınız istenerek, asıl mod yerine çeviri moduna eklenebilir."
       },
       {
         "title": "Kontrol edin ve iyileştirin",
-        "text": "Kaynak metinle çeviriyi yan yana karşılaştırın, kalite kontrolleri yapın, istediğiniz satırı doğrudan arayıp düzeltin ve adlarla terimlerin tutarlı kalması için her dile ayrı bir sözlük tutun."
+        "text": "Kaynak metinle çeviriyi yan yana karşılaştırın, kalite kontrolleri yapın, istediğiniz satırı doğrudan arayıp düzeltin ve adlarla terimlerin tutarlı kalması için her dile ayrı bir sözlük tutun veya sözlüğü otomatik oluşturun."
       },
       {
         "title": "Yapay zekânızı seçin",
@@ -62,7 +62,7 @@
     "items": {
       "translate": "Çeviri kuyruğu ve ilerleme",
       "qa": "Yan yana kalite kontrolü ve düzenleme",
-      "survey": "Modların çeviri durumunu tarama (yalnızca Japonca)",
+      "survey": "Modların çeviri durumunu tarama",
       "model": "Model ve bağlantı ayarları"
     }
   },
@@ -139,7 +139,11 @@
       },
       {
         "q": "Her özellik her dilde çalışır mı?",
-        "a": "Çeviri, çevrilmemiş satırları düzeltme, kalite kontrolü, arama ve sözlükler 11 dilin tamamında çalışır. Mod tarama, çeviri modlarını algılama ve ilişkilendirme, yalnızca güncellemeleri çevirme, Çince metni temel alarak çevirme ve otomatik sözlük oluşturma şimdilik yalnızca Japonca için kullanılabilir. Diğer dillerde kalite kontrolleri daha basittir: Korece, Rusça ve Basitleştirilmiş Çince, kullanılan yazı sistemine göre kontrol edilir; Latin alfabesi kullanan diller arasında ise yalnızca kaynak metinle aynı olan satırlar işaretlenir."
+        "a": "Evet. Çeviri, düzeltme, kalite kontrolü, arama, sözlükler (otomatik oluşturma dahil), mod tarama, çeviri modlarını algılama ve yalnızca güncellemeleri çevirme, 11 hedef dilin tamamında çalışır. Arayüz de bu 11 dilin tamamında kullanılabilir. Birkaç sınırlama vardır: Hedef dil İngilizce olduğunda, çoğu mod zaten İngilizce içerdiği için harici çeviri modları eşleştirilmez; Japonca dışındaki dillerde çeviri modlarını ilişkilendirme daha az test edildiğinden, üzerine yazmadan önce ilişkilendirilen modu kontrol edin; Çince metni temel alarak çevirme Japonca ve Korece için kullanılabilir."
+      },
+      {
+        "q": "Uygulamanın dilini nasıl değiştiririm?",
+        "a": "“Ayarlar” → “Arayüz dili” bölümüne gidin. Değişiklik, uygulamayı yeniden başlattıktan sonra geçerli olur. İlk çalıştırmada uygulama sistem dilinizi kullanır (diliniz desteklenen 11 dilden biri değilse İngilizce kullanılır)."
       },
       {
         "q": "macOS uygulamanın açılamadığını söylüyor.",

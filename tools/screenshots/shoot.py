@@ -1,6 +1,18 @@
 import sys, os, pathlib, subprocess, time
 src = pathlib.Path(sys.argv[1]); out = pathlib.Path(sys.argv[2]); tools = pathlib.Path(__file__).parent
 sys.path.insert(0, str(src))
+UI_LANG = os.environ.get("SHOT_UI_LANG", "japanese")      # language of the app's interface
+TARGET = os.environ.get("SHOT_TARGET", "japanese")        # translation target (and the sample translation mod's language)
+NATIVE = {"japanese": "Japanese", "english": "English", "french": "Français", "german": "Deutsch",
+          "spanish": "Español", "korean": "한국어", "polish": "Polski", "braz_por": "Português (Brasil)",
+          "russian": "Русский", "simp_chinese": "简体中文", "turkish": "Türkçe"}
+try:
+    import i18n
+    i18n.initial_ui_language = lambda *a, **k: UI_LANG
+    label = i18n.t
+except ImportError:  # versions before the multilingual interface
+    i18n = None
+    label = None
 import translator_core
 translator_core._mounted_volume_roots = lambda *a, **k: []
 # Never show the real local LLM setup: answer every model list with made-up names.
@@ -62,22 +74,25 @@ def hide_version(app):
 def run(app):
     nb = app.notebook
     app.after(500, lambda: hide_version(app))
-    def click(tab, label):
+    def click(tab, key, fallback):
+        text = label(key) if label else fallback
         for t, w in buttons(getattr(app, tab)):
-            if t == label:
-                w.invoke(); print("clicked", label, flush=True); return
-        print("NOT FOUND", label, flush=True)
+            if t == text:
+                w.invoke(); print("clicked", text, flush=True); return
+        print("NOT FOUND", text, flush=True)
     def entries(tab):
         return [w for w in walk(getattr(app, tab)) if w.winfo_class() in ("TEntry", "Entry")]
     def s0():
+        if hasattr(app, "_set_target_lang"):
+            app._set_target_lang(TARGET)
         app._append_queue(MOD)
     app.after(1500, s0)
     def s0b(): nb.select(app.tab_models); app.after(1500, lambda: cap(app, "model"))
     app.after(4000, s0b)
     def s1():
-        nb.select(app.tab_status); click("tab_status", "ゲーム/Mod場所を自動検出")
+        nb.select(app.tab_status); click("tab_status", "u6.detect_game_mod_locations", "ゲーム/Mod場所を自動検出")
     app.after(7000, s1)
-    def s2(): click("tab_status", "選択した場所のModを調査")
+    def s2(): click("tab_status", "u6.research_mods_in_selected_locations", "選択した場所のModを調査")
     app.after(9000, s2)
     def s3():
         nb.select(app.tab_status)
@@ -90,12 +105,12 @@ def run(app):
         nb.select(app.tab_review)
         es = entries("tab_review"); print("entries", len(es), flush=True)
         src_f = MOD / "localization/english/etr_l_english.yml"
-        ja_f = MOD.parent / "Example Trade Reforms - Japanese/localization/japanese/etr_l_japanese.yml"
+        ja_f = MOD.parent / f"Example Trade Reforms - {NATIVE[TARGET]}/localization/{TARGET}/etr_l_{TARGET}.yml"
         app.review_src_var.set(str(src_f)); app.review_dst_var.set(str(ja_f))
         try:
             app.review_src_display_var.set(str(src_f)); app.review_dst_display_var.set(str(ja_f))
         except Exception: pass
-        click("tab_review", "比較を読み込む")
+        click("tab_review", "u3.load_comparison", "比較を読み込む")
     app.after(22000, s4)
     def s5(): nb.select(app.tab_review); cap(app, "qa")
     app.after(28000, s5)

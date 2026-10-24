@@ -16,7 +16,7 @@
   "hero": {
     "eyebrow": "Do modów do wielkich strategii Paradox",
     "title": "Tłumacz mody na **swój język** — za pomocą lokalnego modelu LLM lub AI w chmurze.",
-    "lead": "Bezpłatna aplikacja na komputer dla twórców modów i graczy. Tłumaczy pliki lokalizacji modów do Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris, Europa Universalis IV i V oraz Imperator: Rome na dowolny z 11 języków obsługiwanych przez te gry, zachowuje kody formatowania gry i pomaga znaleźć oraz poprawić nieprzetłumaczone fragmenty.",
+    "lead": "Bezpłatna aplikacja na komputer dla twórców modów i graczy. Tłumaczy pliki lokalizacji modów do Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris, Europa Universalis IV i V oraz Imperator: Rome na dowolny z 11 języków obsługiwanych przez te gry, zachowuje kody formatowania gry i pomaga znaleźć oraz poprawić nieprzetłumaczone fragmenty. Sama aplikacja jest również dostępna w tych samych 11 językach.",
     "download": "Pobierz za darmo",
     "platforms": "Windows · macOS · Linux — bez instalowania Python",
     "badges": [
@@ -42,12 +42,12 @@
         "text": "Znajduje nieprzetłumaczone wiersze i tłumaczy tylko je. Każde zadanie ma własną pamięć podręczną: po aktualizacji moda wcześniej przetłumaczone wiersze są wykorzystywane ponownie, więc do AI trafiają tylko nowe lub zmienione wiersze."
       },
       {
-        "title": "Znajduje istniejące mody z tłumaczeniem (japoński)",
-        "text": "W przypadku języka japońskiego sprawdza, czy inny mod już tłumaczy dany mod i czy tłumaczenie jest kompletne. Brakujące wiersze można dodać do moda z tłumaczeniem zamiast do oryginału — po utworzeniu kopii zapasowej i uzyskaniu potwierdzenia."
+        "title": "Znajduje istniejące mody z tłumaczeniem",
+        "text": "Sprawdza, czy inny mod już tłumaczy dany mod na twój język i czy tłumaczenie jest kompletne. Brakujące wiersze można dodać do moda z tłumaczeniem zamiast do oryginału — po utworzeniu kopii zapasowej i uzyskaniu potwierdzenia."
       },
       {
         "title": "Sprawdzaj i dopracowuj",
-        "text": "Porównuj oryginał i tłumaczenie obok siebie, sprawdzaj jakość, wyszukuj i poprawiaj dowolny wiersz bezpośrednio w aplikacji oraz prowadź glosariusz dla każdego języka, aby zachować spójność nazw i terminów."
+        "text": "Porównuj oryginał i tłumaczenie obok siebie, sprawdzaj jakość, wyszukuj i poprawiaj dowolny wiersz bezpośrednio w aplikacji oraz prowadź glosariusz dla każdego języka — lub twórz go automatycznie — aby zachować spójność nazw i terminów."
       },
       {
         "title": "Wybierz swoje AI",
@@ -62,7 +62,7 @@
     "items": {
       "translate": "Kolejka i postęp tłumaczenia",
       "qa": "Kontrola jakości i edycja obok siebie",
-      "survey": "Sprawdzanie stanu tłumaczenia modów (tylko japoński)",
+      "survey": "Sprawdzanie stanu tłumaczenia modów",
       "model": "Ustawienia modelu i połączenia"
     }
   },
@@ -139,7 +139,11 @@
       },
       {
         "q": "Czy każda funkcja działa dla każdego języka?",
-        "a": "Tłumaczenie, uzupełnianie nieprzetłumaczonych wierszy, kontrola jakości, wyszukiwanie i glosariusze działają dla wszystkich 11 języków. Sprawdzanie modów, wykrywanie i powiązywanie modów z tłumaczeniem, tłumaczenie samych aktualizacji, tłumaczenie na podstawie chińskiego tekstu oraz automatyczne tworzenie glosariusza są na razie dostępne tylko dla japońskiego. Kontrola jakości jest prostsza dla pozostałych języków: koreański, rosyjski i chiński uproszczony są sprawdzane pod kątem użytego pisma; przy tłumaczeniu między językami używającymi alfabetu łacińskiego oznaczane są tylko wiersze identyczne z oryginałem."
+        "a": "Tak. Tłumaczenie, poprawianie, kontrola jakości, wyszukiwanie, glosariusze (w tym ich automatyczne tworzenie), sprawdzanie modów, wykrywanie modów z tłumaczeniem i tłumaczenie samych aktualizacji działają dla wszystkich 11 języków docelowych. Interfejs jest również dostępny we wszystkich 11 językach. Jest kilka ograniczeń: gdy językiem docelowym jest angielski, zewnętrzne mody z tłumaczeniem nie są dopasowywane, ponieważ większość modów zawiera już angielski; powiązywanie modów z tłumaczeniem w językach innych niż japoński było mniej testowane, więc sprawdź powiązany mod przed jego nadpisaniem; tłumaczenie na podstawie chińskiego tekstu jest dostępne dla japońskiego i koreańskiego."
+      },
+      {
+        "q": "Jak zmienić język aplikacji?",
+        "a": "Przejdź do „Ustawienia” → „Język interfejsu”. Zmiana zacznie obowiązywać po ponownym uruchomieniu aplikacji. Przy pierwszym uruchomieniu aplikacja używa języka systemu (lub angielskiego, jeśli twój język nie należy do 11 obsługiwanych)."
       },
       {
         "q": "macOS informuje, że nie można otworzyć aplikacji.",

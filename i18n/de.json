@@ -16,7 +16,7 @@
   "hero": {
     "eyebrow": "Für Mods zu Paradox-Globalstrategiespielen",
     "title": "Übersetze Mods in **deine Sprache** — mit einem lokalen LLM oder einer Cloud-KI.",
-    "lead": "Ein kostenloses Desktop-Tool für Modder und Spieler. Es übersetzt die Lokalisierungsdateien von Mods für Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris, Europa Universalis IV und V sowie Imperator: Rome in jede der 11 von den Spielen unterstützten Sprachen, erhält die Formatierungscodes des Spiels und hilft dir, noch unübersetzte Texte zu finden und zu korrigieren.",
+    "lead": "Ein kostenloses Desktop-Tool für Modder und Spieler. Es übersetzt die Lokalisierungsdateien von Mods für Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris, Europa Universalis IV und V sowie Imperator: Rome in jede der 11 von den Spielen unterstützten Sprachen, erhält die Formatierungscodes des Spiels und hilft dir, noch unübersetzte Texte zu finden und zu korrigieren. Die App selbst ist ebenfalls in diesen 11 Sprachen verfügbar.",
     "download": "Kostenlos herunterladen",
     "platforms": "Windows · macOS · Linux — kein Python nötig",
     "badges": [
@@ -42,12 +42,12 @@
         "text": "Das Tool findet unübersetzte Zeilen und übersetzt nur diese. Jeder Auftrag hat seinen eigenen Cache: Wird ein Mod aktualisiert, werden bereits übersetzte Zeilen wiederverwendet. So gehen nur neue oder geänderte Zeilen an die KI."
       },
       {
-        "title": "Vorhandene Übersetzungsmods finden (Japanisch)",
-        "text": "Für Japanisch prüft das Tool, ob bereits ein anderer Mod einen Mod übersetzt und ob diese Übersetzung vollständig ist. Fehlende Zeilen lassen sich dem Übersetzungsmod statt dem Original hinzufügen — mit vorheriger Sicherung und Bestätigung."
+        "title": "Vorhandene Übersetzungsmods finden",
+        "text": "Das Tool prüft, ob bereits ein anderer Mod einen Mod in deine Sprache übersetzt und ob diese Übersetzung vollständig ist. Fehlende Zeilen lassen sich dem Übersetzungsmod statt dem Original hinzufügen — mit vorheriger Sicherung und Bestätigung."
       },
       {
         "title": "Prüfen und verbessern",
-        "text": "Vergleiche Original und Übersetzung nebeneinander, führe Qualitätsprüfungen durch, suche und korrigiere beliebige Zeilen direkt und pflege für jede Sprache ein Glossar, damit Namen und Begriffe einheitlich bleiben."
+        "text": "Vergleiche Original und Übersetzung nebeneinander, führe Qualitätsprüfungen durch, suche und korrigiere beliebige Zeilen direkt und pflege für jede Sprache ein Glossar — oder erstelle es automatisch —, damit Namen und Begriffe einheitlich bleiben."
       },
       {
         "title": "Du wählst die KI",
@@ -62,7 +62,7 @@
     "items": {
       "translate": "Warteschlange und Fortschritt der Übersetzung",
       "qa": "Qualitätsprüfung und Bearbeitung nebeneinander",
-      "survey": "Übersetzungsstand der Mods prüfen (nur Japanisch)",
+      "survey": "Übersetzungsstand der Mods prüfen",
       "model": "Modell- und Verbindungseinstellungen"
     }
   },
@@ -139,7 +139,11 @@
       },
       {
         "q": "Funktioniert jede Funktion für jede Sprache?",
-        "a": "Übersetzung, Nachübersetzen unübersetzter Zeilen, Qualitätsprüfung, Suche und Glossare funktionieren für alle 11 Sprachen. Mod-Analyse, Erkennung und Verknüpfung von Übersetzungsmods, Übersetzung nur von Aktualisierungen, Übersetzung auf Grundlage chinesischer Texte und automatische Glossarerstellung sind derzeit nur für Japanisch verfügbar. Die Qualitätsprüfungen sind für andere Sprachen einfacher: Koreanisch, Russisch und vereinfachtes Chinesisch werden anhand des Schriftsystems geprüft; zwischen Sprachen mit lateinischer Schrift werden nur Zeilen markiert, die mit dem Original identisch sind."
+        "a": "Ja. Übersetzung, Nachbesserung, Qualitätsprüfung, Suche, Glossare (einschließlich automatischer Erstellung), Mod-Analyse, Erkennung von Übersetzungsmods und Übersetzung nur von Aktualisierungen funktionieren für alle 11 Zielsprachen. Auch die Oberfläche ist in allen 11 Sprachen verfügbar. Einige Einschränkungen: Bei Englisch als Zielsprache werden keine externen Übersetzungsmods zugeordnet, da die meisten Mods bereits Englisch enthalten; die Verknüpfung von Übersetzungsmods in anderen Sprachen als Japanisch wurde weniger getestet, prüfe daher den verknüpften Mod vor dem Überschreiben; Übersetzung auf Grundlage chinesischer Texte ist für Japanisch und Koreanisch verfügbar."
+      },
+      {
+        "q": "Wie ändere ich die Sprache der App?",
+        "a": "Gehe zu „Einstellungen“ → „Anzeigesprache“. Die Änderung wird nach einem Neustart der App wirksam. Beim ersten Start verwendet die App deine Systemsprache (Englisch, falls deine Sprache nicht zu den 11 unterstützten Sprachen gehört)."
       },
       {
         "q": "macOS meldet, dass die App nicht geöffnet werden kann.",
