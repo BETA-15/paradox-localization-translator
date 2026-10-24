@@ -32,7 +32,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
-TRANSLATION_RELATION_ALGORITHM_VERSION = 4  # v0.11.80: 情報量で重み付けした一致率を追加（古い調査結果を使い回さない）
+import ui_status
+
+import i18n  # 画面・ログの文（第3段）。LLM への指示文とキャッシュのキーには使わない
+
+TRANSLATION_RELATION_ALGORITHM_VERSION = 5
 LARGE_RELATION_MIN_EFFECTIVE_KEYS = 200
 # 紐付けの判定に使う「情報量で重み付けした一致率」の境目。
 # 実データ（HOI4 の Mod 84件・928組）では、元Modごとの最大の一致率が 15% 以下と 40% 以上の
@@ -57,6 +61,7 @@ DEFAULT_ANTHROPIC_URL = "https://api.anthropic.com/v1"
 DEFAULT_GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta"
 DEFAULT_OPENAI_COMPAT_URL = ""
 DEFAULT_TARGET_LANG = "japanese"
+CHINESE_BASIS_TARGETS = ("japanese", "korean")
 CACHE_FILE_NAME = "translate_cache.json"
 SESSION_FILE_NAME = ".plt_session.json"
 
@@ -81,12 +86,12 @@ TARGET_LANGUAGES = {
     "french": {"label": "フランス語", "name": "French", "script": "latin", "remove_cjk_spaces": False},
     "german": {"label": "ドイツ語", "name": "German", "script": "latin", "remove_cjk_spaces": False},
     "spanish": {"label": "スペイン語", "name": "Spanish", "script": "latin", "remove_cjk_spaces": False},
-    "japanese": {"label": "日本語", "name": "Japanese", "script": "japanese", "remove_cjk_spaces": True},
+    "japanese": {"label": "日本語", "name": "Japanese", "script": "japanese", "remove_cjk_spaces": True, "cjk_space_rule": "japanese"},
     "korean": {"label": "韓国語", "name": "Korean", "script": "hangul", "remove_cjk_spaces": False},
     "polish": {"label": "ポーランド語", "name": "Polish", "script": "latin", "remove_cjk_spaces": False},
     "braz_por": {"label": "ポルトガル語（ブラジル）", "name": "Brazilian Portuguese", "script": "latin", "remove_cjk_spaces": False},
     "russian": {"label": "ロシア語", "name": "Russian", "script": "cyrillic", "remove_cjk_spaces": False},
-    "simp_chinese": {"label": "簡体字中国語", "name": "Simplified Chinese", "script": "han", "remove_cjk_spaces": True},
+    "simp_chinese": {"label": "簡体字中国語", "name": "Simplified Chinese", "script": "han", "remove_cjk_spaces": True, "cjk_space_rule": "zh_punctuation"},
     "turkish": {"label": "トルコ語", "name": "Turkish", "script": "latin", "remove_cjk_spaces": False},
 }
 
@@ -147,10 +152,9 @@ def game_language_warning(target_lang: str, path=None, preset: str = "") -> str:
     supported = GAME_LANGUAGES.get(game)
     if not supported or target_lang in supported:
         return ""
-    names = "・".join(target_language_label(x) for x in supported)
-    basis = "" if game_for_translation(path, "") else "（Mod の場所からゲームが分からないため、ゲームプリセットから判断）"
-    return (f"{game} は{target_language_label(target_lang)}（l_{target_lang}）を読めません{basis}。"
-            f"翻訳しても、ゲームの中には表示されません。{game} が読める言語: {names}")
+    names = "・".join(i18n.t("lang." + x) for x in supported)
+    basis = bool(game_for_translation(path, ""))
+    return (i18n.t('u9.unsupported_game_language' if basis else 'u9.unsupported_game_language_with_preset', game=game, target_name=i18n.t("lang." + target_lang), target_lang=target_lang, supported_game=game, supported_languages=names))
 
 LINE_PATTERN = re.compile(
     r'^(?P<indent>\s*)(?P<key>[A-Za-z0-9_.\-\'&][A-Za-z0-9_.\-\'& ]*)\s*:\s*'
@@ -185,12 +189,24 @@ def _is_katakana_word_char(character: str) -> bool:
 
 
 def normalize_cjk_spacing(text: str, target_lang: str) -> tuple[str, int]:
-    """Remove ASCII spaces at CJK boundaries without altering protected tokens."""
+    """Apply language-specific ASCII spacing rules without altering protected tokens."""
     if not TARGET_LANGUAGES.get(target_lang, {}).get("remove_cjk_spaces", False):
         return text, 0
+    spacing_rule = TARGET_LANGUAGES[target_lang].get("cjk_space_rule", "japanese")
 
     def character_kind(character):
         codepoint = ord(character)
+        if spacing_rule == "zh_punctuation":
+            if character in "，。、；：？！）》」』〉】":
+                return "zh_close"
+            if character in "（《「『〈【":
+                return "zh_open"
+            if any(start <= codepoint <= end for start, end in (
+                (0x3400, 0x4DBF), (0x4E00, 0x9FFF), (0xF900, 0xFAFF),
+                (0x20000, 0x323AF),
+            )):
+                return "zh_text"
+            return "other"
         if any(start <= codepoint <= end for start, end in (
             (0x3001, 0x303F), (0x3040, 0x30FF), (0x31F0, 0x31FF),
             (0x3400, 0x4DBF), (0x4E00, 0x9FFF), (0xF900, 0xFAFF),
@@ -219,6 +235,15 @@ def normalize_cjk_spacing(text: str, target_lang: str) -> tuple[str, int]:
     output = []
     removed = 0
     for index, (kind, piece) in enumerate(atoms):
+        if spacing_rule == "zh_punctuation":
+            if kind == "space" and piece == " " and 0 < index < len(atoms) - 1:
+                previous, following = atoms[index - 1], atoms[index + 1]
+                if ((previous[0] == "zh_text" and following[0] == "zh_close")
+                        or (previous[0] == "zh_open" and following[0] == "zh_text")):
+                    removed += len(piece)
+                    continue
+            output.append(piece)
+            continue
         if kind == "space" and 0 < index < len(atoms) - 1:
             left, right = atoms[index - 1][0], atoms[index + 1][0]
             if ((left == "cjk" and right in {"cjk", "alnum", "variable", "color_end"})
@@ -430,20 +455,18 @@ def glossary_file_problem(path: Path) -> str:
     except FileNotFoundError:
         return ""
     except json.JSONDecodeError as exc:
-        return f"用語集のJSONを読めません（{exc.lineno}行目: {exc.msg}）"
+        return i18n.t('u9.glossary_json_line', line=exc.lineno, error=exc.msg)
     except (OSError, UnicodeError) as exc:
-        return f"用語集のJSONを読めません（{exc}）"
+        return i18n.t('u9.glossary_json_error', error=exc)
     if isinstance(data, dict):
         return ""
-    format_name = "リスト形式" if isinstance(data, list) else "辞書ではない形式"
+    format_name = i18n.t('u9.glossary_list_format') if isinstance(data, list) else i18n.t('u9.glossary_non_dict_format')
     problem = (
-        f"対応していない形式です（{format_name}）。"
-        'このアプリの用語集は {"原語": "訳語"} 形式のJSONです。'
-        "ParaTranz の用語集は『ParaTranz の用語集を取り込む』から取り込めます。"
+        i18n.t('u9.glossary_unsupported_format', format_name=format_name)
     )
     if isinstance(data, list) and data and isinstance(data[0], dict):
         if "term" in data[0] and "translation" in data[0]:
-            problem += "ParaTranz の用語集のようです。"
+            problem = i18n.t('u9.glossary_paratranz_format', format_name=format_name)
     return problem
 
 
@@ -1030,9 +1053,7 @@ def thinking_only_model_warning(provider: str, url: str, model: str) -> str:
         thinking = bool(_THINKING_NAME_RE.search(model))
     if not thinking:
         return ""
-    return (f"{model} は思考を止められない{THINKING_ONLY_MARKER}のため、翻訳には使用できません。"
-            "1回の翻訳で長く考え込み、時間切れや空の応答になります。"
-            "qwen3:4b-instruct-2507 などのinstruct版（思考なし）のモデルを選んでください。")
+    return (i18n.t('u9.thinking_only_warning', model=model, marker=THINKING_ONLY_MARKER))
 
 
 _EMBEDDING_NAME_RE = re.compile(r"embed", re.I)
@@ -1076,9 +1097,7 @@ def embedding_only_model_warning(provider: str, url: str, model: str) -> str:
         return ""
     if not is_embedding_only_model(provider, url, model):
         return ""
-    return (f"{model} は文章を検索用の数値に変える{EMBEDDING_ONLY_MARKER}のため、翻訳には使用できません。"
-            "文章を書けないので、翻訳を始めても訳文が返りません。"
-            "qwen3:8b や gemma3 などの、文章を生成するモデルを選んでください。")
+    return (i18n.t('u9.embedding_only_warning', model=model, marker=EMBEDDING_ONLY_MARKER))
 
 
 def unusable_model_warning(provider: str, url: str, model: str) -> str:
@@ -1112,8 +1131,7 @@ class ReasoningModelError(RuntimeError):
 
 
 def reasoning_model_warning_text(model: str) -> str:
-    return (f"{model} は{REASONING_MODEL_MARKER}のため、翻訳に向きません。"
-            "1回の翻訳で長く考え込み、時間切れや空の応答になります。instruct 版など、考える過程を出さないモデルに替えてください。")
+    return (i18n.t('u9.reasoning_warning', model=model, marker=REASONING_MODEL_MARKER))
 
 
 # LM Studio が reasoning_effort を受け付けなかった（HTTP 400）サーバーとモデル。2回目からは送らない。
@@ -1195,7 +1213,7 @@ def call_llm_raw(provider: str, url: str, model: str, user_content: str, system_
                     "contents": [{"role": "user", "parts": [{"text": user_content}]}],
                 }
             else:
-                raise RuntimeError(f"未対応のプロバイダです: {provider}")
+                raise RuntimeError(i18n.t('u9.unsupported_provider', provider=provider))
             req = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers)
             try:
                 with _urlopen(req, timeout=timeout) as resp:
@@ -1250,7 +1268,7 @@ def call_llm_raw(provider: str, url: str, model: str, user_content: str, system_
             if not content and _response_reasoning(p, body).strip():
                 raise ReasoningModelError(reasoning_model_warning_text(model))
             if not content:
-                raise RuntimeError("LLMから空の応答が返されました")
+                raise RuntimeError(i18n.t('u9.empty_llm_response'))
             if controller:
                 # GUIへ、モデルが実際に返した生のテキストを通知する。
                 # 読み取り専用のライブ確認欄で利用し、翻訳結果そのものの処理ロジックは変更しない。
@@ -1282,7 +1300,7 @@ def call_llm_raw(provider: str, url: str, model: str, user_content: str, system_
     elapsed = max(time.perf_counter() - overall_start, 1e-6)
     if controller:
         controller.notify(kind="llm_metric", metric=_metric(provider, model, elapsed, False, error=str(last_err)))
-    raise RuntimeError(f"LLM呼び出しに{retries}回失敗しました: {last_err}")
+    raise RuntimeError(i18n.t('u9.llm_retries_failed', retries=retries, error=last_err))
 
 def reasoning_model_probe_warning(provider: str, url: str, model: str, api_key: str = "",
                                   timeout: float = 60) -> str:
@@ -1320,7 +1338,10 @@ def build_system_prompt(source_lang: str, glossary: Optional[dict] = None,
                         preset: str = "General", dual_source: bool = False,
                         chinese_basis: bool = False, target_lang: str = DEFAULT_TARGET_LANG) -> str:
     if (target_lang or DEFAULT_TARGET_LANG) != DEFAULT_TARGET_LANG:
-        return _build_system_prompt_other(source_lang, glossary, preset, dual_source, target_lang)
+        prompt = _build_system_prompt_other(source_lang, glossary, preset, dual_source, target_lang)
+        if chinese_basis and target_lang == "korean":
+            prompt += _korean_chinese_basis_instructions()
+        return prompt
     lang_label = {"english": "英語", "simp_chinese": "簡体字中国語"}.get(source_lang, source_lang)
     preset_text = GAME_PRESETS.get(preset, GAME_PRESETS["General"])
     glossary_text = ""
@@ -1355,9 +1376,22 @@ def build_system_prompt(source_lang: str, glossary: Optional[dict] = None,
 """
 
 
+def _korean_chinese_basis_instructions() -> str:
+    return """
+This is Chinese-basis translation into Korean. Use the vocabulary of the Simplified Chinese source as the primary basis for institutional, official and historical terminology.
+1. If a Chinese term is intelligible as an established Korean Sino-Korean word, write its Korean reading in Hangul. Restore simplified characters to their original traditional forms before determining the reading: 经济 → 經濟 → 경제; 中央集权 → 중앙집권; 科举 → 과거; 节度使 → 절도사; 内阁 → 내각.
+2. Do not write Hanja in the output. Only when identical Hangul readings would make the meaning ambiguous may you add Hanja in parentheses, for example 과거(科擧). Do this only at the first occurrence of the same term.
+3. Do not overuse Sino-Korean words. Prefer ordinary Korean native words or loanwords where established: 坦克 → 탱크 (not 탄극); 咖啡 → 커피; 沙发 → 소파. Never invent Sino-Korean words that Korean readers would not understand.
+4. Do not derive Korean terms through Japanese readings or Japanese-style Sino-Korean coinages. Use terms ordinarily used in Korean.
+5. Use natural Korean word order, particles and sentence structure. Do not copy Chinese syntax.
+6. For Chinese and Korean personal and place names, use the Korean reading of the Hanja: 李鸿章 → 이홍장. Prefer an established local-pronunciation form where customary in Korean: 北京 → 베이징. For other foreign proper names, use conventional Korean loanword spelling.
+Glossary translations have the highest priority and override these terminology preferences wherever applicable.
+"""
+
+
 def _build_system_prompt_other(source_lang: str, glossary: Optional[dict], preset: str,
                                dual_source: bool, target_lang: str) -> str:
-    """日本語以外の翻訳先の指示文（英語で書いたテンプレート）。中国語基準翻訳は日本語専用なので使わない。"""
+    """日本語以外の翻訳先の指示文（英語で書いたテンプレート）。"""
     source_name = target_language_name(source_lang)
     target_name = target_language_name(target_lang)
     preset_text = GAME_PRESETS_EN.get(preset, GAME_PRESETS_EN["General"])
@@ -1573,10 +1607,10 @@ def source_language_gap_reason_text(result: dict) -> str:
     en = int((result or {}).get("english_only_count", 0) or 0)
     zh = int((result or {}).get("chinese_only_count", 0) or 0)
     if en:
-        parts.append(f"英語にのみ存在する翻訳対象キー {en}件")
+        parts.append(i18n.t('u9.source_english_only', count=en))
     if zh:
-        parts.append(f"簡体字中国語にのみ存在する翻訳対象キー {zh}件")
-    return " / ".join(parts) if parts else "原文間の欠落なし"
+        parts.append(i18n.t('u9.source_chinese_only', count=zh))
+    return " / ".join(parts) if parts else i18n.t('u9.source_no_gaps')
 
 
 def gap_origin_counts(candidates: List[dict]) -> dict:
@@ -1592,22 +1626,22 @@ def gap_origin_counts(candidates: List[dict]) -> dict:
     return counts
 
 
-def gap_reason_text(candidates: List[dict]) -> str:
+def gap_reason_text(candidates: List[dict], *, target_lang: str = "japanese") -> str:
     """Human-readable reason for a multilingual Japanese coverage failure."""
     counts = gap_origin_counts(candidates)
     parts = []
     if counts["english_only"]:
-        parts.append(f"英語にのみ存在するキーのうち、日本語訳が必要な {counts['english_only']}件が欠如")
+        parts.append(i18n.t('u9.gap_english_only.target', count=counts['english_only'], target_name=i18n.t("lang." + target_lang)))
     if counts["chinese_only"]:
-        parts.append(f"簡体字中国語にのみ存在するキーのうち、日本語訳が必要な {counts['chinese_only']}件が欠如")
+        parts.append(i18n.t('u9.gap_chinese_only.target', count=counts['chinese_only'], target_name=i18n.t("lang." + target_lang)))
     if counts["shared"]:
-        parts.append(f"英語・簡体字中国語の共通キーで {counts['shared']}件が欠如または未翻訳")
+        parts.append(i18n.t('u9.gap_shared', count=counts['shared']))
     if counts["other"]:
-        parts.append(f"その他の翻訳不足 {counts['other']}件")
-    return " / ".join(parts) if parts else "欠損なし"
+        parts.append(i18n.t('u9.gap_other', count=counts['other']))
+    return " / ".join(parts) if parts else i18n.t('u9.gap_none')
 
 
-def scan_translation_gaps(root: Path, preferred_source: str = "english") -> List[dict]:
+def scan_translation_gaps(root: Path, preferred_source: str = "english", *, target_lang: str = "japanese") -> List[dict]:
     """Scan Japanese coverage against the union of English and Simplified Chinese.
 
     A localization key that exists in only one source language is not automatically a
@@ -1619,6 +1653,28 @@ def scan_translation_gaps(root: Path, preferred_source: str = "english") -> List
     English-only keys, and English-basis translations are checked for Chinese-only
     keys.
     """
+    if target_lang != "japanese":
+        data = _collect_mod_language_entries(Path(root), target_lang=target_lang)
+        source, language_by_key = _relation_source_view(
+            data["languages"], preferred_source, target_lang=target_lang)
+        gaps = _external_gap_candidates(
+            source, data["japanese"], data["english"], data["simp_chinese"],
+            target_lang=target_lang, source_language_by_key=language_by_key)
+        candidates = []
+        for gap in gaps:
+            key = gap["key"]
+            language = gap["source_lang"]
+            missing = gap["kind"] == "missing_key"
+            candidates.append({
+                "kind": i18n.t("u9.gap_missing_target" if missing else "u9.gap_foreign_target",
+                               target_name=i18n.t("lang." + target_lang)),
+                "logical_file": "", "source_file": data["language_paths"].get(language, {}).get(key, ""),
+                "target_file": "" if missing else data["language_paths"].get(target_lang, {}).get(key, ""),
+                "source_lang": language, "source_origin": gap["source_origin"], "key": key,
+                "source": gap["source_text"], "target": gap["target_text"],
+                "needs_llm": gap["needs_llm"], "confidence": gap["confidence"],
+            })
+        return candidates
     view = _multilingual_source_view(Path(root), preferred_source=preferred_source)
     english = view["english"]
     chinese = view["simp_chinese"]
@@ -1700,11 +1756,12 @@ def scan_translation_gaps(root: Path, preferred_source: str = "english") -> List
 
 def classify_monitor_candidates(provider: str, url: str, model: str, candidates: List[dict],
                                 controller: Optional[TranslationController] = None,
-                                api_key: str = "", batch_size: int = 40) -> Dict[int, bool]:
+                                api_key: str = "", batch_size: int = 40,
+                                target_lang: str = DEFAULT_TARGET_LANG) -> Dict[int, bool]:
     """Use a small LLM only for ambiguous monitor candidates.
 
     Returns ``{candidate_index: True}`` for entries that should be translated to
-    Japanese. Definite missing-file/key candidates should not be passed here.
+    the target language. Definite missing-file/key candidates should not be passed here.
     """
     decisions: Dict[int, bool] = {}
     if not candidates:
@@ -1714,6 +1771,14 @@ def classify_monitor_candidates(provider: str, url: str, model: str, candidates:
 固有の商品名・人名・一般的な略語・コード・型番など、通常そのまま表示してよいものは NO。
 英語などの説明文、UI語、文章、翻訳されるべき一般語は YES。
 出力は入力と同じ番号を使い、必ず `N|||YES` または `N|||NO` の1行だけ。説明は禁止。"""
+    if target_lang != DEFAULT_TARGET_LANG:
+        target_name = target_language_name(target_lang)
+        system = f"""You are a lightweight QA classifier for {target_name} game localization.
+For each line, decide only whether it is untranslated text remaining in the {target_name} version and should be translated into {target_name}.
+Use {target_name} localization conventions, not Japanese conventions.
+Answer NO for proper product names, personal names, common abbreviations, code, and model numbers normally left unchanged in {target_name}.
+Answer YES for foreign-language descriptions, UI terms, sentences, and ordinary words that should be localized into {target_name}.
+Use the same input numbers and output exactly one `N|||YES` or `N|||NO` line per input. No explanations."""
     for start in range(0, len(candidates), max(1, batch_size)):
         if controller:
             controller.wait_if_paused()
@@ -1971,7 +2036,7 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
             return ""
         return (zh_refs or {}).get(key, "")
     if repair_target_file and verbose:
-        print(f"  原文は既に{target_lang}です。未翻訳の外国語部分だけを修復します")
+        print(i18n.t('u9.repair_source_notice', target_lang=target_lang))
 
     parsed_lines = []
     jobs = []
@@ -2007,7 +2072,7 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
 
     total_keys = sum(1 for k, _ in parsed_lines if k == "line")
     if verbose:
-        print(f"  原文言語: {source_lang}{'（修復）' if repair_target_file else ''} / 全キー: {total_keys} / 翻訳対象: {len(jobs)}")
+        print(i18n.t('u9.file_translation_summary_repair', source_lang=source_lang, total_keys=total_keys, translation_count=len(jobs)) if repair_target_file else i18n.t('u9.file_translation_summary', source_lang=source_lang, total_keys=total_keys, translation_count=len(jobs)))
 
     results = {}
     failed = set()
@@ -2083,12 +2148,12 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
             for job in b:
                 line_idx = job["line_idx"]
                 if line_idx in failed:
-                    failure_reasons[line_idx] = err or "LLM応答が原文のまま、または翻訳として利用できませんでした"
+                    failure_reasons[line_idx] = err or i18n.t('u9.unusable_llm_translation')
                 else:
                     failure_reasons.pop(line_idx, None)
             completed_jobs += len(b)
             if err and verbose:
-                print(f"  [警告] バッチ失敗: {err}")
+                print(i18n.t('u9.batch_failed', error=err))
             if cache_file:
                 save_cache(cache_file, cache)
             if controller:
@@ -2111,18 +2176,18 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
             for pending in jobs[cursor:]:
                 failed.add(pending["line_idx"])
                 deferred_systemic_failures.add(pending["line_idx"])
-                failure_reasons[pending["line_idx"]] = f"接続・プロバイダ障害のため後段再試行へ延期: {reason}"
+                failure_reasons[pending["line_idx"]] = i18n.t('u9.deferred_provider_failure', reason=reason)
             for batch, _translated, err in work_results:
                 if err:
                     deferred_systemic_failures.update(j["line_idx"] for j in batch)
             if verbose and cursor < len(jobs):
-                print(f"  [警告] プロバイダ障害が継続しているため、残り {len(jobs)-cursor}件をキュー後段の再試行へ延期します")
+                print(i18n.t('u9.provider_retry_deferred', count=len(jobs)-cursor))
             cursor = len(jobs)
 
     if failed:
         if verbose:
             immediate_count = sum(1 for idx in failed if idx not in deferred_systemic_failures)
-            print(f"  {immediate_count}件を単発再試行します…")
+            print(i18n.t('u9.single_retry_count', count=immediate_count))
         retry_jobs = [j for j in jobs if j["line_idx"] in failed and j["line_idx"] not in deferred_systemic_failures]
         for j in retry_jobs:
             if controller:
@@ -2141,7 +2206,7 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
                 restored = restore_text(tr[0], j["tokens"])
                 if unusable_translation(j["value"], restored, translation_source_lang, target_lang):
                     cache.pop(j["hash"], None)
-                    failure_reasons[j["line_idx"]] = "単発再試行後も原文のまま、または翻訳として利用できませんでした"
+                    failure_reasons[j["line_idx"]] = i18n.t('u9.single_retry_unusable')
                 else:
                     results[j["line_idx"]] = restored
                     cache[j["hash"]] = restored
@@ -2182,7 +2247,7 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
     failed_jobs = [
         {
             "key": j["key"],
-            "reason": failure_reasons.get(j["line_idx"], "翻訳できませんでした"),
+            "reason": failure_reasons.get(j["line_idx"], i18n.t('u9.translation_failed')),
         }
         for j in jobs if j["line_idx"] in failed
     ]
@@ -2211,12 +2276,14 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
         cache_file = output_path / CACHE_FILE_NAME
     cache = load_cache(cache_file) if (resume or cache_file.exists()) else {}
     current_manifest = build_source_manifest(input_path, None if include_target_files else target_lang)
+    if target_lang != DEFAULT_TARGET_LANG:
+        current_manifest["target_lang"] = target_lang
     glossary = load_glossary(Path(glossary_path)) if glossary_path else {}
     zh_refs = build_chinese_reference_map(input_path) if input_path.is_dir() else {}
     exclude = None if include_target_files else target_lang
     files = gather_yml_files(input_path, exclude)
     if not files:
-        raise RuntimeError("翻訳対象のYAMLファイルが見つかりませんでした。")
+        raise RuntimeError(i18n.t('u9.no_yaml_files'))
 
     file_errors = []
     encoding_recoveries = []
@@ -2227,15 +2294,19 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
     qa_backup_dir = (create_qa_repair_backup_dir(Path(qa_backup_root), "normal_translation")
                      if auto_qa and qa_backup_root else None)
 
-    def collect_file_error(path: Path, stage: str, exc: Exception, action: str = "スキップして継続"):
-        skipped = action.startswith("スキップ")
+    # 処置は ID で判断する（文は画面の言語で変わるため。第3段 2-5 章）。文は表示とログ用。
+    file_error_actions = {"skip_continue": i18n.t('u9.skip_continue'), "keep_result_continue": i18n.t('u9.keep_results_continue')}
+
+    def collect_file_error(path: Path, stage: str, exc: Exception, action_id: str = "skip_continue"):
+        action = file_error_actions[action_id]
+        skipped = action_id == "skip_continue"
         row = {
             "file": str(path), "stage": stage, "error_type": type(exc).__name__,
-            "message": str(exc), "action": action, "skipped": skipped,
+            "message": str(exc), "message_parts": [ui_status.message_part("u9.exception_detail", detail=str(exc))], "action": action, "action_id": action_id, "skipped": skipped,
             "retryable": skipped,
         }
         file_errors.append(row)
-        print(f"  [警告] {stage}エラーのため{action}: {path} / {type(exc).__name__}: {exc}")
+        print(i18n.t('u9.file_error', stage=stage, action=action, path=path, error_type=type(exc).__name__, error=exc))
         if controller:
             controller.notify(kind="file_error", **row)
 
@@ -2290,10 +2361,10 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
             if "+" in encoding:
                 recovery = {
                     "file": str(p), "detected_encoding": encoding,
-                    "action": "混在BOMを除去して読み込み、出力はUTF-8 BOMへ正規化",
+                    "action": i18n.t('u9.mixed_bom_repair'),
                 }
                 encoding_recoveries.append(recovery)
-                print(f"  [自動修復] 混在BOMを検出: {p} / {encoding}")
+                print(i18n.t('u9.mixed_bom_detected', path=p, encoding=encoding))
                 if controller:
                     controller.notify(kind="encoding_recovered", **recovery)
         except StopRequested:
@@ -2305,7 +2376,7 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
     # 同じ出力先になる原文が複数あれば、先に処理したものが使われる（後のものは「出力先重複」でスキップ）。
     file_info.sort(key=lambda row: (source_language_priority(row[1], target_lang), str(row[0])))
 
-    print(f"プロバイダ: {provider} / モデル: {model} / 対象ファイル: {len(file_info)} / 読込スキップ: {sum(1 for row in file_errors if row.get('skipped'))} / プリセット: {preset} / 英中併用: {'ON' if dual_source else 'OFF'}")
+    print(i18n.t('u9.translation_settings', provider=provider, model=model, file_count=len(file_info), skipped_file_count=sum(1 for row in file_errors if row.get('skipped')), preset=preset, dual_source='ON' if dual_source else 'OFF'))
     base_dir = input_path if input_path.is_dir() else input_path.parent
     planned = {}
     processed = 0
@@ -2319,7 +2390,7 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
                 out = output_path / remap_rel_dir(rel, target_lang) / rename_for_target(f, target_lang, source_lang)
                 key = str(out.resolve())
                 if key in planned:
-                    print(f"[{i}/{len(file_info)}] 出力先重複のためスキップ: {f.name}")
+                    print(i18n.t('u9.duplicate_output_skip', index=i, total=len(file_info), file_name=f.name))
                     continue
                 planned[key] = str(f)
                 print(f"[{i}/{len(file_info)}] {f.relative_to(base_dir) if input_path.is_dir() else f.name} -> {out}")
@@ -2349,7 +2420,7 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
                             out, source_ref, source_lang=source_lang, glossary=glossary,
                             model=model, url=url, provider=provider, api_key=api_key, preset=preset,
                             controller=controller,
-                            chinese_basis=(source_lang == "simp_chinese" and target_lang == DEFAULT_TARGET_LANG),
+                            chinese_basis=(source_lang == "simp_chinese" and target_lang in CHINESE_BASIS_TARGETS),
                             max_passes=qa_repair_max_passes, backup_dir=qa_backup_dir,
                             backup_relative_root=output_path, target_lang=target_lang,
                             normalize_spacing=normalize_spacing)
@@ -2371,11 +2442,11 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
                                             for event in qa_result.get("events", []))
                     for issue in issues:
                         qa_report.append({"source_file":str(f), "target_file":str(out), **issue})
-                    print(f"  自動QA・修正: error {severe} / warning {warn} / notice {notice} / 修正 {repaired}件 / 試行 {qa_result.get('repair_attempts',0)}回")
+                    print(i18n.t('u9.qa_repair_summary', error_count=severe, warning_count=warn, notice_count=notice, repaired_count=repaired, repair_attempts=qa_result.get('repair_attempts',0)))
                 except StopRequested:
                     raise
                 except Exception as exc:
-                    collect_file_error(out, "翻訳後QA", exc, action="翻訳結果を保持して継続")
+                    collect_file_error(out, "翻訳後QA", exc, action_id="keep_result_continue")
             if controller:
                 controller.notify(kind="file_done", file=str(f), file_no=i, file_total=len(file_info))
                 if controller.stop_event.is_set():
@@ -2384,7 +2455,7 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
         save_cache(cache_file, cache)
         save_source_manifest(cache_file, current_manifest)
         report_path = save_error_report(interrupted=True)
-        print("保存して中断しました。次回はキャッシュから再開できます。")
+        print(i18n.t('u9.saved_stop'))
         return {"processed": processed, "interrupted": True, "jobs": total_jobs, "failed": total_failed,
                 "spaces_removed": spaces_removed,
                 "skipped": sum(1 for row in file_errors if row.get("skipped")), "file_errors": file_errors,
@@ -2403,10 +2474,10 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
         })
     report_path = save_error_report(interrupted=False)
     if file_errors or total_failed:
-        print(f"警告付きで完了しました。スキップ {sum(1 for row in file_errors if row.get('skipped'))}ファイル / 翻訳失敗 {total_failed}件")
+        print(i18n.t('u9.completed_with_warnings', skipped_file_count=sum(1 for row in file_errors if row.get('skipped')), failed_count=total_failed))
     else:
-        print("完了しました。")
-    print(f"半角スペース除去: {spaces_removed}個")
+        print(i18n.t('u9.completed'))
+    print(i18n.t('u9.spaces_removed', count=spaces_removed))
     return {"processed": processed, "interrupted": False, "jobs": total_jobs, "failed": total_failed,
             "spaces_removed": spaces_removed,
             "skipped": sum(1 for row in file_errors if row.get("skipped")), "file_errors": file_errors,
@@ -2460,9 +2531,9 @@ def looks_like_proper_noun_candidate(key: str, source: str, target: str,
         return False, ""
     path_text = str(source_path or "").replace("\\", "/").lower()
     if "/names/" in path_text or "/dynasties/" in path_text:
-        return True, "中国語原文と同一で、names/dynasties配下の短い表記です"
+        return True, i18n.t('u9.proper_noun_path')
     if _PROPER_NOUN_KEY_RE.search(str(key or "")):
-        return True, "中国語原文と同一で、キー名が人物名・家名系の形式です"
+        return True, i18n.t('u9.proper_noun_key')
     return False, ""
 
 
@@ -2480,6 +2551,106 @@ def _qa_issue(key: str, severity: str, issue_type: str, message: str, value: str
     return row
 
 
+_QA_SCRIPT_PATTERNS = {
+    "han": re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\U00020000-\U0002ee5f\U0002f800-\U0002fa1f\U00030000-\U000323af]'),
+    "kana": re.compile(r'[\u3041-\u3096\u309d-\u309f\u30a1-\u30fa\u30fd-\u30ff\u31f0-\u31ff\uff66-\uff9f\U0001b000-\U0001b16f]'),
+    "hangul": re.compile(r'[\u1100-\u11ff\u3130-\u318f\ua960-\ua97f\uac00-\ud7af\ud7b0-\ud7ff]'),
+    "cyrillic": re.compile(r'[\u0400-\u052f\u1c80-\u1c8f\u2de0-\u2dff\ua640-\ua69f\U0001e030-\U0001e08f]'),
+}
+_QA_ENGLISH_FUNCTION_WORDS = frozenset({
+    "the", "of", "and", "to", "in", "on", "for", "by", "with", "from", "is", "are",
+    "this", "that", "your", "you", "will", "has", "have", "can", "be", "not",
+})
+_QA_ENGLISH_DISTINCTIVE_WORDS = frozenset({
+    "the", "of", "and", "with", "this", "that", "your", "you", "will", "has", "have", "are",
+})
+_QA_ICON_TOKEN_RE = re.compile(r'@[A-Za-z_][A-Za-z0-9_]*!')
+_QA_NAME_FILE_RE = re.compile(r'(?:^|_)(?:names|dynasties)(?:_l_[a-z_]+)?$', re.IGNORECASE)
+_QA_NAME_PARTICLES = frozenset({'de', 'del', 'della', 'di', 'da', 'do', 'dos', 'du', 'des',
+                               'van', 'von', 'der', 'den', 'la', 'le', 'of', 'al', 'el', 'bin', 'ibn'})
+_QA_KOREAN_HAN_ANNOTATION_RE = re.compile(
+    "(?<=" + _QA_SCRIPT_PATTERNS["hangul"].pattern + ")"
+    + r'(?:\([\s' + _QA_SCRIPT_PATTERNS["han"].pattern[1:-1] + r']+\)|（[\s'
+    + _QA_SCRIPT_PATTERNS["han"].pattern[1:-1] + r']+）)')
+
+
+def _qa_visible_text(value: str) -> str:
+    plain = _QA_ICON_TOKEN_RE.sub(' ', value or '')
+    return PLACEHOLDER_RE.sub(' ', _SPACING_TOKEN_RE.sub(' ', PROTECT_RE.sub(' ', plain))).strip()
+
+
+def script_mixture_issues(value: str, target_lang: str) -> List[Tuple[str, str, dict]]:
+    """Return QA-only script contamination; Japanese behavior is deliberately unchanged."""
+    if target_lang == DEFAULT_TARGET_LANG or target_lang not in TARGET_LANGUAGES:
+        return []
+    plain = _qa_visible_text(value)
+    script = target_language_script(target_lang)
+    issues = []
+    for kind, pattern in _QA_SCRIPT_PATTERNS.items():
+        if kind == script:
+            continue
+        characters = pattern.findall(plain)
+        if not characters:
+            continue
+        annotation_characters = []
+        if target_lang == "korean" and kind == "han":
+            annotations = _QA_KOREAN_HAN_ANNOTATION_RE.findall(plain)
+            annotation_characters = pattern.findall(''.join(annotations))
+        outside_count = len(characters) - len(annotation_characters)
+        if outside_count:
+            severity = "notice" if kind == "cyrillic" and script != "latin" else "warning"
+            issues.append((kind, severity, {"count": outside_count}))
+        if annotation_characters:
+            issues.append((kind, "notice", {"count": len(annotation_characters)}))
+    return issues
+
+
+def english_left_in_target(value: str, target_lang: str) -> bool:
+    """Conservative QA notice, independent of translation/retry validation."""
+    if target_lang in {DEFAULT_TARGET_LANG, "english"} or target_lang not in TARGET_LANGUAGES:
+        return False
+    plain = _qa_visible_text(value)
+    words = re.findall(r"[^\W_]+(?:['’][^\W_]+)?", plain)
+    words = [word for word in words if not any(character.isdigit() for character in word)
+             and not word.isupper()]
+    if target_language_script(target_lang) == "latin":
+        if len(words) < 3:
+            return False
+        lower_words = [word.lower() for word in words]
+        function_count = sum(word in _QA_ENGLISH_FUNCTION_WORDS for word in lower_words)
+        distinctive_count = sum(word in _QA_ENGLISH_DISTINCTIVE_WORDS for word in lower_words)
+        return distinctive_count >= 2 and function_count / len(words) >= 0.4
+    english_words = re.findall(r"[A-Za-z0-9_]+(?:['’][A-Za-z0-9_]+)?", plain)
+    english_words = [word for word in english_words if not word.isupper()
+                     and not re.search(r'[0-9_]', word)]
+    return sum(len(word) for word in english_words) >= 4 and (
+        len(english_words) >= 2 or any(len(word) >= 4 for word in english_words))
+
+
+def _qa_same_as_source_candidate(key: str, source: str, target: str, source_lang: str,
+                                 target_lang: str, source_path: Optional[Path]) -> bool:
+    if (target_lang == DEFAULT_TARGET_LANG or target_lang not in TARGET_LANGUAGES or source_lang == target_lang
+            or source.strip() != target.strip()):
+        return False
+    plain = _qa_visible_text(source)
+    if len(plain) <= 3 or not any(character.isalpha() for character in plain):
+        return False
+    words = re.findall(r"[^\W\d_]+(?:['’][^\W\d_]+)?", plain)
+    if not words or all(word.isupper() for word in words):
+        return False
+    name_words = [re.sub(r"^[dl]['’]", '', word, flags=re.IGNORECASE) for word in words]
+    if any(word[0].isupper() for word in name_words) and all(
+            word[0].isupper() or word.lower() in _QA_NAME_PARTICLES for word in name_words):
+        return False
+    if re.fullmatch(r'[A-Za-z0-9_.+\-/]+', plain) and any(character.isdigit() for character in plain):
+        return False
+    path_text = str(source_path or '').replace('\\', '/').lower()
+    if (_PROPER_NOUN_KEY_RE.search(key) or '/names/' in path_text or '/dynasties/' in path_text
+            or _QA_NAME_FILE_RE.search(Path(path_text).stem)):
+        return False
+    return True
+
+
 def qa_entries(target_entries: Dict[str,str], source_entries: Optional[Dict[str,str]] = None,
                source_lang: str = "english", glossary: Optional[dict] = None,
                source_path: Optional[Path] = None, target_lang: str = DEFAULT_TARGET_LANG) -> List[dict]:
@@ -2494,28 +2665,39 @@ def qa_entries(target_entries: Dict[str,str], source_entries: Optional[Dict[str,
     issues = []
     glossary = glossary or {}
     for key, value in target_entries.items():
+        for kind, severity, detail in script_mixture_issues(value, target_lang):
+            message_key = 'u9.script_' + kind + '_in_target'
+            issues.append(_qa_issue(key, severity, "script_" + kind, i18n.t(message_key, **detail), value,
+                                    rule_id="QA-SCRIPT-" + kind.upper() + "-001", repairable=False,
+                                    recommended_action=i18n.t('u9.review_content'),
+                                    message_parts=[ui_status.message_part(message_key, **detail)], **detail))
+        if english_left_in_target(value, target_lang):
+            issues.append(_qa_issue(key, "notice", "english_left", i18n.t('u9.english_left_in_target'), value,
+                                    rule_id="QA-ENGLISH-LEFT-001", repairable=False,
+                                    recommended_action=i18n.t('u9.review_content'),
+                                    message_parts=[ui_status.message_part('u9.english_left_in_target')]))
         _, removable_spaces = normalize_cjk_spacing(value, target_lang)
         if removable_spaces:
             issues.append(_qa_issue(key, "notice", "cjk_space",
-                                    f"文字の間に余分な半角スペースが{removable_spaces}個あります", value,
+                                    i18n.t('u9.extra_spaces', count=removable_spaces), value,
                                     rule_id="QA-SPACE-001", repairable=False,
-                                    recommended_action="内容を確認"))
+                                    recommended_action=i18n.t('u9.review_content'), message_parts=[ui_status.message_part('u9.extra_spaces', count=removable_spaces)]))
         # English residues can be detected without a source file.  When a source
         # entry is present, looks_untranslated() below performs the source-aware
         # check so the same issue is not reported twice.
         if (not source_entries or key not in source_entries) and foreign_in_output(value, target_lang):
-            label = ("中国語の未翻訳候補" if target_lang == DEFAULT_TARGET_LANG and looks_like_chinese_in_japanese(value)
-                     else "英語の未翻訳候補")
+            label = (i18n.t('u9.untranslated_chinese_candidate') if target_lang == DEFAULT_TARGET_LANG and looks_like_chinese_in_japanese(value)
+                     else i18n.t('u9.untranslated_english_candidate'))
             issues.append(_qa_issue(key, "error", "untranslated", label, value,
                                     rule_id="QA-UNTRANSLATED-EN-001", repairable=False,
-                                    recommended_action="原文を指定して再翻訳"))
+                                    recommended_action=i18n.t('u9.specify_source_retranslate'), message_parts=[ui_status.message_part('u9.untranslated_chinese_candidate') if target_lang == DEFAULT_TARGET_LANG and looks_like_chinese_in_japanese(value) else ui_status.message_part('u9.untranslated_english_candidate')]))
         for item in (typo_checks(value) if target_lang == DEFAULT_TARGET_LANG else ()):
             issues.append({"key": key, "value": value, "rule_id":"QA-TYPO-001",
-                           "repairable":False, "recommended_action":"内容を確認", **item})
+                           "repairable":False, "recommended_action":i18n.t('u9.review_content_reason'), **item})
         if '@@' in value:
-            issues.append(_qa_issue(key, "error", "placeholder", "内部プレースホルダ @@N@@ が残っています", value,
+            issues.append(_qa_issue(key, "error", "placeholder", i18n.t('u9.internal_placeholder'), value,
                                     rule_id="QA-PLACEHOLDER-001", repairable=bool(source_entries and key in source_entries),
-                                    recommended_action="原文から再翻訳"))
+                                    recommended_action=i18n.t('u9.retranslate_source'), message_parts=[ui_status.message_part('u9.internal_placeholder')]))
         if source_entries and key in source_entries:
             src = source_entries[key]
             if unusable_translation(src, value, source_lang, target_lang):
@@ -2523,27 +2705,26 @@ def qa_entries(target_entries: Dict[str,str], source_entries: Optional[Dict[str,
                                   if target_lang == DEFAULT_TARGET_LANG else (False, ""))
                 if proper:
                     issues.append(_qa_issue(key, "notice", "proper_noun_untranslated",
-                                            "固有名詞の可能性があるため原文同一表記を注意として扱います", value,
+                                            i18n.t('u9.proper_noun_notice'), value,
                                             rule_id="QA-PROPER-NOUN-001", repairable=False,
-                                            recommended_action="固有名詞として適切か確認", reason=reason))
+                                            recommended_action=i18n.t('u9.review_proper_noun'), reason=reason, message_parts=[ui_status.message_part('u9.proper_noun_notice')]))
                 else:
-                    msg = "簡体字中国語の原文が未翻訳のままです" if source_lang == "simp_chinese" else "原文が未翻訳のままです"
+                    msg = i18n.t('u9.untranslated_chinese_source') if source_lang == "simp_chinese" else i18n.t('u9.untranslated_source')
                     issues.append(_qa_issue(key, "error", "untranslated", msg, value,
                                             rule_id="QA-UNTRANSLATED-ZH-001" if source_lang == "simp_chinese" else "QA-UNTRANSLATED-EN-002",
-                                            repairable=True, recommended_action="原文から再翻訳"))
-            elif (target_lang != DEFAULT_TARGET_LANG and target_language_script(target_lang) == "latin"
-                  and src.strip() == value.strip() and re.search(r"[^\W\d_]{4,}", PROTECT_RE.sub("", src))):
-                issues.append(_qa_issue(key, "notice", "same_as_source",
-                                        "原文と同じ表記です（固有名詞なら問題ありません）", value,
+                                            repairable=True, recommended_action=i18n.t('u9.retranslate_unchanged'), message_parts=[ui_status.message_part('u9.untranslated_chinese_source') if source_lang == "simp_chinese" else ui_status.message_part('u9.untranslated_source')]))
+            elif _qa_same_as_source_candidate(key, src, value, source_lang, target_lang, source_path):
+                issues.append(_qa_issue(key, "warning", "same_as_source",
+                                        i18n.t('u9.identical_source'), value,
                                         rule_id="QA-SAME-AS-SOURCE-001", repairable=False,
-                                        recommended_action="固有名詞か、訳し忘れかを確認"))
+                                        recommended_action=i18n.t('u9.review_identical_source'), message_parts=[ui_status.message_part('u9.identical_source')]))
             src_tokens = extract_protected_tokens(src)
             dst_tokens = extract_protected_tokens(value)
             if src_tokens != dst_tokens:
-                issues.append(_qa_issue(key, "error", "syntax", "ゲーム変数/タグが原文と一致しません", value,
+                issues.append(_qa_issue(key, "error", "syntax", i18n.t('u9.token_mismatch'), value,
                                         rule_id="QA-TOKEN-001", repairable=True,
-                                        recommended_action="安全なトークン修復後、必要なら再翻訳",
-                                        expected_tokens=src_tokens, actual_tokens=dst_tokens))
+                                        recommended_action=i18n.t('u9.repair_tokens_action'),
+                                        expected_tokens=src_tokens, actual_tokens=dst_tokens, message_parts=[ui_status.message_part('u9.token_mismatch')]))
             # Translation-term QA: if a registered source term is present, require
             # its fixed Japanese term in the target.  This is especially useful for
             # Chinese historical/institutional terminology.
@@ -2551,22 +2732,22 @@ def qa_entries(target_entries: Dict[str,str], source_entries: Optional[Dict[str,
                 if src_term and dst_term and src_term in src and dst_term not in value:
                     issues.append({
                         "key": key, "severity": "warning", "type": "term_mismatch",
-                        "message": f"用語集指定『{src_term} → {dst_term}』が訳文に反映されていません",
+                        "message": i18n.t('u9.glossary_not_applied', source_term=src_term, target_term=dst_term), "message_parts": [ui_status.message_part('u9.glossary_not_applied', source_term=src_term, target_term=dst_term)],
                         "value": value, "source_term": src_term, "expected_term": dst_term,
                         "rule_id":"QA-TERM-001", "repairable":False,
-                        "recommended_action":"用語集と訳文を確認",
+                        "recommended_action":i18n.t('u9.review_glossary'),
                     })
     if source_entries:
         missing = set(source_entries) - set(target_entries)
         extra = set(target_entries) - set(source_entries)
         for key in sorted(missing):
-            issues.append(_qa_issue(key, "error", "missing_key", "訳文側にキーがありません", "",
+            issues.append(_qa_issue(key, "error", "missing_key", i18n.t('u9.missing_target_key'), "",
                                     rule_id="QA-MISSING-KEY-001", repairable=True,
-                                    recommended_action="原文から翻訳して追加"))
+                                    recommended_action=i18n.t('u9.translate_add_key'), message_parts=[ui_status.message_part('u9.missing_target_key')]))
         for key in sorted(extra):
-            issues.append(_qa_issue(key, "warning", "extra_key", "原文側に存在しないキーです", target_entries[key],
+            issues.append(_qa_issue(key, "warning", "extra_key", i18n.t('u9.extra_target_key'), target_entries[key],
                                     rule_id="QA-EXTRA-KEY-001", repairable=False,
-                                    recommended_action="古いキーか独自キーか確認"))
+                                    recommended_action=i18n.t('u9.review_extra_key'), message_parts=[ui_status.message_part('u9.extra_target_key')]))
     return issues
 
 
@@ -2818,7 +2999,8 @@ def qa_file_with_auto_repair(target_path: Path, source_path: Path, *,
             for job in jobs:
                 events.append({"pass": pass_no, "key": job["key"], "issue_type": job["issue_type"],
                                "action": "retranslate", "result": "failed",
-                               "error_type": type(exc).__name__, "message": str(exc)})
+                               "error_type": type(exc).__name__, "message": str(exc),
+                               "message_parts": [ui_status.message_part("u9.exception_detail", detail=str(exc))]})
             break
         updates = {}
         for job, translated_value in zip(jobs, translated):
@@ -2849,7 +3031,7 @@ def qa_file_with_auto_repair(target_path: Path, source_path: Path, *,
         rolled_back = True
         events.append({"pass": attempts, "key": "", "issue_type": "file",
                        "action": "rollback", "result": "restored",
-                       "reason": "修復前よりエラーが減らなかったため"})
+                       "reason": i18n.t('u9.repair_no_improvement')})
         final = qa_file(target_path, source_path, source_lang=detected_lang, glossary=glossary, target_lang=target_lang)
         final_errors = [x for x in final if x.get("severity") == "error"]
     return {
@@ -2924,6 +3106,10 @@ def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
         target = Path(pair.get("target_file") or pair.get("target") or "")
         source_lang = str(pair.get("source_language") or pair.get("lang") or "english")
         pair_target = target_language_of_pair(pair, target_lang)
+        pair_glossary = glossary if pair_target == DEFAULT_TARGET_LANG else None
+        if pair_target == "korean" and glossary_path:
+            korean_glossary = glossary_path_for_language(glossary_path, pair_target)
+            pair_glossary = load_glossary(korean_glossary) if korean_glossary.is_file() else None
         created_target = False
         try:
             if controller:
@@ -2931,16 +3117,16 @@ def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
                 controller.notify(kind="qa_repair_progress",stage="file_start",file_no=file_index,
                                   file_total=len(pair_list),source_file=str(source),target_file=str(target))
             if not source.is_file():
-                raise FileNotFoundError(f"原文ファイルが見つかりません: {source}")
+                raise FileNotFoundError(i18n.t('u9.source_file_missing', source_path=source))
             if not target.exists():
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(f"\ufeffl_{pair_target}:\n", encoding="utf-8")
                 created_target = True
             result = qa_file_with_auto_repair(
                 target, source, source_lang=source_lang,
-                glossary=glossary if pair_target == DEFAULT_TARGET_LANG else None,
+                glossary=pair_glossary,
                 model=model, url=url, provider=provider, api_key=api_key, preset=preset,
-                controller=controller, chinese_basis=(source_lang == "simp_chinese" and pair_target == DEFAULT_TARGET_LANG),
+                controller=controller, chinese_basis=(source_lang == "simp_chinese" and pair_target in CHINESE_BASIS_TARGETS),
                 max_passes=max_passes, backup_dir=backup_dir,
                 backup_relative_root=None,
                 progress_context={"file_no":file_index,"file_total":len(pair_list)},
@@ -2952,7 +3138,7 @@ def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
                 result.setdefault("events", []).append({
                     "pass":result.get("repair_attempts",0), "key":"", "issue_type":"file",
                     "action":"rollback_created_output", "result":"removed",
-                    "reason":"新規出力のエラーが減らなかったため",
+                    "reason":i18n.t('u9.new_output_no_improvement'),
                 })
             warnings = sum(1 for issue in result.get("issues", []) if issue.get("severity") == "warning")
             notices = sum(1 for issue in result.get("issues", []) if issue.get("severity") == "notice")
@@ -2980,8 +3166,8 @@ def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
                 target.unlink(missing_ok=True)
             failures.append({"source_file":str(source), "target_file":str(target),
                              "source_language":source_lang, "stage":"qa_auto_repair",
-                             "error_type":type(exc).__name__, "message":str(exc),
-                             "action":"スキップして次のファイルを継続"})
+                             "error_type":type(exc).__name__, "message":str(exc), "message_parts": [ui_status.message_part("u9.exception_detail", detail=str(exc))],
+                             "action":i18n.t('u9.skip_next_file')})
     return {
         "schema":2, "generated_at":time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "mode":"manual_auto_qa_repair", "backup_dir":str(backup_dir),"interrupted":interrupted,
@@ -3009,33 +3195,57 @@ def _is_auto_glossary_source_candidate(text: str, source_lang: str) -> bool:
     return len(plain) <= 60
 
 
-def build_auto_glossary_candidates(pairs: Iterable[dict]) -> List[dict]:
-    """Build terminology candidates from aligned source/Japanese localization files.
+def glossary_source_languages(target_lang: str = "japanese") -> tuple:
+    if target_lang == "japanese":
+        return ("english", "simp_chinese")
+    return tuple(sorted((lang for lang in KNOWN_SOURCE_LANGS if lang != target_lang),
+                        key=lambda lang: source_language_priority(lang, target_lang)))
+
+
+def _glossary_pair_priority(pair: dict, target_lang: str) -> int:
+    try:
+        language = parse_localization_file(Path(pair.get("source", "")))[0]
+    except Exception:
+        return 3
+    return source_language_priority(language, target_lang)
+
+
+def build_auto_glossary_candidates(pairs: Iterable[dict], target_lang: str = "japanese") -> List[dict]:
+    """Build terminology candidates from aligned source/target localization files.
 
     Repeated short source labels/terms are grouped by their exact source wording.
-    If existing Japanese localization uses more than one wording, all variants and
+    If existing target localization uses more than one wording, all variants and
     occurrence counts are retained so the UI can unify them later.
     """
     from collections import Counter, defaultdict
     grouped = defaultdict(Counter)
     langs = {}
     keys_by_source = defaultdict(list)
-    for pair in pairs:
+    seen = set()
+    pair_list = list(pairs)
+    if target_lang != "japanese":
+        pair_list.sort(key=lambda pair: _glossary_pair_priority(pair, target_lang))
+    for pair in pair_list:
         source = Path(pair.get("source", ""))
         target = Path(pair.get("target", ""))
         if not source.exists() or not target.exists():
             continue
         try:
             source_lang, source_entries, _ = parse_localization_file(source)
-            _, target_entries, _ = parse_localization_file(target)
+            target_language, target_entries, _ = parse_localization_file(target)
         except Exception:
             continue
-        if source_lang not in {"english", "simp_chinese"}:
+        if source_lang not in glossary_source_languages(target_lang) or target_language != target_lang:
             continue
         for key, src in source_entries.items():
+            identity = (str(target), key)
+            if target_lang != "japanese" and identity in seen:
+                continue
             dst = target_entries.get(key, "").strip()
             src = (src or "").strip()
-            if not dst or not src or looks_untranslated(src, dst, source_lang):
+            if src and dst:
+                seen.add(identity)
+            if not dst or not src or looks_untranslated(src, dst, source_lang, target_lang):
                 continue
             if not _is_auto_glossary_source_candidate(src, source_lang):
                 continue
@@ -3056,13 +3266,14 @@ def build_auto_glossary_candidates(pairs: Iterable[dict]) -> List[dict]:
             "conflict": len(variants) > 1,
             "keys": keys_by_source[src][:30],
             "source_kind": "auto",
-            "term_kind": _classify_glossary_term_kind(src, langs.get(src, "english"), keys_by_source[src][0], preferred),
+            "term_kind": _classify_glossary_term_kind(src, langs.get(src, "english"), keys_by_source[src][0], preferred, target_lang),
         })
     out.sort(key=lambda x: (not x["conflict"], -x["occurrences"], x["source"]))
     return out
 
 
-def _is_probable_specific_glossary_term(key: str, source: str, target: str, source_lang: str) -> bool:
+def _is_probable_specific_glossary_term(key: str, source: str, target: str, source_lang: str,
+                                       target_lang: str = "japanese") -> bool:
     """Conservative heuristic for names/titles that should not enter common-term mode.
 
     The filter intentionally errs on the side of keeping reusable terminology.  It
@@ -3091,7 +3302,7 @@ def _is_probable_specific_glossary_term(key: str, source: str, target: str, sour
         '子爵', '男爵', '女男爵', '国王', '女王', '皇帝', '女帝', '族長',
         '大公', '公', '王子', '王女',
     )
-    for suffix in jp_titles:
+    for suffix in jp_titles if target_lang == "japanese" else ():
         if dst != suffix and dst.endswith(suffix):
             prefix = dst[:-len(suffix)].strip(' ・·-—–')
             if prefix:
@@ -3143,7 +3354,8 @@ def _is_title_case_name(words: List[str]) -> bool:
     return capitalized >= (1 if words[0] == "the" else 2)
 
 
-def _classify_glossary_term_kind(source: str, source_lang: str, key: str = "", target: str = "") -> str:
+def _classify_glossary_term_kind(source: str, source_lang: str, key: str = "", target: str = "",
+                                target_lang: str = "japanese") -> str:
     """自動生成の用語候補の種類（要望C）。proper＝固有名詞、term＝単語、phrase＝定型句。原文の側だけで決める。
 
     定型句の第一の目印は文の終わりの記号（出来事の選択肢の短い返事 "Great!"、"So be it." など）と変数。
@@ -3171,17 +3383,17 @@ def _classify_glossary_term_kind(source: str, source_lang: str, key: str = "", t
     elif source_lang == "simp_chinese":
         if plain.startswith(("增加", "减少", "获得", "失去", "提高", "降低", "解锁", "允许", "禁止", "可以", "需要")):
             return "phrase"
-    if _is_probable_specific_glossary_term(key, source, target, source_lang):
+    if _is_probable_specific_glossary_term(key, source, target, source_lang, target_lang):
         return "proper"
     return "term"
 
 
 def build_import_glossary_candidates_from_records(records: Iterable[dict], source_kind: str = "import",
-                                                   mode: str = "common") -> List[dict]:
+                                                   mode: str = "common", target_lang: str = "japanese") -> List[dict]:
     """Build imported glossary candidates from already key-aligned records.
 
     mode="common": keep short reusable terms and filter obvious proper-name labels.
-    mode="all": retain every usable aligned source->Japanese pair.
+    mode="all": retain every usable aligned source->target pair.
     """
     from collections import Counter, defaultdict
     grouped = defaultdict(Counter)
@@ -3194,14 +3406,14 @@ def build_import_glossary_candidates_from_records(records: Iterable[dict], sourc
         src = str(rec.get('source_text', '') or '').strip()
         dst = str(rec.get('target_text', '') or '').strip()
         source_lang = str(rec.get('source_lang', 'english') or 'english')
-        if source_lang not in {'english', 'simp_chinese'}:
+        if source_lang not in glossary_source_languages(target_lang):
             continue
-        if not src or not dst or looks_untranslated(src, dst, source_lang):
+        if not src or not dst or looks_untranslated(src, dst, source_lang, target_lang):
             continue
         if mode == 'common':
             if not _is_auto_glossary_source_candidate(src, source_lang):
                 continue
-            if _is_probable_specific_glossary_term(key, src, dst, source_lang):
+            if _is_probable_specific_glossary_term(key, src, dst, source_lang, target_lang):
                 continue
         grouped[src][dst] += 1
         langs[src] = source_lang
@@ -3227,31 +3439,40 @@ def build_import_glossary_candidates_from_records(records: Iterable[dict], sourc
 
 
 def build_import_glossary_candidates(pairs: Iterable[dict], source_kind: str = "import",
-                                     mode: str = "common") -> List[dict]:
+                                     mode: str = "common", target_lang: str = "japanese") -> List[dict]:
     """Build glossary candidates from aligned localization file pairs."""
     records = []
-    for pair in pairs:
+    seen = set()
+    pair_list = list(pairs)
+    if target_lang != "japanese":
+        pair_list.sort(key=lambda pair: _glossary_pair_priority(pair, target_lang))
+    for pair in pair_list:
         source = Path(pair.get("source", ""))
         target = Path(pair.get("target", ""))
         if not source.exists() or not target.exists():
             continue
         try:
             source_lang, source_entries, _ = parse_localization_file(source)
-            _, target_entries, _ = parse_localization_file(target)
+            target_language, target_entries, _ = parse_localization_file(target)
         except Exception:
             continue
-        if source_lang not in {"english", "simp_chinese"}:
+        if source_lang not in glossary_source_languages(target_lang) or target_language != target_lang:
             continue
         for key, src in source_entries.items():
             if key not in target_entries:
                 continue
+            identity = (str(target), key)
+            if target_lang != "japanese" and identity in seen:
+                continue
+            seen.add(identity)
             records.append({
                 'key': key,
                 'source_text': src,
                 'target_text': target_entries.get(key, ''),
                 'source_lang': source_lang,
             })
-    return build_import_glossary_candidates_from_records(records, source_kind=source_kind, mode=mode)
+    return build_import_glossary_candidates_from_records(records, source_kind=source_kind, mode=mode,
+                                                         target_lang=target_lang)
 
 def resolve_auto_glossary_conflicts(provider: str, url: str, model: str, candidates: List[dict],
                                       preset: str = "General", api_key: str = "",
@@ -3306,7 +3527,7 @@ def classify_paratranz_glossary(items: list) -> dict:
     duplicates count source occurrences, including variants.
     """
     if not is_paratranz_glossary(items):
-        raise ValueError("ParaTranz の用語集（term / translation を持つリスト）ではありません。")
+        raise ValueError(i18n.t('u9.not_paratranz_glossary'))
     result = {"terms": {}, "meta": {}, "rules": [], "short_terms": [], "note_rules": []}
     counts = dict.fromkeys(("items", "terms", "from_variants", "rules", "affixes", "symbols",
                            "short_terms", "spaces_fixed", "duplicates", "note_rules"), 0)
@@ -3315,7 +3536,7 @@ def classify_paratranz_glossary(items: list) -> dict:
 
     def add_source(raw, item, variant_of=None):
         if not isinstance(raw, str) or not raw.strip() or not isinstance(item["translation"], str):
-            raise ValueError("原語と訳語は文字列で、原語は空白だけでない必要があります。")
+            raise ValueError(i18n.t('u9.paratranz_strings_required'))
         source = raw.strip()
         counts["spaces_fixed"] += int(source != raw)
         if source in seen:
@@ -3327,14 +3548,14 @@ def classify_paratranz_glossary(items: list) -> dict:
         note = note if isinstance(note, str) else ""
         entry = {"term": source, "translation": translation, "note": note}
         if translation.startswith("※"):
-            category, reason = "rules", "訳語が「※」で始まるルールの項目"
+            category, reason = "rules", i18n.t('u9.paratranz_rule_item')
         elif source.startswith("-") or source.endswith("-"):
-            category, reason = "affixes", "原語が「-」で始まるか終わる接辞の項目"
+            category, reason = "affixes", i18n.t('u9.paratranz_affix_item')
         elif not any(character.isalnum() and re.fullmatch(
                 r"[A-Za-z0-9\u1100-\u11ff\u3000-\u312f\u3130-\u318f\u31a0-\u31bf"
                 r"\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff\ua960-\ua97f\uac00-\ud7ff"
                 r"\uf900-\ufaff\uff66-\uffdc\U00020000-\U000323af]", character) for character in source):
-            category, reason = "symbols", "英字・数字・CJKの文字がない記号だけの項目"
+            category, reason = "symbols", i18n.t('u9.paratranz_symbol_item')
         else:
             category, reason = None, None
         if category:
@@ -3354,7 +3575,7 @@ def classify_paratranz_glossary(items: list) -> dict:
             result["short_terms"].append(entry)
             counts["short_terms"] += 1
         if any(word in note for word in ("ルール", "入れないように", "しないように", "禁止")):
-            result["note_rules"].append({**entry, "reason": "note にルールがある（自動でプロンプトには入れません）"})
+            result["note_rules"].append({**entry, "reason": i18n.t('u9.paratranz_note_rule')})
             counts["note_rules"] += 1
 
     for item in items:
@@ -3376,17 +3597,17 @@ def glossary_notation_rules_path(glossary_path: Path) -> Path:
 
 def save_paratranz_import(glossary_path, classified, mode) -> dict:
     if mode not in ("merge", "replace"):
-        raise ValueError("取り込み方法は merge または replace を指定してください。")
+        raise ValueError(i18n.t('u9.import_mode_required'))
     glossary_path = Path(glossary_path)
     with _JSON_SAVE_LOCK:
         problem = glossary_file_problem(glossary_path)
         if problem:
-            raise ValueError(problem + " 対応していない形式のファイルには上書きしません。")
+            raise ValueError(problem + i18n.t('u9.unsupported_overwrite'))
         existing = load_glossary(glossary_path)
         glossary = dict(existing) if mode == "merge" else {}
         metadata = load_json(glossary_variants_path(glossary_path), {})
         if not isinstance(metadata, dict):
-            raise ValueError("用語の補助ファイルが辞書形式ではないため上書きしません。")
+            raise ValueError(i18n.t('u9.invalid_terms_sidecar'))
         if mode == "replace":
             metadata = {source: value for source, value in metadata.items() if source in classified["terms"]}
         added, updated, conflicts = [], [], []
@@ -3404,7 +3625,7 @@ def save_paratranz_import(glossary_path, classified, mode) -> dict:
         rules_path = glossary_notation_rules_path(glossary_path)
         notation = load_json(rules_path, {}) if mode == "merge" else {}
         if not isinstance(notation, dict) or any(not isinstance(notation.get(key, []), list) for key in ("rules", "note_rules")):
-            raise ValueError("表記ルールのファイルの形式が不正なため上書きしません。")
+            raise ValueError(i18n.t('u9.invalid_rules_sidecar'))
         for key in ("rules", "note_rules"):
             entries = list(notation.get(key, []))
             for entry in classified[key]:
@@ -3562,17 +3783,21 @@ def compare_localization_entries(source_entries: Dict[str, str], target_entries:
         dst = target_entries.get(key, "")
         if key not in target_entries:
             status = "missing"
-            message = f"{target_language_label(target_lang)}側にキーがありません"
+            message_part = ui_status.message_part("u9.comparison_missing." + target_lang)
+            message = i18n.t('u9.comparison_missing', target_name=i18n.t("lang." + target_lang))
         elif key not in source_entries:
             status = "extra"
-            message = f"{target_language_label(target_lang)}側だけに存在するキーです"
+            message_part = ui_status.message_part("u9.comparison_extra." + target_lang)
+            message = i18n.t('u9.comparison_extra', target_name=i18n.t("lang." + target_lang))
         elif unusable_translation(src, dst, source_lang, target_lang):
             status = "untranslated"
-            message = "原文のまま残っている可能性があります"
+            message_part = ui_status.message_part('u9.comparison_untranslated')
+            message = ui_status.build_message([message_part])
         else:
             status = "ok"
-            message = "対応あり"
-        rows.append({"key": key, "status": status, "message": message, "source": src, "target": dst})
+            message_part = ui_status.message_part('u9.comparison_ok')
+            message = ui_status.build_message([message_part])
+        rows.append({"key": key, "status": status, "message": message, "message_parts": [message_part], "source": src, "target": dst})
     return rows
 
 
@@ -3584,6 +3809,9 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
                                   provider="Ollama", api_key="", qa_backup_root=None,
                                   qa_repair_max_passes=2, normalize_spacing: bool = True):
     """Translate only Simplified Chinese localization using Chinese wording as the terminology basis."""
+    target_lang = target_lang or DEFAULT_TARGET_LANG
+    if target_lang not in CHINESE_BASIS_TARGETS:
+        raise ValueError("Chinese-basis translation supports only Japanese and Korean")
     input_path = Path(input_path)
     output_path = Path(output_path)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -3591,6 +3819,8 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
     cache_file.parent.mkdir(parents=True, exist_ok=True)
     cache = load_cache(cache_file) if cache_file.exists() else {}
     current_manifest = build_source_manifest_for_language(input_path, "simp_chinese")
+    if target_lang != DEFAULT_TARGET_LANG:
+        current_manifest["target_lang"] = target_lang
     glossary = load_glossary(Path(glossary_path)) if glossary_path else {}
 
     if input_path.is_file():
@@ -3608,7 +3838,7 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
         if lang == "simp_chinese":
             chinese_files.append(f)
     if not chinese_files:
-        raise RuntimeError("簡体字中国語（l_simp_chinese）のYAMLファイルが見つかりませんでした。")
+        raise RuntimeError(i18n.t('u9.no_chinese_yaml'))
 
     total_jobs = total_failed = processed = spaces_removed = 0
     qa_errors = qa_warnings = qa_notices = 0
@@ -3645,7 +3875,7 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
                     model=model, url=url, provider=provider, api_key=api_key, preset=preset,
                     controller=controller, chinese_basis=True, max_passes=qa_repair_max_passes,
                     backup_dir=qa_backup_dir, backup_relative_root=output_path,
-                    normalize_spacing=normalize_spacing)
+                    normalize_spacing=normalize_spacing, target_lang=target_lang)
                 issues = qa_result["issues"]
                 spaces_removed += qa_result.get("spaces_removed", 0)
                 severe = sum(1 for x in issues if x["severity"] == "error")
@@ -3659,7 +3889,7 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
                                         for event in qa_result.get("events", []))
                 for issue in issues:
                     qa_report.append({"source_file": str(f), "target_file": str(out), **issue})
-                print(f"  中国語翻訳語 自動QA・修正: error {severe} / warning {warn} / notice {notice} / 修正 {qa_result.get('repaired',0)}件 / 試行 {qa_result.get('repair_attempts',0)}回")
+                print(i18n.t('u9.chinese_qa_summary', error_count=severe, warning_count=warn, notice_count=notice, repaired_count=qa_result.get('repaired',0), repair_attempts=qa_result.get('repair_attempts',0)))
             if controller:
                 controller.notify(kind="file_done", file=str(f), file_no=i, file_total=len(chinese_files))
                 if controller.stop_event.is_set():
@@ -3681,7 +3911,7 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
                        "repair_events":len(qa_repair_events)},
             "issues":qa_report, "repair_events":qa_repair_events,
         })
-    print(f"半角スペース除去: {spaces_removed}個")
+    print(i18n.t('u9.chinese_spaces_removed', count=spaces_removed))
     return {"interrupted": False, "processed_files": processed, "jobs": total_jobs, "failed": total_failed, "cache": str(cache_file), "output": str(output_path),
     "spaces_removed": spaces_removed,
             "qa_errors": qa_errors, "qa_warnings": qa_warnings, "qa_notices":qa_notices, "qa_repaired":qa_repaired,
@@ -3734,7 +3964,7 @@ def qa_translation_output(input_path: Path, output_path: Path, glossary_path=Non
             except Exception:
                 src_entries = {}
             for key in src_entries:
-                issues_all.append({"source_file": str(f), "target_file": str(out), "key": key, "severity": "error", "type": "missing_output", "message": f"対応する{target_language_label(target_lang)}の出力ファイルがありません", "value": ""})
+                issues_all.append({"source_file": str(f), "target_file": str(out), "key": key, "severity": "error", "type": "missing_output", "message": i18n.t('u9.missing_output', target_name=i18n.t("lang." + target_lang)), "message_parts": [ui_status.message_part('u9.missing_output', target_name=i18n.t("lang." + target_lang))], "value": ""})
             continue
         checked += 1
         source_ref = None if source_lang == target_lang else f
@@ -3753,8 +3983,11 @@ def qa_translation_output(input_path: Path, output_path: Path, glossary_path=Non
             "issues": issues_all}
 
 
-def qa_chinese_basis_translation(input_path: Path, output_path: Path, glossary_path=None) -> dict:
+def qa_chinese_basis_translation(input_path: Path, output_path: Path, glossary_path=None,
+                                target_lang: str = DEFAULT_TARGET_LANG) -> dict:
     """Run Chinese-source-aware QA against an existing Chinese-basis translation output."""
+    if target_lang not in CHINESE_BASIS_TARGETS:
+        raise ValueError("Chinese-basis translation supports only Japanese and Korean")
     input_path = Path(input_path)
     output_path = Path(output_path)
     glossary = load_glossary(Path(glossary_path)) if glossary_path else {}
@@ -3778,7 +4011,7 @@ def qa_chinese_basis_translation(input_path: Path, output_path: Path, glossary_p
         if lang != "simp_chinese":
             continue
         rel = f.parent.relative_to(base_dir) if input_path.is_dir() else Path(".")
-        out = output_path / remap_rel_dir(rel, DEFAULT_TARGET_LANG) / rename_for_target(f, DEFAULT_TARGET_LANG, "simp_chinese")
+        out = output_path / remap_rel_dir(rel, target_lang) / rename_for_target(f, target_lang, "simp_chinese")
         if not out.exists():
             missing_outputs += 1
             try:
@@ -3786,10 +4019,11 @@ def qa_chinese_basis_translation(input_path: Path, output_path: Path, glossary_p
             except Exception:
                 src_entries = {}
             for key in src_entries:
-                issues_all.append({"source_file": str(f), "target_file": str(out), "key": key, "severity": "error", "type": "missing_output", "message": "対応する日本語出力ファイルがありません", "value": ""})
+                issues_all.append({"source_file": str(f), "target_file": str(out), "key": key, "severity": "error", "type": "missing_output", "message": i18n.t('u9.missing_japanese_output', target_name=i18n.t("lang." + target_lang)), "message_parts": [ui_status.message_part('u9.missing_japanese_output', target_name=i18n.t("lang." + target_lang))], "value": ""})
             continue
         checked += 1
-        qa_result = qa_file_with_syntax_repair(out, f, source_lang="simp_chinese", glossary=glossary)
+        qa_result = qa_file_with_syntax_repair(out, f, source_lang="simp_chinese", glossary=glossary,
+                                             target_lang=target_lang)
         syntax_detected += qa_result["syntax_detected"]
         syntax_repaired += qa_result["syntax_repaired"]
         syntax_unresolved += qa_result["syntax_unresolved"]
@@ -3994,12 +4228,39 @@ def mod_localization_root(mod_root: Path) -> Optional[Path]:
 
 
 
-def _collect_mod_language_entries(mod_root: Path) -> dict:
-    """Collect localization entries by language plus source/Japanese shortcuts."""
+def _relation_source_languages(data: dict, *, target_lang: str = "japanese") -> dict:
+    if target_lang == "japanese":
+        return {"english": data.get("english") or {}, "simp_chinese": data.get("simp_chinese") or {}}
+    languages = data.get("languages") or {}
+    order = ["english", "simp_chinese", *sorted(set(languages) - {"english", "simp_chinese"})]
+    return {language: languages[language] for language in order
+            if language != target_lang and languages.get(language)}
+
+
+def _relation_source_view(languages: dict, preferred_source: str = "english",
+                          *, target_lang: str = "japanese") -> Tuple[dict, dict]:
+    order = ["english", "simp_chinese", *sorted(set(languages) - {"english", "simp_chinese"})]
+    if preferred_source != target_lang and languages.get(preferred_source):
+        order = [preferred_source, *[language for language in order if language != preferred_source]]
+    entries, language_by_key = {}, {}
+    for language in order:
+        if language == target_lang:
+            continue
+        for key, value in (languages.get(language) or {}).items():
+            if key not in entries:
+                entries[key] = value
+                language_by_key[key] = language
+    return entries, language_by_key
+
+
+def _collect_mod_language_entries(mod_root: Path, *, target_lang: str = "japanese") -> dict:
+    """Collect languages; historical Japanese field names alias the requested target."""
     loc = mod_localization_root(mod_root)
     result = {"localization": str(loc) if loc else "", "source": {}, "english": {},
               "simp_chinese": {}, "japanese": {}, "japanese_files": [], "languages": {},
               "language_files": {}}
+    if target_lang != "japanese":
+        result["language_paths"] = {}
     if not loc:
         return result
     for f in gather_yml_files(loc):
@@ -4010,7 +4271,9 @@ def _collect_mod_language_entries(mod_root: Path) -> dict:
         if lang:
             result["languages"].setdefault(lang, {}).update(entries)
             result["language_files"][lang] = int(result["language_files"].get(lang, 0)) + 1
-        if lang == "japanese":
+            if target_lang != "japanese":
+                result["language_paths"].setdefault(lang, {}).update({key: str(f) for key in entries})
+        if lang == target_lang:
             result["japanese"].update(entries)
             result["japanese_files"].append(str(f))
         elif lang == "english":
@@ -4020,6 +4283,8 @@ def _collect_mod_language_entries(mod_root: Path) -> dict:
     result["source"].update(result["english"])
     for k, v in result["simp_chinese"].items():
         result["source"].setdefault(k, v)
+    if target_lang != "japanese":
+        result["source"], _ = _relation_source_view(result["languages"], target_lang=target_lang)
     return result
 
 
@@ -4120,14 +4385,14 @@ def translation_localization_warnings(profile: dict, *, japanese_files: int,
     warnings = []
     if profile.get("legacy_english_japanese_layout"):
         warnings.append(
-            "古い日本語化方式の可能性があります。日本語文が英語localization（l_english）として収録されています。"
+            i18n.t('u9.legacy_translation_warning')
         )
     if (profile.get("translation_hint")
             and (profile.get("legacy_english_japanese_layout") or japanese_files > 0)
             and has_review_candidate
             and not has_external_translation):
         warnings.append(
-            "日本語化Mod形式ですが対応元Modを自動特定できません。対応元Modの未導入、古いバージョン、またはキーの大幅な変更が考えられます。"
+            i18n.t('u9.translation_source_unknown')
         )
     return warnings
 
@@ -4143,10 +4408,18 @@ def apply_translation_warning_status(result: dict) -> dict:
         if profile.get("legacy_english_japanese_layout")
         else "要確認（関連元未特定）"
     )
-    warning_text = "警告: " + " ".join(warnings)
-    message = str(result.get("message") or "")
-    if warning_text not in message:
-        result["message"] = (message + " " + warning_text).strip()
+    warning_ids = result.get("translation_warning_ids") or []
+    warning_part = (ui_status.message_part("u9.warnings_" + "_".join(warning_ids))
+                    if warning_ids else ui_status.message_part("u9.warning_text", warnings=" ".join(warnings)))
+    warning_text = ui_status.build_message([warning_part])
+    if result.get("message_parts"):
+        if warning_part not in result["message_parts"]:
+            result["message_parts"].append(warning_part)
+        result["message"] = ui_status.build_message(result["message_parts"])
+    else:
+        message = str(result.get("message") or "")
+        if warning_text not in message:
+            result["message"] = (message + " " + warning_text).strip()
     return result
 
 
@@ -4216,27 +4489,31 @@ def _mod_content_profile(mod_root: Path, japanese_files: int = 0,
     }
 
 
-def build_translation_mod_index(mod_roots: Iterable[Path]) -> List[dict]:
+def build_translation_mod_index(mod_roots: Iterable[Path], *, target_lang: str = "japanese") -> List[dict]:
     """Build a reusable index of Japanese-localization candidate Mods.
 
     Each candidate carries structural and descriptor evidence used by the weighted
     v0.11.33 relationship classifier.  The first-seen role gate is applied by the UI
     before roots reach this function.
     """
+    if target_lang == "english":
+        return []
     rows = []
     for root in mod_roots:
         root = Path(root)
-        data = _collect_mod_language_entries(root)
+        if game_language_warning(target_lang, root):
+            continue
+        data = _collect_mod_language_entries(root, target_lang=target_lang)
         ja = data.get("japanese", {})
         if not ja:
             continue
         jp_files = len(data.get("japanese_files") or [])
         # Count localization files by language and keep every language's exact key set.
         language_files = dict(data.get("language_files") or {})
-        en_files = int(language_files.get("english", 0) or 0)
-        zh_files = int(language_files.get("simp_chinese", 0) or 0)
+        en_files = int(language_files.get("english", 0) or 0) if target_lang != "english" else 0
+        zh_files = int(language_files.get("simp_chinese", 0) or 0) if target_lang != "simp_chinese" else 0
         other_language_files = sum(int(v or 0) for k, v in language_files.items()
-                                   if k not in {"japanese", "english", "simp_chinese"})
+                                   if k not in {target_lang, "english", "simp_chinese"})
         language_keys = {lang: set(entries or {}) for lang, entries in (data.get("languages") or {}).items()}
         loc_root = Path(data.get("localization") or localization_dir_path(root))
         localization_folder_names = []
@@ -4249,12 +4526,13 @@ def build_translation_mod_index(mod_roots: Iterable[Path]) -> List[dict]:
                 parts = list(Path(raw_file).parent.parts)
             for part in parts:
                 low = part.lower()
-                if low in {*LOCALIZATION_DIR_NAMES, "japanese", "ja"}:
+                if low in {*LOCALIZATION_DIR_NAMES, target_lang} or (target_lang == "japanese" and low == "ja"):
                     continue
                 if part and low not in seen_folder_names:
                     seen_folder_names.add(low)
                     localization_folder_names.append(part)
         rows.append({
+            "target_lang": target_lang,
             "path": str(root),
             "mod": detect_mod_name(root),
             "localization": data.get("localization", ""),
@@ -4268,45 +4546,49 @@ def build_translation_mod_index(mod_roots: Iterable[Path]) -> List[dict]:
             "other_language_files": other_language_files,
             "language_files": language_files,
             "language_keys": language_keys,
-            "source_language_entries": {
-                "english": dict((data.get("languages") or {}).get("english", {}) or {}),
-                "simp_chinese": dict((data.get("languages") or {}).get("simp_chinese", {}) or {}),
-            },
+            "source_language_entries": _relation_source_languages(data, target_lang=target_lang),
             "dependencies": _descriptor_dependency_names(root),
             "profile": _mod_content_profile(root, jp_files, en_files, zh_files, other_language_files),
         })
+        if target_lang != "japanese":
+            rows[-1]["language_paths"] = data.get("language_paths") or {}
     return rows
 
 
-def _normalize_mod_name_for_match(name: str) -> str:
+def _normalize_mod_name_for_match(name: str, *, target_lang: str = "japanese") -> str:
     text = (name or "").lower()
-    for token in ["japanese", "日本語化", "日本語", "translation", "localization", "localisation", "jp", "ja"]:
+    tokens = ["translation", "localization", "localisation", target_lang]
+    if target_lang == "japanese":
+        tokens = ["japanese", "日本語化", "日本語", "translation", "localization", "localisation", "jp", "ja"]
+    for token in tokens:
         text = text.replace(token, " ")
-    return re.sub(r'[^0-9a-z\u3040-\u30ff\u4e00-\u9fff]+', '', text)
+    if target_lang == "japanese":
+        return re.sub(r'[^0-9a-z\u3040-\u30ff\u4e00-\u9fff]+', '', text)
+    return re.sub(r'[^\w]+', '', text, flags=re.UNICODE)
 
 
-def _normalize_localization_folder_for_match(name: str) -> str:
+def _normalize_localization_folder_for_match(name: str, *, target_lang: str = "japanese") -> str:
     """Normalize a localization subfolder for supplementary Mod-name evidence."""
     text = (name or "").strip().lower()
     # Comprehensive translation packs commonly keep an explicit empty marker to
     # remember supported Mods even when the current translation payload is empty.
     text = re.sub(r'(?i)(?:[\s_\-\.]+)(?:empty|emptied|no[_\- ]?translation)$', '', text)
-    return _normalize_mod_name_for_match(text)
+    return _normalize_mod_name_for_match(text, target_lang=target_lang)
 
 
-def _localization_folder_name_evidence(source_name: str, row: dict) -> dict:
+def _localization_folder_name_evidence(source_name: str, row: dict, *, target_lang: str = "japanese") -> dict:
     """Return additive evidence when Japanese localization folders name the source Mod.
 
     This is intentionally supplementary only: the source-side exact-key gate remains
     mandatory, so a folder-name coincidence can improve ranking but cannot establish a
     relationship by itself.
     """
-    source_norm = _normalize_mod_name_for_match(source_name)
+    source_norm = _normalize_mod_name_for_match(source_name, target_lang=target_lang)
     if not source_norm:
         return {"points": 0.0, "matched_folder": "", "match_type": "none"}
     best = {"points": 0.0, "matched_folder": "", "match_type": "none"}
     for folder in row.get("localization_folder_names") or []:
-        folder_norm = _normalize_localization_folder_for_match(str(folder))
+        folder_norm = _normalize_localization_folder_for_match(str(folder), target_lang=target_lang)
         if not folder_norm:
             continue
         if folder_norm == source_norm:
@@ -4321,16 +4603,30 @@ def _localization_folder_name_evidence(source_name: str, row: dict) -> dict:
 
 def _external_gap_candidates(source_entries: Dict[str, str], japanese_entries: Dict[str, str],
                              english_entries: Optional[Dict[str, str]] = None,
-                             chinese_entries: Optional[Dict[str, str]] = None) -> List[dict]:
+                             chinese_entries: Optional[Dict[str, str]] = None, *, target_lang: str = "japanese",
+                             source_language_by_key: Optional[dict] = None) -> List[dict]:
     """Return real translation gaps for an external Japanese translation mod."""
     english_entries = english_entries or {}
     chinese_entries = chinese_entries or {}
+    if target_lang == "english":
+        english_entries = {}
+    if target_lang == "simp_chinese":
+        chinese_entries = {}
     candidates = []
     for key, source_text in source_entries.items():
+        if (source_language_by_key or {}).get(key) == target_lang:
+            continue
         in_en = key in english_entries
         in_zh = key in chinese_entries
         origin = "shared" if in_en and in_zh else "english_only" if in_en else "chinese_only" if in_zh else "other"
         source_lang = "english" if in_en else "simp_chinese" if in_zh else "english"
+        source_lang = (source_language_by_key or {}).get(key, source_lang)
+        if source_lang == target_lang:
+            continue
+        if target_lang == "english" and in_zh:
+            source_text = chinese_entries[key]
+        elif target_lang == "simp_chinese" and in_en:
+            source_text = english_entries[key]
         if looks_untranslatable(source_text):
             continue
         target = japanese_entries.get(key)
@@ -4339,19 +4635,21 @@ def _external_gap_candidates(source_entries: Dict[str, str], japanese_entries: D
                                "target_text": "", "confidence": "確定", "source_origin": origin,
                                "source_lang": source_lang, "needs_llm": False})
             continue
-        if looks_untranslated(source_text, target, source_lang):
+        if (looks_untranslated(source_text, target, source_lang, target_lang=target_lang)
+                or (target_lang != "japanese" and _qa_same_as_source_candidate(
+                    key, source_text, target, source_lang, target_lang, None))):
             candidates.append({"kind": "source_copy", "key": key, "source_text": source_text,
                                "target_text": target, "confidence": "確定", "source_origin": origin,
                                "source_lang": source_lang, "needs_llm": False})
             continue
-        if looks_foreign_in_target(target, "japanese"):
+        if looks_foreign_in_target(target, target_lang):
             candidates.append({"kind": "foreign_text", "key": key, "source_text": source_text,
                                "target_text": target, "confidence": "要確認", "source_origin": origin,
                                "source_lang": source_lang, "needs_llm": True})
     return candidates
 
 
-def _translation_mod_weight_legacy(source_name: str, source_keys: set, row: dict) -> dict:
+def _translation_mod_weight_legacy(source_name: str, source_keys: set, row: dict, *, target_lang: str = "japanese") -> dict:
     """Score one Japanese Mod candidate using two-stage exact-key evidence.
 
     v0.11.51 uses a fixed evidence threshold for ordinary/large Mods:
@@ -4377,7 +4675,7 @@ def _translation_mod_weight_legacy(source_name: str, source_keys: set, row: dict
     precision = overlap_n / max(1, len(ja_keys))
     profile = dict(row.get("profile") or {})
     dependencies = list(row.get("dependencies") or [])
-    source_norm = _normalize_mod_name_for_match(source_name)
+    source_norm = _normalize_mod_name_for_match(source_name, target_lang=target_lang)
 
     # Relationship gate.  Large Mods use a fixed 50-key requirement rather than
     # demanding 50% of the whole source Mod.  This keeps a 10,000-key Mod from
@@ -4411,9 +4709,9 @@ def _translation_mod_weight_legacy(source_name: str, source_keys: set, row: dict
     gameplay_dirs = list(profile.get("gameplay_dirs") or [])
     other_files = int(profile.get("other_files", 0) or 0)
     language_files = dict(row.get("language_files") or {})
-    japanese_file_count = int(language_files.get("japanese", row.get("japanese_files", 0)) or 0)
+    japanese_file_count = int(language_files.get(target_lang, row.get("japanese_files", 0)) or 0)
     non_japanese_loc_files = sum(
-        int(v or 0) for lang, v in language_files.items() if lang != "japanese"
+        int(v or 0) for lang, v in language_files.items() if lang != target_lang
     )
     pure_japanese_localization = bool(
         japanese_file_count > 0 and non_japanese_loc_files == 0 and non_loc == 0
@@ -4423,30 +4721,30 @@ def _translation_mod_weight_legacy(source_name: str, source_keys: set, row: dict
         # than ordinary localization-heavy Mods.  This intentionally separates a
         # dedicated translation package from a gameplay Mod that merely ships JP text.
         translation_only_points = 60.0
-        structure_label = "日本語localization専用（大幅加点）"
+        structure_label = i18n.t('u9.structure_japanese_only.target', target_name=i18n.t("lang." + target_lang))
     elif non_loc == 0:
         translation_only_points = 30.0
-        structure_label = "localization専用（他言語を含む）"
+        structure_label = i18n.t('u9.structure_localization_only')
     elif gameplay_files == 0 and other_files <= 3:
         translation_only_points = 27.5
-        structure_label = "日本語化補助ファイルのみ"
+        structure_label = i18n.t('u9.structure_helper_only.target', target_name=i18n.t("lang." + target_lang))
     elif gameplay_files == 0 and loc_ratio >= 0.80:
         translation_only_points = 22.5
-        structure_label = "localization中心"
+        structure_label = i18n.t('u9.structure_localization_focused')
     elif loc_ratio >= 0.60:
         translation_only_points = 15.0
-        structure_label = "localization優勢"
+        structure_label = i18n.t('u9.structure_localization_dominant')
     elif loc_ratio >= 0.30:
         translation_only_points = 7.5
-        structure_label = "localization混在"
+        structure_label = i18n.t('u9.structure_mixed')
     else:
         translation_only_points = 0.0
-        structure_label = "ゲーム内容中心"
+        structure_label = i18n.t('u9.structure_gameplay')
 
     dependency_match = False
     matched_dependency = ""
     for dep in dependencies:
-        dep_norm = _normalize_mod_name_for_match(dep)
+        dep_norm = _normalize_mod_name_for_match(dep, target_lang=target_lang)
         if source_norm and dep_norm and (source_norm == dep_norm or source_norm in dep_norm or dep_norm in source_norm):
             dependency_match = True; matched_dependency = dep; break
     dependency_points = 20.0 if dependency_match else 0.0
@@ -4467,7 +4765,7 @@ def _translation_mod_weight_legacy(source_name: str, source_keys: set, row: dict
     language_files = dict(row.get("language_files") or {})
     other_language_relations = []
     for lang, keys in sorted(language_keys.items()):
-        if lang == "japanese":
+        if lang == target_lang:
             continue
         keys = set(keys or set())
         if not keys:
@@ -4496,7 +4794,7 @@ def _translation_mod_weight_legacy(source_name: str, source_keys: set, row: dict
         avg_other_quality = 1.0
         other_language_penalty = 0.0
 
-    folder_evidence = _localization_folder_name_evidence(source_name, row)
+    folder_evidence = _localization_folder_name_evidence(source_name, row, target_lang=target_lang)
     localization_folder_points = float(folder_evidence.get("points", 0.0) or 0.0)
 
     # v0.11.57: protect against mistaking a base-game Japanese correction Mod for
@@ -4540,48 +4838,44 @@ def _translation_mod_weight_legacy(source_name: str, source_keys: set, row: dict
     else:
         classification = "rejected"
 
-    threshold_label = "100キー以上 → 50キー一致" if source_count >= 100 else "100キー未満 → 20%"
+    threshold_label = i18n.t('u9.legacy_threshold_large') if source_count >= 100 else i18n.t('u9.legacy_threshold_small')
     reasons = [
-        f"元Modキー完全一致率 {coverage*100:.1f}% ({overlap_n}/{source_count}) / 判定基準 {threshold_label} → {key_points:.1f}点",
-        f"参考: 日本語化Mod側一致率 {precision*100:.1f}% ({overlap_n}/{len(ja_keys)})",
-        f"構成評価 {structure_label}: 日本語YAML {japanese_file_count} / 他言語YAML {non_japanese_loc_files} / localization比率 {loc_ratio*100:.1f}% / 非localization {non_loc}ファイル → {translation_only_points:.1f}点",
-        (f"localizationフォルダ名一致『{folder_evidence.get('matched_folder')}』 → +{localization_folder_points:.1f}点"
-         if localization_folder_points > 0 else "localizationフォルダ名一致なし → 0.0点"),
-        (f"dependencies一致『{matched_dependency}』 → 20.0点" if dependency_match else "dependencies一致なし → 0.0点"),
-        f"ゲーム内容 {gameplay_files}ファイル / {len(gameplay_dirs)}分類 → {low_gameplay_points:.1f}点",
+        i18n.t('u9.legacy_source_coverage', percent=coverage*100, matched=overlap_n, total=source_count, threshold=threshold_label, points=key_points),
+        i18n.t('u9.legacy_candidate_coverage.target', percent=precision*100, matched=overlap_n, total=len(ja_keys), target_name=i18n.t("lang." + target_lang)),
+        i18n.t('u9.legacy_structure_score.target', kind=structure_label, japanese_file_count=japanese_file_count, other_language_file_count=non_japanese_loc_files, localization_percent=loc_ratio*100, non_localization_file_count=non_loc, points=translation_only_points, target_name=i18n.t("lang." + target_lang)),
+        (i18n.t('u9.legacy_folder_match', folder_name=folder_evidence.get('matched_folder'), points=localization_folder_points)
+         if localization_folder_points > 0 else i18n.t('u9.legacy_no_folder_match')),
+        (i18n.t('u9.legacy_dependency_match', dependency=matched_dependency) if dependency_match else i18n.t('u9.legacy_no_dependency')),
+        i18n.t('u9.legacy_gameplay_score', file_count=gameplay_files, category_count=len(gameplay_dirs), points=low_gameplay_points),
     ]
     if other_language_relations:
         details = ", ".join(
             f"{x['language']} {x['coverage']*100:.1f}% ({x['overlap_keys']}/{source_count})"
             for x in other_language_relations
         )
-        reasons.append(f"他言語localizationの元Mod関連度: {details} / 基準充足度平均 {avg_other_quality*100:.1f}% → {other_language_penalty:.1f}点")
+        reasons.append(i18n.t('u9.legacy_other_language_score', details=details, average_quality_percent=avg_other_quality*100, points=other_language_penalty))
     else:
-        reasons.append("他言語localizationなし → 減点なし")
+        reasons.append(i18n.t('u9.legacy_no_other_language'))
     if base_game_keys:
         if base_game_match_ratio >= 0.70:
             reasons.append(
-                f"日本語化Mod側から見たゲーム本体キー一致率 {base_game_match_ratio*100:.1f}% "
-                f"({base_game_match_n}/{len(ja_keys)}) / 70%以上 → 本体和訳修正の可能性が高いため "
-                f"{base_game_penalty:.1f}点"
+                i18n.t('u9.legacy_base_penalty.target', percent=base_game_match_ratio*100, matched=base_game_match_n, total=len(ja_keys), points=base_game_penalty, target_name=i18n.t("lang." + target_lang))
             )
         else:
             reasons.append(
-                f"日本語化Mod側から見たゲーム本体キー一致率 {base_game_match_ratio*100:.1f}% "
-                f"({base_game_match_n}/{len(ja_keys)}) / 70%未満 → 減点なし"
+                i18n.t('u9.legacy_base_no_penalty.target', percent=base_game_match_ratio*100, matched=base_game_match_n, total=len(ja_keys), target_name=i18n.t("lang." + target_lang))
             )
     else:
-        reasons.append("ゲーム本体キーを取得できないため、本体和訳修正例外の減点なし")
+        reasons.append(i18n.t('u9.legacy_base_unavailable' if target_lang == 'japanese' else 'u9.legacy_base_unavailable.language', target_name=i18n.t('lang.' + target_lang)))
     if pure_japanese_relation_gate and not ordinary_gate:
         reasons.append(
-            f"日本語localization専用の例外ゲート: 日本語化Mod側一致率 {precision*100:.1f}% / "
-            f"完全一致 {overlap_n}キー → 関係判定対象"
+            i18n.t('u9.legacy_exception_gate.target', percent=precision*100, matched=overlap_n, target_name=i18n.t("lang." + target_lang))
         )
     if not gate:
         if source_count >= 100:
-            reasons.append(f"元Modとの完全一致が必要値 50キー未満のため関係判定対象外")
+            reasons.append(i18n.t('u9.legacy_few_matches'))
         else:
-            reasons.append(f"元Modキーの完全一致率が必要値 {required_coverage*100:.0f}% 未満のため関係判定対象外")
+            reasons.append(i18n.t('u9.legacy_low_coverage', threshold_percent=required_coverage*100))
     return {
         "score": score, "raw_score": raw_score, "classification": classification,
         "precision": precision, "coverage": coverage, "source_match_ratio": coverage, "overlap_keys": overlap_n,
@@ -4615,7 +4909,7 @@ def _normalized_relation_text(value: str) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip())
 
 
-def classify_translation_candidate_role(row: dict) -> dict:
+def classify_translation_candidate_role(row: dict, *, target_lang: str = "japanese", source_language_entries: Optional[dict] = None, source_language_paths: Optional[dict] = None) -> dict:
     """Classify candidate shape independently from any one source Mod relation."""
     japanese_keys = set(row.get("japanese_keys") or set(row.get("japanese", {}) or {}))
     language_keys = dict(row.get("language_keys") or {})
@@ -4623,6 +4917,10 @@ def classify_translation_candidate_role(row: dict) -> dict:
     english_keys = set(language_keys.get("english") or set(source_entries.get("english", {}) or {}))
     chinese_keys = set(language_keys.get("simp_chinese") or set(source_entries.get("simp_chinese", {}) or {}))
     paired_keys = japanese_keys & (english_keys | chinese_keys)
+    if target_lang != "japanese":
+        paired_keys = japanese_keys & set().union(*[
+            set(keys) for language, keys in language_keys.items() if language != target_lang], *[
+            set(entries) for language, entries in source_entries.items() if language != target_lang])
     base_game_keys = set(row.get("base_game_keys") or set())
     japanese_count = len(japanese_keys)
     base_count = len(japanese_keys & base_game_keys)
@@ -4649,7 +4947,26 @@ def classify_translation_candidate_role(row: dict) -> dict:
         base_classification = "large_override_candidate"
     else:
         base_classification = "normal"
+    copy_evidence = {}
+    if target_lang not in {"japanese", "english"}:
+        originals = source_language_entries if source_language_entries is not None else source_entries
+        original_paths = source_language_paths if source_language_paths is not None else (row.get("language_paths") or {})
+        english = originals.get("english") or {}
+        chinese = originals.get("simp_chinese") or {}
+        comparable = identical = 0
+        for key, target in (row.get("japanese") or {}).items():
+            source_lang = "english" if key in english else "simp_chinese"
+            source = english.get(key) if key in english else chinese.get(key)
+            source_file = Path((original_paths.get(source_lang) or {}).get(key) or row.get("path") or "")
+            if source is None or not _qa_same_as_source_candidate(key, source, source, source_lang, target_lang, source_file):
+                continue
+            comparable += 1
+            identical += int(_qa_same_as_source_candidate(key, source, target, source_lang, target_lang, source_file))
+        copy_evidence = {"candidate_source_comparable": comparable, "candidate_source_identical": identical}
+        if comparable >= 20 and identical / comparable >= 0.80:
+            copy_evidence["candidate_rejected"] = "source_copy"
     return {
+        **copy_evidence,
         "candidate_total_keys": japanese_count,
         "candidate_base_keys": base_count,
         "candidate_base_rate": base_rate,
@@ -4667,15 +4984,22 @@ def classify_translation_candidate_role(row: dict) -> dict:
 
 def prepare_translation_source_profile(source_language_entries: dict,
                                        base_game_source_entries: Optional[dict] = None,
-                                       base_game_keys: Optional[set] = None) -> dict:
+                                       base_game_keys: Optional[set] = None, *, target_lang: str = "japanese") -> dict:
     """Precompute source-side vanilla identity once for repeated candidate checks."""
     source_language_entries = source_language_entries or {}
     source_english = source_language_entries.get("english") or {}
     source_chinese = source_language_entries.get("simp_chinese") or {}
+    if target_lang == "english":
+        source_english = {}
+    if target_lang == "simp_chinese":
+        source_chinese = {}
     source_entries = dict(source_english)
     for key, value in source_chinese.items():
         source_entries.setdefault(key, value)
     source_keys = set(source_entries)
+    if target_lang != "japanese":
+        source_entries, _ = _relation_source_view(source_language_entries, target_lang=target_lang)
+        source_keys = set(source_entries)
 
     base_entries = base_game_source_entries or {}
     base_english = base_entries.get("english") or {}
@@ -4701,6 +5025,18 @@ def prepare_translation_source_profile(source_language_entries: dict,
                 else:
                     changed_base.add(key)
 
+    if target_lang != "japanese":
+        source_entries, source_language_by_key = _relation_source_view(source_language_entries, target_lang=target_lang)
+        resolved_base_keys = set(base_game_keys or set()) | set().union(*[
+            set(entries) for language, entries in base_entries.items() if language != target_lang])
+        unchanged_vanilla, changed_base = set(), set()
+        for key, language in source_language_by_key.items():
+            language_base = base_entries.get(language) or {}
+            if key in language_base:
+                if _normalized_relation_text(source_entries[key]) == _normalized_relation_text(language_base[key]):
+                    unchanged_vanilla.add(key)
+                else:
+                    changed_base.add(key)
     return {
         "source_english": source_english,
         "source_chinese": source_chinese,
@@ -4779,13 +5115,14 @@ def relation_weighted_tier(source_rate: float, candidate_rate: float, overlap_ke
 
 
 def translation_relation_evidence(source_language_entries: dict, row: dict,
-                                  source_profile: Optional[dict] = None) -> dict:
+                                  source_profile: Optional[dict] = None, *, target_lang: str = "japanese") -> dict:
     """Return source/candidate relation evidence after vanilla and text filtering."""
     if source_profile is None:
         source_profile = prepare_translation_source_profile(
             source_language_entries,
             row.get("base_game_source_entries") or {},
             set(row.get("base_game_keys") or set()),
+            target_lang=target_lang,
         )
     source_english = source_profile.get("source_english") or {}
     source_chinese = source_profile.get("source_chinese") or {}
@@ -4811,7 +5148,14 @@ def translation_relation_evidence(source_language_entries: dict, row: dict,
     source_text_mismatches = 0
     for key in preverified_overlap:
         language = source_language_by_key.get(key)
-        if language == "english" and key in candidate_english:
+        if target_lang != "japanese" and key in (candidate_source.get(language) or {}):
+            source_text_present += 1
+            if _normalized_relation_text(source_profile["source_entries"][key]) == _normalized_relation_text(candidate_source[language][key]):
+                source_text_matches += 1
+                effective_overlap.add(key)
+            else:
+                source_text_mismatches += 1
+        elif language == "english" and key in candidate_english:
             source_text_present += 1
             if _normalized_relation_text(source_english[key]) == _normalized_relation_text(candidate_english[key]):
                 source_text_matches += 1
@@ -4873,7 +5217,7 @@ def translation_relation_evidence(source_language_entries: dict, row: dict,
         # 今までの条件に加え、情報量で重み付けした一致率でも紐付けない水準でないこと。
         relation_gate = bool(count_pass and (source_rate_pass or candidate_rate_pass) and weighted_tier != "reject")
         threshold_label = (
-            f"有効キー100以上 → {LARGE_RELATION_MIN_EFFECTIVE_KEYS}キーかつ双方向40%のどちらか"
+            i18n.t('u9.relation_large_threshold', min_keys=LARGE_RELATION_MIN_EFFECTIVE_KEYS)
         )
     else:
         required_match_count = max(1, int((len(source_effective_keys) * 0.20) + 0.999999))
@@ -4881,7 +5225,7 @@ def translation_relation_evidence(source_language_entries: dict, row: dict,
         candidate_rate_pass = candidate_rate >= 0.20
         count_pass = len(effective_overlap) >= required_match_count
         relation_gate = bool(count_pass and source_rate_pass and weighted_tier != "reject")
-        threshold_label = "有効キー100未満 → 元Mod側20%"
+        threshold_label = i18n.t('u9.relation_small_threshold')
     return {
         "raw_source_keys": len(source_keys),
         "source_effective_keys": len(source_effective_keys),
@@ -4918,17 +5262,17 @@ def translation_relation_evidence(source_language_entries: dict, row: dict,
 def _translation_mod_weight(source_name: str, source_keys: set, row: dict,
                             source_language_entries: Optional[dict] = None,
                             source_path: str = "",
-                            source_profile: Optional[dict] = None) -> dict:
+                            source_profile: Optional[dict] = None, *, target_lang: str = "japanese", source_language_paths: Optional[dict] = None) -> dict:
     """Score a relation only after candidate-role and effective-key gates pass."""
     source_language_entries = dict(source_language_entries or {})
     if not source_language_entries:
         source_language_entries = {"english": {key: "" for key in set(source_keys or set())}, "simp_chinese": {}}
-    evidence = translation_relation_evidence(source_language_entries, row, source_profile=source_profile)
-    role = classify_translation_candidate_role(row)
+    evidence = translation_relation_evidence(source_language_entries, row, source_profile=source_profile, target_lang=target_lang)
+    role = classify_translation_candidate_role(row, target_lang=target_lang, source_language_entries=source_language_entries, source_language_paths=source_language_paths)
     profile = dict(row.get("profile") or {})
     language_files = dict(row.get("language_files") or {})
-    japanese_file_count = int(language_files.get("japanese", row.get("japanese_files", 0)) or 0)
-    non_japanese_loc_files = sum(int(value or 0) for lang, value in language_files.items() if lang != "japanese")
+    japanese_file_count = int(language_files.get(target_lang, row.get("japanese_files", 0)) or 0)
+    non_japanese_loc_files = sum(int(value or 0) for lang, value in language_files.items() if lang != target_lang)
     non_loc = int(profile.get("non_localization_files", 0) or 0)
     gameplay_files = int(profile.get("gameplay_files", 0) or 0)
     gameplay_dirs = list(profile.get("gameplay_dirs") or [])
@@ -4937,25 +5281,25 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict,
     pure_japanese_localization = bool(japanese_file_count > 0 and non_japanese_loc_files == 0 and non_loc == 0)
     if pure_japanese_localization:
         translation_only_points = 60.0
-        structure_label = "日本語localization専用（大幅加点）"
+        structure_label = i18n.t('u9.structure_japanese_only_new.target', target_name=i18n.t("lang." + target_lang))
     elif non_loc == 0:
         translation_only_points = 30.0
-        structure_label = "localization専用（他言語を含む）"
+        structure_label = i18n.t('u9.structure_localization_only_new')
     elif gameplay_files == 0 and other_files <= 3:
         translation_only_points = 27.5
-        structure_label = "日本語化補助ファイルのみ"
+        structure_label = i18n.t('u9.structure_helper_only_new.target', target_name=i18n.t("lang." + target_lang))
     elif gameplay_files == 0 and loc_ratio >= 0.80:
         translation_only_points = 22.5
-        structure_label = "localization中心"
+        structure_label = i18n.t('u9.structure_localization_focused_new')
     elif loc_ratio >= 0.60:
         translation_only_points = 15.0
-        structure_label = "localization優勢"
+        structure_label = i18n.t('u9.structure_localization_dominant_new')
     elif loc_ratio >= 0.30:
         translation_only_points = 7.5
-        structure_label = "localization混在"
+        structure_label = i18n.t('u9.structure_mixed_new')
     else:
         translation_only_points = 0.0
-        structure_label = "ゲーム内容中心"
+        structure_label = i18n.t('u9.structure_gameplay_new')
 
     if gameplay_files <= 0:
         low_gameplay_points = 10.0
@@ -4966,8 +5310,8 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict,
     else:
         low_gameplay_points = 0.0
 
-    source_norm = _normalize_mod_name_for_match(source_name)
-    candidate_norm = _normalize_mod_name_for_match(str(row.get("mod", "")))
+    source_norm = _normalize_mod_name_for_match(source_name, target_lang=target_lang)
+    candidate_norm = _normalize_mod_name_for_match(str(row.get("mod", "")), target_lang=target_lang)
     name_match = bool(
         source_norm and candidate_norm and
         (source_norm == candidate_norm or
@@ -4977,7 +5321,7 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict,
     dependency_match = False
     matched_dependency = ""
     for dependency in row.get("dependencies") or []:
-        dependency_norm = _normalize_mod_name_for_match(str(dependency))
+        dependency_norm = _normalize_mod_name_for_match(str(dependency), target_lang=target_lang)
         if source_norm and dependency_norm and (
             source_norm == dependency_norm or source_norm in dependency_norm or dependency_norm in source_norm
         ):
@@ -4985,7 +5329,7 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict,
             matched_dependency = str(dependency)
             break
     dependency_points = 20.0 if dependency_match else 0.0
-    folder_evidence = _localization_folder_name_evidence(source_name, row)
+    folder_evidence = _localization_folder_name_evidence(source_name, row, target_lang=target_lang)
     localization_folder_points = float(folder_evidence.get("points", 0.0) or 0.0)
     folder_match = localization_folder_points > 0
     manual_translation = row.get("manual_role") == "translation"
@@ -5004,7 +5348,7 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict,
     )
     weighted_tier = str(evidence.get("weighted_tier") or "auto")
     numeric_gate = bool(evidence.get("relation_gate") or (multi_relation_gate and weighted_tier != "reject"))
-    final_gate = bool(numeric_gate and translation_shape_gate and base_role_gate)
+    final_gate = bool(numeric_gate and translation_shape_gate and base_role_gate and not role.get("candidate_rejected"))
 
     effective_overlap_n = int(evidence.get("effective_overlap_keys", 0) or 0)
     source_effective_n = int(evidence.get("source_effective_keys", 0) or 0)
@@ -5034,38 +5378,29 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict,
         classification = "candidate"  # 総合和訳（複数の元Modをまとめて訳したもの）は元Modごとの一致率が低くてよい
 
     reasons = [
-        f"生共通キー {evidence['raw_overlap_keys']}件 / バニラ持ち込み除外 {evidence['vanilla_carryover_keys']}件",
-        (f"共通キー内訳: 本体原文変更 {evidence['changed_base_overlap_keys']}件 / "
-         f"非本体 {evidence['non_base_overlap_keys']}件"),
-        (f"候補原文照合: 一致 {evidence['source_text_match_keys']}件 / "
-         f"不一致 {evidence['source_text_mismatch_keys']}件 / "
-         f"候補原文なし {max(0, evidence['preverified_overlap_keys'] - evidence['source_text_present_keys'])}件"),
-        (f"最終有効共通キー {effective_overlap_n}件 / 元Mod側 {evidence['effective_source_rate']*100:.1f}% / "
-         f"候補側 {evidence['effective_candidate_rate']*100:.1f}%"),
-        (f"関係ゲート: 件数 {'PASS' if evidence['effective_count_pass'] else 'FAIL'} / "
-         f"元Mod側 {'PASS' if evidence['effective_source_rate_pass'] else 'FAIL'} / "
-         f"候補側 {'PASS' if evidence['effective_candidate_rate_pass'] else 'FAIL'}"),
-        (f"候補構成: 本体キー {role['candidate_base_keys']}/{role['candidate_total_keys']} "
-         f"({role['candidate_base_rate']*100:.1f}%) / 非本体 {role['candidate_non_base_rate']*100:.1f}% / "
-         f"原文同梱 {role['candidate_paired_source_rate']*100:.1f}%"),
-        f"候補役割: {role['candidate_base_classification']} / {role['candidate_localization_shape']}",
+        i18n.t('u9.relation_raw_keys', shared_keys=evidence['raw_overlap_keys'], excluded_keys=evidence['vanilla_carryover_keys']),
+        (i18n.t('u9.relation_shared_breakdown', changed_base_keys=evidence['changed_base_overlap_keys'], non_base_keys=evidence['non_base_overlap_keys'])),
+        (i18n.t('u9.relation_source_check', matched=evidence['source_text_match_keys'], mismatched=evidence['source_text_mismatch_keys'], missing_source_keys=max(0, evidence['preverified_overlap_keys'] - evidence['source_text_present_keys']))),
+        (i18n.t('u9.relation_effective_keys', shared_keys=effective_overlap_n, source_percent=evidence['effective_source_rate']*100, candidate_percent=evidence['effective_candidate_rate']*100)),
+        (i18n.t('u9.relation_gate', count_result='PASS' if evidence['effective_count_pass'] else 'FAIL', source_result='PASS' if evidence['effective_source_rate_pass'] else 'FAIL', candidate_result='PASS' if evidence['effective_candidate_rate_pass'] else 'FAIL')),
+        (i18n.t('u9.relation_structure', base_keys=role['candidate_base_keys'], total_keys=role['candidate_total_keys'], base_percent=role['candidate_base_rate']*100, non_base_percent=role['candidate_non_base_rate']*100, paired_source_percent=role['candidate_paired_source_rate']*100)),
+        i18n.t('u9.relation_role', classification=role['candidate_base_classification'], localization_kind=role['candidate_localization_shape']),
     ]
     reasons.append(
-        f"情報量で重み付けした一致率（多くのModに共通するキーほど軽く数える）: "
-        f"元Mod側 {float(evidence.get('weighted_source_rate',0.0))*100:.1f}% / "
-        f"日本語化Mod側 {float(evidence.get('weighted_candidate_rate',0.0))*100:.1f}% → "
-        + {"auto": "自動で紐付けできる水準", "candidate": "候補の水準", "reject": "紐付けない水準"}.get(weighted_tier, weighted_tier)
+        i18n.t('u9.relation_weighted.target', source_percent=float(evidence.get('weighted_source_rate',0.0))*100, candidate_percent=float(evidence.get('weighted_candidate_rate',0.0))*100, level={"auto": i18n.t('u9.relation_auto_level'), "candidate": i18n.t('u9.relation_candidate_level'), "reject": i18n.t('u9.relation_reject_level')}.get(weighted_tier, weighted_tier), target_name=i18n.t("lang." + target_lang))
     )
     if multi_relation_gate:
         reasons.append(
-            f"総合和訳集合ゲート: 候補有効キー和集合率 {float(row.get('multi_translation_union_coverage', 0.0))*100:.1f}% → PASS"
+                i18n.t('u9.relation_union_gate' if target_lang == 'japanese' else 'u9.relation_union_gate.language', target_name=i18n.t('lang.' + target_lang), percent=float(row.get('multi_translation_union_coverage', 0.0))*100)
         )
     if not translation_shape_gate:
-        reasons.append("候補が原文と日本語を80%以上同梱する独立Mod型で、明示的な関係証拠がないため除外")
+        reasons.append(i18n.t('u9.relation_standalone_excluded.target', target_name=i18n.t("lang." + target_lang)))
     if not base_role_gate:
-        reasons.append("候補が本体キー80%以上・50キー以上の本体日本語化型で、明示的な関係証拠がないため除外")
+        reasons.append(i18n.t('u9.relation_base_excluded.target', target_name=i18n.t("lang." + target_lang)))
     if not numeric_gate:
-        reasons.append("有効なMod間関連キーのゲート未通過のため、構成点だけでは自動関連付けしない")
+        reasons.append(i18n.t('u9.relation_gate_failed'))
+    if role.get("candidate_rejected") == "source_copy":
+        reasons.append(i18n.t('u7.source_copy_rejected'))
 
     public_evidence = {key: value for key, value in evidence.items() if not key.startswith("_")}
     return {
@@ -5112,33 +5447,39 @@ def _translation_mod_weight(source_name: str, source_keys: set, row: dict,
     }
 
 
-def assign_translation_candidate_owners(source_roots: Iterable[Path], translation_index: Optional[List[dict]]) -> List[dict]:
+def assign_translation_candidate_owners(source_roots: Iterable[Path], translation_index: Optional[List[dict]], *, target_lang: str = "japanese") -> List[dict]:
     """Annotate Japanese-only candidates that collectively translate several Mods."""
-    rows = [dict(row) for row in (translation_index or [])]
+    if target_lang == "english":
+        return []
+    rows = [dict(row) for row in (translation_index or [])
+            if row.get("target_lang", "japanese") == target_lang
+            and not game_language_warning(target_lang, row.get("path"))]
     sources = []
     for root in source_roots or []:
         root = Path(root)
+        if game_language_warning(target_lang, root):
+            continue
         try:
             source_id = str(root.expanduser().resolve())
         except Exception:
             source_id = str(root)
-        data = _collect_mod_language_entries(root)
+        data = _collect_mod_language_entries(root, target_lang=target_lang)
         if data.get("source"):
-            sources.append((source_id, {
-                "english": dict(data.get("english") or {}),
-                "simp_chinese": dict(data.get("simp_chinese") or {}),
-            }))
+            sources.append((source_id, _relation_source_languages(data, target_lang=target_lang)))
     # プール全体の Mod の原文（英語・中国語）のキーから、キーごとの情報量を計算して各候補に持たせる。
     # 日本語のキーは数えない（訳されたキーほど「よく出る共通キー」と見なされて軽くなってしまうため）。
     keys_by_mod: Dict[str, set] = {}
     for source_id, entries in sources:
-        keys_by_mod.setdefault(source_id, set()).update(entries.get("english") or {}, entries.get("simp_chinese") or {})
+        keys_by_mod.setdefault(source_id, set()).update(*entries.values())
     for row in rows:
         try:
             row_id = str(Path(row.get("path", "")).expanduser().resolve())
         except Exception:
             row_id = str(row.get("path", ""))
-        for lang in ("english", "simp_chinese"):
+        for lang in (("english", "simp_chinese") if target_lang == "japanese"
+                     else (row.get("source_language_entries") or {})):
+            if lang == target_lang:
+                continue
             entries = (row.get("source_language_entries") or {}).get(lang) or {}
             if entries:
                 keys_by_mod.setdefault(row_id, set()).update(entries)
@@ -5147,7 +5488,7 @@ def assign_translation_candidate_owners(source_roots: Iterable[Path], translatio
         row["relation_key_weights"] = pool_weights
     source_profile_cache = {}
     for row in rows:
-        role = classify_translation_candidate_role(row)
+        role = classify_translation_candidate_role(row, target_lang=target_lang)
         manual_translation = row.get("manual_role") == "translation"
         if role.get("candidate_localization_shape") == "self_localized" and not manual_translation:
             continue
@@ -5170,9 +5511,10 @@ def assign_translation_candidate_owners(source_roots: Iterable[Path], translatio
                     source_entries,
                     row.get("base_game_source_entries") or {},
                     set(row.get("base_game_keys") or set()),
+                    target_lang=target_lang,
                 )
                 source_profile_cache[profile_key] = source_profile
-            evidence = translation_relation_evidence(source_entries, row, source_profile=source_profile)
+            evidence = translation_relation_evidence(source_entries, row, source_profile=source_profile, target_lang=target_lang)
             if int(evidence.get("effective_overlap_keys", 0) or 0) < LARGE_RELATION_MIN_EFFECTIVE_KEYS:
                 continue
             if evidence.get("weighted_tier") == "reject":
@@ -5208,21 +5550,18 @@ def assign_translation_candidate_owners(source_roots: Iterable[Path], translatio
             row["multi_translation_union_coverage"] = union_coverage
     return rows
 
-def rank_external_japanese_translations(mod_root: Path, translation_index: Optional[List[dict]]) -> List[dict]:
+def rank_external_japanese_translations(mod_root: Path, translation_index: Optional[List[dict]], *, target_lang: str = "japanese") -> List[dict]:
     """Return weighted Japanese-translation candidates ordered by score."""
-    if not translation_index:
+    if not translation_index or target_lang == "english" or game_language_warning(target_lang, mod_root):
         return []
     mod_root = Path(mod_root)
-    src_data = _collect_mod_language_entries(mod_root)
+    src_data = _collect_mod_language_entries(mod_root, target_lang=target_lang)
     source_entries = src_data.get("source", {})
     if not source_entries:
         return []
     source_keys = set(source_entries)
     source_name = detect_mod_name(mod_root)
-    source_language_entries = {
-        "english": src_data.get("english") or {},
-        "simp_chinese": src_data.get("simp_chinese") or {},
-    }
+    source_language_entries = _relation_source_languages(src_data, target_lang=target_lang)
     ranked = []
     source_profile_cache = {}
     try:
@@ -5230,6 +5569,9 @@ def rank_external_japanese_translations(mod_root: Path, translation_index: Optio
     except Exception:
         source_id = str(mod_root)
     for row in translation_index:
+        if (row.get("target_lang", "japanese") != target_lang
+                or game_language_warning(target_lang, row.get("path"))):
+            continue
         try:
             cand_path = Path(row.get("path", ""))
             if cand_path.resolve() == mod_root.resolve():
@@ -5249,6 +5591,7 @@ def rank_external_japanese_translations(mod_root: Path, translation_index: Optio
                 source_language_entries,
                 row.get("base_game_source_entries") or {},
                 set(row.get("base_game_keys") or set()),
+                target_lang=target_lang,
             )
             source_profile_cache[profile_key] = source_profile
         weight = _translation_mod_weight(
@@ -5258,13 +5601,18 @@ def rank_external_japanese_translations(mod_root: Path, translation_index: Optio
             source_language_entries=source_language_entries,
             source_path=source_id,
             source_profile=source_profile,
+            target_lang=target_lang,
+            source_language_paths=src_data.get("language_paths"),
         )
+        if weight.get("candidate_rejected") == "source_copy":
+            ranked.append({**row, **weight})
+            continue
         if manual_role == "translation" and source_id in manual_sources:
-            reasons = ["手動例外: この日本語化Modと元Modの対応関係をユーザーが指定"] + list(weight.get("reasons") or [])
+            reasons = [i18n.t('u9.manual_relation_override.target', target_name=i18n.t("lang." + target_lang))] + list(weight.get("reasons") or [])
             weight = {**weight, "score": 100.0, "raw_score": max(100.0, float(weight.get("raw_score",0.0) or 0.0)),
                       "classification": "auto", "manual_relation": True, "reasons": reasons}
         elif manual_role == "translation" and weight.get("overlap_keys", 0) > 0:
-            reasons = ["手動例外: このModを日本語化Modとして固定（対応元は自動判定）"] + list(weight.get("reasons") or [])
+            reasons = [i18n.t('u9.manual_translation_override.target', target_name=i18n.t("lang." + target_lang))] + list(weight.get("reasons") or [])
             weight = {**weight, "classification": ("auto" if weight.get("classification")=="auto" else "candidate"),
                       "manual_translation_role": True, "reasons": reasons}
         elif weight.get("overlap_keys", 0) <= 0:
@@ -5274,12 +5622,12 @@ def rank_external_japanese_translations(mod_root: Path, translation_index: Optio
     return ranked
 
 
-def find_external_japanese_translation(mod_root: Path, translation_index: Optional[List[dict]]) -> Optional[dict]:
+def find_external_japanese_translation(mod_root: Path, translation_index: Optional[List[dict]], *, target_lang: str = "japanese") -> Optional[dict]:
     """Find an automatically trusted separate Japanese translation Mod."""
-    ranked = rank_external_japanese_translations(mod_root, translation_index)
+    ranked = rank_external_japanese_translations(mod_root, translation_index, target_lang=target_lang)
     if not ranked:
         return None
-    src_data = _collect_mod_language_entries(Path(mod_root))
+    src_data = _collect_mod_language_entries(Path(mod_root), target_lang=target_lang)
     source_entries = src_data.get("source", {})
     # 自動で紐付けできる候補が複数あるときは、手動指定を最優先にし、次に元Modをいちばん多く
     # （情報量で重み付けして）訳しているものを選ぶ。構成の点数は同点のときの順位付けだけに使う。
@@ -5290,8 +5638,12 @@ def find_external_japanese_translation(mod_root: Path, translation_index: Option
     for row in autos:
         cand_path = Path(row.get("path", ""))
         ja = row.get("japanese", {}) or {}
-        gaps = _external_gap_candidates(source_entries, ja, src_data.get("english", {}), src_data.get("simp_chinese", {}))
+        _, language_by_key = _relation_source_view(
+            _relation_source_languages(src_data, target_lang=target_lang), target_lang=target_lang)
+        gaps = _external_gap_candidates(source_entries, ja, src_data.get("english", {}), src_data.get("simp_chinese", {}),
+                                       target_lang=target_lang, source_language_by_key=language_by_key)
         return {
+            "target_lang": target_lang,
             "mod": row.get("mod", cand_path.name),
             "path": str(cand_path),
             "localization": row.get("localization", ""),
@@ -5307,26 +5659,34 @@ def find_external_japanese_translation(mod_root: Path, translation_index: Option
         }
     return None
 
-def analyze_external_translation_coverage(source_mod_root: Path, japanese_mod_root: Path) -> dict:
+def analyze_external_translation_coverage(source_mod_root: Path, japanese_mod_root: Path, *, target_lang: str = "japanese") -> dict:
     """Compare one source mod's English/Chinese union with a separate Japanese mod."""
-    source_data = _collect_mod_language_entries(Path(source_mod_root))
-    japanese_data = _collect_mod_language_entries(Path(japanese_mod_root))
+    source_data = _collect_mod_language_entries(Path(source_mod_root), target_lang=target_lang)
+    japanese_data = _collect_mod_language_entries(Path(japanese_mod_root), target_lang=target_lang)
     source_entries = source_data.get("source", {})
     japanese_entries = japanese_data.get("japanese", {})
+    _, language_by_key = _relation_source_view(
+        _relation_source_languages(source_data, target_lang=target_lang), target_lang=target_lang)
     gaps = _external_gap_candidates(
         source_entries, japanese_entries,
-        source_data.get("english", {}), source_data.get("simp_chinese", {}))
-    return {
+        source_data.get("english", {}), source_data.get("simp_chinese", {}), target_lang=target_lang,
+        source_language_by_key=language_by_key)
+    result = {
+        "target_lang": target_lang,
         "gap_count": len(gaps),
         "gaps": gaps,
-        "gap_reason": gap_reason_text(gaps),
+        "gap_reason": gap_reason_text(gaps, target_lang=target_lang),
         "complete": len(gaps) == 0,
         "source_keys": len(source_entries),
         "japanese_keys": len(japanese_entries),
     }
+    warning = game_language_warning(target_lang, source_mod_root) or game_language_warning(target_lang, japanese_mod_root)
+    if warning:
+        result.update({"unsupported_game_language": True, "message": warning, "complete": False})
+    return result
 
 
-def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "english", translation_index: Optional[List[dict]] = None) -> dict:
+def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "english", translation_index: Optional[List[dict]] = None, *, target_lang: str = "japanese") -> dict:
     """Return a mod-level Japanese translation status without invoking an LLM.
 
     If ``translation_index`` is supplied, a separate Japanese translation mod is also
@@ -5336,11 +5696,13 @@ def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "engl
     loc = mod_localization_root(mod_root)
     name = detect_mod_name(mod_root)
     result = {
+        "target_lang": target_lang,
         "mod": name,
         "path": str(mod_root),
         "localization": str(loc) if loc else "",
         "status": "不明",
-        "message": f"{name}のlocalizationフォルダを確認できませんでした。",
+        "message_parts": [ui_status.message_part('u9.mod_localization_missing', mod_name=name)],
+        "message": i18n.t('u9.mod_localization_missing', mod_name=name),
         "source_files": 0,
         "simp_chinese_files": 0,
         "simp_chinese_keys": 0,
@@ -5367,8 +5729,14 @@ def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "engl
         "translation_format_profile": {},
         "translation_warnings": [],
     }
+    result["message"] = ui_status.build_message(result["message_parts"])
+    language_warning = game_language_warning(target_lang, mod_root)
+    if language_warning:
+        result["unsupported_game_language"] = True
+    if target_lang == "english":
+        result["external_check_skipped"] = "english_target"
     if not loc:
-        return result
+        return _translation_status_language_notice(result, mod_root, target_lang=target_lang)
 
     english_keys = set()
     english_entries = {}
@@ -5377,12 +5745,14 @@ def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "engl
     english_files = 0
     simp_chinese_files = 0
     japanese_files = 0
+    other_source_keys = set()
+    other_source_files = 0
     for f in gather_yml_files(loc):
         try:
             lang, entries, _ = parse_localization_file(f)
         except Exception:
             continue
-        if lang == "japanese":
+        if lang == target_lang:
             japanese_files += 1
             japanese_keys.update(entries.keys())
         elif lang == "english":
@@ -5392,12 +5762,16 @@ def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "engl
         elif lang == "simp_chinese":
             simp_chinese_files += 1
             simp_chinese_keys.update(entries.keys())
+        elif target_lang != "japanese" and lang in KNOWN_SOURCE_LANGS:
+            other_source_files += 1
+            other_source_keys.update(entries)
 
-    source_keys = english_keys | simp_chinese_keys
-    candidates = scan_translation_gaps(loc, preferred_source=preferred_source)
+    source_keys = english_keys | simp_chinese_keys | other_source_keys
+    language_fields = {"target_lang": target_lang} if target_lang != "japanese" else {}
+    candidates = scan_translation_gaps(loc, preferred_source=preferred_source, **language_fields)
     origin_counts = gap_origin_counts(candidates)
     result.update({
-        "source_files": english_files + simp_chinese_files,
+        "source_files": english_files + simp_chinese_files + other_source_files,
         "english_files": english_files,
         "english_keys": len(english_keys),
         "simp_chinese_files": simp_chinese_files,
@@ -5409,17 +5783,18 @@ def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "engl
         "chinese_only_keys": len(simp_chinese_keys - english_keys),
         "gap_count": len(candidates),
         "gap_origin_counts": origin_counts,
-        "gap_reason": gap_reason_text(candidates),
+        "gap_reason": gap_reason_text(candidates, target_lang=target_lang),
         "candidates": candidates,
     })
-    format_profile = translation_localization_format_profile(mod_root, english_entries)
+    format_profile = translation_localization_format_profile(mod_root, english_entries) if target_lang == "japanese" else {}
     result["translation_format_profile"] = format_profile
 
-    external = find_external_japanese_translation(mod_root, translation_index)
+    external_allowed = target_lang != "english" and not language_warning
+    external = find_external_japanese_translation(mod_root, translation_index, **language_fields) if external_allowed else None
     review_candidate = None
-    if not external and translation_index:
+    if not external and translation_index and external_allowed:
         try:
-            ranked_review = rank_external_japanese_translations(mod_root, translation_index)
+            ranked_review = rank_external_japanese_translations(mod_root, translation_index, **language_fields)
             review_candidate = next((x for x in ranked_review if x.get("classification") == "candidate"), None)
         except Exception:
             review_candidate = None
@@ -5453,12 +5828,17 @@ def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "engl
 
     if not source_keys:
         result["status"] = "対象なし"
-        result["message"] = f"{name}には判定対象となる英語/中国語ローカライズが見つかりませんでした。"
+        result["message_parts"] = [ui_status.message_part(
+            'u9.mod_no_sources' if target_lang == "japanese" else 'u9.mod_no_other_sources',
+            mod_name=name, target_name=target_lang)]
+        result["message"] = ui_status.build_message(result["message_parts"])
     elif japanese_files > 0 and japanese_keys and not candidates:
         result["status"] = "翻訳あり"
-        result["message"] = f"{name}のModは日本語翻訳が確認できました。"
+        result["message_parts"] = [ui_status.message_part('u9.mod_translated.target', mod_name=name, target_name=target_lang)]
+        result["message"] = ui_status.build_message(result["message_parts"])
         if external:
-            result["message"] += f" 別Mod『{external['mod']}』にも日本語化があります。"
+            result["message_parts"].append(ui_status.message_part('u9.mod_external_also.target', translation_mod_name=external['mod'], target_name=target_lang))
+            result["message"] = ui_status.build_message(result["message_parts"])
     elif external and external.get("complete"):
         result["status"] = "別Modで完全翻訳"
         result["gap_count"] = 0
@@ -5466,32 +5846,63 @@ def analyze_mod_translation_status(mod_root: Path, preferred_source: str = "engl
         # Once a separate translation mod covers the effective key set completely,
         # those source-side candidates are not real gaps and must not reach the LLM/UI.
         result["candidates"] = []
-        result["message"] = f"{name}には日本語化Mod『{external['mod']}』があり、完全な日本語化を確認できました。"
+        result["message_parts"] = [ui_status.message_part('u9.mod_external_complete.target', mod_name=name, translation_mod_name=external['mod'], target_name=target_lang)]
+        result["message"] = ui_status.build_message(result["message_parts"])
     elif external:
         result["status"] = "別Mod翻訳・欠損"
         result["gap_count"] = int(external.get("gap_count", 0))
         result["candidates"] = list(external.get("gaps", []))
-        result["message"] = f"{name}には日本語化Mod『{external['mod']}』がありますが、翻訳に欠損があります（{result['gap_count']}件）。 {gap_reason_text(result['candidates'])}。"
+        gap_counts = gap_origin_counts(result["candidates"])
+        result["message_parts"] = [ui_status.message_part(("u9.mod_external_gaps_" + ("_".join(origin for origin in ("english_only", "chinese_only", "shared", "other") if gap_counts[origin]) or "none")) + ".target", name=name, mod=external["mod"], gap_count=result["gap_count"], **{origin: gap_counts[origin] for origin in ("english_only", "chinese_only", "shared", "other") if gap_counts[origin]}, target_name=target_lang)]
+        result["message"] = ui_status.build_message(result["message_parts"])
     elif japanese_files == 0 or not japanese_keys:
         result["status"] = "翻訳なし"
-        result["message"] = f"{name}というModは日本語翻訳がありません。日本語化Modも確認できませんでした。"
+        result["message_parts"] = [ui_status.message_part('u9.mod_no_translation.target', mod_name=name, target_name=target_lang)]
+        result["message"] = ui_status.build_message(result["message_parts"])
     elif candidates:
         result["status"] = "欠損あり"
-        result["message"] = f"{name}のModに翻訳の欠損箇所があります（{len(candidates)}件）。 {gap_reason_text(candidates)}。"
+        gap_counts = gap_origin_counts(candidates)
+        result["message_parts"] = [ui_status.message_part(("u9.mod_translation_gaps_" + ("_".join(origin for origin in ("english_only", "chinese_only", "shared", "other") if gap_counts[origin]) or "none")) + ".target", name=name, gap_count=len(candidates), **{origin: gap_counts[origin] for origin in ("english_only", "chinese_only", "shared", "other") if gap_counts[origin]}, target_name=target_lang)]
+        result["message"] = ui_status.build_message(result["message_parts"])
     else:
         result["status"] = "翻訳あり"
-        result["message"] = f"{name}のModは日本語翻訳が確認できました。"
+        result["message_parts"] = [ui_status.message_part('u9.mod_translated_fallback.target', mod_name=name, target_name=target_lang)]
+        result["message"] = ui_status.build_message(result["message_parts"])
     if review_candidate and not external:
-        result["message"] += (f" 日本語化Mod候補『{review_candidate.get('mod','')}』を検出しましたが、"
-                              f"関連度 {float(review_candidate.get('score',0.0) or 0.0):.1f}/100 のため自動関連付けしていません。")
+        result["message_parts"].append(ui_status.message_part('u9.mod_review_candidate.target', mod_name=review_candidate.get('mod',''), score=float(review_candidate.get('score',0.0) or 0.0), target_name=target_lang))
+        result["message"] = ui_status.build_message(result["message_parts"])
     warnings = translation_localization_warnings(
         format_profile,
         japanese_files=japanese_files,
         has_review_candidate=bool(review_candidate),
         has_external_translation=bool(external),
-    )
+    ) if target_lang == "japanese" else []
     result["translation_warnings"] = warnings
-    return apply_translation_warning_status(result)
+    result["translation_warning_ids"] = []
+    if format_profile.get("legacy_english_japanese_layout"):
+        result["translation_warning_ids"].append("legacy")
+    if (format_profile.get("translation_hint")
+            and (format_profile.get("legacy_english_japanese_layout") or japanese_files > 0)
+            and review_candidate and not external):
+        result["translation_warning_ids"].append("source")
+    result = apply_translation_warning_status(result)
+    return _translation_status_language_notice(result, mod_root, target_lang=target_lang)
+
+
+def _translation_status_language_notice(result: dict, mod_root: Path, *, target_lang: str = "japanese") -> dict:
+    target_name = target_lang
+    for part in result.get("message_parts") or []:
+        part["fields"]["target_name"] = target_name
+    if result.get("external_check_skipped"):
+        result["message_parts"].append(ui_status.message_part("u9.external_english_skipped", target_name=target_name))
+    if result.get("unsupported_game_language"):
+        game = game_for_translation(mod_root)
+        supported = GAME_LANGUAGES.get(game) or ()
+        result["message_parts"].append(ui_status.message_part(
+            "u9.unsupported_game_language", game=game, target_name=target_name, target_lang=target_lang,
+            supported_game=game, supported_languages=list(supported)))
+    result["message"] = ui_status.build_message(result.get("message_parts"))
+    return result
 
 # ---------------------------------------------------------------------------
 # Automatic Paradox / Steam mod-location discovery
@@ -5886,19 +6297,24 @@ def mod_location_kind(path: str) -> str:
     raw = str(path or "").replace("\\", "/").lower()
     if not raw:
         return ""
-    return "Steam Workshop" if "/workshop/content/" in raw else "ローカル"
+    return "Steam Workshop" if "/workshop/content/" in raw else i18n.t('u9.local_location')
 
 
-def _relation_name_tokens(name: str) -> set:
+def _relation_name_tokens(name: str, *, target_lang: str = "japanese") -> set:
     low = str(name or "").lower()
     words = set(re.findall(r"[a-z0-9]{3,}", low))
     words |= set(re.findall(r"[぀-ヿ一-鿿]{2,}", low))
-    return {w for w in words if w not in _RELATION_NAME_STOPWORDS}
+    stopwords = _RELATION_NAME_STOPWORDS
+    if target_lang != "japanese":
+        stopwords = {"translation", "translated", "localisation", "localization", "mod", "mods",
+                     "the", "and", "for", target_lang}
+        words = set(re.findall(r"[^\W_]{3,}", low))
+    return {w for w in words if w not in stopwords}
 
 
-def _relation_names_look_related(a: str, b: str) -> Optional[bool]:
+def _relation_names_look_related(a: str, b: str, *, target_lang: str = "japanese") -> Optional[bool]:
     """名前に共通の語があれば True、無ければ False、判断できなければ None。"""
-    ta, tb = _relation_name_tokens(a), _relation_name_tokens(b)
+    ta, tb = _relation_name_tokens(a, target_lang=target_lang), _relation_name_tokens(b, target_lang=target_lang)
     if not ta or not tb:
         return None
     if ta & tb:
@@ -5907,20 +6323,32 @@ def _relation_names_look_related(a: str, b: str) -> Optional[bool]:
     return bool(na and nb and (na in nb or nb in na))
 
 
-def build_relation_report(results: Iterable[dict]) -> dict:
+def _relation_report_target_fields(*, target_lang: str = "japanese") -> Tuple[str, str, str]:
+    target_name = i18n.t_lang("japanese", "lang." + target_lang)
+    return tuple(i18n.t_lang("japanese", key, target_name=target_name) for key in (
+        "u9.report_target_match_field", "u9.report_target_weighted_field", "u9.report_target_mod_field"))
+
+
+def build_relation_report(results: Iterable[dict], *, target_lang: str = "japanese") -> dict:
     """翻訳状況の調査結果から、紐付けの一覧（rows）と日本語化Modごとの集計（by_translation）を作る。"""
+    target_match_field, target_weighted_field, target_mod_field = _relation_report_target_fields(target_lang=target_lang)
     rows = []
     for r in results or []:
         if not r.get("path"):
             continue
-        if r.get("external_translation_mod"):
-            prefix, kind = "external_translation", "自動で紐付け"
+        # 種別は ID（_kind_id）で判断する。「種別」の欄は表示とレポート用の文。
+        relation_kinds = {"auto": i18n.t('u9.automatic_link'), "candidate": i18n.t('u9.candidate_link'), "": ""}
+        if r.get("unsupported_game_language") or target_lang == "english":
+            prefix, kind_id = "", ""
+        elif r.get("external_translation_mod"):
+            prefix, kind_id = "external_translation", "auto"
             if r.get("external_translation_confidence") == "candidate":
-                kind = "候補（自動では紐付けず）"
+                kind_id = "candidate"
         elif r.get("translation_candidate_mod"):
-            prefix, kind = "translation_candidate", "候補（自動では紐付けず）"
+            prefix, kind_id = "translation_candidate", "candidate"
         else:
-            prefix, kind = "", ""
+            prefix, kind_id = "", ""
+        kind = relation_kinds[kind_id]
         get = (lambda k, d=None: r.get(f"{prefix}_{k}", d)) if prefix else (lambda k, d=None: d)
         target_path = str(get("path", "") or "")
         coverage = float(get("coverage", 0.0) or 0.0)
@@ -5936,11 +6364,12 @@ def build_relation_report(results: Iterable[dict]) -> dict:
             "紐付け先": str(get("mod", "") or ""),
             "紐付け先の保管場所": mod_location_kind(target_path),
             "種別": kind,
+            "_kind_id": kind_id,
             "点数": round(float(get("score", 0.0) or 0.0), 1) if prefix else "",
             "元Mod側の一致率": f"{coverage*100:.1f}%" if prefix else "",
-            "日本語化Mod側の一致率": f"{precision*100:.1f}%" if prefix else "",
+            target_match_field: f"{precision*100:.1f}%" if prefix else "",
             "重み付き一致率（元Mod側）": f"{w_coverage*100:.1f}%" if prefix else "",
-            "重み付き一致率（日本語化Mod側）": f"{w_precision*100:.1f}%" if prefix else "",
+            target_weighted_field: f"{w_precision*100:.1f}%" if prefix else "",
             "要確認": "",
             "根拠": " / ".join(reasons[:6]),
             "元Modの場所": str(r.get("path") or ""),
@@ -5958,24 +6387,24 @@ def build_relation_report(results: Iterable[dict]) -> dict:
         if not row["紐付け先"]:
             row["要確認"] = ""
             continue
-        if row["種別"].startswith("候補"):
-            flags.append("候補のみ（自動では紐付けていない）")
+        if row["_kind_id"] == "candidate":
+            flags.append(i18n.t('u9.report_candidate_only'))
         if row["_coverage"] < RELATION_REPORT_LOW_COVERAGE:
-            flags.append(f"元Modのキーとの一致が少ない（重み付き {row['重み付き一致率（元Mod側）']}）")
-        related = _relation_names_look_related(row["元Mod"], row["紐付け先"])
+            flags.append(i18n.t('u9.report_low_match', percent=row['重み付き一致率（元Mod側）']))
+        related = _relation_names_look_related(row["元Mod"], row["紐付け先"], target_lang=target_lang)
         if related is False:
-            flags.append("名前が似ていない")
+            flags.append(i18n.t('u9.report_names_unrelated'))
         linked = by_target.get(row["紐付け先の場所"], [])
-        auto_links = [x for x in linked if x["種別"] == "自動で紐付け"]
+        auto_links = [x for x in linked if x["_kind_id"] == "auto"]
         # 自動の紐付けが2つ以上あるとき、または候補が「すでに別の元Modに使われている日本語化Mod」を指すとき。
-        if len(linked) > 1 and (len(auto_links) > 1 or row["種別"] != "自動で紐付け"):
-            flags.append("同じ日本語化Modが複数の元Modに紐付いている")
+        if len(linked) > 1 and (len(auto_links) > 1 or row["_kind_id"] != "auto"):
+            flags.append(i18n.t('u9.report_multiple_sources.target', target_name=i18n.t("lang." + target_lang)))
         row["要確認"] = "、".join(flags)
 
     by_translation = []
     for target_path, linked in sorted(by_target.items(), key=lambda kv: kv[1][0]["紐付け先"].lower()):
         by_translation.append({
-            "日本語化Mod": linked[0]["紐付け先"],
+            target_mod_field: linked[0]["紐付け先"],
             "保管場所": linked[0]["紐付け先の保管場所"],
             "元Modの数": len(linked),
             "元Mod": "、".join(f"{x['元Mod']}（{x['種別'] or '—'}）" for x in linked),
@@ -5983,8 +6412,9 @@ def build_relation_report(results: Iterable[dict]) -> dict:
         })
     for row in rows:
         row.pop("_coverage", None)
+        row.pop("_kind_id", None)
     rows.sort(key=lambda x: (0 if x["要確認"] else 1, x["ゲーム"], x["元Mod"].lower()))
-    return {"rows": rows, "by_translation": by_translation}
+    return {"rows": rows, "by_translation": by_translation, "target_lang": target_lang}
 
 
 def relation_report_csv(report: dict) -> str:
@@ -5993,42 +6423,48 @@ def relation_report_csv(report: dict) -> str:
     buf = io.StringIO()
     fields = list(rows[0].keys()) if rows else ["ゲーム", "元Mod", "紐付け先", "要確認"]
     w = csv.DictWriter(buf, fieldnames=fields, lineterminator="\n")
-    w.writeheader()
+    column_keys = {"ゲーム": "u9.column_game", "元Mod": "u9.column_source_mod", "元Modの保管場所": "u9.column_source_storage", "状態": "u9.column_status", "紐付け先": "u9.column_linked_mod", "紐付け先の保管場所": "u9.column_linked_storage", "種別": "u9.column_type", "点数": "u9.column_score", "元Mod側の一致率": "u9.column_source_match", "日本語化Mod側の一致率": "u9.column_translation_match", "重み付き一致率（元Mod側）": "u9.column_source_weighted", "重み付き一致率（日本語化Mod側）": "u9.column_translation_weighted", "要確認": "u9.column_review", "根拠": "u9.column_evidence", "元Modの場所": "u9.column_source_path", "紐付け先の場所": "u9.column_linked_path"}
+    target_lang = report.get("target_lang", "japanese")
+    if target_lang != "japanese":
+        target_match_field, target_weighted_field, _ = _relation_report_target_fields(target_lang=target_lang)
+        column_keys[target_match_field] = "u9.column_translation_match.target"
+        column_keys[target_weighted_field] = "u9.column_translation_weighted.target"
+    w.writerow({field: i18n.t(column_keys[field], target_name=i18n.t("lang." + target_lang))
+                if field in column_keys else field for field in fields})
     for row in rows:
-        w.writerow(row)
+        w.writerow({field: ui_status.display_status(value) if field == "状態" else value
+                    for field, value in row.items()})
     return buf.getvalue()
 
 
-def relation_report_markdown(report: dict, title: str = "紐付けレポート") -> str:
+def relation_report_markdown(report: dict, title: str = None, *, target_lang: str = "japanese") -> str:
+    target_match_field, target_weighted_field, target_mod_field = _relation_report_target_fields(target_lang=target_lang)
+    title = i18n.t("u9.report_title") if title is None else title
     def cell(v):
         return str(v).replace("|", "／").replace("\n", " ")
     rows = report.get("rows") or []
     flagged = [r for r in rows if r.get("要確認")]
     out = [f"# {title}", "",
-           "一致率の「重み付き」は、多くのModに共通して出てくるキー（国名など）ほど軽く数えた割合です"
-           "（キーの重み = log((Mod数 + 1) ÷ そのキーを原文に持つMod数)）。", "",
-           f"元Mod {len(rows)}件のうち、紐付けあり {sum(1 for r in rows if r.get('紐付け先'))}件、"
-           f"要確認 {len(flagged)}件。", "",
-           "「要確認」の印の意味：候補のみ＝自動では紐付けていない／一致が少ない＝元Modのキーのうち日本語化Modにもある割合"
-           f"（重み付き）が{RELATION_REPORT_LOW_COVERAGE*100:.0f}%未満／名前が似ていない＝名前に共通の語が無い／"
-           "複数に紐付き＝同じ日本語化Modが2つ以上の元Modに紐付いている（総合和訳なら正しいこともある）。", "",
-           "## 元Modごとの紐付け（要確認を先に表示）", "",
-           "| 要確認 | ゲーム | 元Mod | 元Modの保管場所 | 状態 | 紐付け先 | 紐付け先の保管場所 | 種別 | 点数 | 重み付き一致率（元Mod側） | 重み付き一致率（日本語化Mod側） |",
+           i18n.t('u9.report_weight_explanation'), "",
+           i18n.t('u9.report_summary', mod_count=len(rows), linked_count=sum(1 for r in rows if r.get('紐付け先')), review_count=len(flagged)), "",
+           i18n.t('u9.report_flag_explanation.target', threshold_percent=RELATION_REPORT_LOW_COVERAGE*100, target_name=i18n.t("lang." + target_lang)), "",
+           i18n.t('u9.report_source_heading'), "",
+           i18n.t('u9.report_source_columns.target', target_name=i18n.t("lang." + target_lang)),
            "|---|---|---|---|---|---|---|---|---:|---:|---:|"]
     for r in rows:
-        out.append("| " + " | ".join(cell(r.get(k, "")) for k in (
+        out.append("| " + " | ".join(cell(ui_status.display_status(r.get(k, "")) if k == "状態" else r.get(k, "")) for k in (
             "要確認", "ゲーム", "元Mod", "元Modの保管場所", "状態", "紐付け先", "紐付け先の保管場所",
-            "種別", "点数", "重み付き一致率（元Mod側）", "重み付き一致率（日本語化Mod側）")) + " |")
-    out += ["", "## 日本語化Modごとの紐付け先", "",
-            "| 日本語化Mod | 保管場所 | 元Modの数 | 元Mod |", "|---|---|---:|---|"]
+            "種別", "点数", "重み付き一致率（元Mod側）", target_weighted_field)) + " |")
+    out += ["", i18n.t('u9.report_translation_heading.target', target_name=i18n.t("lang." + target_lang)), "",
+            i18n.t('u9.report_translation_columns.target', target_name=i18n.t("lang." + target_lang)), "|---|---|---:|---|"]
     for t in report.get("by_translation") or []:
-        out.append("| " + " | ".join(cell(t.get(k, "")) for k in ("日本語化Mod", "保管場所", "元Modの数", "元Mod")) + " |")
+        out.append("| " + " | ".join(cell(t.get(k, "")) for k in (target_mod_field, "保管場所", "元Modの数", "元Mod")) + " |")
     if flagged:
-        out += ["", "## 要確認の根拠", ""]
+        out += ["", i18n.t('u9.report_review_heading'), ""]
         for r in flagged:
             out += [f"### {cell(r['元Mod'])} → {cell(r['紐付け先'])}",
-                    f"- 要確認：{r['要確認']}",
-                    f"- 根拠：{r.get('根拠') or '（記録なし）'}",
-                    f"- 元Modの場所：{r['元Modの場所']}",
-                    f"- 紐付け先の場所：{r['紐付け先の場所']}", ""]
+                    i18n.t('u9.report_review_line', review_reason=r['要確認']),
+                    i18n.t('u9.report_evidence_line', evidence=r.get('根拠') or i18n.t('u9.no_record')),
+                    i18n.t('u9.report_source_path', source_path=r['元Modの場所']),
+                    i18n.t('u9.report_target_path', target_path=r['紐付け先の場所']), ""]
     return "\n".join(out) + "\n"

@@ -1,0 +1,182 @@
+"""第3段：訳してはいけない日本語の文字列（走査テスト tests/test_i18n_scan.py が数えない）。
+
+増やすときは、理由をコメントに書くこと。
+"""
+
+# 1. 中身をまるごと訳さない関数（LLM への指示文・判定の手がかり）。v0.12 のスナップショットテストで固定しているもの。
+EXCLUDED_OWNERS = {
+    "app/translator_core.py": {
+        "build_system_prompt",              # LLM への指示文（日本語は一字一句固定）
+        "_korean_chinese_basis_instructions",
+        "proofread_text",                   # 校正の指示文
+        "resolve_auto_glossary_conflicts",  # 用語統一の指示文
+        "classify_monitor_candidates",      # 軽量QAの指示文
+        "benchmark_model",                  # ベンチマークの指示文
+        "_is_probable_specific_glossary_term",  # 判定の手がかり（日本語の称号の一覧）
+        "typo_checks",                      # 判定の手がかり（日本語の誤字の正規表現）。message は U9 で別に扱う
+        "_looks_like_untranslated_chinese_sentence",  # 判定の手がかり（中国語の字）
+        "looks_like_chinese_in_japanese",   # 判定の手がかり（中国語の字と機能語）
+        "_is_katakana_word_char",           # 判定の手がかり（カタカナ）
+        "_classify_glossary_term_kind",     # 判定の手がかり（中国語の動詞）
+        "_is_auto_glossary_source_candidate",  # 判定の手がかり（句点）
+        "_relation_name_tokens",            # 判定の手がかり（名前の語）
+    },
+    "app/main.py": set(),
+}
+
+# 2. ディスク上の名前・保存して比べている値・内部の ID（訳すと、利用者のフォルダや保存したジョブが読めなくなる）
+EXCLUDED_VALUES = {
+    # フォルダ・ファイルの名前（v0.11.69 の移行処理と利用者のフォルダがこの名前を前提にしている）
+    "設定", "翻訳結果", "キャッシュ", "バックアップ", "ログ", "作業データ", "QA", "エラー", "日本語化Mod判定", "診断",
+    "夜間処理", "システム・履歴", "QA自動修復", "差分翻訳", "上書き", "復元前退避", "総合診断", "中国語基準翻訳",
+    "保存場所コピー", "_差分上書き", "_不足分上書き", "ゲーム未特定",
+    # 保存して比べている値（翻訳状況の判定の結果。translator_core が作り、ui_status.display_status で表示する）
+    "不明", "対象なし", "翻訳あり", "別Modで完全翻訳", "別Mod翻訳・欠損", "翻訳なし", "欠損あり",
+    "要確認（旧式日本語化）", "要確認（関連元未特定）",
+    # LLM接続エラーとログの判定語（表示文ではなく、外部応答の分類に使用）
+    "読み込み済み", "失敗",
+    # ファイル名の安全化パターンと不足分の保存フォルダ名（変更すると保存先が変わる）
+    r"[^0-9A-Za-zぁ-んァ-ヶ一-龯_\-]+", "不足翻訳キュー",
+    # 内部の ID
+    "本体/日本語化Mod統合",
+}
+
+# 3. 日本語の文字列と比べてよい所（保存した値・フォルダの名前・判定の手がかりとの比較）。(ファイル, 関数, 比べている式の一部)
+ALLOWED_COMPARISONS = {
+    ("app/main.py", "_create_full_localization_snapshot", "category =="),
+    ("app/main.py", "_next_overwrite_backup_generation", "category') !="),
+    ("app/main.py", "_next_overwrite_backup_generation", "d.name in"),
+    ("app/main.py", "_base_game_source_data_for_mod", "ゲーム未特定"),
+    ("app/main.py", "_apply_translation_status_restore_resolution", "ゲーム未特定"),
+    ("app/main.py", "_queue_item_is_completed", "完了"),
+    ("app/main.py", "_queue_item_is_completed", "上書き済み"),
+    ("app/main.py", "_reset_item_for_full_translation", "差分"),
+    ("app/main.py", "restore_session", "翻訳中"),
+    ("app/main.py", "change_data_root", "保存場所コピー"),
+    ("app/main.py", "_collect_backup_restore_entries_background", "上書き'"),
+    ("app/main.py", "_refresh_diagnostic_action_state", "本体/日本語化Mod統合"),
+    ("app/main.py", "queue_all_except_selected_mods", "翻訳あり"),
+    ("app/main.py", "_apply_data_root_change", "設定"),
+    ("app/translator_core.py", "_is_katakana_word_char", "ーヽヾ"),
+    ("app/translator_core.py", "_classify_glossary_term_kind", "增加"),
+}
+
+
+# 4. 段階1の単位ごとの追加（並行して作業するので、自分の単位の塊だけに足す。ほかの単位の塊には触らない）
+#    OWNERS は (ファイル, 関数) の組、VALUES は文字列、COMPARISONS は ALLOWED_COMPARISONS と同じ形。足すときは理由をコメントに書く。
+
+# ---- U1_translate_queue
+U1_OWNERS = {
+    ("app/main.py", "_queue_item_is_completed"),  # 保存済み状態の完了・上書き済み判定を維持する。
+    ("app/main.py", "_reset_item_for_full_translation"),  # 保存済み状態の差分プレフィックス判定を維持する。
+    ("app/main.py", "_merge_missing_only_output"),  # 残る文字列はバックアップ名「不足分上書き」と保存カテゴリ「上書き」のみ。
+}
+# ---- U1_translate_queue（値）
+U1_VALUES = {
+    "（不足分）",  # mod_name に保存する識別用の接尾辞。画面言語によって保存名を変えない。
+}
+# ---- U1_translate_queue（比較）
+U1_COMPARISONS = set()
+
+# ---- U2_chinese
+U2_OWNERS = set()
+# ---- U2_chinese（値）
+U2_VALUES = set()
+# ---- U2_chinese（比較）
+U2_COMPARISONS = set()
+
+# ---- U3_review_diff_search
+U3_OWNERS = set()
+# ---- U3_review_diff_search（値）
+U3_VALUES = set()
+# ---- U3_review_diff_search（比較）
+U3_COMPARISONS = set()
+
+# ---- U4_glossary
+U4_OWNERS = set()
+# ---- U4_glossary（値）
+U4_VALUES = set()
+# ---- U4_glossary（比較）
+U4_COMPARISONS = set()
+
+# ---- U5_models_settings
+U5_OWNERS = set()
+# ---- U5_models_settings（値）
+U5_VALUES = set()
+# ---- U5_models_settings（比較）
+U5_COMPARISONS = set()
+
+# ---- U6_status_mods
+U6_OWNERS = {
+    # 表示文は移行済み。残るのは固定ファイル名と build_relation_report の列キーだけ。
+    # 「要確認」を全体の VALUES に入れると U9 の未移行数まで変わるため、この関数だけを除外。
+    ("app/main.py", "export_relation_report"),
+}
+# ---- U6_status_mods（値）
+U6_VALUES = set()
+# ---- U6_status_mods（比較）
+U6_COMPARISONS = set()
+
+# ---- U7_diag_backup
+U7_OWNERS = {
+    # 残るのは既存バックアップ種別だけ。共有 VALUES に足すと他単位の走査数が変わる。
+    ('app/main.py', '_collect_backup_restore_entries_background'),
+    # 残るのは復元時に比較する内部状態「翻訳中」だけ（表示文は辞書へ移動済み）。
+    ('app/main.py', 'restore_session'),
+}
+# ---- U7_diag_backup（値）
+U7_VALUES = {
+    # 保存先の安全化・旧形式フォルダ名の判定。画面言語でパスや復元候補を変えない。
+    r'[^0-9A-Za-zぁ-んァ-ヶ一-龯 _\-().\[\]]+',
+    r'_(?:差分上書き|不足分上書き)$',
+    r'_(?:不足分上書き|差分上書き)$',
+    'f"第{generation:04d}回_{stamp}"',
+    # バックアップ種別・診断結果の既存 kind ID。保存値と他単位の判定を維持する。
+    '総合診断修復', '差分上書き',
+    '本体/日本語化Mod重複', 'localization欠落', 'YAML読込エラー',
+    '日本語化Mod（複数対応可）', '日本語化Mod候補（未確定）',
+    '英語原文なし', '簡体字中国語なし', '日本語なし',
+    '同一Mod内の完全重複', '同一Mod内の訳競合', '不要日本語キー',
+    '不要日本語ファイル', '修復基準なし', '日本語ファイル異常増加', '異常なし',
+}
+# ---- U7_diag_backup（比較）
+U7_COMPARISONS = set()
+
+# ---- U8_help
+U8_OWNERS = set()
+# ---- U8_help（値）
+U8_VALUES = set()
+# ---- U8_help（比較）
+U8_COMPARISONS = set()
+
+# ---- U9_core
+U9_OWNERS = {
+    ("app/translator_core.py", "<module>"),  # LLM の言語ラベル・プリセット指示文・エラー分類マーカー・翻訳 Mod 判定語を固定する。
+    ("app/translator_core.py", "game_language_warning"),  # 言語名の区切り「・」は日本語表示を固定する記号。表示文は辞書化済み。
+    ("app/translator_core.py", "normalize_cjk_spacing"),  # CJK 文字間スペース判定の字集合（中黒）。
+    ("app/translator_core.py", "normalize_provider"),  # 保存設定の旧プロバイダ名を認識する互換用別名。
+    ("app/translator_core.py", "scan_translation_gaps"),  # kind / confidence は保存して判断する識別値。翻訳対象にしない。
+    ("app/translator_core.py", "run_translation"),  # ファイルエラーの stage は保存記録の識別値。表示文は辞書化済み。
+    ("app/translator_core.py", "classify_paratranz_glossary"),  # note のルール判定語だけを保持する。利用者向けの理由は辞書化済み。
+    ("app/translator_core.py", "translation_localization_format_profile"),  # 日本語化名の検出・かな判定用の正規表現。
+    ("app/translator_core.py", "_normalize_mod_name_for_match"),  # 日本語化名から削除する一致判定語。
+    ("app/translator_core.py", "_external_gap_candidates"),  # confidence は保存して判断する識別値。
+    ("app/translator_core.py", "discover_paradox_mod_locations"),  # 「ローカルMod」は探索結果 kind の固定識別値。
+    ("app/translator_core.py", "build_relation_report"),  # 残る文字列は報告 dict の固定列キー。表示文は辞書化済み。
+    ("app/translator_core.py", "relation_report_csv"),  # 固定列キーと状態列キーの参照。出力時のみ列名と状態を訳す。
+    ("app/translator_core.py", "relation_report_markdown"),  # 固定列キーの参照。見出し・説明・表示状態は辞書化済み。
+}
+# ---- U9_core（値）
+U9_VALUES = set()
+# ---- U9_core（比較）
+U9_COMPARISONS = {
+    ("app/translator_core.py", "relation_report_csv", 'field == "状態"'),  # 固定の報告列キー。
+    ("app/translator_core.py", "relation_report_markdown", 'k == "状態"'),  # 固定の報告列キー。
+}
+
+_UNITS = ((U1_OWNERS, U1_VALUES, U1_COMPARISONS), (U2_OWNERS, U2_VALUES, U2_COMPARISONS), (U3_OWNERS, U3_VALUES, U3_COMPARISONS), (U4_OWNERS, U4_VALUES, U4_COMPARISONS), (U5_OWNERS, U5_VALUES, U5_COMPARISONS), (U6_OWNERS, U6_VALUES, U6_COMPARISONS), (U7_OWNERS, U7_VALUES, U7_COMPARISONS), (U8_OWNERS, U8_VALUES, U8_COMPARISONS), (U9_OWNERS, U9_VALUES, U9_COMPARISONS))
+for _owners, _values, _comparisons in _UNITS:
+    for _file, _owner in _owners:
+        EXCLUDED_OWNERS.setdefault(_file, set()).add(_owner)
+    EXCLUDED_VALUES |= _values
+    ALLOWED_COMPARISONS |= _comparisons

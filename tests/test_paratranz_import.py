@@ -234,6 +234,7 @@ def test_confirmation_language_and_cancel_without_app(tmp_path, classified, monk
     monkeypatch.setattr(main.tk, "Toplevel", Widget)
     for name in ("Frame", "Label", "Combobox", "Radiobutton", "Button"):
         monkeypatch.setattr(main.ttk, name, Widget)
+    monkeypatch.setattr(main, "WrappingLabel", Widget)
     state = SimpleNamespace(glossary_path_var=Variable(str(tmp_path / "glossary.json")),
         glossary_lang_var=Variable(main._target_lang_choice("japanese")), progress_text=Variable(),
         _show_glossary_import_text=lambda parent, text: previews.append(text),

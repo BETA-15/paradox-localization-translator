@@ -66,10 +66,12 @@ def test_non_japanese_prompts_use_the_english_template_for_the_target():
         assert "Hearts of Iron IV" in prompt and "- Duke => Herzog" in prompt
         assert "@@0@@" in prompt and "日本語" not in prompt
     assert "Simplified Chinese characters" in core.build_system_prompt("english", target_lang="simp_chinese")
-    # 中国語の参考訳は翻訳先が中国語のときは付けない。中国語基準翻訳は日本語専用
+    # 中国語の参考訳は翻訳先が中国語のときは付けない。
     assert "ZH_REF" not in core.build_system_prompt("english", dual_source=True, target_lang="simp_chinese")
     assert "ZH_REF" in core.build_system_prompt("english", dual_source=True, target_lang="french")
-    assert "中国語基準" not in core.build_system_prompt("simp_chinese", chinese_basis=True, target_lang="korean")
+    assert "Chinese-basis translation" in core.build_system_prompt("simp_chinese", chinese_basis=True, target_lang="korean")
+    for language in set(core.TARGET_LANGUAGES) - set(core.CHINESE_BASIS_TARGETS):
+        assert "Chinese-basis translation" not in core.build_system_prompt("simp_chinese", chinese_basis=True, target_lang=language)
 
 
 def test_non_japanese_proofreading_prompt(monkeypatch):
@@ -188,8 +190,7 @@ def test_run_translation_end_to_end_for_each_target(tmp_path, monkeypatch, targe
     assert text.startswith(f"l_{target}:")
     lang, entries, _ = core.parse_localization_file(generated)
     assert lang == target
-    # 日本語・簡体字中国語は、文字と変数の間の半角スペースを取り除く（要望A1）
-    space = "" if core.TARGET_LANGUAGES[target].get("remove_cjk_spaces") else " "
+    space = "" if target == "japanese" else " "
     assert entries["greet"] == f"{FAKE_TEXT[target]}{space}$NAME$"
     assert entries["title"] == FAKE_TEXT[target]
     assert {c[0] for c in calls} == {expected_source} and {c[1] for c in calls} == {target}
@@ -235,7 +236,7 @@ def test_qa_on_french_output_reports_no_japanese_specific_errors():
                              target_lang="french")
     assert not [i for i in issues if i["severity"] in {"error", "warning"}]
     same = [i for i in issues if i["type"] == "same_as_source"]
-    assert len(same) == 1 and same[0]["severity"] == "notice" and same[0]["repairable"] is False
+    assert not same
 
 
 def test_without_english_simplified_chinese_is_preferred_over_other_languages(tmp_path, monkeypatch):

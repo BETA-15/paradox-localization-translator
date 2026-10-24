@@ -47,7 +47,7 @@ def test_other_languages_unchanged(language):
 
 
 def test_chinese_and_language_flags():
-    assert core.normalize_cjk_spacing("债务 危机", "simp_chinese") == ("债务危机", 1)
+    assert core.normalize_cjk_spacing("债务 危机", "simp_chinese") == ("债务 危机", 0)
     assert {language for language, info in core.TARGET_LANGUAGES.items()
             if info["remove_cjk_spaces"]} == {"japanese", "simp_chinese"}
 
@@ -142,7 +142,7 @@ def test_chinese_basis_respects_setting(tmp_path, monkeypatch, enabled):
 def test_qa_notice_language_gating(language):
     issues = core.qa_entries({"description": "債務 危機"}, target_lang=language)
     assert any(issue["rule_id"] == "QA-SPACE-001" for issue in issues) == (
-        language in {"japanese", "simp_chinese"})
+        language == "japanese")
 
 
 class Value:
@@ -182,6 +182,11 @@ def test_diff_translation_spacing(tmp_path, monkeypatch, enabled, language, text
     while not state.events.empty():
         events.append(state.events.get())
     result = next(payload for kind, payload in events if kind == "diff_translate_done")
+    if language == "simp_chinese":
+        assert result["spaces_removed"] == 0
+        assert main.core.parse_localization_file(target)[1] == {
+            "existing": text, "description": text}
+        return
     assert result["spaces_removed"] == int(enabled)
     assert main.core.parse_localization_file(target)[1] == {
         "existing": text, "description": text.replace(" ", "") if enabled else text}

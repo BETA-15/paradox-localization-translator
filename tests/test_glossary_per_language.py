@@ -8,6 +8,12 @@ import pytest
 import main
 
 
+@pytest.fixture(autouse=True)
+def display_free_heading_fit(monkeypatch):
+    """Persistence tests use row-only trees, not Tk widgets or fonts."""
+    monkeypatch.setattr(main, "fit_tree_headings", lambda tree: None)
+
+
 class Variable:
     def __init__(self, value=""):
         self.value = value
@@ -144,6 +150,9 @@ def test_review_save_uses_translation_language_not_tab_language(tmp_path, monkey
     base.write_text('{"King": "王"}', encoding="utf-8")
     state = glossary_state(base, "japanese")
     state.target_lang_var = Variable(main._target_lang_choice("french"))
+    target = tmp_path / "sample_l_french.yml"
+    target.write_text('l_french:\n KING:0 "Roi"\n', encoding="utf-8-sig")
+    state.review_dst_var = Variable(str(target))
     state._selected_review_key = lambda: "KING"
     state.review_source_entries = {"KING": "King"}
     state.dst_text = SimpleNamespace(get=lambda *args: "Roi")
@@ -165,15 +174,13 @@ def test_translation_glossary_lookup_uses_explicit_language(tmp_path, language):
 
 
 @pytest.mark.parametrize("method,args", [
-    ("start_auto_glossary_generation", ("review",)),
-    ("_save_imported_glossary_candidates", ([{"source": "King", "target": "王"}], "example")),
-    ("import_glossary_from_base_game", ()),
-    ("import_glossary_from_japanese_source", ("file",)),
     ("bulk_unify_review_terms", ()),
-    ("on_glossary_import_drop_paths", (None,)),
 ])
 def test_japanese_generation_is_blocked_for_other_languages(tmp_path, monkeypatch, method, args):
     state = glossary_state(tmp_path / "glossary.json", "french")
+    state.review_dst_var = Variable(str(tmp_path / "sample_l_french.yml"))
+    state.review_target_path = state.review_dst_var.get()
+    state.review_target_lang = "french"
     notices = []
     monkeypatch.setattr(main.messagebox, "showinfo", lambda title, text: notices.append(text))
     getattr(main.App, method)(state, *args)
