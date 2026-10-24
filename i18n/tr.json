@@ -1,0 +1,168 @@
+{
+  "meta": {
+    "title": "Paradox Localization Translator — Paradox oyunlarının modlarını yapay zekâyla çevirin",
+    "description": "Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris ve Europa Universalis modlarını yerel bir LLM veya bulut tabanlı yapay zekâyla 11 dile çevirmek için ücretsiz, gayriresmî bir araç."
+  },
+  "nav": {
+    "features": "Özellikler",
+    "shots": "Ekran görüntüleri",
+    "games": "Oyunlar ve diller",
+    "howto": "Nasıl kullanılır",
+    "faq": "Sık sorulan sorular",
+    "language": "Dil"
+  },
+  "suggest": "Bu sayfa Türkçe olarak da sunulmaktadır.",
+  "suggest_close": "Kapat",
+  "hero": {
+    "eyebrow": "Paradox büyük strateji oyunlarının modları için",
+    "title": "Modları **kendi dilinize** çevirin — yerel bir LLM veya bulut tabanlı yapay zekâyla.",
+    "lead": "Mod yapımcıları ve oyuncular için ücretsiz bir masaüstü aracı. Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris, Europa Universalis IV ve V ile Imperator: Rome modlarının yerelleştirme dosyalarını oyunların desteklediği 11 dilden herhangi birine çevirir, oyunun biçimlendirme kodlarını korur ve henüz çevrilmemiş kısımları bulup düzeltmenize yardımcı olur.",
+    "download": "Ücretsiz indirin",
+    "platforms": "Windows · macOS · Linux — Python gerekmez",
+    "badges": [
+      "Gayriresmî",
+      "Tüm özellikler ücretsiz",
+      "MIT Lisansı"
+    ],
+    "demo_caption": "Biçimlendirme kodları olduğu gibi korunur."
+  },
+  "features": {
+    "title": "Neler yapar",
+    "items": [
+      {
+        "title": "Tüm modu tek seferde çevirin",
+        "text": "Tek bir dosya, bir yerelleştirme klasörü veya modun tamamını ekleyin ya da sürükleyip bırakın. Birden fazla modu sıraya alın; duraklatın, sürdürün veya durdurup bir sonraki sefer devam edin."
+      },
+      {
+        "title": "Oyun kodlarını korur",
+        "text": "`[ROOT.Char.GetName]`, `$VALUE$`, `£gold£` ve `§Y…§!` gibi biçimlendirme kodları çeviri sırasında korunur ve sonrasında geri yüklenir. Böylece oyun metinleri bozulmaz."
+      },
+      {
+        "title": "Çevirin, düzeltin ve güncelleyin",
+        "text": "Çevrilmeden kalan satırları bulur ve yalnızca onları çevirir. Her işin kendi önbelleği vardır: bir mod güncellendiğinde, daha önce çevrilen satırlar yeniden kullanılır. Böylece yapay zekâya yalnızca yeni veya değişen satırlar gönderilir."
+      },
+      {
+        "title": "Mevcut çeviri modlarını bulur (Japonca)",
+        "text": "Japonca için, bir modu zaten çeviren başka bir mod olup olmadığını ve bu çevirinin tamamlanıp tamamlanmadığını kontrol eder. Eksik satırlar, önce yedek alınıp onayınız istenerek, asıl mod yerine çeviri moduna eklenebilir."
+      },
+      {
+        "title": "Kontrol edin ve iyileştirin",
+        "text": "Kaynak metinle çeviriyi yan yana karşılaştırın, kalite kontrolleri yapın, istediğiniz satırı doğrudan arayıp düzeltin ve adlarla terimlerin tutarlı kalması için her dile ayrı bir sözlük tutun."
+      },
+      {
+        "title": "Yapay zekânızı seçin",
+        "text": "Ollama veya LM Studio ile ücretsiz ve gizliliğinizi koruyan yerel bir model çalıştırın ya da OpenAI, Anthropic, Google Gemini veya OpenAI uyumlu herhangi bir API kullanın. API anahtarları hiçbir zaman ayarlara, profillere veya günlüklere kaydedilmez."
+      }
+    ]
+  },
+  "shots": {
+    "title": "Ekran görüntüleri",
+    "pending": "Ekran görüntüsü yakında eklenecek",
+    "ui_note": "Ekran görüntüleri uygulamanın Japonca arayüzünü gösterir; Türkçe bir arayüz planlanmaktadır.",
+    "items": {
+      "translate": "Çeviri kuyruğu ve ilerleme",
+      "qa": "Yan yana kalite kontrolü ve düzenleme",
+      "survey": "Modların çeviri durumunu tarama (yalnızca Japonca)",
+      "model": "Model ve bağlantı ayarları"
+    }
+  },
+  "games": {
+    "title": "Oyunlar ve diller",
+    "intro": "Araç, 11 resmî dilin tamamına çeviri yapabilir. Her oyun bunların yalnızca bir kısmını okur; oyunun görüntüleyemediği bir dil seçerseniz araç başlamadan önce sizi uyarır. Otomatik mod algılama, Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris ve Europa Universalis V oyunlarını kapsar; Europa Universalis IV ve Imperator: Rome için dosya veya klasörleri kendiniz ekleyin.",
+    "game": "Oyun",
+    "count": "{n} dil",
+    "all": "11 dilin tamamı",
+    "pending": "doğrulanacak",
+    "legend": "✓ = oyun bu dili görüntüleyebilir"
+  },
+  "howto": {
+    "title": "Nasıl kullanılır",
+    "steps": [
+      {
+        "title": "Bir yapay zekâ hazırlayın",
+        "text": "Ollama veya LM Studio uygulamasını başlatıp bir model yükleyin ya da bir bulut hizmeti için API anahtarınızı hazır bulundurun."
+      },
+      {
+        "title": "Uygulamayı indirip açın",
+        "text": "En son sürümden sisteminize uygun dosyayı seçin."
+      },
+      {
+        "title": "Modeli seçin",
+        "text": "“Modeller” bölümünden sağlayıcıyı ve modeli seçin."
+      },
+      {
+        "title": "Bir mod ekleyip çevirin",
+        "text": "Bir dosya, klasör veya mod ekleyin (sürükleyip bırakabilirsiniz), hedef dili seçin ve “Çeviriyi başlat” düğmesine basın."
+      },
+      {
+        "title": "Kontrol edip uygulayın",
+        "text": "Sonucu “QA / Karşılaştır” bölümünde inceleyin, ardından tamamlanan çeviriyi moda yazın. Önce yedek alınır."
+      }
+    ]
+  },
+  "needs": {
+    "title": "Neye ihtiyacınız var",
+    "local_title": "Yerel",
+    "local": "Ollama veya LM Studio ve hedef dilinizde iyi yazan bir model (örneğin Qwen veya Gemma modelleri).",
+    "cloud_title": "Bulut",
+    "cloud": "OpenAI, Anthropic, Google Gemini veya OpenAI uyumlu bir hizmet için API anahtarı. Kullanım ücretini bu araç değil, ilgili hizmet alır."
+  },
+  "publish": {
+    "title": "Çevrilmiş bir modu yayımlama",
+    "intro": "Bu araçla yaptığınız bir çeviriyi Steam Workshop veya başka bir yerde paylaşacaksanız lütfen:",
+    "items": [
+      {
+        "title": "Asıl modun yapımcısından izin alın.",
+        "text": "Mod topluluğunda alışılmış uygulama budur. Ayrıca Steam koşulları, yüklediğiniz içerik üzerinde gerekli haklara sahip olmanızı gerektirir."
+      },
+      {
+        "title": "Ücretsiz yayımlayın.",
+        "text": "Paradox Interactive Kullanıcı Sözleşmesi (Bölüm 5), modların ve kullanıcılar tarafından üretilen diğer içeriklerin herkes için ücretsiz olmasını gerektirir; bunlara erişim ücretli olamaz. Harcadığınız zaman için bağış kabul etmenize izin verilir."
+      },
+      {
+        "title": "Makine çevirisi olduğunu belirtin,",
+        "text": "eğer öyleyse. Bu, oyuncuların karar vermesine yardımcı olur."
+      }
+    ]
+  },
+  "donate": {
+    "title": "Geliştirmeyi destekleyin",
+    "text": "Bağışlar GitHub Sponsors üzerinden yapılır ve VF Software Co., Ltd. tarafından alınır. Bu araç da dâhil olmak üzere tüm çalışmalarımızın geliştirilmesine ayrılan zamanı ve maliyetlerini destekler. Her özellik herkes için ücretsiz kalır ve bağış yapmak hiçbir şeyin kilidini açmaz.",
+    "button": "GitHub üzerinden destekleyin"
+  },
+  "faq": {
+    "title": "Sık sorulan sorular",
+    "items": [
+      {
+        "q": "Gerçekten ücretsiz mi?",
+        "a": "Evet. Her özellik MIT Lisansı kapsamında herkes için ücretsizdir. Ücretli bir sürüm yoktur."
+      },
+      {
+        "q": "Her özellik her dilde çalışır mı?",
+        "a": "Çeviri, çevrilmemiş satırları düzeltme, kalite kontrolü, arama ve sözlükler 11 dilin tamamında çalışır. Mod tarama, çeviri modlarını algılama ve ilişkilendirme, yalnızca güncellemeleri çevirme, Çince metni temel alarak çevirme ve otomatik sözlük oluşturma şimdilik yalnızca Japonca için kullanılabilir. Diğer dillerde kalite kontrolleri daha basittir: Korece, Rusça ve Basitleştirilmiş Çince, kullanılan yazı sistemine göre kontrol edilir; Latin alfabesi kullanan diller arasında ise yalnızca kaynak metinle aynı olan satırlar işaretlenir."
+      },
+      {
+        "q": "macOS uygulamanın açılamadığını söylüyor.",
+        "a": "Uygulama Apple tarafından imzalanmamıştır. Sistem Ayarları → Gizlilik ve Güvenlik bölümünü açın ve uygulamanın açılmasına izin verin."
+      },
+      {
+        "q": "Windows bir SmartScreen uyarısı gösteriyor.",
+        "a": "Uygulamanın kod imzası yoktur. Yalnızca resmî GitHub Releases sayfasından indirin, ardından “Ek bilgi” → “Yine de çalıştır” seçeneğini seçin."
+      },
+      {
+        "q": "Steam Workshop modlarını doğrudan çevirebilir miyim?",
+        "a": "Evet, ancak bir Workshop güncellemesi değişikliklerinizin üzerine yazabilir. Araç yedekleri saklar; önemli çalışmalarınızda çevirinin bir kopyasını da saklayın."
+      },
+      {
+        "q": "Bir hatayı nasıl bildiririm?",
+        "a": "GitHub üzerinde bir hata kaydı açın. Mümkünse “Ayarlar” → “Tanılama günlüklerini topla” yoluyla aldığınız tanılama ZIP dosyasını ekleyin ve adımları açıklayın. ZIP dosyası çevirilerinizi veya API anahtarlarınızı içermez."
+      }
+    ]
+  },
+  "footer": {
+    "notice": "Paradox Localization Translator, bireysel bir geliştirici tarafından yapılmış gayriresmî bir araçtır. Paradox Interactive ile bağlantılı değildir ve Paradox Interactive tarafından onaylanmamıştır. Paradox Interactive, Crusader Kings, Victoria, Hearts of Iron, Stellaris ve Europa Universalis, ilgili sahiplerinin ticari markalarıdır.",
+    "license": "MIT Lisansı",
+    "source": "Kaynak kodu GitHub üzerinde",
+    "made_by": "Geliştiren"
+  }
+}

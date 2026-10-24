@@ -295,3 +295,12 @@ h1 em { font-style: italic; color: var(--brass-2); }
 
 /* keep the game names visible while the language columns scroll on narrow screens */
 .matrix th[scope="row"], .matrix thead th:first-child { position: sticky; left: 0; z-index: 1; background: var(--ink-2); }
+
+/* long words (German, Russian, Polish …) must not push past a phone's width */
+h1, h2, h3, .card h3, .steps h3, .faq summary, p, li { overflow-wrap: break-word; }
+:lang(de) :is(h1, h2, h3), :lang(ru) :is(h1, h2, h3), :lang(pl) :is(h1, h2, h3), :lang(tr) :is(h1, h2, h3) { hyphens: auto; -webkit-hyphens: auto; }
+/* serif headings that have the right glyphs */
+:lang(ko) { --serif: "AppleMyungjo", "Nanum Myeongjo", "Noto Serif KR", "Batang", serif; }
+:lang(zh-Hans) { --serif: "Songti SC", "STSong", "Noto Serif SC", "Noto Serif CJK SC", "SimSun", serif; }
+:lang(ko) .eyebrow, :lang(zh-Hans) .eyebrow { text-transform: none; }
+:lang(ko) :is(h1, h2, h3) { word-break: keep-all; }

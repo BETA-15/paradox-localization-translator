@@ -111,6 +111,18 @@ def shot_src(name: str, code: str) -> tuple[str, bool] | None:
     return None
 
 
+def asset_version() -> str:
+    """Short hash of the stylesheet and script, appended to their URLs so browsers fetch new versions."""
+    import hashlib
+    h = hashlib.sha256()
+    for name in ("assets/style.css", "assets/site.js"):
+        h.update((ROOT / name).read_bytes())
+    return h.hexdigest()[:10]
+
+
+ASSET_V = asset_version()
+
+
 def build_page(lang: dict, built: list[dict], en: dict) -> str:
     code = lang["code"]
     texts = json.loads((ROOT / "i18n" / f"{code}.json").read_text(encoding="utf-8"))
@@ -127,6 +139,7 @@ def build_page(lang: dict, built: list[dict], en: dict) -> str:
         "lang": html.escape(lang["hreflang"]),
         "lang_name": html.escape(lang["name"]),
         "root": root,
+        "asset_v": ASSET_V,
         "slug_path": lang["slug"] + "/" if lang["slug"] else "",
         "canonical": html.escape(page_url(lang)),
     })

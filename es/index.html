@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paradox Localization Translator — traduce mods de juegos de Paradox con IA</title>
+<meta name="description" content="Herramienta gratuita y no oficial para traducir mods de Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris y Europa Universalis a 11 idiomas con un LLM local o una IA en la nube.">
+<link rel="canonical" href="https://beta-15.github.io/paradox-localization-translator/es/">
+<link rel="alternate" hreflang="en" href="https://beta-15.github.io/paradox-localization-translator/">
+<link rel="alternate" hreflang="ja" href="https://beta-15.github.io/paradox-localization-translator/ja/">
+<link rel="alternate" hreflang="fr" href="https://beta-15.github.io/paradox-localization-translator/fr/">
+<link rel="alternate" hreflang="de" href="https://beta-15.github.io/paradox-localization-translator/de/">
+<link rel="alternate" hreflang="es" href="https://beta-15.github.io/paradox-localization-translator/es/">
+<link rel="alternate" hreflang="ko" href="https://beta-15.github.io/paradox-localization-translator/ko/">
+<link rel="alternate" hreflang="pl" href="https://beta-15.github.io/paradox-localization-translator/pl/">
+<link rel="alternate" hreflang="pt-BR" href="https://beta-15.github.io/paradox-localization-translator/pt-br/">
+<link rel="alternate" hreflang="ru" href="https://beta-15.github.io/paradox-localization-translator/ru/">
+<link rel="alternate" hreflang="zh-Hans" href="https://beta-15.github.io/paradox-localization-translator/zh-hans/">
+<link rel="alternate" hreflang="tr" href="https://beta-15.github.io/paradox-localization-translator/tr/">
+<link rel="alternate" hreflang="x-default" href="https://beta-15.github.io/paradox-localization-translator/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Paradox Localization Translator — traduce mods de juegos de Paradox con IA">
+<meta property="og:description" content="Herramienta gratuita y no oficial para traducir mods de Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris y Europa Universalis a 11 idiomas con un LLM local o una IA en la nube.">
+<meta property="og:url" content="https://beta-15.github.io/paradox-localization-translator/es/">
+<meta property="og:image" content="https://beta-15.github.io/paradox-localization-translator/assets/icon.png">
+<meta name="theme-color" content="#0e1620">
+<link rel="icon" href="../assets/icon.png">
+<link rel="stylesheet" href="../assets/style.css?v=8eb586893a">
+</head>
+<body>
+<a class="skip" href="#main">↓</a>
+
+<div class="suggest" id="suggest" hidden>
+  <a id="suggest-link" href="#"></a>
+  <button type="button" id="suggest-close" aria-label="Cerrar">×</button>
+</div>
+
+<header class="top">
+  <a class="brand" href="../es/">
+    <img src="../assets/icon.png" alt="" width="28" height="28">
+    <span>Paradox Localization Translator</span>
+  </a>
+  <nav class="menu" aria-label="Sections">
+    <a href="#features">Funciones</a>
+    <a href="#shots">Capturas</a>
+    <a href="#games">Juegos e idiomas</a>
+    <a href="#howto">Cómo usarla</a>
+    <a href="#faq">Preguntas frecuentes</a>
+  </nav>
+  <div class="tools">
+    <details class="langs">
+      <summary aria-label="Idioma"><span class="globe" aria-hidden="true">◍</span> Español</summary>
+      <ul><li><a href="../" hreflang="en" lang="en">English</a></li><li><a href="../ja/" hreflang="ja" lang="ja">日本語</a></li><li><a href="../fr/" hreflang="fr" lang="fr">Français</a></li><li><a href="../de/" hreflang="de" lang="de">Deutsch</a></li><li><a href="../es/" hreflang="es" lang="es" aria-current=page>Español</a></li><li><a href="../ko/" hreflang="ko" lang="ko">한국어</a></li><li><a href="../pl/" hreflang="pl" lang="pl">Polski</a></li><li><a href="../pt-br/" hreflang="pt-BR" lang="pt-BR">Português (Brasil)</a></li><li><a href="../ru/" hreflang="ru" lang="ru">Русский</a></li><li><a href="../zh-hans/" hreflang="zh-Hans" lang="zh-Hans">简体中文</a></li><li><a href="../tr/" hreflang="tr" lang="tr">Türkçe</a></li></ul>
+    </details>
+    <a class="gh" href="https://github.com/BETA-15/paradox-localization-translator" aria-label="GitHub">GitHub ↗</a>
+  </div>
+</header>
+
+<main id="main">
+
+<section class="hero">
+  <div class="hero-text">
+    <p class="eyebrow">Para mods de juegos de gran estrategia de Paradox</p>
+    <h1>Traduce mods a <em>tu idioma</em> con un LLM local o una IA en la nube.</h1>
+    <p class="lead">Una herramienta de escritorio gratuita para creadores de mods y jugadores. Traduce los archivos de localización de mods de Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris, Europa Universalis IV y V e Imperator: Rome a cualquiera de los 11 idiomas que admiten los juegos, mantiene intactos los códigos de formato del juego y te ayuda a encontrar y corregir lo que aún no está traducido.</p>
+    <div class="cta">
+      <a class="btn" href="https://github.com/BETA-15/paradox-localization-translator/releases/latest">Descargar gratis <span aria-hidden="true">→</span></a>
+      <div class="os">
+        <a href="https://github.com/BETA-15/paradox-localization-translator/releases/latest/download/ParadoxLocalizationTranslator.exe">Windows</a>
+        <a href="https://github.com/BETA-15/paradox-localization-translator/releases/latest/download/ParadoxLocalizationTranslator-macOS.zip">macOS</a>
+        <a href="https://github.com/BETA-15/paradox-localization-translator/releases/latest/download/ParadoxLocalizationTranslator">Linux</a>
+      </div>
+    </div>
+    <p class="platforms">Windows · macOS · Linux — no requiere Python</p>
+    <ul class="badges"><li>No oficial</li><li>Todas las funciones gratis</li><li>Licencia MIT</li></ul>
+  </div>
+
+  <figure class="ledger" aria-label="Los códigos de formato se mantienen exactamente como estaban.">
+    <div class="ledger-head"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="fname">localization/…_l_english.yml</span></div>
+<pre class="yml"><code><span class="lk">l_english:</span>
+ <span class="key">trait_brave_desc:0</span> <span class="str">"<span class="tok">[ROOT.Char.GetFirstName]</span> fears nothing. <span class="tok">§Y</span>+2 Prowess<span class="tok">§!</span>"</span></code></pre>
+    <div class="arrow" aria-hidden="true">↓</div>
+<pre class="yml out"><code><span class="lk" id="demo-lang">l_spanish:</span>
+ <span class="key">trait_brave_desc:0</span> <span class="str" id="demo-line">"<span class="tok">[ROOT.Char.GetFirstName]</span> no teme a nada. <span class="tok">§Y</span>+2 de Destreza<span class="tok">§!</span>"</span></code></pre>
+    <figcaption>Los códigos de formato se mantienen exactamente como estaban.</figcaption>
+  </figure>
+</section>
+
+<section id="features" class="band">
+  <h2>Qué hace</h2>
+  <div class="cards"><article class="card"><span class="num">01</span><h3>Traduce mods enteros de una vez</h3><p>Añade un archivo, una carpeta de localización o un mod entero, también arrastrándolo y soltándolo. Pon varios mods en cola; pausa, reanuda o detén la traducción y continúa la próxima vez.</p></article><article class="card"><span class="num">02</span><h3>Protege los códigos del juego</h3><p>Los códigos de formato como <code>[ROOT.Char.GetName]</code>, <code>$VALUE$</code>, <code>£gold£</code> y <code>§Y…§!</code> se protegen durante la traducción y se restauran después para que el texto del juego siga funcionando.</p></article><article class="card"><span class="num">03</span><h3>También corrige y actualiza</h3><p>Encuentra las líneas que quedaron sin traducir y traduce solo esas. Cada tarea conserva su propia caché: cuando se actualiza un mod, se reutilizan las líneas ya traducidas y solo se envían a la IA las nuevas o modificadas.</p></article><article class="card"><span class="num">04</span><h3>Encuentra mods de traducción existentes (japonés)</h3><p>Para el japonés, comprueba si otro mod ya traduce un mod y si esa traducción está completa. Las líneas que faltan se pueden añadir al mod de traducción en lugar de al original, con una copia de seguridad y una confirmación previas.</p></article><article class="card"><span class="num">05</span><h3>Revisa y mejora</h3><p>Compara el original y la traducción en paralelo, ejecuta controles de calidad, busca y corrige cualquier línea directamente y mantén un glosario por idioma para que los nombres y los términos sean coherentes.</p></article><article class="card"><span class="num">06</span><h3>Elige tu IA</h3><p>Usa un modelo local con Ollama o LM Studio, gratis y en privado, o utiliza OpenAI, Anthropic, Google Gemini o cualquier API compatible con OpenAI. Las claves API nunca se guardan en los ajustes, los perfiles ni los registros.</p></article></div>
+</section>
+
+<section id="shots" class="band">
+  <h2>Capturas de pantalla</h2>
+  <p class="intro">Las capturas muestran la interfaz de la aplicación en japonés; está prevista una interfaz en español.</p>
+  <div class="shots"><figure class="shot"><button type="button" class="zoom" data-full="../assets/shots/ja/translate.png"><img src="../assets/shots/ja/translate.png" alt="Cola y progreso de traducción" width="1480" height="1012" loading="lazy"></button><figcaption>Cola y progreso de traducción</figcaption></figure><figure class="shot"><button type="button" class="zoom" data-full="../assets/shots/ja/qa.png"><img src="../assets/shots/ja/qa.png" alt="Control de calidad y edición en paralelo" width="1480" height="1012" loading="lazy"></button><figcaption>Control de calidad y edición en paralelo</figcaption></figure><figure class="shot"><button type="button" class="zoom" data-full="../assets/shots/ja/survey.png"><img src="../assets/shots/ja/survey.png" alt="Análisis del estado de traducción de los mods (solo japonés)" width="1480" height="1012" loading="lazy"></button><figcaption>Análisis del estado de traducción de los mods (solo japonés)</figcaption></figure><figure class="shot"><button type="button" class="zoom" data-full="../assets/shots/ja/model.png"><img src="../assets/shots/ja/model.png" alt="Ajustes del modelo y de conexión" width="1480" height="1012" loading="lazy"></button><figcaption>Ajustes del modelo y de conexión</figcaption></figure></div>
+</section>
+
+<section id="games" class="band">
+  <h2>Juegos e idiomas</h2>
+  <p class="intro">La herramienta puede traducir a los 11 idiomas oficiales. Cada juego solo lee algunos de ellos; si eliges un idioma que el juego no puede mostrar, la herramienta te avisa antes de empezar. La detección automática de mods abarca Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris y Europa Universalis V; para Europa Universalis IV e Imperator: Rome, añade los archivos o las carpetas manualmente.</p>
+  <div class="matrix-wrap"><table class="matrix"><thead><tr><th scope="col">Juego</th><th scope="col" title="English">EN</th><th scope="col" title="日本語">JA</th><th scope="col" title="Français">FR</th><th scope="col" title="Deutsch">DE</th><th scope="col" title="Español" class=here>ES</th><th scope="col" title="한국어">KO</th><th scope="col" title="Polski">PL</th><th scope="col" title="Português (Brasil)">PT</th><th scope="col" title="Русский">RU</th><th scope="col" title="简体中文">ZH</th><th scope="col" title="Türkçe">TR</th></tr></thead><tbody><tr><th scope="row">Victoria 3<span class="count">los 11</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr><tr><th scope="row">Europa Universalis V<span class="count">los 11</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr><tr><th scope="row">Hearts of Iron IV<span class="count">10 idiomas</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Stellaris<span class="count">10 idiomas</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Crusader Kings III<span class="count">9 idiomas</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Imperator: Rome<span class="count">6 idiomas</span></th><td class="yes">✓</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Europa Universalis IV<span class="count">4 idiomas</span></th><td class="yes">✓</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="no">–</td></tr></tbody></table></div>
+  <p class="legend">✓ = el juego puede mostrar este idioma</p>
+</section>
+
+<section id="howto" class="band">
+  <h2>Cómo usarla</h2>
+  <ol class="steps"><li><h3>Prepara una IA</h3><p>Inicia Ollama o LM Studio y carga un modelo, o ten lista una clave API para un servicio en la nube.</p></li><li><h3>Descarga y abre la aplicación</h3><p>Elige el archivo para tu sistema en la versión más reciente.</p></li><li><h3>Elige el modelo</h3><p>En «Modelos», selecciona el proveedor y el modelo.</p></li><li><h3>Añade un mod y tradúcelo</h3><p>Añade un archivo, una carpeta o un mod (también puedes arrastrarlo y soltarlo), elige el idioma de destino y pulsa «Iniciar traducción».</p></li><li><h3>Revisa y aplica</h3><p>Revisa el resultado en «QA / Comparar» y luego escribe la traducción terminada en el mod. Primero se crea una copia de seguridad.</p></li></ol>
+  <div class="needs">
+    <h3>Qué necesitas</h3>
+    <div class="needs-grid">
+      <div><h4>En local</h4><p>Ollama o LM Studio y un modelo que escriba bien en el idioma de destino (por ejemplo, modelos Qwen o Gemma).</p></div>
+      <div><h4>En la nube</h4><p>Una clave API para OpenAI, Anthropic, Google Gemini o un servicio compatible con OpenAI. El uso lo factura ese servicio, no esta herramienta.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="publish" class="band notice-band">
+  <h2>Publicar un mod traducido</h2>
+  <p class="intro">Si compartes una traducción hecha con esta herramienta en Steam Workshop o en otro sitio, por favor:</p>
+  <ul class="rules"><li><strong>Pide permiso al autor del mod original.</strong> Es la costumbre en la comunidad de creadores de mods, y las condiciones de Steam exigen que tengas los derechos sobre lo que subes.</li><li><strong>Publícalo gratis.</strong> El Acuerdo de Usuario de Paradox Interactive (sección 5) exige que los mods y otros contenidos creados por los usuarios sean gratuitos para todos; no pueden estar sujetos a un pago para acceder a ellos. Se permite aceptar donaciones por el tiempo dedicado.</li><li><strong>Indica que es una traducción automática,</strong> si lo es. Ayuda a los jugadores a decidir.</li></ul>
+</section>
+
+<section id="donate" class="band donate"><h2>Apoya el desarrollo</h2><p>Las donaciones se tramitan a través de GitHub Sponsors y las recibe VF Software Co., Ltd. Contribuyen a financiar el tiempo y los costes de desarrollo de todo nuestro trabajo, incluida esta herramienta. Todas las funciones siguen siendo gratuitas para todos, y donar no desbloquea nada.</p><a class="btn" href="https://github.com/sponsors/BETA-15">Apoyar en GitHub ♥</a></section>
+
+<section id="faq" class="band">
+  <h2>Preguntas frecuentes</h2>
+  <div class="faq"><details><summary>¿De verdad es gratis?</summary><p>Sí. Todas las funciones son gratuitas para todos, bajo la licencia MIT. No hay versión de pago.</p></details><details><summary>¿Todas las funciones sirven para todos los idiomas?</summary><p>La traducción, la corrección de líneas sin traducir, el control de calidad, la búsqueda y los glosarios funcionan para los 11 idiomas. Por ahora, el análisis de mods, la detección y vinculación de mods de traducción, la traducción solo de actualizaciones, la traducción a partir del chino y la creación automática de glosarios solo están disponibles para el japonés. Los controles de calidad son más sencillos para los demás idiomas: el coreano, el ruso y el chino simplificado se comprueban según su sistema de escritura; entre idiomas que usan el alfabeto latino, solo se señalan las líneas idénticas al original.</p></details><details><summary>macOS dice que no se puede abrir la aplicación.</summary><p>La aplicación no está firmada por Apple. Abre Ajustes del Sistema → Privacidad y seguridad y permite que se abra.</p></details><details><summary>Windows muestra una advertencia de SmartScreen.</summary><p>La aplicación no tiene firma de código. Descárgala solo desde la página oficial de GitHub Releases y después elige «Más información» → «Ejecutar de todas formas».</p></details><details><summary>¿Puedo traducir mods de Steam Workshop directamente?</summary><p>Sí, pero una actualización de Workshop puede sobrescribir tus cambios. La herramienta guarda copias de seguridad; para trabajos importantes, conserva una copia de la traducción.</p></details><details><summary>¿Cómo informo de un error?</summary><p>Abre una incidencia en GitHub. Si puedes, adjunta el ZIP de diagnóstico desde «Ajustes» → «Recopilar registros de diagnóstico» y describe los pasos. El ZIP no incluye tus traducciones ni tus claves API.</p></details></div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <p class="unofficial">Paradox Localization Translator es una herramienta no oficial creada por un desarrollador individual. No está afiliada a Paradox Interactive ni cuenta con su respaldo. Paradox Interactive, Crusader Kings, Victoria, Hearts of Iron, Stellaris y Europa Universalis son marcas de sus respectivos propietarios.</p>
+  <p class="links">
+    <a href="https://github.com/BETA-15/paradox-localization-translator/blob/main/LICENSE">Licencia MIT</a>
+    <a href="https://github.com/BETA-15/paradox-localization-translator">Código fuente en GitHub</a>
+    <span>Creado por <a href="https://beta-15.github.io/beta-lab/">BETA-15</a></span>
+  </p>
+</footer>
+
+<div class="lightbox" id="lightbox" hidden><img alt=""></div>
+
+<script>window.PLT = {"here": "es", "langs": [{"tag": "en", "href": "../", "text": "This page is also available in English."}, {"tag": "ja", "href": "../ja/", "text": "このページは日本語でも読めます。"}, {"tag": "fr", "href": "../fr/", "text": "Cette page est aussi disponible en français."}, {"tag": "de", "href": "../de/", "text": "Diese Seite ist auch auf Deutsch verfügbar."}, {"tag": "es", "href": "../es/", "text": "Esta página también está disponible en español."}, {"tag": "ko", "href": "../ko/", "text": "이 페이지는 한국어로도 볼 수 있습니다."}, {"tag": "pl", "href": "../pl/", "text": "Ta strona jest również dostępna po polsku."}, {"tag": "pt-BR", "href": "../pt-br/", "text": "Esta página também está disponível em português brasileiro."}, {"tag": "ru", "href": "../ru/", "text": "Эта страница также доступна на русском языке."}, {"tag": "zh-Hans", "href": "../zh-hans/", "text": "本页面也提供简体中文版。"}, {"tag": "tr", "href": "../tr/", "text": "Bu sayfa Türkçe olarak da sunulmaktadır."}], "demo": [["l_spanish", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span> no teme a nada. <span class=\"tok\">§Y<\/span>+2 de Destreza<span class=\"tok\">§!<\/span>"], ["l_korean", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span>은(는) 아무것도 두려워하지 않는다. <span class=\"tok\">§Y<\/span>기량 +2<span class=\"tok\">§!<\/span>"], ["l_polish", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span> niczego się nie boi. <span class=\"tok\">§Y<\/span>+2 do Waleczności<span class=\"tok\">§!<\/span>"], ["l_braz_por", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span> não teme nada. <span class=\"tok\">§Y<\/span>+2 de Destreza<span class=\"tok\">§!<\/span>"], ["l_russian", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span> ничего не боится. <span class=\"tok\">§Y<\/span>+2 к доблести<span class=\"tok\">§!<\/span>"], ["l_simp_chinese", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span>无所畏惧。<span class=\"tok\">§Y<\/span>勇武 +2<span class=\"tok\">§!<\/span>"], ["l_turkish", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span> hiçbir şeyden korkmaz. <span class=\"tok\">§Y<\/span>+2 Yiğitlik<span class=\"tok\">§!<\/span>"], ["l_japanese", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span>は何も恐れない。<span class=\"tok\">§Y<\/span>武勇 +2<span class=\"tok\">§!<\/span>"], ["l_french", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span> ne craint rien. <span class=\"tok\">§Y<\/span>+2 en Prouesse<span class=\"tok\">§!<\/span>"], ["l_german", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span> fürchtet nichts. <span class=\"tok\">§Y<\/span>+2 Kampfgeschick<span class=\"tok\">§!<\/span>"]]};</script>
+<script src="../assets/site.js?v=8eb586893a" defer></script>
+</body>
+</html>
