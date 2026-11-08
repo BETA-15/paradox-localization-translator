@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Paradox Localization Translator — translate Paradox game mods with AI</title>
-<meta name="description" content="Free, unofficial tool to translate Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris and Europa Universalis mods into 11 languages using a local LLM or a cloud AI.">
+<title>AI Mod Translator for CK3, HOI4, Victoria 3 &amp; Stellaris | Paradox Localization Translator</title>
+<meta name="description" content="Free, unofficial tool to translate mods for CK3, HOI4, Victoria 3, Stellaris, EU4, EU5 and Imperator into 11 languages with a local LLM (Ollama, LM Studio) or a cloud AI. Formatting codes stay intact.">
 <link rel="canonical" href="https://beta-15.github.io/paradox-localization-translator/">
 <link rel="alternate" hreflang="en" href="https://beta-15.github.io/paradox-localization-translator/">
 <link rel="alternate" hreflang="ja" href="https://beta-15.github.io/paradox-localization-translator/ja/">
@@ -19,10 +19,20 @@
 <link rel="alternate" hreflang="tr" href="https://beta-15.github.io/paradox-localization-translator/tr/">
 <link rel="alternate" hreflang="x-default" href="https://beta-15.github.io/paradox-localization-translator/">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Paradox Localization Translator — translate Paradox game mods with AI">
-<meta property="og:description" content="Free, unofficial tool to translate Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris and Europa Universalis mods into 11 languages using a local LLM or a cloud AI.">
+<meta property="og:site_name" content="Paradox Localization Translator">
+<meta property="og:title" content="AI Mod Translator for CK3, HOI4, Victoria 3 &amp; Stellaris | Paradox Localization Translator">
+<meta property="og:description" content="Free, unofficial tool to translate mods for CK3, HOI4, Victoria 3, Stellaris, EU4, EU5 and Imperator into 11 languages with a local LLM (Ollama, LM Studio) or a cloud AI. Formatting codes stay intact.">
 <meta property="og:url" content="https://beta-15.github.io/paradox-localization-translator/">
-<meta property="og:image" content="https://beta-15.github.io/paradox-localization-translator/assets/icon.png">
+<meta property="og:image" content="https://beta-15.github.io/paradox-localization-translator/assets/og/en.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Translate Paradox mods into your language — with a local LLM or a cloud AI.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="AI Mod Translator for CK3, HOI4, Victoria 3 &amp; Stellaris | Paradox Localization Translator">
+<meta name="twitter:description" content="Free, unofficial tool to translate mods for CK3, HOI4, Victoria 3, Stellaris, EU4, EU5 and Imperator into 11 languages with a local LLM (Ollama, LM Studio) or a cloud AI. Formatting codes stay intact.">
+<meta name="twitter:image" content="https://beta-15.github.io/paradox-localization-translator/assets/og/en.png">
+<meta name="twitter:image:alt" content="Translate Paradox mods into your language — with a local LLM or a cloud AI.">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Paradox Localization Translator", "url": "https://beta-15.github.io/paradox-localization-translator/", "description": "Free, unofficial tool to translate mods for CK3, HOI4, Victoria 3, Stellaris, EU4, EU5 and Imperator into 11 languages with a local LLM (Ollama, LM Studio) or a cloud AI. Formatting codes stay intact.", "applicationCategory": "UtilitiesApplication", "operatingSystem": "Windows, macOS, Linux", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "isAccessibleForFree": true, "license": "https://github.com/BETA-15/paradox-localization-translator/blob/main/LICENSE", "downloadUrl": "https://github.com/BETA-15/paradox-localization-translator/releases/latest", "codeRepository": "https://github.com/BETA-15/paradox-localization-translator", "image": "https://beta-15.github.io/paradox-localization-translator/assets/og/en.png", "inLanguage": ["en", "ja", "fr", "de", "es", "ko", "pl", "pt-BR", "ru", "zh-Hans", "tr"], "author": {"@type": "Person", "name": "BETA-15", "url": "https://beta-15.github.io/beta-lab/"}}</script>
 <meta name="theme-color" content="#0e1620">
 <link rel="icon" href="./assets/icon.png">
 <link rel="stylesheet" href="./assets/style.css?v=8eb586893a">
@@ -36,7 +46,7 @@
 </div>
 
 <header class="top">
-  <a class="brand" href="./">
+  <a class="brand" href="./" aria-label="Paradox Localization Translator">
     <img src="./assets/icon.png" alt="" width="28" height="28">
     <span>Paradox Localization Translator</span>
   </a>
@@ -49,7 +59,7 @@
   </nav>
   <div class="tools">
     <details class="langs">
-      <summary aria-label="Language"><span class="globe" aria-hidden="true">◍</span> English</summary>
+      <summary title="Language"><span class="globe" aria-hidden="true">◍</span> English</summary>
       <ul><li><a href="./" hreflang="en" lang="en" aria-current=page>English</a></li><li><a href="./ja/" hreflang="ja" lang="ja">日本語</a></li><li><a href="./fr/" hreflang="fr" lang="fr">Français</a></li><li><a href="./de/" hreflang="de" lang="de">Deutsch</a></li><li><a href="./es/" hreflang="es" lang="es">Español</a></li><li><a href="./ko/" hreflang="ko" lang="ko">한국어</a></li><li><a href="./pl/" hreflang="pl" lang="pl">Polski</a></li><li><a href="./pt-br/" hreflang="pt-BR" lang="pt-BR">Português (Brasil)</a></li><li><a href="./ru/" hreflang="ru" lang="ru">Русский</a></li><li><a href="./zh-hans/" hreflang="zh-Hans" lang="zh-Hans">简体中文</a></li><li><a href="./tr/" hreflang="tr" lang="tr">Türkçe</a></li></ul>
     </details>
     <a class="gh" href="https://github.com/BETA-15/paradox-localization-translator" aria-label="GitHub">GitHub ↗</a>
@@ -61,7 +71,7 @@
 <section class="hero">
   <div class="hero-text">
     <p class="eyebrow">For Paradox grand strategy mods</p>
-    <h1>Translate mods into <em>your language</em> — with a local LLM or a cloud AI.</h1>
+    <h1>Translate Paradox mods into <em>your language</em> — with a local LLM or a cloud AI.</h1>
     <p class="lead">A free desktop tool for modders and players. It translates mod localisation files for Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris, Europa Universalis IV and V, and Imperator: Rome into any of the 11 languages the games support, keeps the game&#x27;s formatting codes intact, and helps you find and fix what is still untranslated. The app itself is available in the same 11 languages.</p>
     <div class="cta">
       <a class="btn" href="https://github.com/BETA-15/paradox-localization-translator/releases/latest">Download for free <span aria-hidden="true">→</span></a>
@@ -93,14 +103,14 @@
 
 <section id="shots" class="band">
   <h2>Screenshots</h2>
-  <p class="intro">The app&#x27;s interface is currently in Japanese; an English UI is planned.</p>
-  <div class="shots"><figure class="shot"><button type="button" class="zoom" data-full="./assets/shots/ja/translate.png"><img src="./assets/shots/ja/translate.png" alt="Translation queue and progress" width="1480" height="1012" loading="lazy"></button><figcaption>Translation queue and progress</figcaption></figure><figure class="shot"><button type="button" class="zoom" data-full="./assets/shots/ja/qa.png"><img src="./assets/shots/ja/qa.png" alt="Side-by-side QA and editing" width="1480" height="1012" loading="lazy"></button><figcaption>Side-by-side QA and editing</figcaption></figure><figure class="shot"><button type="button" class="zoom" data-full="./assets/shots/ja/survey.png"><img src="./assets/shots/ja/survey.png" alt="Mod translation status survey" width="1480" height="1012" loading="lazy"></button><figcaption>Mod translation status survey</figcaption></figure><figure class="shot"><button type="button" class="zoom" data-full="./assets/shots/ja/model.png"><img src="./assets/shots/ja/model.png" alt="Model and connection settings" width="1480" height="1012" loading="lazy"></button><figcaption>Model and connection settings</figcaption></figure></div>
+  
+  <div class="shots"><figure class="shot"><button type="button" class="zoom" data-full="./assets/shots/en/translate.webp"><img src="./assets/shots/en/translate.webp" alt="Paradox Localization Translator — Translation queue and progress" width="1480" height="1012" loading="lazy"></button><figcaption>Translation queue and progress</figcaption></figure><figure class="shot"><button type="button" class="zoom" data-full="./assets/shots/en/qa.webp"><img src="./assets/shots/en/qa.webp" alt="Paradox Localization Translator — Side-by-side QA and editing" width="1480" height="1012" loading="lazy"></button><figcaption>Side-by-side QA and editing</figcaption></figure><figure class="shot"><button type="button" class="zoom" data-full="./assets/shots/en/survey.webp"><img src="./assets/shots/en/survey.webp" alt="Paradox Localization Translator — Mod translation status survey" width="1480" height="1012" loading="lazy"></button><figcaption>Mod translation status survey</figcaption></figure><figure class="shot"><button type="button" class="zoom" data-full="./assets/shots/en/model.webp"><img src="./assets/shots/en/model.webp" alt="Paradox Localization Translator — Model and connection settings" width="1480" height="1012" loading="lazy"></button><figcaption>Model and connection settings</figcaption></figure></div>
 </section>
 
 <section id="games" class="band">
   <h2>Games and languages</h2>
   <p class="intro">The tool can translate into all 11 official languages. Each game only reads some of them; if you choose a language the game cannot display, the tool warns you before it starts. Automatic mod detection covers Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris and Europa Universalis V; for Europa Universalis IV and Imperator: Rome, add the files or folders yourself.</p>
-  <div class="matrix-wrap"><table class="matrix"><thead><tr><th scope="col">Game</th><th scope="col" title="English" class=here>EN</th><th scope="col" title="日本語">JA</th><th scope="col" title="Français">FR</th><th scope="col" title="Deutsch">DE</th><th scope="col" title="Español">ES</th><th scope="col" title="한국어">KO</th><th scope="col" title="Polski">PL</th><th scope="col" title="Português (Brasil)">PT</th><th scope="col" title="Русский">RU</th><th scope="col" title="简体中文">ZH</th><th scope="col" title="Türkçe">TR</th></tr></thead><tbody><tr><th scope="row">Victoria 3<span class="count">all 11</span></th><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr><tr><th scope="row">Europa Universalis V<span class="count">all 11</span></th><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr><tr><th scope="row">Hearts of Iron IV<span class="count">10 languages</span></th><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Stellaris<span class="count">10 languages</span></th><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Crusader Kings III<span class="count">9 languages</span></th><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Imperator: Rome<span class="count">6 languages</span></th><td class="yes here">✓</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Europa Universalis IV<span class="count">4 languages</span></th><td class="yes here">✓</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="no">–</td></tr></tbody></table></div>
+  <div class="matrix-wrap"><table class="matrix"><thead><tr><th scope="col">Game</th><th scope="col" title="English" class=here>EN</th><th scope="col" title="日本語">JA</th><th scope="col" title="Français">FR</th><th scope="col" title="Deutsch">DE</th><th scope="col" title="Español">ES</th><th scope="col" title="한국어">KO</th><th scope="col" title="Polski">PL</th><th scope="col" title="Português (Brasil)">PT</th><th scope="col" title="Русский">RU</th><th scope="col" title="简体中文">ZH</th><th scope="col" title="Türkçe">TR</th></tr></thead><tbody><tr><th scope="row">Victoria 3<span class="count">all 11</span></th><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr><tr><th scope="row">Europa Universalis V (EU5)<span class="count">all 11</span></th><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr><tr><th scope="row">Hearts of Iron IV (HOI4)<span class="count">10 languages</span></th><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Stellaris<span class="count">10 languages</span></th><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Crusader Kings III (CK3)<span class="count">9 languages</span></th><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Imperator: Rome<span class="count">6 languages</span></th><td class="yes here">✓</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Europa Universalis IV (EU4)<span class="count">4 languages</span></th><td class="yes here">✓</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="no">–</td></tr></tbody></table></div>
   <p class="legend">✓ = the game can display this language</p>
 </section>
 

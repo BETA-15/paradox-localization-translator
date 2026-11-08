@@ -1,7 +1,7 @@
 {
   "meta": {
-    "title": "Paradox Localization Translator — AI로 Paradox 게임 모드 번역",
-    "description": "로컬 LLM이나 클라우드 AI로 Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris, Europa Universalis 모드를 11개 언어로 번역하는 무료 비공식 도구입니다."
+    "title": "AI로 Paradox 모드 한글화: CK3, HOI4, Victoria 3, Stellaris | Paradox Localization Translator",
+    "description": "CK3, HOI4, Victoria 3, Stellaris, EU5 모드를 로컬 LLM(Ollama, LM Studio)이나 클라우드 AI로 직접 한글화할 수 있는 무료 비공식 도구입니다. 서식 코드는 그대로 유지되며, 11개 언어로 번역할 수 있습니다."
   },
   "nav": {
     "features": "기능",
@@ -15,7 +15,7 @@
   "suggest_close": "닫기",
   "hero": {
     "eyebrow": "Paradox 대전략 게임 모드용",
-    "title": "로컬 LLM이나 클라우드 AI로 모드를 **원하는 언어**로 번역합니다.",
+    "title": "로컬 LLM이나 클라우드 AI로 Paradox 모드를 **직접 한글화**하세요.",
     "lead": "모드 제작자와 플레이어를 위한 무료 데스크톱 도구입니다. Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris, Europa Universalis IV 및 V, Imperator: Rome의 모드 현지화 파일을 게임에서 지원하는 11개 언어 중 원하는 언어로 번역합니다. 게임 서식 코드를 그대로 유지하며, 아직 번역되지 않은 부분을 찾아 수정할 수 있습니다. 앱 자체도 동일한 11개 언어로 사용할 수 있습니다.",
     "download": "무료 다운로드",
     "platforms": "Windows · macOS · Linux — Python 설치 불필요",
@@ -58,7 +58,6 @@
   "shots": {
     "title": "스크린샷",
     "pending": "스크린샷 준비 중",
-    "ui_note": "스크린샷에는 앱의 일본어 화면이 표시되어 있습니다. 한국어 화면도 제공할 예정입니다.",
     "items": {
       "translate": "번역 대기열 및 진행 상황",
       "qa": "원문·번역문 비교 검토 및 편집",

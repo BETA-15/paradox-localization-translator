@@ -1,7 +1,7 @@
 {
   "meta": {
-    "title": "Paradox Localization Translator — Paradox のゲームの Mod を AI で翻訳",
-    "description": "Crusader Kings III、Victoria 3、Hearts of Iron IV、Stellaris、Europa Universalis の Mod を、ローカル LLM やクラウドの AI で11言語へ翻訳する、無料の非公式ツール。"
+    "title": "Paradox の Mod を AI で日本語化｜CK3・HOI4・Victoria 3・Stellaris | Paradox Localization Translator",
+    "description": "CK3・HOI4・Victoria 3・Stellaris・EU5 の Mod を、ローカル LLM（Ollama・LM Studio）やクラウドの AI で日本語化できる、無料の非公式ツール。書式の記号は壊さず、11言語への翻訳に対応します。"
   },
   "nav": {
     "features": "できること",
@@ -15,7 +15,7 @@
   "suggest_close": "閉じる",
   "hero": {
     "eyebrow": "Paradox の歴史ストラテジーの Mod に",
-    "title": "Mod を、**あなたの言語へ。**ローカル LLM でも、クラウドの AI でも。",
+    "title": "Paradox の Mod を、**自分で日本語化。**ローカル LLM でも、クラウドの AI でも。",
     "lead": "Mod を作る人・遊ぶ人のための無料のデスクトップ用ツールです。Crusader Kings III、Victoria 3、Hearts of Iron IV、Stellaris、Europa Universalis IV・V、Imperator: Rome の Mod のローカライズを、ゲームが対応する11言語のどれへでも翻訳します。ゲームの書式の記号は壊さず、訳し残しも見つけて直せます。アプリの画面も、同じ11言語で使えます。",
     "download": "無料でダウンロード",
     "platforms": "Windows・macOS・Linux　Python のインストールは不要",

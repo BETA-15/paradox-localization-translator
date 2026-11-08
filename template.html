@@ -8,10 +8,20 @@
 <link rel="canonical" href="{{canonical}}">
 {{hreflang}}
 <meta property="og:type" content="website">
+<meta property="og:site_name" content="Paradox Localization Translator">
 <meta property="og:title" content="{{meta.title}}">
 <meta property="og:description" content="{{meta.description}}">
 <meta property="og:url" content="{{canonical}}">
-<meta property="og:image" content="{{base_url}}assets/icon.png">
+<meta property="og:image" content="{{og_image}}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="{{og_alt}}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{meta.title}}">
+<meta name="twitter:description" content="{{meta.description}}">
+<meta name="twitter:image" content="{{og_image}}">
+<meta name="twitter:image:alt" content="{{og_alt}}">
+{{verification}}<script type="application/ld+json">{{jsonld}}</script>
 <meta name="theme-color" content="#0e1620">
 <link rel="icon" href="{{root}}assets/icon.png">
 <link rel="stylesheet" href="{{root}}assets/style.css?v={{asset_v}}">
@@ -25,7 +35,7 @@
 </div>
 
 <header class="top">
-  <a class="brand" href="{{root}}{{slug_path}}">
+  <a class="brand" href="{{root}}{{slug_path}}" aria-label="Paradox Localization Translator">
     <img src="{{root}}assets/icon.png" alt="" width="28" height="28">
     <span>Paradox Localization Translator</span>
   </a>
@@ -38,7 +48,7 @@
   </nav>
   <div class="tools">
     <details class="langs">
-      <summary aria-label="{{nav.language}}"><span class="globe" aria-hidden="true">◍</span> {{lang_name}}</summary>
+      <summary title="{{nav.language}}"><span class="globe" aria-hidden="true">◍</span> {{lang_name}}</summary>
       <ul>{{langmenu}}</ul>
     </details>
     <a class="gh" href="{{repo_url}}" aria-label="GitHub">GitHub ↗</a>

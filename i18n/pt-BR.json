@@ -1,7 +1,7 @@
 {
   "meta": {
-    "title": "Paradox Localization Translator — traduza mods de jogos da Paradox com IA",
-    "description": "Ferramenta gratuita e não oficial para traduzir mods de Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris e Europa Universalis para 11 idiomas usando um LLM local ou IA na nuvem."
+    "title": "Tradução de mods da Paradox com IA: HOI4, Victoria 3, Stellaris, EU5 | Paradox Localization Translator",
+    "description": "Ferramenta gratuita e não oficial que traduz para o português mods de HOI4, Victoria 3, Stellaris e EU5 com um LLM local (Ollama, LM Studio) ou IA na nuvem. Os códigos de formatação ficam intactos. 11 idiomas."
   },
   "nav": {
     "features": "Recursos",
@@ -15,7 +15,7 @@
   "suggest_close": "Fechar",
   "hero": {
     "eyebrow": "Para mods dos jogos de grande estratégia da Paradox",
-    "title": "Traduza mods para **seu idioma** — com um LLM local ou IA na nuvem.",
+    "title": "Traduza mods da Paradox para **seu idioma** — com um LLM local ou IA na nuvem.",
     "lead": "Uma ferramenta gratuita para computador, feita para criadores de mods e jogadores. Traduz arquivos de localização de mods de Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris, Europa Universalis IV e V e Imperator: Rome para qualquer um dos 11 idiomas compatíveis com os jogos, preserva os códigos de formatação do jogo e ajuda a encontrar e corrigir o que ainda não foi traduzido. O próprio aplicativo também está disponível nesses mesmos 11 idiomas.",
     "download": "Baixar grátis",
     "platforms": "Windows · macOS · Linux — não precisa de Python",
@@ -58,7 +58,6 @@
   "shots": {
     "title": "Capturas de tela",
     "pending": "Captura de tela em breve",
-    "ui_note": "As capturas de tela mostram a interface do aplicativo em japonês; está prevista uma interface em português brasileiro.",
     "items": {
       "translate": "Fila e progresso da tradução",
       "qa": "Controle de qualidade e edição lado a lado",

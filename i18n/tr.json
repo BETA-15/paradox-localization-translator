@@ -1,7 +1,7 @@
 {
   "meta": {
-    "title": "Paradox Localization Translator — Paradox oyunlarının modlarını yapay zekâyla çevirin",
-    "description": "Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris ve Europa Universalis modlarını yerel bir LLM veya bulut tabanlı yapay zekâyla 11 dile çevirmek için ücretsiz, gayriresmî bir araç."
+    "title": "Victoria 3 ve EU5 modlarına yapay zekâyla Türkçe yama | Paradox Localization Translator",
+    "description": "Victoria 3 ve Europa Universalis V modlarına yerel bir LLM (Ollama, LM Studio) veya bulut tabanlı yapay zekâyla kendi Türkçe yamanızı yapmanızı sağlayan ücretsiz, gayriresmî bir araç. Biçim kodları bozulmaz. 11 dil."
   },
   "nav": {
     "features": "Özellikler",
@@ -15,7 +15,7 @@
   "suggest_close": "Kapat",
   "hero": {
     "eyebrow": "Paradox büyük strateji oyunlarının modları için",
-    "title": "Modları **kendi dilinize** çevirin — yerel bir LLM veya bulut tabanlı yapay zekâyla.",
+    "title": "Paradox modlarına **kendi Türkçe yamanızı** yapın — yerel bir LLM veya bulut tabanlı yapay zekâyla.",
     "lead": "Mod yapımcıları ve oyuncular için ücretsiz bir masaüstü aracı. Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris, Europa Universalis IV ve V ile Imperator: Rome modlarının yerelleştirme dosyalarını oyunların desteklediği 11 dilden herhangi birine çevirir, oyunun biçimlendirme kodlarını korur ve henüz çevrilmemiş kısımları bulup düzeltmenize yardımcı olur. Uygulamanın kendisi de aynı 11 dilde kullanılabilir.",
     "download": "Ücretsiz indirin",
     "platforms": "Windows · macOS · Linux — Python gerekmez",
@@ -58,7 +58,6 @@
   "shots": {
     "title": "Ekran görüntüleri",
     "pending": "Ekran görüntüsü yakında eklenecek",
-    "ui_note": "Ekran görüntüleri uygulamanın Japonca arayüzünü gösterir; Türkçe bir arayüz planlanmaktadır.",
     "items": {
       "translate": "Çeviri kuyruğu ve ilerleme",
       "qa": "Yan yana kalite kontrolü ve düzenleme",

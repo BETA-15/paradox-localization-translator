@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Paradox Localization Translator — 用 AI 翻译 Paradox 游戏模组</title>
-<meta name="description" content="一款免费的非官方工具，可使用本地 LLM 或云端 AI，将 Crusader Kings III、Victoria 3、Hearts of Iron IV、Stellaris 和 Europa Universalis 的模组翻译成 11 种语言。">
+<title>用 AI 汉化 Paradox 模组：钢铁雄心4、群星、十字军之王3、维多利亚3 | Paradox Localization Translator</title>
+<meta name="description" content="免费的非官方工具：用本地 LLM（Ollama、LM Studio）或云端 AI，自己汉化钢铁雄心4（HOI4）、群星（Stellaris）、十字军之王3（CK3）、维多利亚3、EU5 和 Imperator 的模组。格式代码保持不变，支持 11 种语言。">
 <link rel="canonical" href="https://beta-15.github.io/paradox-localization-translator/zh-hans/">
 <link rel="alternate" hreflang="en" href="https://beta-15.github.io/paradox-localization-translator/">
 <link rel="alternate" hreflang="ja" href="https://beta-15.github.io/paradox-localization-translator/ja/">
@@ -19,10 +19,20 @@
 <link rel="alternate" hreflang="tr" href="https://beta-15.github.io/paradox-localization-translator/tr/">
 <link rel="alternate" hreflang="x-default" href="https://beta-15.github.io/paradox-localization-translator/">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Paradox Localization Translator — 用 AI 翻译 Paradox 游戏模组">
-<meta property="og:description" content="一款免费的非官方工具，可使用本地 LLM 或云端 AI，将 Crusader Kings III、Victoria 3、Hearts of Iron IV、Stellaris 和 Europa Universalis 的模组翻译成 11 种语言。">
+<meta property="og:site_name" content="Paradox Localization Translator">
+<meta property="og:title" content="用 AI 汉化 Paradox 模组：钢铁雄心4、群星、十字军之王3、维多利亚3 | Paradox Localization Translator">
+<meta property="og:description" content="免费的非官方工具：用本地 LLM（Ollama、LM Studio）或云端 AI，自己汉化钢铁雄心4（HOI4）、群星（Stellaris）、十字军之王3（CK3）、维多利亚3、EU5 和 Imperator 的模组。格式代码保持不变，支持 11 种语言。">
 <meta property="og:url" content="https://beta-15.github.io/paradox-localization-translator/zh-hans/">
-<meta property="og:image" content="https://beta-15.github.io/paradox-localization-translator/assets/icon.png">
+<meta property="og:image" content="https://beta-15.github.io/paradox-localization-translator/assets/og/zh-Hans.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="用本地 LLM 或云端 AI，自己汉化 Paradox 模组。">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="用 AI 汉化 Paradox 模组：钢铁雄心4、群星、十字军之王3、维多利亚3 | Paradox Localization Translator">
+<meta name="twitter:description" content="免费的非官方工具：用本地 LLM（Ollama、LM Studio）或云端 AI，自己汉化钢铁雄心4（HOI4）、群星（Stellaris）、十字军之王3（CK3）、维多利亚3、EU5 和 Imperator 的模组。格式代码保持不变，支持 11 种语言。">
+<meta name="twitter:image" content="https://beta-15.github.io/paradox-localization-translator/assets/og/zh-Hans.png">
+<meta name="twitter:image:alt" content="用本地 LLM 或云端 AI，自己汉化 Paradox 模组。">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Paradox Localization Translator", "url": "https://beta-15.github.io/paradox-localization-translator/zh-hans/", "description": "免费的非官方工具：用本地 LLM（Ollama、LM Studio）或云端 AI，自己汉化钢铁雄心4（HOI4）、群星（Stellaris）、十字军之王3（CK3）、维多利亚3、EU5 和 Imperator 的模组。格式代码保持不变，支持 11 种语言。", "applicationCategory": "UtilitiesApplication", "operatingSystem": "Windows, macOS, Linux", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "isAccessibleForFree": true, "license": "https://github.com/BETA-15/paradox-localization-translator/blob/main/LICENSE", "downloadUrl": "https://github.com/BETA-15/paradox-localization-translator/releases/latest", "codeRepository": "https://github.com/BETA-15/paradox-localization-translator", "image": "https://beta-15.github.io/paradox-localization-translator/assets/og/zh-Hans.png", "inLanguage": ["en", "ja", "fr", "de", "es", "ko", "pl", "pt-BR", "ru", "zh-Hans", "tr"], "author": {"@type": "Person", "name": "BETA-15", "url": "https://beta-15.github.io/beta-lab/"}}</script>
 <meta name="theme-color" content="#0e1620">
 <link rel="icon" href="../assets/icon.png">
 <link rel="stylesheet" href="../assets/style.css?v=8eb586893a">
@@ -36,7 +46,7 @@
 </div>
 
 <header class="top">
-  <a class="brand" href="../zh-hans/">
+  <a class="brand" href="../zh-hans/" aria-label="Paradox Localization Translator">
     <img src="../assets/icon.png" alt="" width="28" height="28">
     <span>Paradox Localization Translator</span>
   </a>
@@ -49,7 +59,7 @@
   </nav>
   <div class="tools">
     <details class="langs">
-      <summary aria-label="语言"><span class="globe" aria-hidden="true">◍</span> 简体中文</summary>
+      <summary title="语言"><span class="globe" aria-hidden="true">◍</span> 简体中文</summary>
       <ul><li><a href="../" hreflang="en" lang="en">English</a></li><li><a href="../ja/" hreflang="ja" lang="ja">日本語</a></li><li><a href="../fr/" hreflang="fr" lang="fr">Français</a></li><li><a href="../de/" hreflang="de" lang="de">Deutsch</a></li><li><a href="../es/" hreflang="es" lang="es">Español</a></li><li><a href="../ko/" hreflang="ko" lang="ko">한국어</a></li><li><a href="../pl/" hreflang="pl" lang="pl">Polski</a></li><li><a href="../pt-br/" hreflang="pt-BR" lang="pt-BR">Português (Brasil)</a></li><li><a href="../ru/" hreflang="ru" lang="ru">Русский</a></li><li><a href="../zh-hans/" hreflang="zh-Hans" lang="zh-Hans" aria-current=page>简体中文</a></li><li><a href="../tr/" hreflang="tr" lang="tr">Türkçe</a></li></ul>
     </details>
     <a class="gh" href="https://github.com/BETA-15/paradox-localization-translator" aria-label="GitHub">GitHub ↗</a>
@@ -61,7 +71,7 @@
 <section class="hero">
   <div class="hero-text">
     <p class="eyebrow">适用于 Paradox 大战略游戏模组</p>
-    <h1>使用本地 LLM 或云端 AI，将模组翻译成<em>你的语言</em>。</h1>
+    <h1>用本地 LLM 或云端 AI，<em>自己汉化</em> Paradox 模组。</h1>
     <p class="lead">为模组作者和玩家提供的免费桌面工具。可将 Crusader Kings III、Victoria 3、Hearts of Iron IV、Stellaris、Europa Universalis IV 和 V，以及 Imperator: Rome 的模组本地化文件翻译成游戏支持的 11 种语言中的任意一种，完整保留游戏格式代码，并帮助你查找和修复尚未翻译的内容。应用本身也支持相同的 11 种语言。</p>
     <div class="cta">
       <a class="btn" href="https://github.com/BETA-15/paradox-localization-translator/releases/latest">免费下载 <span aria-hidden="true">→</span></a>
@@ -93,14 +103,14 @@
 
 <section id="shots" class="band">
   <h2>截图</h2>
-  <p class="intro">截图展示的是应用的日语界面；计划提供简体中文界面。</p>
-  <div class="shots"><figure class="shot"><button type="button" class="zoom" data-full="../assets/shots/ja/translate.png"><img src="../assets/shots/ja/translate.png" alt="翻译队列与进度" width="1480" height="1012" loading="lazy"></button><figcaption>翻译队列与进度</figcaption></figure><figure class="shot"><button type="button" class="zoom" data-full="../assets/shots/ja/qa.png"><img src="../assets/shots/ja/qa.png" alt="并排质检与编辑" width="1480" height="1012" loading="lazy"></button><figcaption>并排质检与编辑</figcaption></figure><figure class="shot"><button type="button" class="zoom" data-full="../assets/shots/ja/survey.png"><img src="../assets/shots/ja/survey.png" alt="模组翻译状态调查" width="1480" height="1012" loading="lazy"></button><figcaption>模组翻译状态调查</figcaption></figure><figure class="shot"><button type="button" class="zoom" data-full="../assets/shots/ja/model.png"><img src="../assets/shots/ja/model.png" alt="模型与连接设置" width="1480" height="1012" loading="lazy"></button><figcaption>模型与连接设置</figcaption></figure></div>
+  
+  <div class="shots"><figure class="shot"><button type="button" class="zoom" data-full="../assets/shots/zh-Hans/translate.webp"><img src="../assets/shots/zh-Hans/translate.webp" alt="Paradox Localization Translator — 翻译队列与进度" width="1480" height="1012" loading="lazy"></button><figcaption>翻译队列与进度</figcaption></figure><figure class="shot"><button type="button" class="zoom" data-full="../assets/shots/zh-Hans/qa.webp"><img src="../assets/shots/zh-Hans/qa.webp" alt="Paradox Localization Translator — 并排质检与编辑" width="1480" height="1012" loading="lazy"></button><figcaption>并排质检与编辑</figcaption></figure><figure class="shot"><button type="button" class="zoom" data-full="../assets/shots/zh-Hans/survey.webp"><img src="../assets/shots/zh-Hans/survey.webp" alt="Paradox Localization Translator — 模组翻译状态调查" width="1480" height="1012" loading="lazy"></button><figcaption>模组翻译状态调查</figcaption></figure><figure class="shot"><button type="button" class="zoom" data-full="../assets/shots/zh-Hans/model.webp"><img src="../assets/shots/zh-Hans/model.webp" alt="Paradox Localization Translator — 模型与连接设置" width="1480" height="1012" loading="lazy"></button><figcaption>模型与连接设置</figcaption></figure></div>
 </section>
 
 <section id="games" class="band">
   <h2>游戏与语言</h2>
   <p class="intro">本工具可翻译成全部 11 种官方语言。每款游戏只能读取其中部分语言；如果选择了游戏无法显示的语言，工具会在开始前提醒。支持自动检测 Crusader Kings III、Victoria 3、Hearts of Iron IV、Stellaris 和 Europa Universalis V 的模组；Europa Universalis IV 和 Imperator: Rome 的文件或文件夹需要手动添加。</p>
-  <div class="matrix-wrap"><table class="matrix"><thead><tr><th scope="col">游戏</th><th scope="col" title="English">EN</th><th scope="col" title="日本語">JA</th><th scope="col" title="Français">FR</th><th scope="col" title="Deutsch">DE</th><th scope="col" title="Español">ES</th><th scope="col" title="한국어">KO</th><th scope="col" title="Polski">PL</th><th scope="col" title="Português (Brasil)">PT</th><th scope="col" title="Русский">RU</th><th scope="col" title="简体中文" class=here>ZH</th><th scope="col" title="Türkçe">TR</th></tr></thead><tbody><tr><th scope="row">Victoria 3<span class="count">全部 11 种</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td></tr><tr><th scope="row">Europa Universalis V<span class="count">全部 11 种</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td></tr><tr><th scope="row">Hearts of Iron IV<span class="count">10 种语言</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="no">–</td></tr><tr><th scope="row">Stellaris<span class="count">10 种语言</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="no">–</td></tr><tr><th scope="row">Crusader Kings III<span class="count">9 种语言</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td><td class="yes">✓</td><td class="yes here">✓</td><td class="no">–</td></tr><tr><th scope="row">Imperator: Rome<span class="count">6 种语言</span></th><td class="yes">✓</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="yes">✓</td><td class="yes here">✓</td><td class="no">–</td></tr><tr><th scope="row">Europa Universalis IV<span class="count">4 种语言</span></th><td class="yes">✓</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="no here">–</td><td class="no">–</td></tr></tbody></table></div>
+  <div class="matrix-wrap"><table class="matrix"><thead><tr><th scope="col">游戏</th><th scope="col" title="English">EN</th><th scope="col" title="日本語">JA</th><th scope="col" title="Français">FR</th><th scope="col" title="Deutsch">DE</th><th scope="col" title="Español">ES</th><th scope="col" title="한국어">KO</th><th scope="col" title="Polski">PL</th><th scope="col" title="Português (Brasil)">PT</th><th scope="col" title="Русский">RU</th><th scope="col" title="简体中文" class=here>ZH</th><th scope="col" title="Türkçe">TR</th></tr></thead><tbody><tr><th scope="row">Victoria 3<span class="count">全部 11 种</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td></tr><tr><th scope="row">Europa Universalis V (EU5)<span class="count">全部 11 种</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td></tr><tr><th scope="row">Hearts of Iron IV (HOI4)<span class="count">10 种语言</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="no">–</td></tr><tr><th scope="row">Stellaris<span class="count">10 种语言</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="no">–</td></tr><tr><th scope="row">Crusader Kings III (CK3)<span class="count">9 种语言</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td><td class="yes">✓</td><td class="yes here">✓</td><td class="no">–</td></tr><tr><th scope="row">Imperator: Rome<span class="count">6 种语言</span></th><td class="yes">✓</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="yes">✓</td><td class="yes here">✓</td><td class="no">–</td></tr><tr><th scope="row">Europa Universalis IV (EU4)<span class="count">4 种语言</span></th><td class="yes">✓</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="no here">–</td><td class="no">–</td></tr></tbody></table></div>
   <p class="legend">✓ = 游戏可显示此语言</p>
 </section>
 

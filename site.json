@@ -11,6 +11,7 @@
   },
   "donate": true,
   "sponsor_url": "https://github.com/sponsors/BETA-15",
+  "search_verification": {"google": "", "bing": ""},
 
   "languages": [
     {"code": "en", "slug": "", "hreflang": "en", "game": "l_english", "name": "English"},
@@ -28,12 +29,12 @@
 
   "games": [
     {"name": "Victoria 3", "langs": "all"},
-    {"name": "Europa Universalis V", "langs": "all"},
-    {"name": "Hearts of Iron IV", "langs": ["l_english", "l_french", "l_german", "l_spanish", "l_japanese", "l_korean", "l_polish", "l_braz_por", "l_russian", "l_simp_chinese"]},
+    {"name": "Europa Universalis V (EU5)", "langs": "all"},
+    {"name": "Hearts of Iron IV (HOI4)", "langs": ["l_english", "l_french", "l_german", "l_spanish", "l_japanese", "l_korean", "l_polish", "l_braz_por", "l_russian", "l_simp_chinese"]},
     {"name": "Stellaris", "langs": ["l_english", "l_french", "l_german", "l_spanish", "l_japanese", "l_korean", "l_polish", "l_braz_por", "l_russian", "l_simp_chinese"]},
-    {"name": "Crusader Kings III", "langs": ["l_english", "l_french", "l_german", "l_spanish", "l_japanese", "l_korean", "l_polish", "l_russian", "l_simp_chinese"]},
+    {"name": "Crusader Kings III (CK3)", "langs": ["l_english", "l_french", "l_german", "l_spanish", "l_japanese", "l_korean", "l_polish", "l_russian", "l_simp_chinese"]},
     {"name": "Imperator: Rome", "langs": ["l_english", "l_french", "l_german", "l_spanish", "l_russian", "l_simp_chinese"]},
-    {"name": "Europa Universalis IV", "langs": ["l_english", "l_french", "l_german", "l_spanish"]}
+    {"name": "Europa Universalis IV (EU4)", "langs": ["l_english", "l_french", "l_german", "l_spanish"]}
   ],
 
   "demo": {
@@ -53,7 +54,7 @@
     }
   },
 
-  "shots_fallback": "ja",
+  "shots_fallback": null,
   "shots": [
     {"file": "translate", "w": 1480, "h": 1012},
     {"file": "qa", "w": 1480, "h": 1012},

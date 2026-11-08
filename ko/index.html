@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Paradox Localization Translator — AI로 Paradox 게임 모드 번역</title>
-<meta name="description" content="로컬 LLM이나 클라우드 AI로 Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris, Europa Universalis 모드를 11개 언어로 번역하는 무료 비공식 도구입니다.">
+<title>AI로 Paradox 모드 한글화: CK3, HOI4, Victoria 3, Stellaris | Paradox Localization Translator</title>
+<meta name="description" content="CK3, HOI4, Victoria 3, Stellaris, EU5 모드를 로컬 LLM(Ollama, LM Studio)이나 클라우드 AI로 직접 한글화할 수 있는 무료 비공식 도구입니다. 서식 코드는 그대로 유지되며, 11개 언어로 번역할 수 있습니다.">
 <link rel="canonical" href="https://beta-15.github.io/paradox-localization-translator/ko/">
 <link rel="alternate" hreflang="en" href="https://beta-15.github.io/paradox-localization-translator/">
 <link rel="alternate" hreflang="ja" href="https://beta-15.github.io/paradox-localization-translator/ja/">
@@ -19,10 +19,20 @@
 <link rel="alternate" hreflang="tr" href="https://beta-15.github.io/paradox-localization-translator/tr/">
 <link rel="alternate" hreflang="x-default" href="https://beta-15.github.io/paradox-localization-translator/">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Paradox Localization Translator — AI로 Paradox 게임 모드 번역">
-<meta property="og:description" content="로컬 LLM이나 클라우드 AI로 Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris, Europa Universalis 모드를 11개 언어로 번역하는 무료 비공식 도구입니다.">
+<meta property="og:site_name" content="Paradox Localization Translator">
+<meta property="og:title" content="AI로 Paradox 모드 한글화: CK3, HOI4, Victoria 3, Stellaris | Paradox Localization Translator">
+<meta property="og:description" content="CK3, HOI4, Victoria 3, Stellaris, EU5 모드를 로컬 LLM(Ollama, LM Studio)이나 클라우드 AI로 직접 한글화할 수 있는 무료 비공식 도구입니다. 서식 코드는 그대로 유지되며, 11개 언어로 번역할 수 있습니다.">
 <meta property="og:url" content="https://beta-15.github.io/paradox-localization-translator/ko/">
-<meta property="og:image" content="https://beta-15.github.io/paradox-localization-translator/assets/icon.png">
+<meta property="og:image" content="https://beta-15.github.io/paradox-localization-translator/assets/og/ko.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="로컬 LLM이나 클라우드 AI로 Paradox 모드를 직접 한글화하세요.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="AI로 Paradox 모드 한글화: CK3, HOI4, Victoria 3, Stellaris | Paradox Localization Translator">
+<meta name="twitter:description" content="CK3, HOI4, Victoria 3, Stellaris, EU5 모드를 로컬 LLM(Ollama, LM Studio)이나 클라우드 AI로 직접 한글화할 수 있는 무료 비공식 도구입니다. 서식 코드는 그대로 유지되며, 11개 언어로 번역할 수 있습니다.">
+<meta name="twitter:image" content="https://beta-15.github.io/paradox-localization-translator/assets/og/ko.png">
+<meta name="twitter:image:alt" content="로컬 LLM이나 클라우드 AI로 Paradox 모드를 직접 한글화하세요.">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Paradox Localization Translator", "url": "https://beta-15.github.io/paradox-localization-translator/ko/", "description": "CK3, HOI4, Victoria 3, Stellaris, EU5 모드를 로컬 LLM(Ollama, LM Studio)이나 클라우드 AI로 직접 한글화할 수 있는 무료 비공식 도구입니다. 서식 코드는 그대로 유지되며, 11개 언어로 번역할 수 있습니다.", "applicationCategory": "UtilitiesApplication", "operatingSystem": "Windows, macOS, Linux", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "isAccessibleForFree": true, "license": "https://github.com/BETA-15/paradox-localization-translator/blob/main/LICENSE", "downloadUrl": "https://github.com/BETA-15/paradox-localization-translator/releases/latest", "codeRepository": "https://github.com/BETA-15/paradox-localization-translator", "image": "https://beta-15.github.io/paradox-localization-translator/assets/og/ko.png", "inLanguage": ["en", "ja", "fr", "de", "es", "ko", "pl", "pt-BR", "ru", "zh-Hans", "tr"], "author": {"@type": "Person", "name": "BETA-15", "url": "https://beta-15.github.io/beta-lab/"}}</script>
 <meta name="theme-color" content="#0e1620">
 <link rel="icon" href="../assets/icon.png">
 <link rel="stylesheet" href="../assets/style.css?v=8eb586893a">
@@ -36,7 +46,7 @@
 </div>
 
 <header class="top">
-  <a class="brand" href="../ko/">
+  <a class="brand" href="../ko/" aria-label="Paradox Localization Translator">
     <img src="../assets/icon.png" alt="" width="28" height="28">
     <span>Paradox Localization Translator</span>
   </a>
@@ -49,7 +59,7 @@
   </nav>
   <div class="tools">
     <details class="langs">
-      <summary aria-label="언어"><span class="globe" aria-hidden="true">◍</span> 한국어</summary>
+      <summary title="언어"><span class="globe" aria-hidden="true">◍</span> 한국어</summary>
       <ul><li><a href="../" hreflang="en" lang="en">English</a></li><li><a href="../ja/" hreflang="ja" lang="ja">日本語</a></li><li><a href="../fr/" hreflang="fr" lang="fr">Français</a></li><li><a href="../de/" hreflang="de" lang="de">Deutsch</a></li><li><a href="../es/" hreflang="es" lang="es">Español</a></li><li><a href="../ko/" hreflang="ko" lang="ko" aria-current=page>한국어</a></li><li><a href="../pl/" hreflang="pl" lang="pl">Polski</a></li><li><a href="../pt-br/" hreflang="pt-BR" lang="pt-BR">Português (Brasil)</a></li><li><a href="../ru/" hreflang="ru" lang="ru">Русский</a></li><li><a href="../zh-hans/" hreflang="zh-Hans" lang="zh-Hans">简体中文</a></li><li><a href="../tr/" hreflang="tr" lang="tr">Türkçe</a></li></ul>
     </details>
     <a class="gh" href="https://github.com/BETA-15/paradox-localization-translator" aria-label="GitHub">GitHub ↗</a>
@@ -61,7 +71,7 @@
 <section class="hero">
   <div class="hero-text">
     <p class="eyebrow">Paradox 대전략 게임 모드용</p>
-    <h1>로컬 LLM이나 클라우드 AI로 모드를 <em>원하는 언어</em>로 번역합니다.</h1>
+    <h1>로컬 LLM이나 클라우드 AI로 Paradox 모드를 <em>직접 한글화</em>하세요.</h1>
     <p class="lead">모드 제작자와 플레이어를 위한 무료 데스크톱 도구입니다. Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris, Europa Universalis IV 및 V, Imperator: Rome의 모드 현지화 파일을 게임에서 지원하는 11개 언어 중 원하는 언어로 번역합니다. 게임 서식 코드를 그대로 유지하며, 아직 번역되지 않은 부분을 찾아 수정할 수 있습니다. 앱 자체도 동일한 11개 언어로 사용할 수 있습니다.</p>
     <div class="cta">
       <a class="btn" href="https://github.com/BETA-15/paradox-localization-translator/releases/latest">무료 다운로드 <span aria-hidden="true">→</span></a>
@@ -93,14 +103,14 @@
 
 <section id="shots" class="band">
   <h2>스크린샷</h2>
-  <p class="intro">스크린샷에는 앱의 일본어 화면이 표시되어 있습니다. 한국어 화면도 제공할 예정입니다.</p>
-  <div class="shots"><figure class="shot"><button type="button" class="zoom" data-full="../assets/shots/ja/translate.png"><img src="../assets/shots/ja/translate.png" alt="번역 대기열 및 진행 상황" width="1480" height="1012" loading="lazy"></button><figcaption>번역 대기열 및 진행 상황</figcaption></figure><figure class="shot"><button type="button" class="zoom" data-full="../assets/shots/ja/qa.png"><img src="../assets/shots/ja/qa.png" alt="원문·번역문 비교 검토 및 편집" width="1480" height="1012" loading="lazy"></button><figcaption>원문·번역문 비교 검토 및 편집</figcaption></figure><figure class="shot"><button type="button" class="zoom" data-full="../assets/shots/ja/survey.png"><img src="../assets/shots/ja/survey.png" alt="모드 번역 상태 조사" width="1480" height="1012" loading="lazy"></button><figcaption>모드 번역 상태 조사</figcaption></figure><figure class="shot"><button type="button" class="zoom" data-full="../assets/shots/ja/model.png"><img src="../assets/shots/ja/model.png" alt="모델 및 연결 설정" width="1480" height="1012" loading="lazy"></button><figcaption>모델 및 연결 설정</figcaption></figure></div>
+  
+  <div class="shots"><figure class="shot"><button type="button" class="zoom" data-full="../assets/shots/ko/translate.webp"><img src="../assets/shots/ko/translate.webp" alt="Paradox Localization Translator — 번역 대기열 및 진행 상황" width="1480" height="1012" loading="lazy"></button><figcaption>번역 대기열 및 진행 상황</figcaption></figure><figure class="shot"><button type="button" class="zoom" data-full="../assets/shots/ko/qa.webp"><img src="../assets/shots/ko/qa.webp" alt="Paradox Localization Translator — 원문·번역문 비교 검토 및 편집" width="1480" height="1012" loading="lazy"></button><figcaption>원문·번역문 비교 검토 및 편집</figcaption></figure><figure class="shot"><button type="button" class="zoom" data-full="../assets/shots/ko/survey.webp"><img src="../assets/shots/ko/survey.webp" alt="Paradox Localization Translator — 모드 번역 상태 조사" width="1480" height="1012" loading="lazy"></button><figcaption>모드 번역 상태 조사</figcaption></figure><figure class="shot"><button type="button" class="zoom" data-full="../assets/shots/ko/model.webp"><img src="../assets/shots/ko/model.webp" alt="Paradox Localization Translator — 모델 및 연결 설정" width="1480" height="1012" loading="lazy"></button><figcaption>모델 및 연결 설정</figcaption></figure></div>
 </section>
 
 <section id="games" class="band">
   <h2>게임 및 언어</h2>
   <p class="intro">공식 지원 언어 11개 모두로 번역할 수 있습니다. 각 게임에서 읽을 수 있는 언어는 이 중 일부입니다. 게임이 표시할 수 없는 언어를 선택하면 시작 전에 경고합니다. Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris, Europa Universalis V는 모드를 자동으로 감지합니다. Europa Universalis IV와 Imperator: Rome은 파일이나 폴더를 직접 추가해야 합니다.</p>
-  <div class="matrix-wrap"><table class="matrix"><thead><tr><th scope="col">게임</th><th scope="col" title="English">EN</th><th scope="col" title="日本語">JA</th><th scope="col" title="Français">FR</th><th scope="col" title="Deutsch">DE</th><th scope="col" title="Español">ES</th><th scope="col" title="한국어" class=here>KO</th><th scope="col" title="Polski">PL</th><th scope="col" title="Português (Brasil)">PT</th><th scope="col" title="Русский">RU</th><th scope="col" title="简体中文">ZH</th><th scope="col" title="Türkçe">TR</th></tr></thead><tbody><tr><th scope="row">Victoria 3<span class="count">11개 모두</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr><tr><th scope="row">Europa Universalis V<span class="count">11개 모두</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr><tr><th scope="row">Hearts of Iron IV<span class="count">10개 언어</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Stellaris<span class="count">10개 언어</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Crusader Kings III<span class="count">9개 언어</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Imperator: Rome<span class="count">6개 언어</span></th><td class="yes">✓</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no here">–</td><td class="no">–</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Europa Universalis IV<span class="count">4개 언어</span></th><td class="yes">✓</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no here">–</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="no">–</td></tr></tbody></table></div>
+  <div class="matrix-wrap"><table class="matrix"><thead><tr><th scope="col">게임</th><th scope="col" title="English">EN</th><th scope="col" title="日本語">JA</th><th scope="col" title="Français">FR</th><th scope="col" title="Deutsch">DE</th><th scope="col" title="Español">ES</th><th scope="col" title="한국어" class=here>KO</th><th scope="col" title="Polski">PL</th><th scope="col" title="Português (Brasil)">PT</th><th scope="col" title="Русский">RU</th><th scope="col" title="简体中文">ZH</th><th scope="col" title="Türkçe">TR</th></tr></thead><tbody><tr><th scope="row">Victoria 3<span class="count">11개 모두</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr><tr><th scope="row">Europa Universalis V (EU5)<span class="count">11개 모두</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr><tr><th scope="row">Hearts of Iron IV (HOI4)<span class="count">10개 언어</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Stellaris<span class="count">10개 언어</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Crusader Kings III (CK3)<span class="count">9개 언어</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Imperator: Rome<span class="count">6개 언어</span></th><td class="yes">✓</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no here">–</td><td class="no">–</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Europa Universalis IV (EU4)<span class="count">4개 언어</span></th><td class="yes">✓</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no here">–</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="no">–</td></tr></tbody></table></div>
   <p class="legend">✓ = 게임에서 표시할 수 있는 언어</p>
 </section>
 

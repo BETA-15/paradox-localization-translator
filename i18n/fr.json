@@ -1,7 +1,7 @@
 {
   "meta": {
-    "title": "Paradox Localization Translator — traduisez les mods des jeux Paradox avec l’IA",
-    "description": "Un outil gratuit et non officiel pour traduire les mods de Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris et Europa Universalis en 11 langues avec un LLM local ou une IA dans le cloud."
+    "title": "Traduire les mods Paradox avec l’IA : CK3, HOI4, Victoria 3, Stellaris | Paradox Localization Translator",
+    "description": "Outil gratuit et non officiel pour traduire en français les mods de CK3, HOI4, Victoria 3, Stellaris, EU4, EU5 et Imperator avec un LLM local (Ollama, LM Studio) ou une IA dans le cloud. Les codes de formatage restent intacts. 11 langues."
   },
   "nav": {
     "features": "Fonctionnalités",
@@ -15,7 +15,7 @@
   "suggest_close": "Fermer",
   "hero": {
     "eyebrow": "Pour les mods des jeux de grande stratégie Paradox",
-    "title": "Traduisez les mods dans **votre langue** — avec un LLM local ou une IA dans le cloud.",
+    "title": "Traduisez les mods Paradox dans **votre langue** — avec un LLM local ou une IA dans le cloud.",
     "lead": "Un outil de bureau gratuit pour les créateurs de mods et les joueurs. Il traduit les fichiers de localisation des mods de Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris, Europa Universalis IV et V, et Imperator: Rome vers l’une des 11 langues prises en charge par les jeux, préserve les codes de mise en forme du jeu et vous aide à repérer et à corriger les textes encore non traduits. L’application elle-même est disponible dans ces mêmes 11 langues.",
     "download": "Télécharger gratuitement",
     "platforms": "Windows · macOS · Linux — sans Python",
@@ -58,7 +58,6 @@
   "shots": {
     "title": "Captures d’écran",
     "pending": "Capture d’écran à venir",
-    "ui_note": "Les captures d’écran montrent l’interface japonaise de l’application ; une interface en français est prévue.",
     "items": {
       "translate": "File d’attente et progression des traductions",
       "qa": "Contrôle qualité et édition côte à côte",

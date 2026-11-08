@@ -1,7 +1,7 @@
 {
   "meta": {
-    "title": "Paradox Localization Translator — перевод модов для игр Paradox с помощью ИИ",
-    "description": "Бесплатный неофициальный инструмент для перевода модов Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris и Europa Universalis на 11 языков с помощью локальной LLM или облачного ИИ."
+    "title": "Русификация модов Paradox с ИИ: CK3, HOI4, Victoria 3, Stellaris | Paradox Localization Translator",
+    "description": "Бесплатный неофициальный инструмент, чтобы самому сделать русификатор для модов CK3, HOI4, Victoria 3, Stellaris, EU5 и Imperator с помощью локальной LLM (Ollama, LM Studio) или облачного ИИ. Коды форматирования сохраняются. 11 языков."
   },
   "nav": {
     "features": "Возможности",
@@ -15,7 +15,7 @@
   "suggest_close": "Закрыть",
   "hero": {
     "eyebrow": "Для модов глобальных стратегий Paradox",
-    "title": "Переводите моды на **свой язык** с помощью локальной LLM или облачного ИИ.",
+    "title": "Сделайте **свой русификатор** для модов Paradox — с локальной LLM или облачным ИИ.",
     "lead": "Бесплатное настольное приложение для авторов модов и игроков. Оно переводит файлы локализации модов для Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris, Europa Universalis IV и V, а также Imperator: Rome на любой из 11 поддерживаемых играми языков, сохраняет коды форматирования игры и помогает найти и исправить непереведённый текст. Само приложение также доступно на тех же 11 языках.",
     "download": "Скачать бесплатно",
     "platforms": "Windows · macOS · Linux — Python не нужен",
@@ -58,7 +58,6 @@
   "shots": {
     "title": "Скриншоты",
     "pending": "Скриншот скоро появится",
-    "ui_note": "На скриншотах показан японский интерфейс приложения; планируется интерфейс на русском языке.",
     "items": {
       "translate": "Очередь и ход перевода",
       "qa": "Проверка и правка с сопоставлением текстов",

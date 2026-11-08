@@ -1,7 +1,7 @@
 {
   "meta": {
-    "title": "Paradox Localization Translator — 用 AI 翻译 Paradox 游戏模组",
-    "description": "一款免费的非官方工具，可使用本地 LLM 或云端 AI，将 Crusader Kings III、Victoria 3、Hearts of Iron IV、Stellaris 和 Europa Universalis 的模组翻译成 11 种语言。"
+    "title": "用 AI 汉化 Paradox 模组：钢铁雄心4、群星、十字军之王3、维多利亚3 | Paradox Localization Translator",
+    "description": "免费的非官方工具：用本地 LLM（Ollama、LM Studio）或云端 AI，自己汉化钢铁雄心4（HOI4）、群星（Stellaris）、十字军之王3（CK3）、维多利亚3、EU5 和 Imperator 的模组。格式代码保持不变，支持 11 种语言。"
   },
   "nav": {
     "features": "功能",
@@ -15,7 +15,7 @@
   "suggest_close": "关闭",
   "hero": {
     "eyebrow": "适用于 Paradox 大战略游戏模组",
-    "title": "使用本地 LLM 或云端 AI，将模组翻译成**你的语言**。",
+    "title": "用本地 LLM 或云端 AI，**自己汉化** Paradox 模组。",
     "lead": "为模组作者和玩家提供的免费桌面工具。可将 Crusader Kings III、Victoria 3、Hearts of Iron IV、Stellaris、Europa Universalis IV 和 V，以及 Imperator: Rome 的模组本地化文件翻译成游戏支持的 11 种语言中的任意一种，完整保留游戏格式代码，并帮助你查找和修复尚未翻译的内容。应用本身也支持相同的 11 种语言。",
     "download": "免费下载",
     "platforms": "Windows · macOS · Linux — 无需安装 Python",
@@ -58,7 +58,6 @@
   "shots": {
     "title": "截图",
     "pending": "截图即将提供",
-    "ui_note": "截图展示的是应用的日语界面；计划提供简体中文界面。",
     "items": {
       "translate": "翻译队列与进度",
       "qa": "并排质检与编辑",

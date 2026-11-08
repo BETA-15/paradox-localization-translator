@@ -37,6 +37,11 @@ def inline(text: str) -> str:
     return out
 
 
+def plain(text: str) -> str:
+    """Text for attributes: drop the ** and ` markers that inline() would turn into tags."""
+    return text.replace("**", "").replace("`", "")
+
+
 def highlight(line: str) -> str:
     parts = TOKEN.split(line)
     return "".join(
@@ -142,7 +147,33 @@ def build_page(lang: dict, built: list[dict], en: dict) -> str:
         "asset_v": ASSET_V,
         "slug_path": lang["slug"] + "/" if lang["slug"] else "",
         "canonical": html.escape(page_url(lang)),
+        "og_image": html.escape(f'{SITE["base_url"]}assets/og/{code}.png'),
+        "og_alt": html.escape(plain(t("hero.title"))),
     })
+    # Search engine ownership tags go on the English home page only (the Search Console property's home).
+    verify = SITE.get("search_verification", {})
+    names = {"google": "google-site-verification", "bing": "msvalidate.01"}
+    ctx["verification"] = "".join(
+        f'<meta name="{names[k]}" content="{html.escape(v)}">\n' for k, v in verify.items() if v and not lang["slug"]
+    )
+    ld = {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Paradox Localization Translator",
+        "url": page_url(lang),
+        "description": t("meta.description"),
+        "applicationCategory": "UtilitiesApplication",
+        "operatingSystem": "Windows, macOS, Linux",
+        "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
+        "isAccessibleForFree": True,
+        "license": SITE["repo_url"] + "/blob/main/LICENSE",
+        "downloadUrl": SITE["release_url"],
+        "codeRepository": SITE["repo_url"],
+        "image": f'{SITE["base_url"]}assets/og/{code}.png',
+        "inLanguage": [l["hreflang"] for l in built],
+        "author": {"@type": "Person", "name": "BETA-15", "url": SITE["author_url"]},
+    }
+    ctx["jsonld"] = json.dumps(ld, ensure_ascii=False).replace("</", "<\\/")
 
     alternates = [
         f'<link rel="alternate" hreflang="{l["hreflang"]}" href="{html.escape(page_url(l))}">' for l in built
@@ -171,7 +202,7 @@ def build_page(lang: dict, built: list[dict], en: dict) -> str:
         if src:
             shots.append(
                 f'<figure class="shot"><button type="button" class="zoom" data-full="{root}{src}">'
-                f'<img src="{root}{src}" alt="{caption}" width="{shot["w"]}" height="{shot["h"]}" loading="lazy"></button>'
+                f'<img src="{root}{src}" alt="Paradox Localization Translator — {caption}" width="{shot["w"]}" height="{shot["h"]}" loading="lazy"></button>'
                 f"<figcaption>{caption}</figcaption></figure>"
             )
         else:
