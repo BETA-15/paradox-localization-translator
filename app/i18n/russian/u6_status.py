@@ -424,4 +424,5 @@ STRINGS = {
     'u6.stops_safely_after_the_current_research': 'Безопасная остановка после получения текущего ответа LLM для поиска',
     'u6.multi_mod_translations_use_a_separate.language': '  · Комплексные переводы (язык: {target_name}) используют отдельный порог: не менее 200 ключей в каждом из двух или более исходных модов и покрытие не менее 70% объединения эффективных ключей кандидата',
     'u6.base_game_translation_70_gate.language': '  Проверка порога 70% перевода основной игры (язык: {target_name}): {value}',
+    'u6.location_kind.local_mod': 'Локальные моды',
 }

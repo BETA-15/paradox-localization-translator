@@ -424,4 +424,5 @@ STRINGS = {
     "u6.stops_safely_after_the_current_research": "当前查找专用 LLM 响应完成后，将安全停止",
     'u6.multi_mod_translations_use_a_separate.language': '  ・综合{target_name}翻译使用独立门槛：至少两个原模组各有200个以上的键，且候选有效键并集覆盖率不低于70%',
     'u6.base_game_translation_70_gate.language': '  游戏本体{target_name}翻译70%判定：{value}',
+    'u6.location_kind.local_mod': '本地模组',
 }

@@ -243,4 +243,10 @@ STRINGS = {
     'u7.present_in_both_source_and_japanese.target': '{localization_key}: aparece en el original «{name}» y en el mod de traducción a {target_name} «{cand_name}», con traducciones distintas. Elija qué traducción usar antes de reparar.',
     'u7.source_japanese_translation_mod_integration_integrated.target': 'Integración original/mod de traducción a {target_name}: {moved} claves integradas en el lado elegido',
     'u7.no_translation_conflicts_the_current_diagnostic.target': 'No hay conflictos de traducción. Los resultados actuales no requieren opciones manuales para integrar el original y el mod de traducción a {target_name}.',
+    'u7.backup_kind.diagnostic_repair': 'Reparación del diagnóstico completo',
+    'u7.backup_kind.missing_overwrite': 'Sobrescritura de claves faltantes',
+    'u7.backup_kind.diff_translation': 'Traducción de diferencias',
+    'u7.backup_kind.before_restore': 'Guardado antes de restaurar',
+    'u7.backup_kind.diff_overwrite': 'Sobrescritura de diferencias',
+    'u7.backup_kind.backup': 'Copia de seguridad',
 }

@@ -243,4 +243,10 @@ STRINGS = {
     'u7.source_copy_rejected': 'Exclu des mods de traduction candidats car copie de la source (au moins 20 valeurs comparables, au moins 80 % identiques)',
     'u7.unknown_game': 'Jeu non identifié',
     'u7.diagnostic_phase': 'Diagnostic',
+    'u7.backup_kind.diagnostic_repair': 'Réparation du diagnostic complet',
+    'u7.backup_kind.missing_overwrite': 'Écrasement des clés manquantes',
+    'u7.backup_kind.diff_translation': 'Traduction des différences',
+    'u7.backup_kind.before_restore': 'Sauvegarde avant restauration',
+    'u7.backup_kind.diff_overwrite': 'Écrasement des différences',
+    'u7.backup_kind.backup': 'Sauvegarde',
 }

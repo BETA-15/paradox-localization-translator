@@ -8,6 +8,7 @@ STRINGS = {
     'u5.open_error_logs': 'Fehlerprotokolle öffnen',
     'u5.collect_logs': 'Diagnoseprotokolle sammeln',
     'u5.storage_note': 'Alle von der App erzeugten Daten, darunter Übersetzungen, Caches, Sicherungen, Einstellungen, Sitzungen und Modellstatistiken, werden in diesem Ordner „Paradox Localization Translator“ gespeichert.',
+    'u5.storage_env_override': 'Der Speicherordner wird durch die Umgebungsvariable {env} festgelegt (Entwicklungsversion). Er kann hier nicht geändert werden; der gespeicherte Speicherort bleibt unverändert.',
     'u5.close_behavior': 'Verhalten beim Schließen des Fensters',
     'u5.default_action': 'Standardaktion',
     'u5.close_recommendation': '„Jedes Mal fragen“ wird empfohlen.',

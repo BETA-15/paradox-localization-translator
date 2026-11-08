@@ -8,6 +8,7 @@ STRINGS = {
     'u5.open_error_logs': '오류 로그 열기',
     'u5.collect_logs': '진단 로그 수집',
     'u5.storage_note': '번역 결과・캐시・백업・설정・세션・모델 통계 등 앱이 자동으로 생성하는 모든 데이터는 이 『Paradox Localization Translator』 폴더에 저장됩니다.',
+    'u5.storage_env_override': '저장 위치는 환경 변수 {env}로 정해져 있습니다(개발 버전). 여기서는 변경할 수 없으며, 저장 위치 기록도 바꾸지 않습니다.',
     'u5.close_behavior': '창 닫기 버튼 동작',
     'u5.default_action': '기본 동작',
     'u5.close_recommendation': '『매번 확인』을 권장합니다.',

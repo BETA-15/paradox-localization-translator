@@ -8,6 +8,7 @@ STRINGS = {
     'u5.open_error_logs': 'エラーログを開く',
     'u5.collect_logs': '診断ログを収集',
     'u5.storage_note': '翻訳結果・キャッシュ・バックアップ・設定・セッション・モデル統計など、アプリが自動生成するデータはすべてこの『Paradox Localization Translator』フォルダ内にまとめます。',
+    'u5.storage_env_override': '保存場所は環境変数 {env} で決まっています（開発版）。ここでは変更できません。保存場所の記録も書き換えません。',
     'u5.close_behavior': 'ウィンドウの×ボタンを押したときの動作',
     'u5.default_action': '既定動作',
     'u5.close_recommendation': '通常は『毎回確認』を推奨します。',

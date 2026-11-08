@@ -242,3 +242,54 @@ DIAGNOSTIC_KINDS = {
 def diagnostic_kind_label(kind: str, target_lang: str = "japanese") -> str:
     key = DIAGNOSTIC_KINDS.get(kind)
     return i18n.t(key, target_name=i18n.t("lang." + target_lang)) if key else kind
+
+
+# Mod の場所の種類（core.discover_mod_locations が入れる内部の値）。"Steam Workshop" は固有名なので訳さない。
+LOCATION_KINDS = {"ローカルMod": "u6.location_kind.local_mod"}
+
+
+def location_kind_label(kind: str) -> str:
+    key = LOCATION_KINDS.get(kind)
+    return i18n.t(key) if key else kind
+
+
+# バックアップの種類（manifest の backup_kind と古い形のフォルダ名から決める内部の値）
+BACKUP_KINDS = {
+    "総合診断修復": "u7.backup_kind.diagnostic_repair",
+    "不足分上書き": "u7.backup_kind.missing_overwrite",
+    "差分翻訳": "u7.backup_kind.diff_translation",
+    "復元前退避": "u7.backup_kind.before_restore",
+    "差分上書き": "u7.backup_kind.diff_overwrite",
+    "元Mod上書き": "u6.source_mod_overwrite",
+    "バックアップ": "u7.backup_kind.backup",
+}
+# 作ったときの画面の言語の文で保存された種類（翻訳先の言語名を含む）
+_SAVED_BACKUP_KIND_KEYS = ("u6.same_name_file_conflict_legacy_translation",
+                           "u6.translation_mod_difference_overwrite", "u6.source_mod_overwrite")
+_saved_backup_kinds = None
+
+
+def backup_kind_label(kind: str) -> str:
+    global _saved_backup_kinds
+    key = BACKUP_KINDS.get(kind)
+    if key:
+        return i18n.t(key)
+    if _saved_backup_kinds is None:
+        _saved_backup_kinds = {}
+        for lang in i18n.UI_LANGUAGES:
+            for target in i18n.UI_LANGUAGES:
+                for saved_key in _SAVED_BACKUP_KIND_KEYS:
+                    text = i18n.t_lang(lang, saved_key, target_name=i18n.t_lang(lang, "lang." + target))
+                    _saved_backup_kinds.setdefault(text, (saved_key, target))
+    found = _saved_backup_kinds.get(kind)
+    if found:
+        return i18n.t(found[0], target_name=i18n.t("lang." + found[1]))
+    return kind
+
+
+UNKNOWN_GAME = "ゲーム未特定"
+
+
+def game_label(game) -> str:
+    game = str(game or "")
+    return i18n.t("u7.unknown_game") if not game or game == UNKNOWN_GAME else game

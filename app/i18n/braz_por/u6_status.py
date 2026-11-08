@@ -424,4 +424,5 @@ STRINGS = {
     'u6.stops_safely_after_the_current_research': 'A busca será parada com segurança assim que terminar a resposta atual do LLM de busca',
     'u6.multi_mod_translations_use_a_separate.language': '  · Traduções abrangentes em {target_name} usam um limite separado: pelo menos 200 chaves em cada um de dois ou mais mods de origem e cobertura mínima de 70% da união das chaves efetivas do candidato',
     'u6.base_game_translation_70_gate.language': '  Verificação de 70% da tradução do jogo base em {target_name}: {value}',
+    'u6.location_kind.local_mod': 'Mods locais',
 }

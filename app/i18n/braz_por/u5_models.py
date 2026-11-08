@@ -8,6 +8,7 @@ STRINGS = {
     'u5.open_error_logs': 'Abrir logs de erros',
     'u5.collect_logs': 'Coletar logs de diagnóstico',
     'u5.storage_note': 'Todos os dados gerados automaticamente pelo aplicativo, como resultados de tradução・cache・backups・configurações・sessões・estatísticas dos modelos, ficam reunidos nesta pasta “Paradox Localization Translator”.',
+    'u5.storage_env_override': 'A pasta de armazenamento é definida pela variável de ambiente {env} (versão de desenvolvimento). Ela não pode ser alterada aqui, e o local salvo não é modificado.',
     'u5.close_behavior': 'Comportamento ao clicar no botão × da janela',
     'u5.default_action': 'Ação padrão',
     'u5.close_recommendation': 'Em geral, recomendamos “Perguntar sempre”.',

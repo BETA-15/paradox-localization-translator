@@ -1033,7 +1033,8 @@ def test_u7_call_fields_match_templates():
             assert provided - fields <= ({"target_name"} if isinstance(node.args[0], ast.IfExp) else set()), (node.lineno, key)
             assert "key" not in fields
     import ui_status
-    helper_keys = set(ui_status.DIAGNOSTIC_KINDS.values()) | {"u7.source_copy_rejected"}
+    helper_keys = set(ui_status.DIAGNOSTIC_KINDS.values()) | {"u7.source_copy_rejected", "u7.unknown_game"} | {
+        key for key in ui_status.BACKUP_KINDS.values() if key.startswith("u7.")}
     assert set(calls) | helper_keys == set(JAPANESE)
 
 

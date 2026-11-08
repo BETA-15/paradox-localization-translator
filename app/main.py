@@ -43,7 +43,7 @@ except Exception:
     BaseTk = tk.Tk
 
 APP_NAME = "Paradox Localization Translator"
-APP_VERSION = "0.13.0"
+APP_VERSION = "0.13.1"
 MOD_STATUS_CACHE_VERSION = 16
 TRANSLATION_STATUS_SNAPSHOT_SCHEMA = 2
 MOD_STATUS_EMPTY_IID = "__mod_status_empty__"
@@ -622,7 +622,17 @@ def _load_saved_data_root() -> Path | None:
     return None
 
 
+DATA_ROOT_ENV = "PARADOX_TRANSLATOR_DATA_ROOT"
+
+
+def _data_root_env_override() -> bool:
+    """置き場所を環境変数で決めているか（開発版）。このときは配布版と共有の保存場所の記録を書かない。"""
+    return bool(os.environ.get(DATA_ROOT_ENV, "").strip())
+
+
 def _save_data_root_preference(path: Path):
+    if _data_root_env_override():
+        return
     path = path.expanduser().resolve()
     try:
         if os.name == "nt":
@@ -641,7 +651,7 @@ def _save_data_root_preference(path: Path):
 
 
 def _automatic_data_root() -> Path:
-    override=os.environ.get("PARADOX_TRANSLATOR_DATA_ROOT","").strip()
+    override=os.environ.get(DATA_ROOT_ENV,"").strip()
     if override:
         root=Path(override).expanduser()
         root.mkdir(parents=True,exist_ok=True)
@@ -2929,6 +2939,8 @@ class App(BaseTk):
         ttk.Button(box, text=i18n.t('u5.open_error_logs'), command=lambda:self._open_path(LOG_ROOT)).grid(row=2, column=2, pady=(10,0))
         ttk.Button(box, text=i18n.t('u5.collect_logs'), command=self.collect_error_logs).grid(row=2, column=3, padx=(6,0), pady=(10,0))
         WrappingLabel(box, text=i18n.t('u5.storage_note'),  foreground="#555").grid(row=1, column=0, columnspan=4, sticky="w", pady=(10,0))
+        if _data_root_env_override():
+            WrappingLabel(box, text=i18n.t('u5.storage_env_override', env=DATA_ROOT_ENV), foreground="#a05a00").grid(row=3, column=0, columnspan=4, sticky="w", pady=(10,0))
 
         close_box = ttk.LabelFrame(t, text=i18n.t('u5.close_behavior'), padding=12)
         close_box.pack(fill="x", pady=(12,0))
@@ -2951,6 +2963,8 @@ class App(BaseTk):
         text.config(state="disabled")
 
     def change_data_root(self):
+        if _data_root_env_override():
+            messagebox.showinfo(APP_NAME, i18n.t('u5.storage_env_override', env=DATA_ROOT_ENV)); return
         blockers=[name for name in self._active_file_operation_names() if name!="保存場所コピー"]
         if blockers:
             return
@@ -4481,7 +4495,7 @@ class App(BaseTk):
             return
         self.backup_restore_refresh_thread=None
         self.backup_restore_entries=list(entries or [])
-        games=sorted({str(e.get('game') or 'ゲーム未特定') for e in self.backup_restore_entries},key=str.casefold)
+        games=sorted({ui_status.game_label(e.get('game')) for e in self.backup_restore_entries},key=str.casefold)
         game_values=[i18n.t("p0.filter.all_games")]+games
         self.backup_restore_game_combo['values']=game_values
         if self.backup_restore_game_var.get() not in game_values:
@@ -4504,7 +4518,7 @@ class App(BaseTk):
         generation=entry.get('generation')
         generation_text=(i18n.t('u7.generation', value=int(generation)) if generation else '')
         haystack=' '.join(str(v or '') for v in (
-            entry.get('game'), entry.get('mod'), entry.get('kind'), entry.get('state'),
+            ui_status.game_label(entry.get('game')), entry.get('mod'), ui_status.backup_kind_label(str(entry.get('kind') or '')), entry.get('state'),
             entry.get('created_at'), generation_text, entry.get('target_root'), entry.get('format'),
             entry.get('entry_root'),
         )).casefold()
@@ -4517,7 +4531,7 @@ class App(BaseTk):
         game=self.backup_restore_game_var.get() or i18n.t("p0.filter.all_games")
         query=self.backup_restore_search_var.get().strip() if hasattr(self,'backup_restore_search_var') else ''
         mods=sorted({str(e.get('mod') or 'Mod') for e in self.backup_restore_entries
-                     if (game == i18n.t("p0.filter.all_games") or str(e.get('game')) == game)
+                     if (game == i18n.t("p0.filter.all_games") or ui_status.game_label(e.get('game')) == game)
                      and self._backup_restore_entry_matches_search(e,query)},key=str.casefold)
         values=[i18n.t("p0.filter.all_mods")]+mods
         if hasattr(self,'backup_restore_mod_list'):
@@ -4561,7 +4575,7 @@ class App(BaseTk):
         query=self.backup_restore_search_var.get().strip() if hasattr(self,'backup_restore_search_var') else ''
         visible=[]
         for e in self.backup_restore_entries:
-            if game != i18n.t("p0.filter.all_games") and str(e.get('game')) != game: continue
+            if game != i18n.t("p0.filter.all_games") and ui_status.game_label(e.get('game')) != game: continue
             if mod != i18n.t("p0.filter.all_mods") and str(e.get('mod')) != mod: continue
             if not self._backup_restore_entry_matches_search(e,query): continue
             visible.append(e)
@@ -4571,7 +4585,7 @@ class App(BaseTk):
             gen=(i18n.t('u7.generation_2', value=int(e['generation'])) if e.get('generation') else '—')
             created=str(e.get('created_at') or '')
             target=str(e.get('target_root') or i18n.t('u7.restore_target_not_identified'))
-            self.backup_restore_tree.insert('', 'end', iid=iid, values=(gen,created,e['kind'],e['state'],target,e['format']))
+            self.backup_restore_tree.insert('', 'end', iid=iid, values=(gen,created,ui_status.backup_kind_label(str(e['kind'])),e['state'],target,e['format']))
         scope=[]
         if game != i18n.t("p0.filter.all_games"): scope.append(game)
         if mod != i18n.t("p0.filter.all_mods"): scope.append(mod)
@@ -4596,7 +4610,7 @@ class App(BaseTk):
         if not target and int(e.get('target_candidate_count') or 0) > 1:
             ambiguity=i18n.t('u7.candidates_multiple_mods_share_this_name', value=int(e.get('target_candidate_count') or 0))
         self.backup_restore_detail_var.set(
-            i18n.t('u7.game_mod_saved_state_backup_restore', game=e.get('game',i18n.t('u7.unknown_game')), mod=e['mod'], gen=gen, kind=e['kind'], state=e['state'], entry_root=e['entry_root'], value=target or i18n.t('u7.not_identified'), target_source=target_source, ambiguity=ambiguity, exact=exact)
+            i18n.t('u7.game_mod_saved_state_backup_restore', game=ui_status.game_label(e.get('game')), mod=e['mod'], gen=gen, kind=ui_status.backup_kind_label(str(e['kind'])), state=e['state'], entry_root=e['entry_root'], value=target or i18n.t('u7.not_identified'), target_source=target_source, ambiguity=ambiguity, exact=exact)
         )
         self.backup_restore_btn.config(state='normal' if target and Path(target).exists() else 'disabled')
 
@@ -4610,7 +4624,7 @@ class App(BaseTk):
         if not target.exists():
             messagebox.showerror(APP_NAME,i18n.t('u7.cannot_identify_the_target_mod_no')); return
         gen=i18n.t('u7.generation_2', value=int(e['generation'])) if e.get('generation') else i18n.t('u7.generation_not_recorded')
-        warning=(i18n.t('u7.restore_this_backup_game_target_mod', game=e.get('game',i18n.t('u7.unknown_game')), mod=e['mod'], gen=gen, kind=e['kind'], state=e['state'], target=target))
+        warning=(i18n.t('u7.restore_this_backup_game_target_mod', game=ui_status.game_label(e.get('game')), mod=e['mod'], gen=gen, kind=ui_status.backup_kind_label(str(e['kind'])), state=e['state'], target=target))
         if not e.get('exact'):
             warning=i18n.t('u7.this_legacy_partial_backup_restores_only', warning=warning)
         if not messagebox.askyesno(i18n.t('u7.confirm_backup_restoration'),i18n.t('u7.continue', warning=warning),icon='warning'): return
@@ -5700,7 +5714,7 @@ class App(BaseTk):
             resolved=str(p.resolve())
             if resolved not in paths:
                 paths.append(resolved)
-                labels.append(f"{row.get('game','')} / {row.get('kind','')}")
+                labels.append(f"{row.get('game','')} / {ui_status.location_kind_label(row.get('kind',''))}")
         self.monitor_target_paths=paths
         self.monitor_path_var.set(paths[0] if paths else "")
         if paths:
@@ -5779,7 +5793,7 @@ class App(BaseTk):
             return
         all_roots, missing = self._collect_mod_roots_from_location_rows(rows)
         if not all_roots:
-            counts = ", ".join(f"{r.get('game','')} {r.get('kind','')}: {r.get('mod_count',0)}" for r in rows)
+            counts = ", ".join(f"{r.get('game','')} {ui_status.location_kind_label(r.get('kind',''))}: {r.get('mod_count',0)}" for r in rows)
             messagebox.showinfo(APP_NAME, i18n.t('u6.no_mods_with_localization_found_in', counts=counts))
             self.mod_discovery_status_var.set(i18n.t('u6.no_localization_found_to_research'))
             return
@@ -12390,7 +12404,7 @@ class App(BaseTk):
                     core.save_json(SAVED_STEAM_ROOTS_PATH, remembered)
                     for x in self.discovered_mod_tree.get_children(): self.discovered_mod_tree.delete(x)
                     for i,row in enumerate(self.detected_mod_locations):
-                        self.discovered_mod_tree.insert("","end",iid=f"loc_{i}",values=(row.get("game",""),row.get("kind",""),row.get("mod_count",0),row.get("path","")))
+                        self.discovered_mod_tree.insert("","end",iid=f"loc_{i}",values=(row.get("game",""),ui_status.location_kind_label(row.get("kind","")),row.get("mod_count",0),row.get("path","")))
                     if self.detected_mod_locations:
                         try: self.refresh_translation_search_mods()
                         except Exception: pass

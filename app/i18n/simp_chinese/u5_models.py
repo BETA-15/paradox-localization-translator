@@ -8,6 +8,7 @@ STRINGS = {
     "u5.open_error_logs": "打开错误日志",
     "u5.collect_logs": "收集诊断日志",
     "u5.storage_note": "翻译结果、缓存、备份、设置、会话、模型统计等应用自动生成的数据，均集中保存在此『Paradox Localization Translator』文件夹中。",
+    "u5.storage_env_override": '存储位置由环境变量 {env} 决定（开发版）。无法在此更改，也不会改写已保存的存储位置。',
     "u5.close_behavior": "点击窗口 × 按钮时的行为",
     "u5.default_action": "默认操作",
     "u5.close_recommendation": "通常建议使用『每次询问』。",

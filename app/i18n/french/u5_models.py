@@ -8,6 +8,7 @@ STRINGS = {
     'u5.open_error_logs': 'Ouvrir les journaux d’erreurs',
     'u5.collect_logs': 'Collecter les journaux de diagnostic',
     'u5.storage_note': 'Toutes les données générées par l’application — traductions, caches, sauvegardes, paramètres, sessions et statistiques des modèles — sont regroupées dans ce dossier « Paradox Localization Translator ».',
+    'u5.storage_env_override': 'Le dossier de stockage est défini par la variable d’environnement {env} (version de développement). Il ne peut pas être modifié ici, et l’emplacement enregistré reste inchangé.',
     'u5.close_behavior': 'Comportement du bouton × de la fenêtre',
     'u5.default_action': 'Action par défaut',
     'u5.close_recommendation': '« Demander à chaque fois » est généralement recommandé.',

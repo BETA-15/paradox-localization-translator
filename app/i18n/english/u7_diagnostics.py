@@ -243,4 +243,10 @@ STRINGS = {
     'u7.source_copy_rejected': 'Excluded as a source copy (at least 20 comparable values, at least 80% unchanged)',
     'u7.unknown_game': 'Unknown game',
     'u7.diagnostic_phase': 'Diagnosing',
+    'u7.backup_kind.diagnostic_repair': 'Full diagnostics repair',
+    'u7.backup_kind.missing_overwrite': 'Missing-only overwrite',
+    'u7.backup_kind.diff_translation': 'Difference translation',
+    'u7.backup_kind.before_restore': 'Saved before restore',
+    'u7.backup_kind.diff_overwrite': 'Difference overwrite',
+    'u7.backup_kind.backup': 'Backup',
 }

@@ -8,6 +8,7 @@ STRINGS = {
     'u5.open_error_logs': 'Hata günlüklerini aç',
     'u5.collect_logs': 'Tanılama günlüklerini topla',
     'u5.storage_note': 'Çeviriler, önbellekler, yedekler, ayarlar, oturumlar ve model istatistikleri dâhil uygulamanın oluşturduğu tüm veriler bu 『Paradox Localization Translator』 klasöründe saklanır.',
+    'u5.storage_env_override': 'Depolama klasörü {env} ortam değişkeniyle belirlenir (geliştirme sürümü). Burada değiştirilemez ve kayıtlı depolama konumu değiştirilmez.',
     'u5.close_behavior': 'Pencerenin × düğmesinin davranışı',
     'u5.default_action': 'Varsayılan eylem',
     'u5.close_recommendation': 'Genellikle 『Her seferinde sor』 önerilir.',

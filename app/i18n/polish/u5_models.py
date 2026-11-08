@@ -8,6 +8,7 @@ STRINGS = {
     'u5.open_error_logs': 'Otwórz dzienniki błędów',
     'u5.collect_logs': 'Zbierz dzienniki diagnostyczne',
     'u5.storage_note': 'Wszystkie dane generowane przez aplikację, w tym tłumaczenia, pamięć podręczna, kopie zapasowe, ustawienia, sesje i statystyki modeli, trafiają do tego folderu 『Paradox Localization Translator』.',
+    'u5.storage_env_override': 'Folder danych jest ustawiony przez zmienną środowiskową {env} (wersja deweloperska). Nie można go tu zmienić, a zapisana lokalizacja pozostaje bez zmian.',
     'u5.close_behavior': 'Działanie przycisku × okna',
     'u5.default_action': 'Domyślne działanie',
     'u5.close_recommendation': 'Zwykle zalecane jest 『Pytaj za każdym razem』.',

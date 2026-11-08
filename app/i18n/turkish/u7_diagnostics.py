@@ -243,4 +243,10 @@ STRINGS = {
     'u7.source_copy_rejected': 'Kaynak kopyası olduğundan çeviri modu adaylarından çıkarıldı (en az 20 karşılaştırılabilir değer, en az %80 aynı)',
     'u7.unknown_game': 'Oyun belirlenemedi',
     'u7.diagnostic_phase': 'Tanılama',
+    'u7.backup_kind.diagnostic_repair': 'Tam tanılama onarımı',
+    'u7.backup_kind.missing_overwrite': 'Eksik anahtarların üzerine yazma',
+    'u7.backup_kind.diff_translation': 'Fark çevirisi',
+    'u7.backup_kind.before_restore': 'Geri yüklemeden önce saklandı',
+    'u7.backup_kind.diff_overwrite': 'Farkların üzerine yazma',
+    'u7.backup_kind.backup': 'Yedek',
 }
