@@ -424,4 +424,5 @@ STRINGS = {
     'u6.stops_safely_after_the_current_research': 'Se detendrá de forma segura cuando termine la respuesta actual del LLM de investigación',
     'u6.multi_mod_translations_use_a_separate.language': '  · Las traducciones integrales en {target_name} usan un umbral separado: al menos 200 claves por cada uno de dos o más mods originales y una cobertura mínima del 70% de la unión de claves efectivas del candidato',
     'u6.base_game_translation_70_gate.language': '  Comprobación del 70% de traducción del juego base en {target_name}: {value}',
+    'u6.location_kind.local_mod': 'Mods locales',
 }

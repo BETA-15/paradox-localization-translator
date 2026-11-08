@@ -243,4 +243,10 @@ STRINGS = {
     'u7.source_copy_rejected': 'Wykluczony z kandydatów tłumaczenia jako kopia źródła (co najmniej 20 porównywalnych wartości, co najmniej 80% zgodnych)',
     'u7.unknown_game': 'Nieznana gra',
     'u7.diagnostic_phase': 'Diagnostyka',
+    'u7.backup_kind.diagnostic_repair': 'Naprawa z pełnej diagnostyki',
+    'u7.backup_kind.missing_overwrite': 'Nadpisanie brakujących kluczy',
+    'u7.backup_kind.diff_translation': 'Tłumaczenie różnic',
+    'u7.backup_kind.before_restore': 'Zapisane przed przywróceniem',
+    'u7.backup_kind.diff_overwrite': 'Nadpisanie różnic',
+    'u7.backup_kind.backup': 'Kopia zapasowa',
 }

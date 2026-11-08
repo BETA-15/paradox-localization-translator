@@ -243,4 +243,10 @@ STRINGS = {
     'u7.source_copy_rejected': '原文の写しのため翻訳Mod候補から除外（比較可能20値以上・一致80%以上）',
     'u7.unknown_game': 'ゲーム未特定',
     'u7.diagnostic_phase': '診断',
+    'u7.backup_kind.diagnostic_repair': '総合診断修復',
+    'u7.backup_kind.missing_overwrite': '不足分上書き',
+    'u7.backup_kind.diff_translation': '差分翻訳',
+    'u7.backup_kind.before_restore': '復元前退避',
+    'u7.backup_kind.diff_overwrite': '差分上書き',
+    'u7.backup_kind.backup': 'バックアップ',
 }

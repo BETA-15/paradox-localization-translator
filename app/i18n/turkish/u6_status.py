@@ -424,4 +424,5 @@ STRINGS = {
     'u6.stops_safely_after_the_current_research': 'Mevcut keşif LLM yanıtı tamamlanınca güvenli biçimde durur',
     'u6.multi_mod_translations_use_a_separate.language': '  · Kapsamlı {target_name} çeviriler için ayrı eşik: en az iki kaynak modun her birinde en az 200 anahtar ve adayın etkin anahtar birleşiminde en az %70 kapsama',
     'u6.base_game_translation_70_gate.language': '  Temel oyun {target_name} çevirisi %70 kontrolü: {value}',
+    'u6.location_kind.local_mod': 'Yerel modlar',
 }

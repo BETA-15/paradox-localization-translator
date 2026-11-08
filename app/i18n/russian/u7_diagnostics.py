@@ -243,4 +243,10 @@ STRINGS = {
     'u7.source_copy_rejected': 'Исключён из кандидатов в мод перевода как копия исходного текста (не менее 20 сравнимых значений・не менее 80% совпадений)',
     'u7.unknown_game': 'Игра не определена',
     'u7.diagnostic_phase': 'Диагностика',
+    'u7.backup_kind.diagnostic_repair': 'Исправление по полной диагностике',
+    'u7.backup_kind.missing_overwrite': 'Перезапись недостающих ключей',
+    'u7.backup_kind.diff_translation': 'Перевод изменений',
+    'u7.backup_kind.before_restore': 'Сохранено перед восстановлением',
+    'u7.backup_kind.diff_overwrite': 'Перезапись изменений',
+    'u7.backup_kind.backup': 'Резервная копия',
 }

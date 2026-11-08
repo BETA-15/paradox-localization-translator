@@ -243,4 +243,10 @@ STRINGS = {
     'u7.source_copy_rejected': 'Als Originalkopie von Übersetzungsmod-Kandidaten ausgeschlossen (mindestens 20 vergleichbare Werte, mindestens 80 % Übereinstimmung)',
     'u7.unknown_game': 'Spiel nicht identifiziert',
     'u7.diagnostic_phase': 'Diagnose',
+    'u7.backup_kind.diagnostic_repair': 'Reparatur der Gesamtdiagnose',
+    'u7.backup_kind.missing_overwrite': 'Überschreiben fehlender Schlüssel',
+    'u7.backup_kind.diff_translation': 'Differenzübersetzung',
+    'u7.backup_kind.before_restore': 'Vor der Wiederherstellung gesichert',
+    'u7.backup_kind.diff_overwrite': 'Differenzen überschreiben',
+    'u7.backup_kind.backup': 'Sicherung',
 }

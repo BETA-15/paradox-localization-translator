@@ -424,4 +424,5 @@ STRINGS = {
     'u6.stops_safely_after_the_current_research': 'Sicherer Stopp nach der aktuellen Antwort des Prüf-LLM',
     'u6.multi_mod_translations_use_a_separate.language': '  · Gesamtübersetzungen ({target_name}) verwenden eine separate Schwelle: mindestens 200 Schlüssel je Ursprungsmod bei mindestens zwei Mods und mindestens 70% Abdeckung der Vereinigung effektiver Kandidatenschlüssel',
     'u6.base_game_translation_70_gate.language': '  70%-Prüfung der Basisspielübersetzung ({target_name}): {value}',
+    'u6.location_kind.local_mod': 'Lokale Mods',
 }

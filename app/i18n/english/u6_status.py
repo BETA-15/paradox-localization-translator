@@ -424,4 +424,5 @@ STRINGS = {
     'u6.stops_safely_after_the_current_research': 'Stops safely after the current research LLM response',
     'u6.multi_mod_translations_use_a_separate.language': '  · Comprehensive {target_name} translations use a separate gate: at least 200 keys in each of two or more source mods, with at least 70% coverage of the union of effective candidate keys',
     'u6.base_game_translation_70_gate.language': '  Base-game {target_name} translation 70% check: {value}',
+    'u6.location_kind.local_mod': 'Local mods',
 }

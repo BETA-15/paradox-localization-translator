@@ -187,6 +187,7 @@ EXPECTED_ENGLISH = {
     'u5.open_error_logs': 'Open error logs',
     'u5.collect_logs': 'Collect diagnostic logs',
     'u5.storage_note': 'All app-generated data, including translations, caches, backups, settings, sessions, and model statistics, is stored in this “Paradox Localization Translator” folder.',
+    'u5.storage_env_override': 'The storage folder is set by the environment variable {env} (development build). It cannot be changed here, and the saved storage location is left untouched.',
     'u5.close_behavior': 'Window close-button behavior',
     'u5.default_action': 'Default action',
     'u5.close_recommendation': '“Ask every time” is recommended.',

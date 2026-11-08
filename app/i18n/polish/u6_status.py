@@ -424,4 +424,5 @@ STRINGS = {
     'u6.stops_safely_after_the_current_research': 'Zatrzyma się bezpiecznie po zakończeniu bieżącej odpowiedzi LLM wyszukiwania',
     'u6.multi_mod_translations_use_a_separate.language': '  · Zbiorcze tłumaczenia (język: {target_name}) używają osobnego progu: co najmniej 200 kluczy w każdym z co najmniej dwóch modów źródłowych oraz pokrycie co najmniej 70% sumy zbiorów efektywnych kluczy kandydata',
     'u6.base_game_translation_70_gate.language': '  Próg 70% tłumaczenia gry podstawowej (język: {target_name}): {value}',
+    'u6.location_kind.local_mod': 'Mody lokalne',
 }

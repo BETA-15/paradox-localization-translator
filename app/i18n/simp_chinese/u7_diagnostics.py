@@ -243,4 +243,10 @@ STRINGS = {
     "u7.source_copy_rejected": "因复制原文而从翻译模组候选中排除（可比较值至少 20 个・一致率至少 80%）",
     "u7.unknown_game": "未确定游戏",
     "u7.diagnostic_phase": "诊断",
+    'u7.backup_kind.diagnostic_repair': '综合诊断修复',
+    'u7.backup_kind.missing_overwrite': '缺失部分覆盖',
+    'u7.backup_kind.diff_translation': '差异翻译',
+    'u7.backup_kind.before_restore': '恢复前保存',
+    'u7.backup_kind.diff_overwrite': '差异覆盖',
+    'u7.backup_kind.backup': '备份',
 }

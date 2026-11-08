@@ -243,4 +243,10 @@ STRINGS = {
     'u7.source_copy_rejected': '원문 복사본이므로 번역 모드 후보에서 제외 (비교 가능한 값 20개 이상・변경되지 않은 값 80% 이상)',
     'u7.unknown_game': '알 수 없는 게임',
     'u7.diagnostic_phase': '진단 중',
+    'u7.backup_kind.diagnostic_repair': '종합 진단 복구',
+    'u7.backup_kind.missing_overwrite': '누락분 덮어쓰기',
+    'u7.backup_kind.diff_translation': '변경분 번역',
+    'u7.backup_kind.before_restore': '복원 전 보관',
+    'u7.backup_kind.diff_overwrite': '변경분 덮어쓰기',
+    'u7.backup_kind.backup': '백업',
 }
