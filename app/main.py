@@ -622,7 +622,17 @@ def _load_saved_data_root() -> Path | None:
     return None
 
 
+DATA_ROOT_ENV = "PARADOX_TRANSLATOR_DATA_ROOT"
+
+
+def _data_root_env_override() -> bool:
+    """置き場所を環境変数で決めているか（開発版）。このときは配布版と共有の保存場所の記録を書かない。"""
+    return bool(os.environ.get(DATA_ROOT_ENV, "").strip())
+
+
 def _save_data_root_preference(path: Path):
+    if _data_root_env_override():
+        return
     path = path.expanduser().resolve()
     try:
         if os.name == "nt":
@@ -641,7 +651,7 @@ def _save_data_root_preference(path: Path):
 
 
 def _automatic_data_root() -> Path:
-    override=os.environ.get("PARADOX_TRANSLATOR_DATA_ROOT","").strip()
+    override=os.environ.get(DATA_ROOT_ENV,"").strip()
     if override:
         root=Path(override).expanduser()
         root.mkdir(parents=True,exist_ok=True)
@@ -2929,6 +2939,8 @@ class App(BaseTk):
         ttk.Button(box, text=i18n.t('u5.open_error_logs'), command=lambda:self._open_path(LOG_ROOT)).grid(row=2, column=2, pady=(10,0))
         ttk.Button(box, text=i18n.t('u5.collect_logs'), command=self.collect_error_logs).grid(row=2, column=3, padx=(6,0), pady=(10,0))
         WrappingLabel(box, text=i18n.t('u5.storage_note'),  foreground="#555").grid(row=1, column=0, columnspan=4, sticky="w", pady=(10,0))
+        if _data_root_env_override():
+            WrappingLabel(box, text=i18n.t('u5.storage_env_override', env=DATA_ROOT_ENV), foreground="#a05a00").grid(row=3, column=0, columnspan=4, sticky="w", pady=(10,0))
 
         close_box = ttk.LabelFrame(t, text=i18n.t('u5.close_behavior'), padding=12)
         close_box.pack(fill="x", pady=(12,0))
@@ -2951,6 +2963,8 @@ class App(BaseTk):
         text.config(state="disabled")
 
     def change_data_root(self):
+        if _data_root_env_override():
+            messagebox.showinfo(APP_NAME, i18n.t('u5.storage_env_override', env=DATA_ROOT_ENV)); return
         blockers=[name for name in self._active_file_operation_names() if name!="保存場所コピー"]
         if blockers:
             return

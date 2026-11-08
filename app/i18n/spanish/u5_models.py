@@ -8,6 +8,7 @@ STRINGS = {
     'u5.open_error_logs': 'Abrir registros de errores',
     'u5.collect_logs': 'Recopilar registros de diagnóstico',
     'u5.storage_note': 'Todos los datos generados por la aplicación —traducciones, cachés, copias de seguridad, ajustes, sesiones y estadísticas de modelos— se guardan en esta carpeta «Paradox Localization Translator».',
+    'u5.storage_env_override': 'La carpeta de almacenamiento la define la variable de entorno {env} (versión de desarrollo). No se puede cambiar aquí y la ubicación guardada no se modifica.',
     'u5.close_behavior': 'Acción del botón de cierre',
     'u5.default_action': 'Acción predeterminada',
     'u5.close_recommendation': 'Se recomienda «Preguntar siempre».',
