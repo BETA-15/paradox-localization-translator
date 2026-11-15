@@ -10059,6 +10059,7 @@ class App(BaseTk):
             st=dict(getattr(self,"translation_start_settings",{}) or {})
             return {"provider":st.get("provider",""),"url":st.get("url",""),"model":st.get("model",""),"preset":st.get("preset","CK3"),
                     "batch":st.get("batch",40),"workers":st.get("workers",1),"repair":st.get("repair",True),
+                    "normalize_spacing":st.get("normalize_spacing", True),
                     "dual":st.get("dual",False),"autoqa":st.get("autoqa",True),"glossary":st.get("glossary") or str(DEFAULT_GLOSSARY)}
         return {"provider":self.provider_var.get(),"url":self.url_var.get(),"model":self.model_var.get(),"preset":self.preset_var.get(),
                 "batch":self.batch_var.get(),"workers":self.workers_var.get(),"repair":self.repair_var.get(),
