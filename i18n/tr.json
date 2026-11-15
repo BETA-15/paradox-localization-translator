@@ -9,14 +9,16 @@
     "games": "Oyunlar ve diller",
     "howto": "Nasıl kullanılır",
     "faq": "Sık sorulan sorular",
-    "language": "Dil"
+    "language": "Dil",
+    "skip": "İçeriğe geç",
+    "sections": "Sayfa bölümleri"
   },
   "suggest": "Bu sayfa Türkçe olarak da sunulmaktadır.",
   "suggest_close": "Kapat",
   "hero": {
     "eyebrow": "Paradox büyük strateji oyunlarının modları için",
     "title": "Paradox modlarına **kendi Türkçe yamanızı** yapın — yerel bir LLM veya bulut tabanlı yapay zekâyla.",
-    "lead": "Mod yapımcıları ve oyuncular için ücretsiz bir masaüstü aracı. Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris, Europa Universalis IV ve V ile Imperator: Rome modlarının yerelleştirme dosyalarını oyunların desteklediği 11 dilden herhangi birine çevirir, oyunun biçimlendirme kodlarını korur ve henüz çevrilmemiş kısımları bulup düzeltmenize yardımcı olur. Uygulamanın kendisi de aynı 11 dilde kullanılabilir.",
+    "lead": "Bir modun yerelleştirme dosyalarını yapay zekâyla çeviren, oyunun biçimlendirme kodlarını koruyan ve sonucu kaynak metinle yan yana kontrol edip düzeltmenizi sağlayan ücretsiz bir masaüstü aracı.",
     "download": "Ücretsiz indirin",
     "platforms": "Windows · macOS · Linux — Python gerekmez",
     "badges": [
@@ -24,7 +26,8 @@
       "Tüm özellikler ücretsiz",
       "MIT Lisansı"
     ],
-    "demo_caption": "Biçimlendirme kodları olduğu gibi korunur."
+    "demo_caption": "Biçimlendirme kodları olduğu gibi korunur.",
+    "all_releases": "Tüm sürümler ve sürüm notları"
   },
   "features": {
     "title": "Neler yapar",
@@ -137,6 +140,10 @@
         "a": "Evet. Her özellik MIT Lisansı kapsamında herkes için ücretsizdir. Ücretli bir sürüm yoktur."
       },
       {
+        "q": "Modumun metni nereye gönderilir?",
+        "a": "Yerel bir model (Ollama veya LM Studio) kullandığınızda metin bilgisayarınızda kalır. Bulut tabanlı yapay zekâ kullandığınızda çevrilecek satırlar seçtiğiniz hizmete gönderilir ve o hizmetin koşullarına göre işlenir. API anahtarları ayarlara, profillere veya günlüklere kaydedilmez."
+      },
+      {
         "q": "Her özellik her dilde çalışır mı?",
         "a": "Evet. Çeviri, düzeltme, kalite kontrolü, arama, sözlükler (otomatik oluşturma dahil), mod tarama, çeviri modlarını algılama ve yalnızca güncellemeleri çevirme, 11 hedef dilin tamamında çalışır. Arayüz de bu 11 dilin tamamında kullanılabilir. Birkaç sınırlama vardır: Hedef dil İngilizce olduğunda, çoğu mod zaten İngilizce içerdiği için harici çeviri modları eşleştirilmez; Japonca dışındaki dillerde çeviri modlarını ilişkilendirme daha az test edildiğinden, üzerine yazmadan önce ilişkilendirilen modu kontrol edin; Çince metni temel alarak çevirme Japonca ve Korece için kullanılabilir."
       },
@@ -146,11 +153,15 @@
       },
       {
         "q": "macOS uygulamanın açılamadığını söylüyor.",
-        "a": "Uygulama Apple tarafından imzalanmamıştır. Sistem Ayarları → Gizlilik ve Güvenlik bölümünü açın ve uygulamanın açılmasına izin verin."
+        "a": "Uygulama Apple tarafından imzalanmamıştır. Bir kez açmayı deneyin, ardından Sistem Ayarları → Gizlilik ve Güvenlik bölümüne gidip “Yine de Aç” seçeneğini seçin."
       },
       {
         "q": "Windows bir SmartScreen uyarısı gösteriyor.",
         "a": "Uygulamanın kod imzası yoktur. Yalnızca resmî GitHub Releases sayfasından indirin, ardından “Ek bilgi” → “Yine de çalıştır” seçeneğini seçin."
+      },
+      {
+        "q": "Linux dosyası başlamıyor.",
+        "a": "İndirilen bir dosyanın genellikle çalıştırma izni yoktur. İndirme klasöründe `chmod +x ParadoxLocalizationTranslator` komutunu çalıştırın, ardından dosyayı başlatın."
       },
       {
         "q": "Steam Workshop modlarını doğrudan çevirebilir miyim?",

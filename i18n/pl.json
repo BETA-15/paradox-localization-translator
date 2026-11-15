@@ -9,14 +9,16 @@
     "games": "Gry i języki",
     "howto": "Jak używać",
     "faq": "Pytania i odpowiedzi",
-    "language": "Język"
+    "language": "Język",
+    "skip": "Przejdź do treści",
+    "sections": "Sekcje strony"
   },
   "suggest": "Ta strona jest również dostępna po polsku.",
   "suggest_close": "Zamknij",
   "hero": {
     "eyebrow": "Do modów do wielkich strategii Paradox",
     "title": "Zrób własne **spolszczenie** modów Paradox — z lokalnym modelem LLM lub AI w chmurze.",
-    "lead": "Bezpłatna aplikacja na komputer dla twórców modów i graczy. Tłumaczy pliki lokalizacji modów do Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris, Europa Universalis IV i V oraz Imperator: Rome na dowolny z 11 języków obsługiwanych przez te gry, zachowuje kody formatowania gry i pomaga znaleźć oraz poprawić nieprzetłumaczone fragmenty. Sama aplikacja jest również dostępna w tych samych 11 językach.",
+    "lead": "Bezpłatne narzędzie komputerowe, które tłumaczy pliki lokalizacji moda za pomocą AI, zachowuje kody formatowania gry i pozwala sprawdzać oraz poprawiać wynik obok oryginału.",
     "download": "Pobierz za darmo",
     "platforms": "Windows · macOS · Linux — bez instalowania Python",
     "badges": [
@@ -24,7 +26,8 @@
       "Wszystkie funkcje za darmo",
       "Licencja MIT"
     ],
-    "demo_caption": "Kody formatowania pozostają dokładnie takie same."
+    "demo_caption": "Kody formatowania pozostają dokładnie takie same.",
+    "all_releases": "Wszystkie wersje i informacje o zmianach"
   },
   "features": {
     "title": "Co potrafi",
@@ -137,6 +140,10 @@
         "a": "Tak. Każda funkcja jest bezpłatna dla wszystkich na licencji MIT. Nie ma wersji płatnej."
       },
       {
+        "q": "Dokąd wysyłany jest tekst mojego moda?",
+        "a": "Przy korzystaniu z lokalnego modelu (Ollama lub LM Studio) tekst pozostaje na twoim komputerze. Przy korzystaniu z AI w chmurze wiersze do przetłumaczenia są wysyłane do wybranej usługi i przetwarzane zgodnie z jej warunkami. Klucze API nie są zapisywane w ustawieniach, profilach ani dziennikach."
+      },
+      {
         "q": "Czy każda funkcja działa dla każdego języka?",
         "a": "Tak. Tłumaczenie, poprawianie, kontrola jakości, wyszukiwanie, glosariusze (w tym ich automatyczne tworzenie), sprawdzanie modów, wykrywanie modów z tłumaczeniem i tłumaczenie samych aktualizacji działają dla wszystkich 11 języków docelowych. Interfejs jest również dostępny we wszystkich 11 językach. Jest kilka ograniczeń: gdy językiem docelowym jest angielski, zewnętrzne mody z tłumaczeniem nie są dopasowywane, ponieważ większość modów zawiera już angielski; powiązywanie modów z tłumaczeniem w językach innych niż japoński było mniej testowane, więc sprawdź powiązany mod przed jego nadpisaniem; tłumaczenie na podstawie chińskiego tekstu jest dostępne dla japońskiego i koreańskiego."
       },
@@ -146,11 +153,15 @@
       },
       {
         "q": "macOS informuje, że nie można otworzyć aplikacji.",
-        "a": "Aplikacja nie jest podpisana przez Apple. Otwórz Ustawienia systemowe → Prywatność i ochrona i zezwól na jej otwarcie."
+        "a": "Aplikacja nie jest podpisana przez Apple. Spróbuj ją raz otworzyć, a następnie przejdź do Ustawienia systemowe → Prywatność i ochrona i wybierz „Otwórz mimo to”."
       },
       {
         "q": "Windows wyświetla ostrzeżenie SmartScreen.",
         "a": "Aplikacja nie ma podpisu cyfrowego. Pobieraj ją wyłącznie z oficjalnej strony GitHub Releases, a następnie wybierz „Więcej informacji” → „Uruchom mimo to”."
+      },
+      {
+        "q": "Plik dla systemu Linux nie uruchamia się.",
+        "a": "Pobrany plik zwykle nie ma uprawnień do wykonywania. W folderze pobierania uruchom `chmod +x ParadoxLocalizationTranslator`, a następnie uruchom plik."
       },
       {
         "q": "Czy mogę tłumaczyć mody bezpośrednio z Steam Workshop?",

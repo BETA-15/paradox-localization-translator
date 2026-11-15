@@ -22,12 +22,13 @@
 <meta name="twitter:image" content="{{og_image}}">
 <meta name="twitter:image:alt" content="{{og_alt}}">
 {{verification}}<script type="application/ld+json">{{jsonld}}</script>
-<meta name="theme-color" content="#0e1620">
+<meta name="theme-color" content="#0e1620" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f3ecdc" media="(prefers-color-scheme: light)">
 <link rel="icon" href="{{root}}assets/icon.png">
 <link rel="stylesheet" href="{{root}}assets/style.css?v={{asset_v}}">
 </head>
 <body>
-<a class="skip" href="#main">↓</a>
+<a class="skip" href="#main">{{nav.skip}}</a>
 
 <div class="suggest" id="suggest" hidden>
   <a id="suggest-link" href="#"></a>
@@ -39,9 +40,9 @@
     <img src="{{root}}assets/icon.png" alt="" width="28" height="28">
     <span>Paradox Localization Translator</span>
   </a>
-  <nav class="menu" aria-label="Sections">
-    <a href="#features">{{nav.features}}</a>
+  <nav class="menu" aria-label="{{nav.sections}}">
     <a href="#shots">{{nav.shots}}</a>
+    <a href="#features">{{nav.features}}</a>
     <a href="#games">{{nav.games}}</a>
     <a href="#howto">{{nav.howto}}</a>
     <a href="#faq">{{nav.faq}}</a>
@@ -62,14 +63,7 @@
     <p class="eyebrow">{{hero.eyebrow}}</p>
     <h1>{{hero.title}}</h1>
     <p class="lead">{{hero.lead}}</p>
-    <div class="cta">
-      <a class="btn" href="{{release_url}}">{{hero.download}} <span aria-hidden="true">→</span></a>
-      <div class="os">
-        <a href="{{downloads.windows}}">Windows</a>
-        <a href="{{downloads.macos}}">macOS</a>
-        <a href="{{downloads.linux}}">Linux</a>
-      </div>
-    </div>
+    <div class="cta"><p class="dl-label">{{hero.download}}</p>{{download_html}}</div>
     <p class="platforms">{{hero.platforms}}</p>
     <ul class="badges">{{badges}}</ul>
   </div>
@@ -85,21 +79,21 @@
   </figure>
 </section>
 
-<section id="features" class="band">
-  <h2>{{features.title}}</h2>
-  <div class="cards">{{features_html}}</div>
-</section>
-
 <section id="shots" class="band">
   <h2>{{shots.title}}</h2>
   {{shots_note}}
   <div class="shots">{{shots_html}}</div>
 </section>
 
+<section id="features" class="band">
+  <h2>{{features.title}}</h2>
+  <div class="cards">{{features_html}}</div>
+</section>
+
 <section id="games" class="band">
-  <h2>{{games.title}}</h2>
+  <h2 id="games-title">{{games.title}}</h2>
   <p class="intro">{{games.intro}}</p>
-  <div class="matrix-wrap">{{matrix}}</div>
+  <div class="matrix-wrap" tabindex="0" role="region" aria-labelledby="games-title">{{matrix}}</div>
   <p class="legend">{{games.legend}}</p>
 </section>
 
@@ -115,6 +109,17 @@
   </div>
 </section>
 
+<section id="faq" class="band">
+  <h2>{{faq.title}}</h2>
+  <div class="faq">{{faq_html}}</div>
+</section>
+
+<section id="download" class="band">
+  <h2>{{hero.download}}</h2>
+  <p class="platforms">{{hero.platforms}}</p>
+  {{download_html}}
+</section>
+
 <section id="publish" class="band notice-band">
   <h2>{{publish.title}}</h2>
   <p class="intro">{{publish.intro}}</p>
@@ -122,11 +127,6 @@
 </section>
 
 {{donate_html}}
-
-<section id="faq" class="band">
-  <h2>{{faq.title}}</h2>
-  <div class="faq">{{faq_html}}</div>
-</section>
 
 </main>
 
@@ -139,7 +139,7 @@
   </p>
 </footer>
 
-<div class="lightbox" id="lightbox" hidden><img alt=""></div>
+<dialog class="lightbox" id="lightbox" aria-label="{{shots.title}}"><button type="button" class="close">{{suggest_close}}</button><img alt=""></dialog>
 
 <script>window.PLT = {{js_data}};</script>
 <script src="{{root}}assets/site.js?v={{asset_v}}" defer></script>

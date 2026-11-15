@@ -9,14 +9,16 @@
     "games": "Games & languages",
     "howto": "How to use",
     "faq": "FAQ",
-    "language": "Language"
+    "language": "Language",
+    "skip": "Skip to content",
+    "sections": "Sections"
   },
   "suggest": "This page is also available in English.",
   "suggest_close": "Close",
   "hero": {
     "eyebrow": "For Paradox grand strategy mods",
     "title": "Translate Paradox mods into **your language** — with a local LLM or a cloud AI.",
-    "lead": "A free desktop tool for modders and players. It translates mod localisation files for Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris, Europa Universalis IV and V, and Imperator: Rome into any of the 11 languages the games support, keeps the game's formatting codes intact, and helps you find and fix what is still untranslated. The app itself is available in the same 11 languages.",
+    "lead": "A free desktop tool that translates a mod's localisation files with AI, keeps the game's formatting codes intact, and lets you check and fix the result side by side.",
     "download": "Download for free",
     "platforms": "Windows · macOS · Linux — no Python needed",
     "badges": [
@@ -24,7 +26,8 @@
       "Free, all features",
       "MIT License"
     ],
-    "demo_caption": "Formatting codes stay exactly as they were."
+    "demo_caption": "Formatting codes stay exactly as they were.",
+    "all_releases": "All releases and release notes"
   },
   "features": {
     "title": "What it does",
@@ -137,6 +140,10 @@
         "a": "Yes. Every feature is free for everyone, under the MIT License. There is no paid version."
       },
       {
+        "q": "Where is my mod's text sent?",
+        "a": "With a local model (Ollama or LM Studio), the text stays on your computer. With a cloud AI, the lines to translate are sent to the service you chose and handled under its terms. API keys are not saved to settings, profiles or logs."
+      },
+      {
         "q": "Does every feature work for every language?",
         "a": "Yes. Translation, repair, QA, search, glossaries (including automatic building), the mod survey, translation-mod detection and update-only translation work for all 11 target languages, and the interface is available in all 11 as well. A few limits: with English as the target, outside translation mods are not matched, because most mods already contain English; linking translation mods in languages other than Japanese has been tested less, so check the linked mod before overwriting; Chinese-based translation is available for Japanese and Korean."
       },
@@ -146,11 +153,15 @@
       },
       {
         "q": "macOS says the app cannot be opened.",
-        "a": "The app is not signed by Apple. Open System Settings → Privacy & Security and allow it to open."
+        "a": "The app is not signed by Apple. Try to open it once, then go to System Settings → Privacy & Security and choose “Open Anyway”."
       },
       {
         "q": "Windows shows a SmartScreen warning.",
         "a": "The app is not code-signed. Download it only from the official GitHub Releases page, then choose “More info” → “Run anyway”."
+      },
+      {
+        "q": "The Linux file does not start.",
+        "a": "A downloaded file is usually not marked as executable. Run `chmod +x ParadoxLocalizationTranslator` in the download folder, then start it."
       },
       {
         "q": "Can I translate Steam Workshop mods directly?",

@@ -47,17 +47,20 @@
 
   // Screenshot lightbox.
   var box = document.getElementById("lightbox");
-  if (box) {
+  if (box && box.showModal) {
     var img = box.querySelector("img");
+    var opener = null;
     document.querySelectorAll(".zoom").forEach(function (btn) {
       btn.addEventListener("click", function () {
         img.src = btn.getAttribute("data-full");
         img.alt = btn.querySelector("img").alt;
-        box.hidden = false;
+        opener = btn;
+        box.showModal();
       });
     });
-    box.addEventListener("click", function () { box.hidden = true; });
-    document.addEventListener("keydown", function (e) { if (e.key === "Escape") box.hidden = true; });
+    // Any click inside closes it (the picture, the backdrop or the button); Escape closes it natively.
+    box.addEventListener("click", function () { box.close(); });
+    box.addEventListener("close", function () { if (opener) opener.focus(); });
   }
 
   // Close the language menu when clicking elsewhere.

@@ -9,14 +9,16 @@
     "games": "Juegos e idiomas",
     "howto": "Cómo usarla",
     "faq": "Preguntas frecuentes",
-    "language": "Idioma"
+    "language": "Idioma",
+    "skip": "Ir al contenido",
+    "sections": "Secciones"
   },
   "suggest": "Esta página también está disponible en español.",
   "suggest_close": "Cerrar",
   "hero": {
     "eyebrow": "Para mods de juegos de gran estrategia de Paradox",
     "title": "Traduce los mods de Paradox a **tu idioma** con un LLM local o una IA en la nube.",
-    "lead": "Una herramienta de escritorio gratuita para creadores de mods y jugadores. Traduce los archivos de localización de mods de Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris, Europa Universalis IV y V e Imperator: Rome a cualquiera de los 11 idiomas que admiten los juegos, mantiene intactos los códigos de formato del juego y te ayuda a encontrar y corregir lo que aún no está traducido. La propia aplicación también está disponible en esos mismos 11 idiomas.",
+    "lead": "Una herramienta de escritorio gratuita que traduce los archivos de localización de un mod con IA, mantiene intactos los códigos de formato del juego y te permite revisar y corregir el resultado en paralelo con el original.",
     "download": "Descargar gratis",
     "platforms": "Windows · macOS · Linux — no requiere Python",
     "badges": [
@@ -24,7 +26,8 @@
       "Todas las funciones gratis",
       "Licencia MIT"
     ],
-    "demo_caption": "Los códigos de formato se mantienen exactamente como estaban."
+    "demo_caption": "Los códigos de formato se mantienen exactamente como estaban.",
+    "all_releases": "Todas las versiones y notas de la versión"
   },
   "features": {
     "title": "Qué hace",
@@ -137,6 +140,10 @@
         "a": "Sí. Todas las funciones son gratuitas para todos, bajo la licencia MIT. No hay versión de pago."
       },
       {
+        "q": "¿Adónde se envía el texto de mi mod?",
+        "a": "Con un modelo local (Ollama o LM Studio), el texto permanece en tu ordenador. Con una IA en la nube, las líneas que se van a traducir se envían al servicio que hayas elegido y se tratan según sus condiciones de uso. Las claves API no se guardan en los ajustes, los perfiles ni los registros."
+      },
+      {
         "q": "¿Todas las funciones sirven para todos los idiomas?",
         "a": "Sí. La traducción, la corrección, el control de calidad, la búsqueda, los glosarios (incluida su creación automática), el análisis de mods, la detección de mods de traducción y la traducción solo de actualizaciones funcionan para los 11 idiomas de destino. La interfaz también está disponible en los 11. Hay algunas limitaciones: si el idioma de destino es el inglés, no se buscan coincidencias con mods de traducción externos, porque la mayoría de los mods ya incluyen inglés; la vinculación de mods de traducción en idiomas distintos del japonés se ha probado menos, así que revisa el mod vinculado antes de sobrescribirlo; la traducción a partir del chino está disponible para japonés y coreano."
       },
@@ -146,11 +153,15 @@
       },
       {
         "q": "macOS dice que no se puede abrir la aplicación.",
-        "a": "La aplicación no está firmada por Apple. Abre Ajustes del Sistema → Privacidad y seguridad y permite que se abra."
+        "a": "La aplicación no está firmada por Apple. Intenta abrirla una vez y después ve a Ajustes del Sistema → Privacidad y seguridad y elige «Abrir igualmente»."
       },
       {
         "q": "Windows muestra una advertencia de SmartScreen.",
         "a": "La aplicación no tiene firma de código. Descárgala solo desde la página oficial de GitHub Releases y después elige «Más información» → «Ejecutar de todas formas»."
+      },
+      {
+        "q": "El archivo de Linux no se inicia.",
+        "a": "Los archivos descargados normalmente no tienen permiso de ejecución. Ejecuta `chmod +x ParadoxLocalizationTranslator` en la carpeta de descargas y después inicia el archivo."
       },
       {
         "q": "¿Puedo traducir mods de Steam Workshop directamente?",

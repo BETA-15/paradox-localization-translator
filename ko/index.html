@@ -33,12 +33,13 @@
 <meta name="twitter:image" content="https://beta-15.github.io/paradox-localization-translator/assets/og/ko.png">
 <meta name="twitter:image:alt" content="로컬 LLM이나 클라우드 AI로 Paradox 모드를 직접 한글화하세요.">
 <script type="application/ld+json">{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Paradox Localization Translator", "url": "https://beta-15.github.io/paradox-localization-translator/ko/", "description": "CK3, HOI4, Victoria 3, Stellaris, EU5 모드를 로컬 LLM(Ollama, LM Studio)이나 클라우드 AI로 직접 한글화할 수 있는 무료 비공식 도구입니다. 서식 코드는 그대로 유지되며, 11개 언어로 번역할 수 있습니다.", "applicationCategory": "UtilitiesApplication", "operatingSystem": "Windows, macOS, Linux", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "isAccessibleForFree": true, "license": "https://github.com/BETA-15/paradox-localization-translator/blob/main/LICENSE", "downloadUrl": "https://github.com/BETA-15/paradox-localization-translator/releases/latest", "codeRepository": "https://github.com/BETA-15/paradox-localization-translator", "image": "https://beta-15.github.io/paradox-localization-translator/assets/og/ko.png", "inLanguage": ["en", "ja", "fr", "de", "es", "ko", "pl", "pt-BR", "ru", "zh-Hans", "tr"], "author": {"@type": "Person", "name": "BETA-15", "url": "https://beta-15.github.io/beta-lab/"}}</script>
-<meta name="theme-color" content="#0e1620">
+<meta name="theme-color" content="#0e1620" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f3ecdc" media="(prefers-color-scheme: light)">
 <link rel="icon" href="../assets/icon.png">
-<link rel="stylesheet" href="../assets/style.css?v=8eb586893a">
+<link rel="stylesheet" href="../assets/style.css?v=f6ecd85f40">
 </head>
 <body>
-<a class="skip" href="#main">↓</a>
+<a class="skip" href="#main">본문으로 건너뛰기</a>
 
 <div class="suggest" id="suggest" hidden>
   <a id="suggest-link" href="#"></a>
@@ -50,9 +51,9 @@
     <img src="../assets/icon.png" alt="" width="28" height="28">
     <span>Paradox Localization Translator</span>
   </a>
-  <nav class="menu" aria-label="Sections">
-    <a href="#features">기능</a>
+  <nav class="menu" aria-label="페이지 내 항목">
     <a href="#shots">스크린샷</a>
+    <a href="#features">기능</a>
     <a href="#games">게임 및 언어</a>
     <a href="#howto">사용 방법</a>
     <a href="#faq">자주 묻는 질문</a>
@@ -72,15 +73,8 @@
   <div class="hero-text">
     <p class="eyebrow">Paradox 대전략 게임 모드용</p>
     <h1>로컬 LLM이나 클라우드 AI로 Paradox 모드를 <em>직접 한글화</em>하세요.</h1>
-    <p class="lead">모드 제작자와 플레이어를 위한 무료 데스크톱 도구입니다. Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris, Europa Universalis IV 및 V, Imperator: Rome의 모드 현지화 파일을 게임에서 지원하는 11개 언어 중 원하는 언어로 번역합니다. 게임 서식 코드를 그대로 유지하며, 아직 번역되지 않은 부분을 찾아 수정할 수 있습니다. 앱 자체도 동일한 11개 언어로 사용할 수 있습니다.</p>
-    <div class="cta">
-      <a class="btn" href="https://github.com/BETA-15/paradox-localization-translator/releases/latest">무료 다운로드 <span aria-hidden="true">→</span></a>
-      <div class="os">
-        <a href="https://github.com/BETA-15/paradox-localization-translator/releases/latest/download/ParadoxLocalizationTranslator.exe">Windows</a>
-        <a href="https://github.com/BETA-15/paradox-localization-translator/releases/latest/download/ParadoxLocalizationTranslator-macOS.zip">macOS</a>
-        <a href="https://github.com/BETA-15/paradox-localization-translator/releases/latest/download/ParadoxLocalizationTranslator">Linux</a>
-      </div>
-    </div>
+    <p class="lead">AI로 모드의 현지화 파일을 번역하고 게임 서식 코드를 그대로 유지하며, 원문과 번역 결과를 나란히 확인하고 수정할 수 있는 무료 데스크톱 도구입니다.</p>
+    <div class="cta"><p class="dl-label">무료 다운로드</p><div class="os"><a class="btn" href="https://github.com/BETA-15/paradox-localization-translator/releases/latest/download/ParadoxLocalizationTranslator.exe">Windows</a><a class="btn" href="https://github.com/BETA-15/paradox-localization-translator/releases/latest/download/ParadoxLocalizationTranslator-macOS.zip">macOS</a><a class="btn" href="https://github.com/BETA-15/paradox-localization-translator/releases/latest/download/ParadoxLocalizationTranslator">Linux</a></div><a class="all-rel" href="https://github.com/BETA-15/paradox-localization-translator/releases">모든 버전 및 업데이트 내용 ↗</a></div>
     <p class="platforms">Windows · macOS · Linux — Python 설치 불필요</p>
     <ul class="badges"><li>비공식</li><li>모든 기능 무료</li><li>MIT 라이선스</li></ul>
   </div>
@@ -96,21 +90,21 @@
   </figure>
 </section>
 
-<section id="features" class="band">
-  <h2>주요 기능</h2>
-  <div class="cards"><article class="card"><span class="num">01</span><h3>모드 전체를 한 번에 번역</h3><p>파일 하나, 현지화 폴더 또는 모드 전체를 추가하거나 끌어다 놓습니다. 여러 모드를 대기열에 넣고, 일시 정지하거나 재개할 수 있으며, 중지한 뒤 다음에 이어서 진행할 수도 있습니다.</p></article><article class="card"><span class="num">02</span><h3>게임 코드 보호</h3><p><code>[ROOT.Char.GetName]</code>, <code>$VALUE$</code>, <code>£gold£</code>, <code>§Y…§!</code> 같은 서식 코드를 번역 중에 보호하고 번역 후 복원하여 게임 텍스트가 깨지지 않도록 합니다.</p></article><article class="card"><span class="num">03</span><h3>번역뿐 아니라 보완과 업데이트까지</h3><p>번역되지 않은 줄을 찾아 해당 줄만 번역합니다. 작업마다 별도의 캐시를 유지합니다. 모드가 업데이트되면 이미 번역한 줄을 재사용하므로 새로 추가되거나 변경된 줄만 AI에 보냅니다.</p></article><article class="card"><span class="num">04</span><h3>기존 번역 모드 검색</h3><p>해당 모드를 사용자의 언어로 번역한 다른 모드가 있는지, 번역이 완전한지 확인합니다. 먼저 백업과 확인을 거친 뒤, 누락된 줄을 원본 모드 대신 번역 모드에 추가할 수 있습니다.</p></article><article class="card"><span class="num">05</span><h3>검토 및 다듬기</h3><p>원문과 번역문을 나란히 비교하고, 품질 검사를 실행하며, 원하는 줄을 검색하여 바로 수정할 수 있습니다. 언어별 용어집을 유지하거나 자동으로 생성하여 이름과 용어를 일관되게 유지합니다.</p></article><article class="card"><span class="num">06</span><h3>원하는 AI 선택</h3><p>Ollama나 LM Studio로 로컬 모델을 무료로 실행하며 데이터를 비공개로 유지할 수 있습니다. 또는 OpenAI, Anthropic, Google Gemini 및 OpenAI 호환 API를 사용할 수 있습니다. API 키는 설정, 프로필, 로그에 저장되지 않습니다.</p></article></div>
-</section>
-
 <section id="shots" class="band">
   <h2>스크린샷</h2>
   
   <div class="shots"><figure class="shot"><button type="button" class="zoom" data-full="../assets/shots/ko/translate.webp"><img src="../assets/shots/ko/translate.webp" alt="Paradox Localization Translator — 번역 대기열 및 진행 상황" width="1480" height="1012" loading="lazy"></button><figcaption>번역 대기열 및 진행 상황</figcaption></figure><figure class="shot"><button type="button" class="zoom" data-full="../assets/shots/ko/qa.webp"><img src="../assets/shots/ko/qa.webp" alt="Paradox Localization Translator — 원문·번역문 비교 검토 및 편집" width="1480" height="1012" loading="lazy"></button><figcaption>원문·번역문 비교 검토 및 편집</figcaption></figure><figure class="shot"><button type="button" class="zoom" data-full="../assets/shots/ko/survey.webp"><img src="../assets/shots/ko/survey.webp" alt="Paradox Localization Translator — 모드 번역 상태 조사" width="1480" height="1012" loading="lazy"></button><figcaption>모드 번역 상태 조사</figcaption></figure><figure class="shot"><button type="button" class="zoom" data-full="../assets/shots/ko/model.webp"><img src="../assets/shots/ko/model.webp" alt="Paradox Localization Translator — 모델 및 연결 설정" width="1480" height="1012" loading="lazy"></button><figcaption>모델 및 연결 설정</figcaption></figure></div>
 </section>
 
+<section id="features" class="band">
+  <h2>주요 기능</h2>
+  <div class="cards"><article class="card"><span class="num">01</span><h3>모드 전체를 한 번에 번역</h3><p>파일 하나, 현지화 폴더 또는 모드 전체를 추가하거나 끌어다 놓습니다. 여러 모드를 대기열에 넣고, 일시 정지하거나 재개할 수 있으며, 중지한 뒤 다음에 이어서 진행할 수도 있습니다.</p></article><article class="card"><span class="num">02</span><h3>게임 코드 보호</h3><p><code>[ROOT.Char.GetName]</code>, <code>$VALUE$</code>, <code>£gold£</code>, <code>§Y…§!</code> 같은 서식 코드를 번역 중에 보호하고 번역 후 복원하여 게임 텍스트가 깨지지 않도록 합니다.</p></article><article class="card"><span class="num">03</span><h3>번역뿐 아니라 보완과 업데이트까지</h3><p>번역되지 않은 줄을 찾아 해당 줄만 번역합니다. 작업마다 별도의 캐시를 유지합니다. 모드가 업데이트되면 이미 번역한 줄을 재사용하므로 새로 추가되거나 변경된 줄만 AI에 보냅니다.</p></article><article class="card"><span class="num">04</span><h3>기존 번역 모드 검색</h3><p>해당 모드를 사용자의 언어로 번역한 다른 모드가 있는지, 번역이 완전한지 확인합니다. 먼저 백업과 확인을 거친 뒤, 누락된 줄을 원본 모드 대신 번역 모드에 추가할 수 있습니다.</p></article><article class="card"><span class="num">05</span><h3>검토 및 다듬기</h3><p>원문과 번역문을 나란히 비교하고, 품질 검사를 실행하며, 원하는 줄을 검색하여 바로 수정할 수 있습니다. 언어별 용어집을 유지하거나 자동으로 생성하여 이름과 용어를 일관되게 유지합니다.</p></article><article class="card"><span class="num">06</span><h3>원하는 AI 선택</h3><p>Ollama나 LM Studio로 로컬 모델을 무료로 실행하며 데이터를 비공개로 유지할 수 있습니다. 또는 OpenAI, Anthropic, Google Gemini 및 OpenAI 호환 API를 사용할 수 있습니다. API 키는 설정, 프로필, 로그에 저장되지 않습니다.</p></article></div>
+</section>
+
 <section id="games" class="band">
-  <h2>게임 및 언어</h2>
+  <h2 id="games-title">게임 및 언어</h2>
   <p class="intro">공식 지원 언어 11개 모두로 번역할 수 있습니다. 각 게임에서 읽을 수 있는 언어는 이 중 일부입니다. 게임이 표시할 수 없는 언어를 선택하면 시작 전에 경고합니다. Crusader Kings III, Victoria 3, Hearts of Iron IV, Stellaris, Europa Universalis V는 모드를 자동으로 감지합니다. Europa Universalis IV와 Imperator: Rome은 파일이나 폴더를 직접 추가해야 합니다.</p>
-  <div class="matrix-wrap"><table class="matrix"><thead><tr><th scope="col">게임</th><th scope="col" title="English">EN</th><th scope="col" title="日本語">JA</th><th scope="col" title="Français">FR</th><th scope="col" title="Deutsch">DE</th><th scope="col" title="Español">ES</th><th scope="col" title="한국어" class=here>KO</th><th scope="col" title="Polski">PL</th><th scope="col" title="Português (Brasil)">PT</th><th scope="col" title="Русский">RU</th><th scope="col" title="简体中文">ZH</th><th scope="col" title="Türkçe">TR</th></tr></thead><tbody><tr><th scope="row">Victoria 3<span class="count">11개 모두</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr><tr><th scope="row">Europa Universalis V (EU5)<span class="count">11개 모두</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr><tr><th scope="row">Hearts of Iron IV (HOI4)<span class="count">10개 언어</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Stellaris<span class="count">10개 언어</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Crusader Kings III (CK3)<span class="count">9개 언어</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Imperator: Rome<span class="count">6개 언어</span></th><td class="yes">✓</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no here">–</td><td class="no">–</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Europa Universalis IV (EU4)<span class="count">4개 언어</span></th><td class="yes">✓</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no here">–</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="no">–</td></tr></tbody></table></div>
+  <div class="matrix-wrap" tabindex="0" role="region" aria-labelledby="games-title"><table class="matrix"><thead><tr><th scope="col">게임</th><th scope="col" title="English">EN</th><th scope="col" title="日本語">JA</th><th scope="col" title="Français">FR</th><th scope="col" title="Deutsch">DE</th><th scope="col" title="Español">ES</th><th scope="col" title="한국어" class=here>KO</th><th scope="col" title="Polski">PL</th><th scope="col" title="Português (Brasil)">PT</th><th scope="col" title="Русский">RU</th><th scope="col" title="简体中文">ZH</th><th scope="col" title="Türkçe">TR</th></tr></thead><tbody><tr><th scope="row">Victoria 3<span class="count">11개 모두</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr><tr><th scope="row">Europa Universalis V (EU5)<span class="count">11개 모두</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr><tr><th scope="row">Hearts of Iron IV (HOI4)<span class="count">10개 언어</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Stellaris<span class="count">10개 언어</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Crusader Kings III (CK3)<span class="count">9개 언어</span></th><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes here">✓</td><td class="yes">✓</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Imperator: Rome<span class="count">6개 언어</span></th><td class="yes">✓</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no here">–</td><td class="no">–</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">–</td></tr><tr><th scope="row">Europa Universalis IV (EU4)<span class="count">4개 언어</span></th><td class="yes">✓</td><td class="no">–</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no here">–</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="no">–</td><td class="no">–</td></tr></tbody></table></div>
   <p class="legend">✓ = 게임에서 표시할 수 있는 언어</p>
 </section>
 
@@ -126,18 +120,24 @@
   </div>
 </section>
 
+<section id="faq" class="band">
+  <h2>자주 묻는 질문</h2>
+  <div class="faq"><details><summary>정말 무료인가요?</summary><p>네. MIT 라이선스에 따라 모든 기능이 누구에게나 무료입니다. 유료 버전은 없습니다.</p></details><details><summary>모드의 텍스트는 어디로 전송되나요?</summary><p>로컬 모델(Ollama 또는 LM Studio)을 사용하면 텍스트는 사용자의 컴퓨터에 그대로 남습니다. 클라우드 AI를 사용하면 번역할 줄이 선택한 서비스로 전송되며 해당 서비스의 약관에 따라 처리됩니다. API 키는 설정, 프로필, 로그에 저장되지 않습니다.</p></details><details><summary>모든 언어에서 모든 기능을 사용할 수 있나요?</summary><p>그렇습니다. 번역, 보완, QA, 검색, 용어집(자동 생성 포함), 모드 조사, 번역 모드 감지, 업데이트 부분만 번역은 11개 대상 언어 모두에서 사용할 수 있으며, 인터페이스도 11개 언어 모두로 제공됩니다. 몇 가지 제한이 있습니다. 대상 언어가 영어이면 대부분의 모드에 이미 영어가 포함되어 있으므로 외부 번역 모드를 매칭하지 않습니다. 일본어 이외 언어의 번역 모드 연결은 테스트가 상대적으로 적게 이루어졌으므로 덮어쓰기 전에 연결된 모드를 확인해야 합니다. 중국어 기반 번역은 일본어와 한국어에서 사용할 수 있습니다.</p></details><details><summary>앱의 언어는 어떻게 변경합니까?</summary><p>“설정” → “화면 언어”로 이동합니다. 앱을 다시 시작하면 변경 사항이 적용됩니다. 처음 실행할 때는 시스템 언어를 사용합니다(시스템 언어가 지원하는 11개 언어에 포함되지 않으면 영어를 사용합니다).</p></details><details><summary>macOS에서 앱을 열 수 없다고 합니다.</summary><p>이 앱에는 Apple 서명이 없습니다. 한 번 열기를 시도한 뒤 시스템 설정 → 개인정보 보호 및 보안으로 이동하여 “그래도 열기”를 선택합니다.</p></details><details><summary>Windows에 SmartScreen 경고가 표시됩니다.</summary><p>이 앱에는 코드 서명이 없습니다. 공식 GitHub Releases 페이지에서만 다운로드한 뒤 &quot;추가 정보&quot; → &quot;실행&quot;을 선택합니다.</p></details><details><summary>Linux 파일이 실행되지 않습니다.</summary><p>다운로드한 파일에는 보통 실행 권한이 없습니다. 다운로드 폴더에서 <code>chmod +x ParadoxLocalizationTranslator</code>를 실행한 뒤 파일을 실행합니다.</p></details><details><summary>Steam Workshop 모드를 직접 번역할 수 있나요?</summary><p>네. 다만 Workshop 업데이트로 변경 내용이 덮어써질 수 있습니다. 도구에서 백업을 만들지만, 중요한 번역은 별도로 사본을 보관하세요.</p></details><details><summary>버그는 어떻게 신고하나요?</summary><p>GitHub에 이슈를 등록합니다. 가능하면 &quot;설정&quot; → &quot;진단 로그 수집&quot;에서 만든 진단 ZIP을 첨부하고 재현 절차를 설명해 주세요. ZIP에는 번역문이나 API 키가 포함되지 않습니다.</p></details></div>
+</section>
+
+<section id="download" class="band">
+  <h2>무료 다운로드</h2>
+  <p class="platforms">Windows · macOS · Linux — Python 설치 불필요</p>
+  <div class="os"><a class="btn" href="https://github.com/BETA-15/paradox-localization-translator/releases/latest/download/ParadoxLocalizationTranslator.exe">Windows</a><a class="btn" href="https://github.com/BETA-15/paradox-localization-translator/releases/latest/download/ParadoxLocalizationTranslator-macOS.zip">macOS</a><a class="btn" href="https://github.com/BETA-15/paradox-localization-translator/releases/latest/download/ParadoxLocalizationTranslator">Linux</a></div><a class="all-rel" href="https://github.com/BETA-15/paradox-localization-translator/releases">모든 버전 및 업데이트 내용 ↗</a>
+</section>
+
 <section id="publish" class="band notice-band">
   <h2>번역 모드 배포</h2>
   <p class="intro">이 도구로 만든 번역을 Steam Workshop이나 다른 곳에 공유할 때는 다음 사항을 지켜 주세요.</p>
   <ul class="rules"><li><strong>원본 모드 제작자의 허락을 받으세요.</strong> 이는 모드 커뮤니티의 관례이며, Steam 약관에서도 업로드하는 콘텐츠에 대한 권리를 보유하도록 요구합니다.</li><li><strong>무료로 배포하세요.</strong> Paradox Interactive의 사용자 계약(제5조)에 따라 모드와 기타 사용자 제작 콘텐츠는 누구나 무료로 이용할 수 있어야 하며, 결제해야만 이용할 수 있도록 해서는 안 됩니다. 작업에 들인 시간에 대한 기부는 받을 수 있습니다.</li><li><strong>기계 번역 여부를 밝혀 주세요.</strong> 기계 번역을 사용했다면 이를 표시하면 플레이어가 판단하는 데 도움이 됩니다.</li></ul>
 </section>
 
-<section id="donate" class="band donate"><h2>개발 후원</h2><p>기부금은 GitHub Sponsors를 통해 VF Software Co., Ltd.가 받습니다. 이 도구를 포함한 모든 작업의 개발 시간과 비용을 지원하는 데 사용합니다. 모든 기능은 누구에게나 계속 무료로 제공되며, 기부로 해제되는 기능은 없습니다.</p><a class="btn" href="https://github.com/sponsors/BETA-15">GitHub에서 후원 ♥</a></section>
-
-<section id="faq" class="band">
-  <h2>자주 묻는 질문</h2>
-  <div class="faq"><details><summary>정말 무료인가요?</summary><p>네. MIT 라이선스에 따라 모든 기능이 누구에게나 무료입니다. 유료 버전은 없습니다.</p></details><details><summary>모든 언어에서 모든 기능을 사용할 수 있나요?</summary><p>그렇습니다. 번역, 보완, QA, 검색, 용어집(자동 생성 포함), 모드 조사, 번역 모드 감지, 업데이트 부분만 번역은 11개 대상 언어 모두에서 사용할 수 있으며, 인터페이스도 11개 언어 모두로 제공됩니다. 몇 가지 제한이 있습니다. 대상 언어가 영어이면 대부분의 모드에 이미 영어가 포함되어 있으므로 외부 번역 모드를 매칭하지 않습니다. 일본어 이외 언어의 번역 모드 연결은 테스트가 상대적으로 적게 이루어졌으므로 덮어쓰기 전에 연결된 모드를 확인해야 합니다. 중국어 기반 번역은 일본어와 한국어에서 사용할 수 있습니다.</p></details><details><summary>앱의 언어는 어떻게 변경합니까?</summary><p>“설정” → “화면 언어”로 이동합니다. 앱을 다시 시작하면 변경 사항이 적용됩니다. 처음 실행할 때는 시스템 언어를 사용합니다(시스템 언어가 지원하는 11개 언어에 포함되지 않으면 영어를 사용합니다).</p></details><details><summary>macOS에서 앱을 열 수 없다고 합니다.</summary><p>이 앱에는 Apple 서명이 없습니다. 시스템 설정 → 개인정보 보호 및 보안에서 실행을 허용합니다.</p></details><details><summary>Windows에 SmartScreen 경고가 표시됩니다.</summary><p>이 앱에는 코드 서명이 없습니다. 공식 GitHub Releases 페이지에서만 다운로드한 뒤 &quot;추가 정보&quot; → &quot;실행&quot;을 선택합니다.</p></details><details><summary>Steam Workshop 모드를 직접 번역할 수 있나요?</summary><p>네. 다만 Workshop 업데이트로 변경 내용이 덮어써질 수 있습니다. 도구에서 백업을 만들지만, 중요한 번역은 별도로 사본을 보관하세요.</p></details><details><summary>버그는 어떻게 신고하나요?</summary><p>GitHub에 이슈를 등록합니다. 가능하면 &quot;설정&quot; → &quot;진단 로그 수집&quot;에서 만든 진단 ZIP을 첨부하고 재현 절차를 설명해 주세요. ZIP에는 번역문이나 API 키가 포함되지 않습니다.</p></details></div>
-</section>
+<section id="donate" class="band donate"><h2>개발 후원</h2><p>기부금은 GitHub Sponsors를 통해 VF Software Co., Ltd.가 받습니다. 이 도구를 포함한 모든 작업의 개발 시간과 비용을 지원하는 데 사용합니다. 모든 기능은 누구에게나 계속 무료로 제공되며, 기부로 해제되는 기능은 없습니다.</p><a class="btn btn-ghost" href="https://github.com/sponsors/BETA-15">GitHub에서 후원 ♥</a></section>
 
 </main>
 
@@ -150,9 +150,9 @@
   </p>
 </footer>
 
-<div class="lightbox" id="lightbox" hidden><img alt=""></div>
+<dialog class="lightbox" id="lightbox" aria-label="스크린샷"><button type="button" class="close">닫기</button><img alt=""></dialog>
 
 <script>window.PLT = {"here": "ko", "langs": [{"tag": "en", "href": "../", "text": "This page is also available in English."}, {"tag": "ja", "href": "../ja/", "text": "このページは日本語でも読めます。"}, {"tag": "fr", "href": "../fr/", "text": "Cette page est aussi disponible en français."}, {"tag": "de", "href": "../de/", "text": "Diese Seite ist auch auf Deutsch verfügbar."}, {"tag": "es", "href": "../es/", "text": "Esta página también está disponible en español."}, {"tag": "ko", "href": "../ko/", "text": "이 페이지는 한국어로도 볼 수 있습니다."}, {"tag": "pl", "href": "../pl/", "text": "Ta strona jest również dostępna po polsku."}, {"tag": "pt-BR", "href": "../pt-br/", "text": "Esta página também está disponível em português brasileiro."}, {"tag": "ru", "href": "../ru/", "text": "Эта страница также доступна на русском языке."}, {"tag": "zh-Hans", "href": "../zh-hans/", "text": "本页面也提供简体中文版。"}, {"tag": "tr", "href": "../tr/", "text": "Bu sayfa Türkçe olarak da sunulmaktadır."}], "demo": [["l_korean", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span>은(는) 아무것도 두려워하지 않는다. <span class=\"tok\">§Y<\/span>기량 +2<span class=\"tok\">§!<\/span>"], ["l_polish", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span> niczego się nie boi. <span class=\"tok\">§Y<\/span>+2 do Waleczności<span class=\"tok\">§!<\/span>"], ["l_braz_por", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span> não teme nada. <span class=\"tok\">§Y<\/span>+2 de Destreza<span class=\"tok\">§!<\/span>"], ["l_russian", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span> ничего не боится. <span class=\"tok\">§Y<\/span>+2 к доблести<span class=\"tok\">§!<\/span>"], ["l_simp_chinese", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span>无所畏惧。<span class=\"tok\">§Y<\/span>勇武 +2<span class=\"tok\">§!<\/span>"], ["l_turkish", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span> hiçbir şeyden korkmaz. <span class=\"tok\">§Y<\/span>+2 Yiğitlik<span class=\"tok\">§!<\/span>"], ["l_japanese", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span>は何も恐れない。<span class=\"tok\">§Y<\/span>武勇 +2<span class=\"tok\">§!<\/span>"], ["l_french", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span> ne craint rien. <span class=\"tok\">§Y<\/span>+2 en Prouesse<span class=\"tok\">§!<\/span>"], ["l_german", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span> fürchtet nichts. <span class=\"tok\">§Y<\/span>+2 Kampfgeschick<span class=\"tok\">§!<\/span>"], ["l_spanish", "<span class=\"tok\">[ROOT.Char.GetFirstName]<\/span> no teme a nada. <span class=\"tok\">§Y<\/span>+2 de Destreza<span class=\"tok\">§!<\/span>"]]};</script>
-<script src="../assets/site.js?v=8eb586893a" defer></script>
+<script src="../assets/site.js?v=f6ecd85f40" defer></script>
 </body>
 </html>

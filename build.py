@@ -202,7 +202,7 @@ def build_page(lang: dict, built: list[dict], en: dict) -> str:
         if src:
             shots.append(
                 f'<figure class="shot"><button type="button" class="zoom" data-full="{root}{src}">'
-                f'<img src="{root}{src}" alt="Paradox Localization Translator — {caption}" width="{shot["w"]}" height="{shot["h"]}" loading="lazy"></button>'
+                f'<img src="{root}{src}" alt="Paradox Localization Translator — {html.escape(plain(t(f'shots.items.{shot["file"]}')))}" width="{shot["w"]}" height="{shot["h"]}" loading="lazy"></button>'
                 f"<figcaption>{caption}</figcaption></figure>"
             )
         else:
@@ -211,6 +211,15 @@ def build_page(lang: dict, built: list[dict], en: dict) -> str:
                 f'<figure class="shot empty"><div class="ph">{inline(t("shots.pending"))}</div><figcaption>{caption}</figcaption></figure>'
             )
     ctx["shots_html"] = "".join(shots)
+
+    os_links = "".join(
+        f'<a class="btn" href="{html.escape(SITE["downloads"][k])}">{name}</a>'
+        for k, name in (("windows", "Windows"), ("macos", "macOS"), ("linux", "Linux"))
+    )
+    ctx["download_html"] = (
+        f'<div class="os">{os_links}</div>'
+        f'<a class="all-rel" href="{html.escape(SITE["repo_url"])}/releases">{inline(t("hero.all_releases"))} ↗</a>'
+    )
     # Shown while a page borrows another language's UI pictures; disappears once its own pictures exist.
     ctx["shots_note"] = f'<p class="intro">{inline(t("shots.ui_note"))}</p>' if borrowed_any else ""
 
@@ -232,7 +241,7 @@ def build_page(lang: dict, built: list[dict], en: dict) -> str:
         ctx["donate_html"] = (
             f'<section id="donate" class="band donate"><h2>{inline(t("donate.title"))}</h2>'
             f'<p>{inline(t("donate.text"))}</p>'
-            f'<a class="btn" href="{html.escape(SITE["sponsor_url"])}">{inline(t("donate.button"))} ♥</a></section>'
+            f'<a class="btn btn-ghost" href="{html.escape(SITE["sponsor_url"])}">{inline(t("donate.button"))} ♥</a></section>'
         )
     else:
         ctx["donate_html"] = ""
