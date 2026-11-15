@@ -11060,6 +11060,7 @@ class App(BaseTk):
             contexts=[]; errors=[]
             try:
                 glossaries={language:core.load_glossary(path) if path else {} for language,path in glossary_paths.items()}
+                term_metas={language:core.load_glossary_term_meta(path) if path else {} for language,path in glossary_paths.items()}
             except Exception as exc:
                 errors.append({"source_file":"","target_file":"","source_language":"","stage":"glossary_read","error_type":type(exc).__name__,"message":str(exc),"action":i18n.t('u3.cancel_qa')})
                 self.events.put(('review_qa_batch_loaded',(contexts,errors))); return
@@ -11072,7 +11073,7 @@ class App(BaseTk):
                     stage="target_read"
                     _,target,_=core.parse_localization_file(target_path)
                     stage="qa_analysis"
-                    issues=core.qa_file(target_path,source_path,source_lang=lang,glossary=glossary,target_lang=target_lang)
+                    issues=core.qa_file(target_path,source_path,source_lang=lang,glossary=glossary,target_lang=target_lang,term_meta=term_metas[target_lang])
                     contexts.append({"source_path":source_path,"target_path":target_path,"lang":lang,"target_lang":target_lang,
                                      "source_entries":source,"target_entries":target,"issues":list(issues or [])})
                 except Exception as exc:
@@ -11105,12 +11106,13 @@ class App(BaseTk):
                     else: source_lang='english'; source={}
                 stage="glossary_read"
                 glossary=core.load_glossary(glossary_path) if glossary_path else {}
+                term_meta=core.load_glossary_term_meta(glossary_path) if glossary_path else {}
                 stage="qa_analysis"
                 if dst and dst.exists():
                     issues=core.qa_file(dst,src if src and src.exists() else None,source_lang=source_lang,glossary=glossary,
-                                        target_lang=target_lang)
+                                        target_lang=target_lang,term_meta=term_meta)
                 else:
-                    issues=core.qa_entries(target,source or None,source_lang,glossary,source_path=src,target_lang=target_lang)
+                    issues=core.qa_entries(target,source or None,source_lang,glossary,source_path=src,target_lang=target_lang,term_meta=term_meta)
                 self.events.put(('review_qa_loaded',(source_lang,source,target,issues)))
             except Exception as exc:
                 self.events.put(('review_qa_error',{"source_file":str(src or ""),"target_file":str(dst or ""),"source_language":str(existing_lang or ""),

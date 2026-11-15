@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import hashlib
+from functools import lru_cache
 import json
 import math
 import os
@@ -819,15 +820,52 @@ def cache_entry_is_valid(original: str, cached: str, source_lang: str,
     return not unusable_translation(original, cached, source_lang, target_lang)
 
 
-def glossary_for_prompt(glossary: dict, values: Iterable[str], max_items: int = 80) -> List[Tuple[str, str]]:
-    joined = "\n".join(values).lower()
-    matched = []
-    for src, dst in glossary.items():
-        if src.lower() in joined:
-            matched.append((src, dst))
-            if len(matched) >= max_items:
-                break
-    return matched
+@lru_cache(maxsize=4096)
+def _glossary_term_pattern(term: str, ignorecase: bool):
+    pattern = re.escape(term)
+    if term[0] in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789":
+        pattern = r"(?<![A-Za-z0-9])" + pattern
+    if term[-1] in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz":
+        pattern += r"(?:s|es|'s|’s)?(?![A-Za-z0-9])"
+    elif term[-1] in "0123456789":
+        pattern += r"(?![A-Za-z0-9])"
+    return re.compile(pattern, re.IGNORECASE if ignorecase else 0)
+
+
+def match_glossary_terms(glossary: dict, text: str, *, fold_case: bool,
+                         term_meta: Optional[dict] = None) -> List[str]:
+    """Match literal terms at ASCII boundaries, suppressing contained shorter hits."""
+    term_meta = term_meta or {}
+    folded = text.lower() if fold_case else text
+    hits = {}
+    for term in glossary:
+        if not term:
+            continue
+        info = term_meta.get(term, {})
+        case_sensitive = isinstance(info, dict) and info.get("case_sensitive") is True
+        ignorecase = fold_case and not case_sensitive
+        substring_hit = term.lower() in folded if ignorecase else term in text
+        if not substring_hit:
+            continue
+        spans = [match.span() for match in _glossary_term_pattern(term, ignorecase).finditer(text)]
+        if spans:
+            hits[term] = spans
+    claimed = []
+    taken = set()
+    for term in sorted(hits, key=len, reverse=True):
+        spans = hits[term]
+        if any(not any(start >= left and end <= right for left, right in claimed)
+               for start, end in spans):
+            taken.add(term)
+            claimed.extend(spans)
+    return [term for term in glossary if term in taken]
+
+
+def glossary_for_prompt(glossary: dict, values: Iterable[str], max_items: int = 80,
+                        term_meta: Optional[dict] = None) -> List[Tuple[str, str]]:
+    hits = match_glossary_terms(glossary, "\n".join(values), fold_case=True, term_meta=term_meta)
+    selected = set(sorted(hits, key=len, reverse=True)[:max(0, max_items)])
+    return [(term, glossary[term]) for term in hits if term in selected]
 
 
 def normalize_provider(provider: str) -> str:
@@ -1458,12 +1496,12 @@ def translate_batch(url: str, model: str, jobs: list, source_lang: str,
                     dual_source: bool = False,
                     controller: Optional[TranslationController] = None,
                     provider: str = "Ollama", api_key: str = "",
-                    chinese_basis: bool = False, target_lang: str = DEFAULT_TARGET_LANG, *, extra_rules: str = "") -> List[str]:
+                    chinese_basis: bool = False, target_lang: str = DEFAULT_TARGET_LANG, *, extra_rules: str = "", term_meta: Optional[dict] = None) -> List[str]:
     if not jobs:
         return []
     if target_lang in {"english", "simp_chinese"}:
         dual_source = False  # 翻訳先そのものを参考訳として渡さない
-    selected_glossary = dict(glossary_for_prompt(glossary or {}, [j["value"] for j in jobs]))
+    selected_glossary = dict(glossary_for_prompt(glossary or {}, [j["value"] for j in jobs], term_meta=term_meta))
     prompt = build_system_prompt(source_lang, selected_glossary, preset, dual_source, chinese_basis,
                                  target_lang=target_lang, extra_rules=extra_rules)
     lines = []
@@ -2042,7 +2080,7 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
                  zh_refs: Optional[dict] = None, dual_source: bool = False,
                  cache_file: Optional[Path] = None, file_no: int = 0, file_total: int = 0,
                  provider: str = "Ollama", api_key: str = "", chinese_basis: bool = False,
-                 normalize_spacing: bool = True, *, extra_rules: str = ""):
+                 normalize_spacing: bool = True, *, extra_rules: str = "", term_meta: Optional[dict] = None):
     if target_lang in {"english", "simp_chinese"}:
         dual_source = False  # 翻訳先そのものを原文・参考訳にしない
     raw = read_localization_text(in_path)
@@ -2118,16 +2156,20 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
         current_batch = max(1, int(cfg.get("batch_size", batch_size) or batch_size))
         current_workers = max(1, int(cfg.get("workers", workers) or workers))
         current_glossary = glossary
+        current_term_meta = term_meta
         gp = cfg.get("glossary_path")
         if gp:
             try:
                 current_glossary = load_glossary(Path(gp))
+                current_term_meta = load_glossary_term_meta(Path(gp))
             except Exception:
                 current_glossary = glossary
+                current_term_meta = term_meta
         return {
             "provider": current_provider, "model": current_model, "url": current_url,
             "preset": current_preset, "dual_source": current_dual, "api_key": current_api_key,
             "batch_size": current_batch, "workers": current_workers, "glossary": current_glossary,
+            "term_meta": current_term_meta,
         }
 
     # v0.7.6: バッチ境界ごとにGUI側の最新設定を読み直す。
@@ -2155,7 +2197,7 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
                 return b, translate_batch(cfg["url"], cfg["model"], b, translation_source_lang,
                                           cfg["glossary"], cfg["preset"], cfg["dual_source"],
                                           controller, cfg["provider"], cfg["api_key"], chinese_basis,
-                                          target_lang=target_lang, extra_rules=extra_rules), None
+                                          target_lang=target_lang, extra_rules=extra_rules, term_meta=cfg["term_meta"]), None
             except StopRequested:
                 return b, None, "__STOP__"
             except Exception as e:
@@ -2228,7 +2270,7 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
                 tr = translate_batch(cfg["url"], cfg["model"], [j], translation_source_lang,
                                      cfg["glossary"], cfg["preset"], cfg["dual_source"],
                                      controller, cfg["provider"], cfg["api_key"], chinese_basis,
-                                          target_lang=target_lang, extra_rules=extra_rules)
+                                          target_lang=target_lang, extra_rules=extra_rules, term_meta=cfg["term_meta"])
                 restored = restore_text(tr[0], j["tokens"])
                 if unusable_translation(j["value"], restored, translation_source_lang, target_lang):
                     cache.pop(j["hash"], None)
@@ -2305,6 +2347,7 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
     if target_lang != DEFAULT_TARGET_LANG:
         current_manifest["target_lang"] = target_lang
     glossary = load_glossary(Path(glossary_path)) if glossary_path else {}
+    term_meta = load_glossary_term_meta(Path(glossary_path)) if glossary_path else {}
     zh_refs = build_chinese_reference_map(input_path) if input_path.is_dir() else {}
     exclude = None if include_target_files else target_lang
     files = gather_yml_files(input_path, exclude)
@@ -2423,7 +2466,7 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
                 stats = process_file(f, out, url, model, target_lang, cache, workers, verbose,
                                      batch_size, controller, glossary, preset, zh_refs, dual_source,
                                      cache_file, i, len(file_info), provider, api_key, False,
-                                     normalize_spacing=normalize_spacing, extra_rules=extra_rules)
+                                     normalize_spacing=normalize_spacing, extra_rules=extra_rules, term_meta=term_meta)
             except StopRequested:
                 raise
             except Exception as exc:
@@ -2449,7 +2492,7 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
                             chinese_basis=(source_lang == "simp_chinese" and target_lang in CHINESE_BASIS_TARGETS),
                             max_passes=qa_repair_max_passes, backup_dir=qa_backup_dir,
                             backup_relative_root=output_path, target_lang=target_lang,
-                            normalize_spacing=normalize_spacing, extra_rules=extra_rules)
+                            normalize_spacing=normalize_spacing, extra_rules=extra_rules, term_meta=term_meta)
                     else:
                         qa_result = qa_file_with_syntax_repair(out, source_ref, source_lang=source_lang, glossary=glossary,
                                                                target_lang=target_lang)
@@ -2679,7 +2722,8 @@ def _qa_same_as_source_candidate(key: str, source: str, target: str, source_lang
 
 def qa_entries(target_entries: Dict[str,str], source_entries: Optional[Dict[str,str]] = None,
                source_lang: str = "english", glossary: Optional[dict] = None,
-               source_path: Optional[Path] = None, target_lang: str = DEFAULT_TARGET_LANG) -> List[dict]:
+               source_path: Optional[Path] = None, target_lang: str = DEFAULT_TARGET_LANG,
+               term_meta: Optional[dict] = None) -> List[dict]:
     """QA Japanese localization against an optional source localization.
 
     ``source_lang`` may be ``english`` or ``simp_chinese``.  Chinese-source QA is
@@ -2754,8 +2798,9 @@ def qa_entries(target_entries: Dict[str,str], source_entries: Optional[Dict[str,
             # Translation-term QA: if a registered source term is present, require
             # its fixed Japanese term in the target.  This is especially useful for
             # Chinese historical/institutional terminology.
-            for src_term, dst_term in glossary.items():
-                if src_term and dst_term and src_term in src and dst_term not in value:
+            for src_term in match_glossary_terms(glossary, src, fold_case=False, term_meta=term_meta):
+                dst_term = glossary[src_term]
+                if dst_term and dst_term not in value:
                     issues.append({
                         "key": key, "severity": "warning", "type": "term_mismatch",
                         "message": i18n.t('u9.glossary_not_applied', source_term=src_term, target_term=dst_term), "message_parts": [ui_status.message_part('u9.glossary_not_applied', source_term=src_term, target_term=dst_term)],
@@ -2778,7 +2823,8 @@ def qa_entries(target_entries: Dict[str,str], source_entries: Optional[Dict[str,
 
 
 def qa_file(target_path: Path, source_path: Optional[Path] = None, source_lang: Optional[str] = None,
-            glossary: Optional[dict] = None, target_lang: str = DEFAULT_TARGET_LANG) -> List[dict]:
+            glossary: Optional[dict] = None, target_lang: str = DEFAULT_TARGET_LANG,
+            term_meta: Optional[dict] = None) -> List[dict]:
     _, target_entries, _ = parse_localization_file(Path(target_path))
     source_entries = None
     detected_lang = source_lang or "english"
@@ -2787,7 +2833,7 @@ def qa_file(target_path: Path, source_path: Optional[Path] = None, source_lang: 
         if source_lang:
             detected_lang = source_lang
     issues = qa_entries(target_entries, source_entries, detected_lang, glossary, source_path=source_path,
-                        target_lang=target_lang)
+                        target_lang=target_lang, term_meta=term_meta)
     def line_map(lines):
         result = {}
         for number, line in enumerate(lines, 1):
@@ -2936,7 +2982,7 @@ def qa_file_with_auto_repair(target_path: Path, source_path: Path, *,
                              backup_relative_root: Optional[Path] = None,
                              progress_context: Optional[dict] = None,
                              target_lang: str = DEFAULT_TARGET_LANG,
-                             normalize_spacing: bool = True, extra_rules: str = "") -> dict:
+                             normalize_spacing: bool = True, extra_rules: str = "", term_meta: Optional[dict] = None) -> dict:
     """Back up a translated file, repair QA errors, and re-run QA.
 
     Warnings and notices are deliberately never changed. Safe edge-token repair is attempted
@@ -2952,7 +2998,7 @@ def qa_file_with_auto_repair(target_path: Path, source_path: Path, *,
     notify("initial_qa")
     detected_lang, source_entries, _ = parse_localization_file(source_path)
     detected_lang = source_lang or detected_lang
-    initial = qa_file(target_path, source_path, source_lang=detected_lang, glossary=glossary, target_lang=target_lang)
+    initial = qa_file(target_path, source_path, source_lang=detected_lang, glossary=glossary, target_lang=target_lang, term_meta=term_meta)
     initial_errors = [x for x in initial if x.get("severity") == "error"]
     events = []
     backup_path = None
@@ -2970,7 +3016,7 @@ def qa_file_with_auto_repair(target_path: Path, source_path: Path, *,
     for pass_no in range(1, max(1, int(max_passes)) + 1):
         if controller:
             controller.wait_if_paused()
-        current = qa_file(target_path, source_path, source_lang=detected_lang, glossary=glossary, target_lang=target_lang)
+        current = qa_file(target_path, source_path, source_lang=detected_lang, glossary=glossary, target_lang=target_lang, term_meta=term_meta)
         errors = [x for x in current if x.get("severity") == "error" and x.get("repairable")]
         if not errors:
             break
@@ -2995,7 +3041,7 @@ def qa_file_with_auto_repair(target_path: Path, source_path: Path, *,
             upsert_localization_values(target_path, updates, target_lang)
             repaired_keys.update(updates)
 
-        current = qa_file(target_path, source_path, source_lang=detected_lang, glossary=glossary, target_lang=target_lang)
+        current = qa_file(target_path, source_path, source_lang=detected_lang, glossary=glossary, target_lang=target_lang, term_meta=term_meta)
         retry_by_key = {}
         for issue in current:
             if issue.get("severity") != "error" or not issue.get("repairable"):
@@ -3018,7 +3064,7 @@ def qa_file_with_auto_repair(target_path: Path, source_path: Path, *,
             translated = translate_batch(url, model, jobs, detected_lang, glossary=glossary,
                                          preset=preset, controller=controller, provider=provider,
                                          api_key=api_key, chinese_basis=chinese_basis,
-                                         target_lang=target_lang, extra_rules=extra_rules)
+                                         target_lang=target_lang, extra_rules=extra_rules, term_meta=term_meta)
         except StopRequested:
             raise
         except Exception as exc:
@@ -3048,7 +3094,7 @@ def qa_file_with_auto_repair(target_path: Path, source_path: Path, *,
         notify("recheck",pass_no=pass_no,updated_keys=len(updates))
 
     notify("final_qa")
-    final = qa_file(target_path, source_path, source_lang=detected_lang, glossary=glossary, target_lang=target_lang)
+    final = qa_file(target_path, source_path, source_lang=detected_lang, glossary=glossary, target_lang=target_lang, term_meta=term_meta)
     final_errors = [x for x in final if x.get("severity") == "error"]
     rolled_back = False
     if repaired_keys and len(final_errors) >= len(initial_errors) and backup_path and backup_path.exists():
@@ -3058,7 +3104,7 @@ def qa_file_with_auto_repair(target_path: Path, source_path: Path, *,
         events.append({"pass": attempts, "key": "", "issue_type": "file",
                        "action": "rollback", "result": "restored",
                        "reason": i18n.t('u9.repair_no_improvement')})
-        final = qa_file(target_path, source_path, source_lang=detected_lang, glossary=glossary, target_lang=target_lang)
+        final = qa_file(target_path, source_path, source_lang=detected_lang, glossary=glossary, target_lang=target_lang, term_meta=term_meta)
         final_errors = [x for x in final if x.get("severity") == "error"]
     return {
         "issues": final, "initial_errors": len(initial_errors), "final_errors": len(final_errors),
@@ -3121,6 +3167,7 @@ def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
                          normalize_spacing: bool = True, extra_rules: str = "") -> dict:
     """Repair every error in QA pairs while isolating file failures."""
     glossary = load_glossary(Path(glossary_path)) if glossary_path else {}
+    term_meta = load_glossary_term_meta(Path(glossary_path)) if glossary_path else {}
     backup_dir = create_qa_repair_backup_dir(Path(backup_root), label)
     results, failures = [], []
     spaces_removed = 0
@@ -3133,9 +3180,11 @@ def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
         source_lang = str(pair.get("source_language") or pair.get("lang") or "english")
         pair_target = target_language_of_pair(pair, target_lang)
         pair_glossary = glossary if pair_target == DEFAULT_TARGET_LANG else None
+        pair_term_meta = term_meta if pair_glossary is not None else None
         if pair_target == "korean" and glossary_path:
             korean_glossary = glossary_path_for_language(glossary_path, pair_target)
             pair_glossary = load_glossary(korean_glossary) if korean_glossary.is_file() else None
+            pair_term_meta = load_glossary_term_meta(korean_glossary) if pair_glossary is not None else None
         created_target = False
         try:
             if controller:
@@ -3150,7 +3199,7 @@ def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
                 created_target = True
             result = qa_file_with_auto_repair(
                 target, source, source_lang=source_lang,
-                glossary=pair_glossary,
+                glossary=pair_glossary, term_meta=pair_term_meta,
                 model=model, url=url, provider=provider, api_key=api_key, preset=preset,
                 controller=controller, chinese_basis=(source_lang == "simp_chinese" and pair_target in CHINESE_BASIS_TARGETS),
                 max_passes=max_passes, backup_dir=backup_dir,
@@ -3539,6 +3588,11 @@ def glossary_variants_path(glossary_path: Path) -> Path:
     return glossary_path.with_name(glossary_path.stem + "_variants.json")
 
 
+def load_glossary_term_meta(glossary_path: Path) -> dict:
+    metadata = load_json(glossary_variants_path(glossary_path), {})
+    return metadata if isinstance(metadata, dict) else {}
+
+
 def is_paratranz_glossary(data) -> bool:
     return isinstance(data, list) and all(
         isinstance(item, dict) and "term" in item and "translation" in item
@@ -3724,8 +3778,7 @@ def bulk_unify_qa_terms(target_path: Path, source_path: Path, glossary_path: Pat
     source_lang, source_entries, _ = parse_localization_file(source_path)
     _, target_entries, _ = parse_localization_file(target_path)
     glossary = load_glossary(glossary_path)
-    meta = load_json(glossary_variants_path(glossary_path), {})
-    if not isinstance(meta, dict): meta = {}
+    meta = load_glossary_term_meta(glossary_path)
     changed = {}
     skipped = 0
     for key, src in source_entries.items():
@@ -3733,8 +3786,9 @@ def bulk_unify_qa_terms(target_path: Path, source_path: Path, glossary_path: Pat
             continue
         value = target_entries[key]
         new_value = value
+        matched_terms = set(match_glossary_terms(glossary, src, fold_case=False, term_meta=meta))
         for src_term, preferred in glossary.items():
-            if not src_term or not preferred or src_term not in src:
+            if not src_term or not preferred or src_term not in matched_terms:
                 continue
             if preferred in new_value:
                 continue
@@ -3848,6 +3902,7 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
     if target_lang != DEFAULT_TARGET_LANG:
         current_manifest["target_lang"] = target_lang
     glossary = load_glossary(Path(glossary_path)) if glossary_path else {}
+    term_meta = load_glossary_term_meta(Path(glossary_path)) if glossary_path else {}
 
     if input_path.is_file():
         files = [input_path]
@@ -3888,7 +3943,7 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
                 f, out, url, model, target_lang, cache, workers, True,
                 batch_size, controller, glossary, preset, None, False,
                 cache_file, i, len(chinese_files), provider, api_key, True,
-                normalize_spacing=normalize_spacing, extra_rules=extra_rules)
+                normalize_spacing=normalize_spacing, extra_rules=extra_rules, term_meta=term_meta)
             processed += 1
             total_jobs += stats["jobs"]
             total_failed += stats["failed"]
@@ -3900,7 +3955,7 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
                     model=model, url=url, provider=provider, api_key=api_key, preset=preset,
                     controller=controller, chinese_basis=True, max_passes=qa_repair_max_passes,
                     backup_dir=qa_backup_dir, backup_relative_root=output_path,
-                    normalize_spacing=normalize_spacing, target_lang=target_lang, extra_rules=extra_rules)
+                    normalize_spacing=normalize_spacing, target_lang=target_lang, extra_rules=extra_rules, term_meta=term_meta)
                 issues = qa_result["issues"]
                 spaces_removed += qa_result.get("spaces_removed", 0)
                 severe = sum(1 for x in issues if x["severity"] == "error")
