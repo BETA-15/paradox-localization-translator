@@ -174,7 +174,7 @@
     ]
   },
   "footer": {
-    "notice": "Paradox Localization Translator は、個人が開発している非公式のツールです。Paradox Interactive 社とは関係がなく、同社の承認も受けていません。Paradox Interactive、Crusader Kings、Victoria、Hearts of Iron、Stellaris、Europa Universalis の各名称は、それぞれの権利者の商標です。",
+    "notice": "Paradox Localization Translator は、株式会社ＶＦソフトウェアが運営する非公式のツールです。Paradox Interactive 社とは関係がなく、同社の承認も受けていません。Paradox Interactive、Crusader Kings、Victoria、Hearts of Iron、Stellaris、Europa Universalis の各名称は、それぞれの権利者の商標です。",
     "license": "MIT ライセンス",
     "source": "GitHub のソース",
     "made_by": "作者"

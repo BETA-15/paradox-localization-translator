@@ -174,7 +174,7 @@
     ]
   },
   "footer": {
-    "notice": "Paradox Localization Translator 是由个人开发者制作的非官方工具，与 Paradox Interactive 无关联，也未获得其认可。Paradox Interactive、Crusader Kings、Victoria、Hearts of Iron、Stellaris 和 Europa Universalis 的商标归各自所有者所有。",
+    "notice": "Paradox Localization Translator 是由 VF Software Co., Ltd. 运营的非官方工具，与 Paradox Interactive 无关联，也未获得其认可。Paradox Interactive、Crusader Kings、Victoria、Hearts of Iron、Stellaris 和 Europa Universalis 的商标归各自所有者所有。",
     "license": "MIT 许可证",
     "source": "GitHub 源代码",
     "made_by": "开发者"

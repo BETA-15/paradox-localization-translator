@@ -174,7 +174,7 @@
     ]
   },
   "footer": {
-    "notice": "Paradox Localization Translator — неофициальный инструмент, созданный отдельным разработчиком. Он не связан с Paradox Interactive и не одобрен этой компанией. Paradox Interactive, Crusader Kings, Victoria, Hearts of Iron, Stellaris и Europa Universalis — товарные знаки соответствующих владельцев.",
+    "notice": "Paradox Localization Translator — неофициальный инструмент под управлением VF Software Co., Ltd. Он не связан с Paradox Interactive и не одобрен этой компанией. Paradox Interactive, Crusader Kings, Victoria, Hearts of Iron, Stellaris и Europa Universalis — товарные знаки соответствующих владельцев.",
     "license": "Лицензия MIT",
     "source": "Исходный код на GitHub",
     "made_by": "Разработчик"
