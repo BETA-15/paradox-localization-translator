@@ -139,4 +139,6 @@ STRINGS = {
     'u1.queue_retry': 'Yeniden deneme: {mod} ({pos}/{total})',
     'u1.queue_start': 'Başlat: {mod} ({pos}/{total})',
     'u1.base_game_error.language': 'Temel oyun {target_name} çeviri düzeltme istisnası',
+    'u1.extra_rules_item_button': 'Ek talimatlar…',
+    'u1.extra_rules_item_title': 'Bu öğe için ek talimatlar',
 }

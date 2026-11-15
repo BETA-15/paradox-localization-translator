@@ -139,4 +139,6 @@ STRINGS = {
     "u1.queue_retry": "重试：{mod} ({pos}/{total})",
     "u1.queue_start": "开始：{mod} ({pos}/{total})",
     'u1.base_game_error.language': '游戏本体{target_name}翻译修正例外',
+    'u1.extra_rules_item_button': '附加指示…',
+    'u1.extra_rules_item_title': '此项目的附加指示',
 }

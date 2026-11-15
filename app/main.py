@@ -251,6 +251,23 @@ def _relation_scope_text(target_lang):
     return text
 
 
+def _translation_in_progress(app):
+    controller = getattr(app, "controller", None)
+    worker = getattr(app, "worker", None)
+    return bool(controller and worker and worker.is_alive())
+
+
+def _global_extra_rules(app):
+    var = getattr(app, "extra_rules_var", None)
+    return core.combine_extra_rules(var.get()) if var is not None else ""
+
+
+def _session_extra_rules(app):
+    if _translation_in_progress(app) or threading.current_thread() is not threading.main_thread():
+        return (getattr(app, "translation_start_settings", {}) or {}).get("extra_rules", "")
+    return _global_extra_rules(app)
+
+
 def _normalize_spacing_enabled(app):
     var = getattr(app, "normalize_spacing_var", None)
     return bool(var.get()) if var is not None else True
@@ -1270,6 +1287,7 @@ class App(BaseTk):
         self.workers_var = tk.IntVar(value=max(1, int(last_translation.get("workers", 1) or 1)))
         self.performance_preset_var = tk.StringVar(value=ui_status.performance_preset_label("standard"))
         self.repair_var = tk.BooleanVar(value=True)
+        self.extra_rules_var = tk.StringVar(value=last_translation.get("extra_rules", ""))
         self.normalize_spacing_var = tk.BooleanVar(value=bool(last_translation.get("normalize_spacing", True)))
         self.dual_var = tk.BooleanVar(value=False)
         self.autoqa_var = tk.BooleanVar(value=True)
@@ -1845,6 +1863,7 @@ class App(BaseTk):
 
         qbox=ttk.LabelFrame(right,text=i18n.t('u1.normal_queue'),padding=8)
         qbar=FlowRow(qbox); qbar.pack(fill="x",pady=(0,5))
+        self.normal_extra_rules_btn=ttk.Button(qbar,text=i18n.t('u1.extra_rules_item_button'),command=lambda:self.edit_item_extra_rules("normal")); qbar.add(self.normal_extra_rules_btn,side="left",padx=5)
         self.normal_remove_btn=ttk.Button(qbar,text=i18n.t('u1.remove_selected'),command=self.remove_queue); qbar.add(self.normal_remove_btn, side="left")
         self.normal_clear_btn=ttk.Button(qbar,text=i18n.t('u1.clear_queue'),command=self.clear_queue); qbar.add(self.normal_clear_btn, side="left",padx=(5,0))
         self.normal_change_output_btn=ttk.Button(qbar,text=i18n.t('u1.change_output'),command=self.change_output); qbar.add(self.normal_change_output_btn, side="left",padx=(10,0))
@@ -1881,7 +1900,7 @@ class App(BaseTk):
         self.queue_tree.pack(side="left",fill="both",expand=True)
         self._normal_queue_controls=[
             self.add_menu_button,self.normal_output_entry,self.normal_pick_output_btn,
-            self.normal_remove_btn,self.normal_clear_btn,self.normal_change_output_btn,self.normal_import_cache_btn,
+            self.normal_extra_rules_btn,self.normal_remove_btn,self.normal_clear_btn,self.normal_change_output_btn,self.normal_import_cache_btn,
             self.normal_overwrite_btn,self.normal_qa_btn,self.normal_glossary_btn,self.normal_send_qa_btn,
             self.normal_send_diff_btn,self.normal_transfer_btn,self.normal_transfer_missing_btn,self.queue_tree,
         ]
@@ -1977,6 +1996,7 @@ class App(BaseTk):
 
         qbox=ttk.LabelFrame(right,text=i18n.t("u2.queue_title"),padding=8)
         qbar=FlowRow(qbox); qbar.pack(fill="x",pady=(0,5))
+        self.chinese_extra_rules_btn=ttk.Button(qbar,text=i18n.t('u1.extra_rules_item_button'),command=lambda:self.edit_item_extra_rules("chinese")); qbar.add(self.chinese_extra_rules_btn,side="left",padx=5)
         self.chinese_remove_btn=ttk.Button(qbar,text=i18n.t("u2.remove_selected"),command=self.remove_chinese_queue_selected); qbar.add(self.chinese_remove_btn, side="left")
         self.chinese_clear_btn=ttk.Button(qbar,text=i18n.t("u2.clear_all"),command=self.clear_chinese_queue); qbar.add(self.chinese_clear_btn, side="left",padx=(5,0))
         self.chinese_change_output_btn=ttk.Button(qbar,text=i18n.t("u2.change_output"),command=self.change_chinese_output_for_selected); qbar.add(self.chinese_change_output_btn, side="left",padx=(10,0))
@@ -2013,7 +2033,7 @@ class App(BaseTk):
         self._chinese_queue_controls=[
             self.chinese_target_combo,
             self.chinese_add_menu_button,self.chinese_output_entry,self.chinese_pick_output_btn,
-            self.chinese_remove_btn,self.chinese_clear_btn,self.chinese_change_output_btn,self.chinese_import_cache_btn,
+            self.chinese_extra_rules_btn,self.chinese_remove_btn,self.chinese_clear_btn,self.chinese_change_output_btn,self.chinese_import_cache_btn,
             self.chinese_overwrite_btn,self.chinese_qa_btn,self.chinese_glossary_btn,self.chinese_send_qa_btn,
             self.chinese_send_diff_btn,self.chinese_transfer_btn,self.chinese_transfer_missing_btn,self.chinese_queue_tree,
         ]
@@ -2089,7 +2109,7 @@ class App(BaseTk):
         for x in self.chinese_queue_tree.get_children(): self.chinese_queue_tree.delete(x)
         for i,item in enumerate(self.chinese_queue_items):
             self.chinese_queue_tree.insert("","end",iid=f"zh_{i}",values=(
-                item.get("mod_name",Path(item.get("input","")).name),
+                ("✎ " if core.combine_extra_rules(item.get("extra_rules", "")) else "") + item.get("mod_name",Path(item.get("input","")).name),
                 self._queue_display_path(item.get("input","")),
                 self._queue_display_path(item.get("output","")),
                 display_status(item.get("status") or status_value("waiting")),
@@ -2337,7 +2357,7 @@ class App(BaseTk):
         self.chinese_progress["value"]=0; self.chinese_progress_var.set(i18n.t("u2.preparing")); self.llm_operation="中国語基準翻訳"
         self.chinese_controller=core.TranslationController(progress_callback=lambda x:self.events.put(("chinese_progress",x)))
         self.chinese_start_btn.config(state="disabled"); self.chinese_pause_btn.config(state="normal", text=i18n.t("u2.pause")); self.chinese_stop_btn.config(state="normal")
-        settings={"provider":self.provider_var.get(),"url":self.url_var.get().strip(),"model":self.model_var.get().strip(),"api_key":self.api_key_var.get().strip(),"preset":self.preset_var.get(),"batch":max(1,self.batch_var.get()),"workers":max(1,self.workers_var.get()),"glossary":self.glossary_path_var.get().strip() or None,"autoqa":self.chinese_autoqa_var.get(),"normalize_spacing":_normalize_spacing_enabled(self)}
+        settings={"provider":self.provider_var.get(),"url":self.url_var.get().strip(),"model":self.model_var.get().strip(),"api_key":self.api_key_var.get().strip(),"preset":self.preset_var.get(),"batch":max(1,self.batch_var.get()),"workers":max(1,self.workers_var.get()),"glossary":self.glossary_path_var.get().strip() or None,"autoqa":self.chinese_autoqa_var.get(),"extra_rules":_global_extra_rules(self),"normalize_spacing":_normalize_spacing_enabled(self)}
         snapshot=[(app_state.ensure_queue_item_id(self.chinese_queue_items[i]), dict(self.chinese_queue_items[i])) for i in selected_indices]
         def worker():
             try:
@@ -2356,7 +2376,7 @@ class App(BaseTk):
                     cache=Path(item.get("cache", "")) if item.get("cache") else self._new_cache_path(inp)
                     item["output"]=str(out); item["cache"]=str(cache)
                     live_item["output"]=str(out); live_item["cache"]=str(cache)
-                    result=core.run_chinese_basis_translation(inp,out,target_lang=_item_target_lang(item),model=settings["model"],url=settings["url"],workers=settings["workers"],batch_size=settings["batch"],cache_path=cache,controller=self.chinese_controller,glossary_path=settings["glossary"] if _item_target_lang(item) == core.DEFAULT_TARGET_LANG else _existing_language_glossary(settings["glossary"], _item_target_lang(item)),preset=settings["preset"],auto_qa=settings["autoqa"],provider=settings["provider"],api_key=settings["api_key"],qa_backup_root=BACKUP_ROOT/"QA自動修復",normalize_spacing=settings["normalize_spacing"])
+                    result=core.run_chinese_basis_translation(inp,out,target_lang=_item_target_lang(item),model=settings["model"],url=settings["url"],workers=settings["workers"],batch_size=settings["batch"],cache_path=cache,controller=self.chinese_controller,glossary_path=settings["glossary"] if _item_target_lang(item) == core.DEFAULT_TARGET_LANG else _existing_language_glossary(settings["glossary"], _item_target_lang(item)),preset=settings["preset"],auto_qa=settings["autoqa"],provider=settings["provider"],api_key=settings["api_key"],qa_backup_root=BACKUP_ROOT/"QA自動修復",normalize_spacing=settings["normalize_spacing"],extra_rules=core.combine_extra_rules(settings["extra_rules"],item.get("extra_rules", "")))
                     self.events.put(("chinese_log", i18n.t("u2.spaces_removed", count=result.get('spaces_removed',0))))
                     qa_errors += int(result.get("qa_errors",0) or 0)
                     qa_warnings += int(result.get("qa_warnings",0) or 0)
@@ -5869,6 +5889,7 @@ class App(BaseTk):
                     "batch": max(1, self.batch_var.get()),
                     "workers": max(1, self.workers_var.get()),
                     "chinese_autoqa": bool(self.chinese_autoqa_var.get()),
+                    "extra_rules":_global_extra_rules(self),
                     "normalize_spacing": _normalize_spacing_enabled(self),
                 },
                 "monitor_llm": {
@@ -5909,7 +5930,7 @@ class App(BaseTk):
     def apply_translation_settings_everywhere(self, silent=False):
         """Persist UI translation settings and apply to active queue; QA/diff always read these UI values."""
         self._save_llm_preferences()
-        if self.controller and self.worker and self.worker.is_alive():
+        if _translation_in_progress(self):
             # Reuse the active-job runtime switching logic without a duplicate dialog.
             try:
                 glossary_path=self.glossary_path_var.get().strip()
@@ -5930,7 +5951,7 @@ class App(BaseTk):
                 return False
         if not silent:
             messagebox.showinfo(APP_NAME,
-                i18n.t('u5.settings_applied_running') if self.controller and self.worker and self.worker.is_alive() else i18n.t('u5.settings_applied'))
+                i18n.t('u5.settings_applied_running') if _translation_in_progress(self) else i18n.t('u5.settings_applied'))
         return True
 
     def _snapshot_monitor_worker_settings(self):
@@ -7994,6 +8015,18 @@ class App(BaseTk):
         _wrapping_check(common,text=i18n.t('u5.auto_qa'),variable=self.autoqa_var,command=self._save_llm_preferences).grid(row=2,column=0,columnspan=2,sticky="w",pady=(4,0))
         _wrapping_check(common,text=i18n.t('u5.chinese_auto_qa'),variable=self.chinese_autoqa_var,command=self._save_llm_preferences).grid(row=3,column=0,columnspan=2,sticky="w",pady=(4,0))
         _wrapping_check(common,text=i18n.t('u5.normalize_spacing'),variable=self.normalize_spacing_var,command=self._save_llm_preferences).grid(row=12,column=0,columnspan=2,sticky="ew",pady=(4,0))
+        ttk.Label(common,text=i18n.t('u5.extra_rules_global')).grid(row=13,column=0,columnspan=2,sticky="w",pady=(8,0))
+        self.extra_rules_text=tk.Text(common,height=4,width=30,wrap="word")
+        self.extra_rules_text.grid(row=14,column=0,columnspan=2,sticky="ew")
+        self.extra_rules_text.insert("1.0",self.extra_rules_var.get())
+        def sync_extra_rules(*_args):
+            self.extra_rules_text.delete("1.0","end")
+            self.extra_rules_text.insert("1.0",self.extra_rules_var.get())
+        self.extra_rules_var.trace_add("write",sync_extra_rules)
+        self.extra_rules_text.bind("<FocusOut>",lambda _e:self._save_global_extra_rules(self.extra_rules_text.get("1.0","end-1c")))
+        ttk.Button(common,text=i18n.t('u4.save'),command=lambda:self._save_global_extra_rules(self.extra_rules_text.get("1.0","end-1c"))).grid(row=15,column=0,columnspan=2,sticky="w")
+        WrappingLabel(common,text=i18n.t('u5.extra_rules_example')).grid(row=16,column=0,columnspan=2,sticky="ew")
+        WrappingLabel(common,text=i18n.t('u5.extra_rules_cache_note')).grid(row=17,column=0,columnspan=2,sticky="ew")
         ttk.Label(common,text=i18n.t('u5.batch')).grid(row=4,column=0,sticky="w",pady=(7,0))
         ttk.Spinbox(common,from_=1,to=500,textvariable=self.batch_var,width=8,command=self._save_llm_preferences).grid(row=4,column=1,sticky="w",padx=(6,0),pady=(7,0))
         ttk.Label(common,text=i18n.t('u5.workers')).grid(row=5,column=0,sticky="w",pady=(5,0))
@@ -8900,6 +8933,8 @@ class App(BaseTk):
             label=item.get("mod_name") or (inp.stem if inp.is_file() else inp.name) or i18n.t('u1.unnamed_item')
             if _item_target_lang(item) != core.DEFAULT_TARGET_LANG:
                 label=f"［{i18n.t('lang.' + _item_target_lang(item))}］{label}"
+            if core.combine_extra_rules(item.get("extra_rules", "")):
+                label="✎ " + label
             self.queue_tree.insert("", "end", iid=str(i), values=(
                 label,
                 self._queue_display_path(item.get("input", "")),
@@ -9008,6 +9043,7 @@ class App(BaseTk):
             i18n.t('u3.qa_repair_confirm', label=label, count=len(pairs))):
             return
         settings={
+            "extra_rules":_global_extra_rules(self),
             "normalize_spacing":_normalize_spacing_enabled(self),
             "provider":self.provider_var.get(), "url":self.url_var.get().strip(),
             "model":self.model_var.get().strip(), "api_key":self.api_key_var.get().strip(),
@@ -9026,7 +9062,7 @@ class App(BaseTk):
                     provider=settings["provider"],api_key=settings["api_key"],preset=settings["preset"],
                     glossary_path=settings["glossary"],controller=self.qa_repair_controller,
                     max_passes=2,label=f"{origin}_manual_qa",
-                    normalize_spacing=settings["normalize_spacing"])
+                    normalize_spacing=settings["normalize_spacing"],extra_rules=settings["extra_rules"])
                 report_path=QA_LOG_ROOT/f'qa_auto_repair_{datetime.now().strftime("%Y%m%d_%H%M%S_%f")}.json'
                 core.save_json(report_path,result)
                 contexts=[]
@@ -9339,6 +9375,7 @@ class App(BaseTk):
             "batch":max(1,self.batch_var.get()), "workers":max(1,self.workers_var.get()),
             "glossary":self.glossary_path_var.get().strip() or None, "dual":False,
             "repair":self.repair_var.get(), "autoqa":self.autoqa_var.get(),
+            "extra_rules":_global_extra_rules(self),
             "normalize_spacing":_normalize_spacing_enabled(self)}
         self._active_normal_item_ids = [app_state.ensure_queue_item_id(self.queue_items[idx]) for idx in selected_indices]
         mode_label = i18n.t('u1.diff_only') if diff_requested else i18n.t('u1.full_translation')
@@ -9390,7 +9427,8 @@ class App(BaseTk):
                 dual_source=False, auto_qa=bool(st.get("autoqa",True)),
                 provider=st.get("provider","Ollama"), api_key=st.get("api_key", ""),
                 qa_backup_root=BACKUP_ROOT/"QA自動修復", target_lang=target_lang,
-                normalize_spacing=bool(st.get("normalize_spacing", True)))
+                normalize_spacing=bool(st.get("normalize_spacing", True)),
+                extra_rules=core.combine_extra_rules(st.get("extra_rules", ""),item.get("extra_rules", "")))
             self._register_cache_job(item)
             skipped=int(result.get("skipped",0) or 0)
             failed=int(result.get("failed",0) or 0)
@@ -9533,6 +9571,8 @@ class App(BaseTk):
                     "recovered_items":len(recovered_ids), "unresolved_items":len(unresolved_ids),
                     "queue_errors":queue_error_records,
                     "items":[{
+                        "extra_rules_present":bool(core.combine_extra_rules(getattr(self,"translation_start_settings",{}).get("extra_rules", ""), (app_state.queue_item_by_id(self.queue_items,item_id) or {}).get("extra_rules", ""))),
+                        "extra_rules_hash":core.text_hash(core.combine_extra_rules(getattr(self,"translation_start_settings",{}).get("extra_rules", ""), (app_state.queue_item_by_id(self.queue_items,item_id) or {}).get("extra_rules", ""))),
                         "item_id":item_id,
                         "mod":item_label(app_state.queue_item_by_id(self.queue_items,item_id) or {}),
                         "status":(app_state.queue_item_by_id(self.queue_items,item_id) or {}).get("status",""),
@@ -9891,6 +9931,7 @@ class App(BaseTk):
                 "workers":self._workspace_scalar(self.workers_var,1),
                 "performance_preset":ui_status.performance_preset_from_label(self._workspace_scalar(self.performance_preset_var,"standard")),
                 "repair":bool(self._workspace_scalar(self.repair_var,True)),
+                "extra_rules":_global_extra_rules(self),
                 "normalize_spacing":_normalize_spacing_enabled(self),
                 "dual":bool(self._workspace_scalar(self.dual_var,False)),
                 "autoqa":bool(self._workspace_scalar(self.autoqa_var,True)),
@@ -10009,6 +10050,7 @@ class App(BaseTk):
             m=data.get("models") or {}
             self.provider_var.set(m.get("provider",self.provider_var.get())); self.url_var.set(m.get("url",self.url_var.get())); self.model_var.set(m.get("model",self.model_var.get()))
             self.preset_var.set(m.get("preset",self.preset_var.get())); self.batch_var.set(max(1,int(m.get("batch",self.batch_var.get()) or 40))); self.workers_var.set(max(1,int(m.get("workers",self.workers_var.get()) or 1)))
+            self.extra_rules_var.set(m.get("extra_rules", ""))
             self.normalize_spacing_var.set(bool(m.get("normalize_spacing",_normalize_spacing_enabled(self))))
             self.performance_preset_var.set(ui_status.performance_preset_label(ui_status.performance_preset_from_label(m.get("performance_preset",self.performance_preset_var.get())))); self.repair_var.set(bool(m.get("repair",self.repair_var.get()))); self.dual_var.set(bool(m.get("dual",self.dual_var.get())))
             self.autoqa_var.set(bool(m.get("autoqa",self.autoqa_var.get()))); self.chinese_autoqa_var.set(bool(m.get("chinese_autoqa",self.chinese_autoqa_var.get()))); self.profile_var.set(m.get("profile",self.profile_var.get()))
@@ -10053,16 +10095,64 @@ class App(BaseTk):
             return 0
 
     # ---------------- session ----------------
+    def _save_global_extra_rules(self, text):
+        ok, normalized = core.validate_extra_rules(text)
+        if not ok:
+            messagebox.showinfo(APP_NAME, i18n.t('u5.extra_rules_too_long', limit=core.EXTRA_RULES_LIMIT, count=len(text)))
+            return False
+        self.extra_rules_var.set(normalized)
+        self._save_llm_preferences()
+        return True
+
+    def _save_item_extra_rules(self, item, text, queue_kind):
+        locked = self._chinese_queue_locked() if queue_kind == "chinese" else self._normal_queue_locked()
+        if locked:
+            return False
+        ok, normalized = core.validate_extra_rules(text)
+        if not ok:
+            messagebox.showinfo(APP_NAME, i18n.t('u5.extra_rules_too_long', limit=core.EXTRA_RULES_LIMIT, count=len(text)))
+            return False
+        item["extra_rules"] = normalized
+        if queue_kind == "chinese":
+            self._refresh_chinese_queue_tree()
+        else:
+            self._refresh_queue_tree()
+        self._save_workspace_state("extra_rules_changed")
+        return True
+
+    def edit_item_extra_rules(self, queue_kind="normal"):
+        locked = self._chinese_queue_locked() if queue_kind == "chinese" else self._normal_queue_locked()
+        if locked:
+            return
+        item = self._selected_chinese_queue_item() if queue_kind == "chinese" else self._selected_queue_item()
+        if item is None:
+            return
+        win = tk.Toplevel(self)
+        win.title(i18n.t('u1.extra_rules_item_title'))
+        win.transient(self)
+        field = tk.Text(win, height=7, width=55, wrap="word")
+        field.pack(fill="both", expand=True, padx=10, pady=10)
+        field.insert("1.0", item.get("extra_rules", ""))
+        WrappingLabel(win, text=i18n.t('u5.extra_rules_example')).pack(fill="x", padx=10)
+        WrappingLabel(win, text=i18n.t('u5.extra_rules_cache_note')).pack(fill="x", padx=10)
+        buttons = ttk.Frame(win); buttons.pack(fill="x", padx=10, pady=10)
+        def save():
+            if self._save_item_extra_rules(item, field.get("1.0", "end-1c"), queue_kind):
+                win.destroy()
+        ttk.Button(buttons, text=i18n.t('u4.save'), command=save).pack(side="left")
+        ttk.Button(buttons, text=i18n.t('p0.cancel'), command=win.destroy).pack(side="left", padx=6)
+
     def _settings_dict(self):
         # Worker checkpoints must not read Tk variables directly.
         if threading.current_thread() is not threading.main_thread():
             st=dict(getattr(self,"translation_start_settings",{}) or {})
-            return {"provider":st.get("provider",""),"url":st.get("url",""),"model":st.get("model",""),"preset":st.get("preset","CK3"),
+            return {"extra_rules":_session_extra_rules(self),"provider":st.get("provider",""),"url":st.get("url",""),"model":st.get("model",""),"preset":st.get("preset","CK3"),
                     "batch":st.get("batch",40),"workers":st.get("workers",1),"repair":st.get("repair",True),
                     "normalize_spacing":st.get("normalize_spacing", True),
                     "dual":st.get("dual",False),"autoqa":st.get("autoqa",True),"glossary":st.get("glossary") or str(DEFAULT_GLOSSARY)}
         return {"provider":self.provider_var.get(),"url":self.url_var.get(),"model":self.model_var.get(),"preset":self.preset_var.get(),
                 "batch":self.batch_var.get(),"workers":self.workers_var.get(),"repair":self.repair_var.get(),
+                "extra_rules":_session_extra_rules(self),
                 "normalize_spacing":_normalize_spacing_enabled(self),
                 "dual":self.dual_var.get(),"autoqa":self.autoqa_var.get(),"glossary":self.glossary_path_var.get()}
 
@@ -10171,6 +10261,7 @@ class App(BaseTk):
         self.current_queue_index=max(0,int(data.get("queue_index",0) or 0))
         s=data.get("settings",{})
         self.provider_var.set(s.get("provider",self.provider_var.get())); self.url_var.set(s.get("url",self.url_var.get())); self.model_var.set(s.get("model",self.model_var.get())); self.preset_var.set(s.get("preset",self.preset_var.get()))
+        self.extra_rules_var.set(s.get("extra_rules", ""))
         self.normalize_spacing_var.set(bool(s.get("normalize_spacing", True)))
         self.batch_var.set(s.get("batch",40)); self.workers_var.set(s.get("workers",1)); self.repair_var.set(s.get("repair",True)); self.dual_var.set(s.get("dual",False)); self.autoqa_var.set(s.get("autoqa",True)); self.glossary_path_var.set(s.get("glossary",str(DEFAULT_GLOSSARY)))
         for item in self.queue_items:
@@ -10588,6 +10679,7 @@ class App(BaseTk):
                          _existing_language_glossary(self.glossary_path_var.get().strip(), context.get("target_lang", core.DEFAULT_TARGET_LANG))
                          for context in contexts}
         diff_settings = {
+            "extra_rules":_global_extra_rules(self),
             "normalize_spacing": _normalize_spacing_enabled(self),
             "url": self.url_var.get().strip(), "model": self.model_var.get().strip(),
             "preset": self.preset_var.get(), "provider": self.provider_var.get(),
@@ -10613,7 +10705,7 @@ class App(BaseTk):
                             translated=core.translate_single_text(diff_settings["url"], diff_settings["model"], source_text, source_lang,
                                                                   glossary, diff_settings["preset"], diff_settings["provider"], diff_settings["api_key"], self.diff_controller,
                                                                   chinese_basis=(source_lang == "simp_chinese" and target_lang in core.CHINESE_BASIS_TARGETS),
-                                                                  target_lang=target_lang)
+                                                                  target_lang=target_lang, extra_rules=diff_settings["extra_rules"])
                         except core.StopRequested:
                             raise
                         except Exception as exc:

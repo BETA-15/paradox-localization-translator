@@ -532,11 +532,34 @@ def escape_localization_value(value: str) -> str:
     return "".join(out)
 
 
+EXTRA_RULES_LIMIT = 2000
+EXTRA_RULES_PREFIX_JA = "利用者の追加指示（厳守事項 1〜2 に反する場合は厳守事項を優先）:"
+EXTRA_RULES_PREFIX_OTHER = "Additional user instructions (if they conflict with rules 1-2, rules 1-2 take precedence):"
+
+
+def combine_extra_rules(global_text: str, item_text: str = "") -> str:
+    def normalize(text):
+        return (text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    return "\n".join(value for value in (normalize(global_text), normalize(item_text)) if value)
+
+
+def validate_extra_rules(text: str) -> tuple[bool, str]:
+    return len(text) <= EXTRA_RULES_LIMIT, combine_extra_rules(text)
+
+
+def _extra_rules_suffix(extra_rules: str, target_lang: str) -> str:
+    rules = combine_extra_rules(extra_rules)
+    if not rules:
+        return ""
+    prefix = EXTRA_RULES_PREFIX_JA if (target_lang or DEFAULT_TARGET_LANG) == DEFAULT_TARGET_LANG else EXTRA_RULES_PREFIX_OTHER
+    return prefix + "\n" + rules + "\n"
+
+
 def translation_cache_key(provider: str, model: str, preset: str, source_lang: str,
                           original: str, glossary: Optional[dict] = None,
                           dual_source: bool = False, zh_ref: str = "",
                           translation_mode: str = "standard",
-                          target_lang: str = DEFAULT_TARGET_LANG) -> str:
+                          target_lang: str = DEFAULT_TARGET_LANG, *, extra_rules: str = "") -> str:
     """Cache key including settings that materially change translation output.
 
     翻訳先が日本語のときは v0.11.80 までとまったく同じキーにする（利用者のキャッシュを捨てないため）。
@@ -550,6 +573,9 @@ def translation_cache_key(provider: str, model: str, preset: str, source_lang: s
     ]
     if (target_lang or DEFAULT_TARGET_LANG) != DEFAULT_TARGET_LANG:
         cfg_parts.append(f"target={target_lang}")
+    rules = combine_extra_rules(extra_rules)
+    if rules:
+        cfg_parts.append(f"rules={text_hash(rules)}")
     cfg_blob = "\n".join(cfg_parts)
     return f"v6:{text_hash(cfg_blob)}:{text_hash(original)}"
 
@@ -1336,12 +1362,12 @@ def benchmark_model(provider: str, url: str, model: str,
 
 def build_system_prompt(source_lang: str, glossary: Optional[dict] = None,
                         preset: str = "General", dual_source: bool = False,
-                        chinese_basis: bool = False, target_lang: str = DEFAULT_TARGET_LANG) -> str:
+                        chinese_basis: bool = False, target_lang: str = DEFAULT_TARGET_LANG, *, extra_rules: str = "") -> str:
     if (target_lang or DEFAULT_TARGET_LANG) != DEFAULT_TARGET_LANG:
         prompt = _build_system_prompt_other(source_lang, glossary, preset, dual_source, target_lang)
         if chinese_basis and target_lang == "korean":
             prompt += _korean_chinese_basis_instructions()
-        return prompt
+        return prompt + _extra_rules_suffix(extra_rules, target_lang)
     lang_label = {"english": "英語", "simp_chinese": "簡体字中国語"}.get(source_lang, source_lang)
     preset_text = GAME_PRESETS.get(preset, GAME_PRESETS["General"])
     glossary_text = ""
@@ -1373,7 +1399,7 @@ def build_system_prompt(source_lang: str, glossary: Optional[dict] = None,
 4. 原文のテンプレート構造や改行表現を維持する。
 5. 簡体字中国語をそのまま日本語として流用せず、日本語の字体・語法に直す。
 6. 原文をそのまま返さず、翻訳可能な自然言語は必ず日本語化する。{dual_text}{chinese_basis_text}{glossary_text}
-"""
+""" + _extra_rules_suffix(extra_rules, target_lang)
 
 
 def _korean_chinese_basis_instructions() -> str:
@@ -1432,14 +1458,14 @@ def translate_batch(url: str, model: str, jobs: list, source_lang: str,
                     dual_source: bool = False,
                     controller: Optional[TranslationController] = None,
                     provider: str = "Ollama", api_key: str = "",
-                    chinese_basis: bool = False, target_lang: str = DEFAULT_TARGET_LANG) -> List[str]:
+                    chinese_basis: bool = False, target_lang: str = DEFAULT_TARGET_LANG, *, extra_rules: str = "") -> List[str]:
     if not jobs:
         return []
     if target_lang in {"english", "simp_chinese"}:
         dual_source = False  # 翻訳先そのものを参考訳として渡さない
     selected_glossary = dict(glossary_for_prompt(glossary or {}, [j["value"] for j in jobs]))
     prompt = build_system_prompt(source_lang, selected_glossary, preset, dual_source, chinese_basis,
-                                 target_lang=target_lang)
+                                 target_lang=target_lang, extra_rules=extra_rules)
     lines = []
     for i, j in enumerate(jobs):
         text = j["protected"]
@@ -2016,7 +2042,7 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
                  zh_refs: Optional[dict] = None, dual_source: bool = False,
                  cache_file: Optional[Path] = None, file_no: int = 0, file_total: int = 0,
                  provider: str = "Ollama", api_key: str = "", chinese_basis: bool = False,
-                 normalize_spacing: bool = True):
+                 normalize_spacing: bool = True, *, extra_rules: str = ""):
     if target_lang in {"english", "simp_chinese"}:
         dual_source = False  # 翻訳先そのものを原文・参考訳にしない
     raw = read_localization_text(in_path)
@@ -2058,7 +2084,7 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
                                   glossary=glossary, dual_source=dual_source,
                                   zh_ref=key_zh_ref(m.group("key").strip()),
                                   translation_mode="chinese_basis" if chinese_basis else "standard",
-                                  target_lang=target_lang)
+                                  target_lang=target_lang, extra_rules=extra_rules)
         if h in cache and cache_entry_is_valid(value, cache[h], translation_source_lang, target_lang):
             continue
         if h in cache:
@@ -2121,7 +2147,7 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
                     cfg["provider"], cfg["model"], cfg["preset"], translation_source_lang, j["value"],
                     glossary=cfg["glossary"], dual_source=cfg["dual_source"], zh_ref=j.get("zh_ref") or "",
                     translation_mode="chinese_basis" if chinese_basis else "standard",
-                                  target_lang=target_lang)
+                                  target_lang=target_lang, extra_rules=extra_rules)
             group.append(b)
 
         def run_one(b):
@@ -2129,7 +2155,7 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
                 return b, translate_batch(cfg["url"], cfg["model"], b, translation_source_lang,
                                           cfg["glossary"], cfg["preset"], cfg["dual_source"],
                                           controller, cfg["provider"], cfg["api_key"], chinese_basis,
-                                          target_lang=target_lang), None
+                                          target_lang=target_lang, extra_rules=extra_rules), None
             except StopRequested:
                 return b, None, "__STOP__"
             except Exception as e:
@@ -2197,12 +2223,12 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
                 cfg["provider"], cfg["model"], cfg["preset"], translation_source_lang, j["value"],
                 glossary=cfg["glossary"], dual_source=cfg["dual_source"], zh_ref=j.get("zh_ref") or "",
                 translation_mode="chinese_basis" if chinese_basis else "standard",
-                                  target_lang=target_lang)
+                                  target_lang=target_lang, extra_rules=extra_rules)
             try:
                 tr = translate_batch(cfg["url"], cfg["model"], [j], translation_source_lang,
                                      cfg["glossary"], cfg["preset"], cfg["dual_source"],
                                      controller, cfg["provider"], cfg["api_key"], chinese_basis,
-                                          target_lang=target_lang)
+                                          target_lang=target_lang, extra_rules=extra_rules)
                 restored = restore_text(tr[0], j["tokens"])
                 if unusable_translation(j["value"], restored, translation_source_lang, target_lang):
                     cache.pop(j["hash"], None)
@@ -2233,7 +2259,7 @@ def process_file(in_path: Path, out_path: Path, url: str, model: str,
             h = translation_cache_key(provider, model, preset, translation_source_lang, orig,
                                       glossary=glossary, dual_source=dual_source, zh_ref=zh_ref,
                                       translation_mode="chinese_basis" if chinese_basis else "standard",
-                                  target_lang=target_lang)
+                                  target_lang=target_lang, extra_rules=extra_rules)
             translated = cache.get(h, orig)
         else:
             translated = orig
@@ -2261,7 +2287,7 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
                     include_target_files=True, controller: Optional[TranslationController] = None,
                     glossary_path=None, preset="General", dual_source=False,
                     auto_qa=True, provider="Ollama", api_key="",
-                    qa_backup_root=None, qa_repair_max_passes=2, normalize_spacing: bool = True):
+                    qa_backup_root=None, qa_repair_max_passes=2, normalize_spacing: bool = True, *, extra_rules: str = ""):
     input_path = Path(input_path)
     output_path = Path(output_path)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -2397,7 +2423,7 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
                 stats = process_file(f, out, url, model, target_lang, cache, workers, verbose,
                                      batch_size, controller, glossary, preset, zh_refs, dual_source,
                                      cache_file, i, len(file_info), provider, api_key, False,
-                                     normalize_spacing=normalize_spacing)
+                                     normalize_spacing=normalize_spacing, extra_rules=extra_rules)
             except StopRequested:
                 raise
             except Exception as exc:
@@ -2423,7 +2449,7 @@ def run_translation(input_path, output_path, model=DEFAULT_MODEL, url=DEFAULT_OL
                             chinese_basis=(source_lang == "simp_chinese" and target_lang in CHINESE_BASIS_TARGETS),
                             max_passes=qa_repair_max_passes, backup_dir=qa_backup_dir,
                             backup_relative_root=output_path, target_lang=target_lang,
-                            normalize_spacing=normalize_spacing)
+                            normalize_spacing=normalize_spacing, extra_rules=extra_rules)
                     else:
                         qa_result = qa_file_with_syntax_repair(out, source_ref, source_lang=source_lang, glossary=glossary,
                                                                target_lang=target_lang)
@@ -2910,7 +2936,7 @@ def qa_file_with_auto_repair(target_path: Path, source_path: Path, *,
                              backup_relative_root: Optional[Path] = None,
                              progress_context: Optional[dict] = None,
                              target_lang: str = DEFAULT_TARGET_LANG,
-                             normalize_spacing: bool = True) -> dict:
+                             normalize_spacing: bool = True, extra_rules: str = "") -> dict:
     """Back up a translated file, repair QA errors, and re-run QA.
 
     Warnings and notices are deliberately never changed. Safe edge-token repair is attempted
@@ -2992,7 +3018,7 @@ def qa_file_with_auto_repair(target_path: Path, source_path: Path, *,
             translated = translate_batch(url, model, jobs, detected_lang, glossary=glossary,
                                          preset=preset, controller=controller, provider=provider,
                                          api_key=api_key, chinese_basis=chinese_basis,
-                                         target_lang=target_lang)
+                                         target_lang=target_lang, extra_rules=extra_rules)
         except StopRequested:
             raise
         except Exception as exc:
@@ -3092,7 +3118,7 @@ def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
                          glossary_path=None, controller: Optional[TranslationController] = None,
                          max_passes: int = 2, label: str = "manual_qa",
                          target_lang: str = DEFAULT_TARGET_LANG,
-                         normalize_spacing: bool = True) -> dict:
+                         normalize_spacing: bool = True, extra_rules: str = "") -> dict:
     """Repair every error in QA pairs while isolating file failures."""
     glossary = load_glossary(Path(glossary_path)) if glossary_path else {}
     backup_dir = create_qa_repair_backup_dir(Path(backup_root), label)
@@ -3130,7 +3156,7 @@ def auto_repair_qa_pairs(pairs: Iterable[dict], *, backup_root: Path,
                 max_passes=max_passes, backup_dir=backup_dir,
                 backup_relative_root=None,
                 progress_context={"file_no":file_index,"file_total":len(pair_list)},
-                target_lang=pair_target, normalize_spacing=normalize_spacing)
+                target_lang=pair_target, normalize_spacing=normalize_spacing, extra_rules=extra_rules)
             if created_target and result.get("final_errors", 0) >= result.get("initial_errors", 0):
                 target.unlink(missing_ok=True)
                 result["rolled_back"] = True
@@ -3807,7 +3833,7 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
                                   cache_path=None, controller: Optional[TranslationController] = None,
                                   glossary_path=None, preset="General", auto_qa=True,
                                   provider="Ollama", api_key="", qa_backup_root=None,
-                                  qa_repair_max_passes=2, normalize_spacing: bool = True):
+                                  qa_repair_max_passes=2, normalize_spacing: bool = True, *, extra_rules: str = ""):
     """Translate only Simplified Chinese localization using Chinese wording as the terminology basis."""
     target_lang = target_lang or DEFAULT_TARGET_LANG
     if target_lang not in CHINESE_BASIS_TARGETS:
@@ -3862,8 +3888,7 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
                 f, out, url, model, target_lang, cache, workers, True,
                 batch_size, controller, glossary, preset, None, False,
                 cache_file, i, len(chinese_files), provider, api_key, True,
-                normalize_spacing=normalize_spacing,
-            )
+                normalize_spacing=normalize_spacing, extra_rules=extra_rules)
             processed += 1
             total_jobs += stats["jobs"]
             total_failed += stats["failed"]
@@ -3875,7 +3900,7 @@ def run_chinese_basis_translation(input_path, output_path, model=DEFAULT_MODEL, 
                     model=model, url=url, provider=provider, api_key=api_key, preset=preset,
                     controller=controller, chinese_basis=True, max_passes=qa_repair_max_passes,
                     backup_dir=qa_backup_dir, backup_relative_root=output_path,
-                    normalize_spacing=normalize_spacing, target_lang=target_lang)
+                    normalize_spacing=normalize_spacing, target_lang=target_lang, extra_rules=extra_rules)
                 issues = qa_result["issues"]
                 spaces_removed += qa_result.get("spaces_removed", 0)
                 severe = sum(1 for x in issues if x["severity"] == "error")
@@ -4041,13 +4066,13 @@ def translate_single_text(url: str, model: str, text: str, source_lang: str = "e
                           glossary: Optional[dict] = None, preset: str = "General",
                           provider: str = "Ollama", api_key: str = "",
                           controller: Optional[TranslationController] = None,
-                          chinese_basis: bool = False, target_lang: str = DEFAULT_TARGET_LANG) -> str:
+                          chinese_basis: bool = False, target_lang: str = DEFAULT_TARGET_LANG, *, extra_rules: str = "") -> str:
     """Translate one localization value while preserving Paradox tokens."""
     protected, tokens = protect_text(text)
     job = {"value": text, "protected": protected, "tokens": tokens}
     out = translate_batch(url, model, [job], source_lang, glossary=glossary, preset=preset,
                           dual_source=False, controller=controller, provider=provider, api_key=api_key,
-                          chinese_basis=chinese_basis, target_lang=target_lang)[0]
+                          chinese_basis=chinese_basis, target_lang=target_lang, extra_rules=extra_rules)[0]
     return restore_text(out, tokens)
 
 

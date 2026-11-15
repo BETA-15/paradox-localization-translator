@@ -139,4 +139,6 @@ STRINGS = {
     'u1.queue_retry': 'Nouvelle tentative : {mod} ({pos}/{total})',
     'u1.queue_start': 'Démarrage : {mod} ({pos}/{total})',
     'u1.base_game_error.language': 'Exception de correction de traduction du jeu de base en {target_name}',
+    'u1.extra_rules_item_button': 'Consignes…',
+    'u1.extra_rules_item_title': 'Consignes supplémentaires pour cet élément',
 }

@@ -1324,6 +1324,9 @@ U9_INTERNAL_LITERALS = json.loads(r'''
 ''')
 
 
+U9_INTERNAL_LITERALS.append(["<module>", "利用者の追加指示（厳守事項 1〜2 に反する場合は厳守事項を優先）:"])
+
+
 def test_no_unlisted_u9_internal_japanese_literals():
     from pathlib import Path
     import sys

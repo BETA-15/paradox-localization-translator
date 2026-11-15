@@ -180,6 +180,11 @@ CASES = [
 ]
 
 EXPECTED_ENGLISH = {
+    'u5.extra_rules_global': 'Additional translation instructions (global)',
+    'u5.extra_rules_example': 'Example: Avoid polite style / Use historical military ranks',
+    'u5.extra_rules_cache_note': 'Changing instructions bypasses this item’s cache (it will be retranslated).',
+    'u5.extra_rules_too_long': 'Additional instructions allow up to {limit} characters (currently {count}). Not saved.',
+
     'u5.storage_frame': 'Generated data location',
     'u5.storage_folder': 'Storage folder',
     'u5.change_storage': 'Change location',

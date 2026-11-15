@@ -139,4 +139,6 @@ STRINGS = {
     'u1.queue_retry': '재시도: {mod} ({pos}/{total})',
     'u1.queue_start': '시작: {mod} ({pos}/{total})',
     'u1.base_game_error.language': '게임 본체 {target_name} 번역 수정 예외',
+    'u1.extra_rules_item_button': '추가 지침…',
+    'u1.extra_rules_item_title': '이 항목의 추가 지침',
 }

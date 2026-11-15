@@ -145,4 +145,8 @@ STRINGS = {
     'u5.discovery_response_title': 'Réponse complète du LLM d’exploration',
     'u5.translation_response_title': 'Réponse complète du LLM de traduction',
     'u5.folder_tree': 'Paradox Localization Translator/\n├── 翻訳結果/\n├── キャッシュ/\n│   ├── mod_translation_status_cache.json\n│   ├── mod_classification_cache.json\n│   ├── mod_relation_overrides.json\n│   ├── translation_status_state.json\n│   ├── diagnostic_state.json\n│   └── shared_mod_state_cache.json\n├── バックアップ/\n├── ログ/\n│   ├── QA/\n│   ├── エラー/\n│   ├── 日本語化Mod判定/\n│   ├── 診断/\n│   ├── 夜間処理/\n│   └── システム・履歴/\n├── 作業データ/  ← fichiers temporaires et état de travail indépendants de la version\n└── 設定/\n    ├── session.json\n    ├── resume_state.json\n    ├── storage_migration.json\n    ├── glossary.json\n    ├── model_stats.json\n    ├── model_profiles.json\n    ├── steam_library_roots.json\n    └── app_preferences.json  ← derniers paramètres LLM et comportement du bouton ×\n\nEmplacement par défaut : 書類/Documents/Paradox Localization Translator\nUtilisez ［Changer l’emplacement］ pour déplacer le stockage vers un autre disque, un SSD externe ou tout autre dossier.',
+    'u5.extra_rules_global': 'Consignes de traduction supplémentaires (globales)',
+    'u5.extra_rules_example': 'Exemple : Éviter le style poli / Utiliser les grades militaires historiques',
+    'u5.extra_rules_cache_note': 'Modifier les consignes invalide le cache de cet élément (il sera retraduit).',
+    'u5.extra_rules_too_long': 'Les consignes sont limitées à {limit} caractères ({count} actuellement). Non enregistrées.',
 }

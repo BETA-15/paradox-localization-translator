@@ -212,6 +212,11 @@ ORIGINAL_CASES.append([
 ])
 
 
+ORIGINAL_CASES.extend([
+    ['u1.extra_rules_item_button', {}, '追加指示…'],
+    ['u1.extra_rules_item_title', {}, 'この項目の追加指示'],
+])
+
 @pytest.mark.parametrize("key,fields,expected", ORIGINAL_CASES)
 def test_original_japanese_display(key, fields, expected):
     i18n.set_ui_language("japanese")

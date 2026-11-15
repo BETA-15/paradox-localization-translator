@@ -139,4 +139,6 @@ STRINGS = {
     'u1.queue_retry': 'Reintento: {mod} ({pos}/{total})',
     'u1.queue_start': 'Inicio: {mod} ({pos}/{total})',
     'u1.base_game_error.language': 'Excepción de corrección de la traducción del juego base en {target_name}',
+    'u1.extra_rules_item_button': 'Instrucciones…',
+    'u1.extra_rules_item_title': 'Instrucciones adicionales para este elemento',
 }

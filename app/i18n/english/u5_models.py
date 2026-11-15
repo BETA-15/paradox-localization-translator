@@ -145,4 +145,8 @@ STRINGS = {
     'u5.discovery_response_title': 'Discovery LLM full response',
     'u5.translation_response_title': 'Translation LLM full response',
     'u5.folder_tree': 'Paradox Localization Translator/\n├── 翻訳結果/\n├── キャッシュ/\n│   ├── mod_translation_status_cache.json\n│   ├── mod_classification_cache.json\n│   ├── mod_relation_overrides.json\n│   ├── translation_status_state.json\n│   ├── diagnostic_state.json\n│   └── shared_mod_state_cache.json\n├── バックアップ/\n├── ログ/\n│   ├── QA/\n│   ├── エラー/\n│   ├── 日本語化Mod判定/\n│   ├── 診断/\n│   ├── 夜間処理/\n│   └── システム・履歴/\n├── 作業データ/  ← version-independent temporary files and working state\n└── 設定/\n    ├── session.json\n    ├── resume_state.json\n    ├── storage_migration.json\n    ├── glossary.json\n    ├── model_stats.json\n    ├── model_profiles.json\n    ├── steam_library_roots.json\n    └── app_preferences.json  ← last LLM settings and close-button behavior\n\nDefault location: Documents/Paradox Localization Translator\nUse [Change location] to move to another drive, external SSD, or any folder.',
+    'u5.extra_rules_global': 'Additional translation instructions (global)',
+    'u5.extra_rules_example': 'Example: Avoid polite style / Use historical military ranks',
+    'u5.extra_rules_cache_note': 'Changing instructions bypasses this item’s cache (it will be retranslated).',
+    'u5.extra_rules_too_long': 'Additional instructions allow up to {limit} characters (currently {count}). Not saved.',
 }

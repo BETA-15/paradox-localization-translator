@@ -145,4 +145,8 @@ STRINGS = {
     'u5.discovery_response_title': '탐색용 LLM 전체 응답',
     'u5.translation_response_title': '번역용 LLM 전체 응답',
     'u5.folder_tree': 'Paradox Localization Translator/\n├── 翻訳結果/\n├── キャッシュ/\n│   ├── mod_translation_status_cache.json\n│   ├── mod_classification_cache.json\n│   ├── mod_relation_overrides.json\n│   ├── translation_status_state.json\n│   ├── diagnostic_state.json\n│   └── shared_mod_state_cache.json\n├── バックアップ/\n├── ログ/\n│   ├── QA/\n│   ├── エラー/\n│   ├── 日本語化Mod判定/\n│   ├── 診断/\n│   ├── 夜間処理/\n│   └── システム・履歴/\n├── 作業データ/  ← 버전과 무관한 임시 파일・작업 상태\n└── 設定/\n    ├── session.json\n    ├── resume_state.json\n    ├── storage_migration.json\n    ├── glossary.json\n    ├── model_stats.json\n    ├── model_profiles.json\n    ├── steam_library_roots.json\n    └── app_preferences.json  ← 이전 LLM 설정・창 닫기 버튼 동작\n\n기본 위치: 書類/Documents/Paradox Localization Translator\n［저장 위치 변경］에서 다른 드라이브・외장 SSD・원하는 폴더로 이동할 수 있습니다.',
+    'u5.extra_rules_global': '추가 번역 지침 (전체)',
+    'u5.extra_rules_example': '예: 존댓말을 쓰지 않기 / 역사적 군대 계급 명칭 사용',
+    'u5.extra_rules_cache_note': '지침을 바꾸면 이 항목의 캐시를 사용하지 않습니다 (다시 번역합니다).',
+    'u5.extra_rules_too_long': '추가 지침은 {limit}자까지입니다 (현재 {count}자). 저장하지 않았습니다.',
 }

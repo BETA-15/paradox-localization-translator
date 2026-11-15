@@ -145,4 +145,8 @@ STRINGS = {
     "u5.discovery_response_title": "查找用 LLM 响应全文",
     "u5.translation_response_title": "翻译用 LLM 响应全文",
     "u5.folder_tree": "Paradox Localization Translator/\n├── 翻訳結果/\n├── キャッシュ/\n│   ├── mod_translation_status_cache.json\n│   ├── mod_classification_cache.json\n│   ├── mod_relation_overrides.json\n│   ├── translation_status_state.json\n│   ├── diagnostic_state.json\n│   └── shared_mod_state_cache.json\n├── バックアップ/\n├── ログ/\n│   ├── QA/\n│   ├── エラー/\n│   ├── 日本語化Mod判定/\n│   ├── 診断/\n│   ├── 夜間処理/\n│   └── システム・履歴/\n├── 作業データ/  ← 不依赖版本的临时文件和工作状态\n└── 設定/\n    ├── session.json\n    ├── resume_state.json\n    ├── storage_migration.json\n    ├── glossary.json\n    ├── model_stats.json\n    ├── model_profiles.json\n    ├── steam_library_roots.json\n    └── app_preferences.json  ← 上次 LLM 设置及 × 按钮行为\n\n默认位置：文档/Documents/Paradox Localization Translator\n可通过［更改保存位置］移至其他驱动器、外接 SSD 或任意文件夹。",
+    'u5.extra_rules_global': '附加翻译指示（全局）',
+    'u5.extra_rules_example': '示例：不用敬语／采用历史军衔名称',
+    'u5.extra_rules_cache_note': '更改指示后将不再使用此项目的缓存（会重新翻译）。',
+    'u5.extra_rules_too_long': '附加指示最多 {limit} 字（当前 {count} 字）。未保存。',
 }

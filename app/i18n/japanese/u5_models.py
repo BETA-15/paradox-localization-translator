@@ -145,4 +145,8 @@ STRINGS = {
     'u5.discovery_response_title': '探索用LLM 応答全文',
     'u5.translation_response_title': '翻訳用LLM 応答全文',
     'u5.folder_tree': 'Paradox Localization Translator/\n├── 翻訳結果/\n├── キャッシュ/\n│   ├── mod_translation_status_cache.json\n│   ├── mod_classification_cache.json\n│   ├── mod_relation_overrides.json\n│   ├── translation_status_state.json\n│   ├── diagnostic_state.json\n│   └── shared_mod_state_cache.json\n├── バックアップ/\n├── ログ/\n│   ├── QA/\n│   ├── エラー/\n│   ├── 日本語化Mod判定/\n│   ├── 診断/\n│   ├── 夜間処理/\n│   └── システム・履歴/\n├── 作業データ/  ← バージョン非依存の一時・作業状態用\n└── 設定/\n    ├── session.json\n    ├── resume_state.json\n    ├── storage_migration.json\n    ├── glossary.json\n    ├── model_stats.json\n    ├── model_profiles.json\n    ├── steam_library_roots.json\n    └── app_preferences.json  ← 前回LLM設定・×ボタン動作\n\n既定位置: 書類/Documents/Paradox Localization Translator\n［保存場所を変更］から、別ドライブ・外付けSSD・任意のフォルダへ移動できます。',
+    'u5.extra_rules_global': '追加の翻訳指示（全体）',
+    'u5.extra_rules_example': '例：です・ます調にしない／軍の階級は旧日本軍の呼び方にする',
+    'u5.extra_rules_cache_note': '指示を変えると、その項目のキャッシュは使われません（訳し直しになります）。',
+    'u5.extra_rules_too_long': '追加の翻訳指示は {limit} 字までです（今 {count} 字）。保存していません。',
 }

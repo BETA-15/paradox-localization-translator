@@ -145,4 +145,8 @@ STRINGS = {
     'u5.discovery_response_title': 'Полный ответ LLM для поиска',
     'u5.translation_response_title': 'Полный ответ LLM для перевода',
     'u5.folder_tree': 'Paradox Localization Translator/\n├── 翻訳結果/\n├── キャッシュ/\n│   ├── mod_translation_status_cache.json\n│   ├── mod_classification_cache.json\n│   ├── mod_relation_overrides.json\n│   ├── translation_status_state.json\n│   ├── diagnostic_state.json\n│   └── shared_mod_state_cache.json\n├── バックアップ/\n├── ログ/\n│   ├── QA/\n│   ├── エラー/\n│   ├── 日本語化Mod判定/\n│   ├── 診断/\n│   ├── 夜間処理/\n│   └── システム・履歴/\n├── 作業データ/  ← временные файлы и рабочее состояние, не зависящие от версии\n└── 設定/\n    ├── session.json\n    ├── resume_state.json\n    ├── storage_migration.json\n    ├── glossary.json\n    ├── model_stats.json\n    ├── model_profiles.json\n    ├── steam_library_roots.json\n    └── app_preferences.json  ← предыдущие настройки LLM и действие кнопки ×\n\nМесто по умолчанию: 書類/Documents/Paradox Localization Translator\nЧерез ［Изменить место хранения］ можно перенести данные на другой диск, внешний SSD или в любую папку.',
+    'u5.extra_rules_global': 'Дополнительные указания по переводу (общие)',
+    'u5.extra_rules_example': 'Пример: Не использовать вежливый стиль / Использовать исторические воинские звания',
+    'u5.extra_rules_cache_note': 'Изменение указаний отключит кэш этого элемента (он будет переведён заново).',
+    'u5.extra_rules_too_long': 'Допустимо до {limit} символов (сейчас {count}). Указания не сохранены.',
 }

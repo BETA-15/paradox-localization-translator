@@ -145,4 +145,8 @@ STRINGS = {
     'u5.discovery_response_title': 'Keşif LLM tam yanıtı',
     'u5.translation_response_title': 'Çeviri LLM tam yanıtı',
     'u5.folder_tree': "Paradox Localization Translator/\n├── 翻訳結果/\n├── キャッシュ/\n│   ├── mod_translation_status_cache.json\n│   ├── mod_classification_cache.json\n│   ├── mod_relation_overrides.json\n│   ├── translation_status_state.json\n│   ├── diagnostic_state.json\n│   └── shared_mod_state_cache.json\n├── バックアップ/\n├── ログ/\n│   ├── QA/\n│   ├── エラー/\n│   ├── 日本語化Mod判定/\n│   ├── 診断/\n│   ├── 夜間処理/\n│   └── システム・履歴/\n├── 作業データ/  ← sürümden bağımsız geçici dosyalar ve çalışma durumu\n└── 設定/\n    ├── session.json\n    ├── resume_state.json\n    ├── storage_migration.json\n    ├── glossary.json\n    ├── model_stats.json\n    ├── model_profiles.json\n    ├── steam_library_roots.json\n    └── app_preferences.json  ← son LLM ayarları ve × düğmesi davranışı\n\nVarsayılan konum: 書類/Documents/Paradox Localization Translator\n［Konumu değiştir］ ile başka bir sürücüye, harici SSD'ye veya istediğiniz klasöre taşıyabilirsiniz.",
+    'u5.extra_rules_global': 'Ek çeviri talimatları (genel)',
+    'u5.extra_rules_example': 'Örnek: Resmî üslup kullanma / Tarihî askerî rütbeleri kullan',
+    'u5.extra_rules_cache_note': 'Talimatlar değişirse bu öğenin önbelleği kullanılmaz (yeniden çevrilir).',
+    'u5.extra_rules_too_long': 'Ek talimatlar en fazla {limit} karakter olabilir (şu an {count}). Kaydedilmedi.',
 }

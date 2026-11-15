@@ -145,4 +145,8 @@ STRINGS = {
     'u5.discovery_response_title': 'Vollständige LLM-Antwort der Suche',
     'u5.translation_response_title': 'Vollständige LLM-Antwort der Übersetzung',
     'u5.folder_tree': 'Paradox Localization Translator/\n├── 翻訳結果/\n├── キャッシュ/\n│   ├── mod_translation_status_cache.json\n│   ├── mod_classification_cache.json\n│   ├── mod_relation_overrides.json\n│   ├── translation_status_state.json\n│   ├── diagnostic_state.json\n│   └── shared_mod_state_cache.json\n├── バックアップ/\n├── ログ/\n│   ├── QA/\n│   ├── エラー/\n│   ├── 日本語化Mod判定/\n│   ├── 診断/\n│   ├── 夜間処理/\n│   └── システム・履歴/\n├── 作業データ/  ← versionsunabhängige temporäre Dateien und Arbeitszustände\n└── 設定/\n    ├── session.json\n    ├── resume_state.json\n    ├── storage_migration.json\n    ├── glossary.json\n    ├── model_stats.json\n    ├── model_profiles.json\n    ├── steam_library_roots.json\n    └── app_preferences.json  ← letzte LLM-Einstellungen und Verhalten beim Schließen\n\nStandardspeicherort: Documents/Paradox Localization Translator\nÜber ［Speicherort ändern］ auf ein anderes Laufwerk, eine externe SSD oder in einen beliebigen Ordner verschieben.',
+    'u5.extra_rules_global': 'Zusätzliche Übersetzungsanweisungen (global)',
+    'u5.extra_rules_example': 'Beispiel: Keine Höflichkeitsform / Historische militärische Dienstgrade verwenden',
+    'u5.extra_rules_cache_note': 'Geänderte Anweisungen umgehen den Cache dieses Eintrags (er wird neu übersetzt).',
+    'u5.extra_rules_too_long': 'Zusätzliche Anweisungen dürfen höchstens {limit} Zeichen enthalten (aktuell {count}). Nicht gespeichert.',
 }

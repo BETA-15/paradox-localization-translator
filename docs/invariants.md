@@ -102,6 +102,7 @@ README.md と CHANGELOG.md に書かれた約束ごと（利用者に約束し�
 | INV-48 | ローカル・LAN の LLM へはプロキシを通さず、`http://` 省略や `/v1` 付き URL も扱う（v0.11.76） | `test_local_model_list_bypasses_system_proxy`、`test_local_llm_call_bypasses_system_proxy`、`test_local_url_without_scheme_or_with_openai_suffix_is_normalized`、`test_remote_hosts_keep_using_configured_proxy` | あり | あり |
 | INV-49 | 思考過程を取り除いて訳だけを読み、切り替えられるモデルは思考をオフにする（v0.11.77） | `test_reasoning_is_stripped_from_thinking_model_output`、`test_ollama_disables_thinking_and_explains_thinking_only_models` | あり | あり |
 | INV-50 | 接続確認に成功してから処理を始め、接続エラーの種類ごとに案内を分ける（v0.11.74） | `test_normal_translation_waits_for_preflight_before_creating_output`、`test_successful_preflight_runs_original_operation_on_gui_queue`、`test_lm_studio_connection_refused_uses_large_local_startup_warning` ほか3件 | あり | あり |
+| INV-58 | 追加の翻訳指示はジョブを始めたときに決め、翻訳中の設定変更（INV-53）では変えない。中断して再開しても同じ指示を使う。「セーブして中断」の後、再開前に利用者が全体の欄を書き換えた場合は、編集後の指示を使う。これは利用者による変更なので INV-58 の対象外。キャッシュのキーが異なるため該当行は訳し直され、以前の指示の訳とは混ざらない。 | `test_job_rules_survive_runtime_changes_and_single_retry`、`test_settings_snapshot_frozen` | なし | あり |
 
 ## まだテストがないもの
 
