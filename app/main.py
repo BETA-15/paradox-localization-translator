@@ -10688,6 +10688,7 @@ class App(BaseTk):
         def work():
             try:
                 glossaries = {language: core.load_glossary(Path(path)) if path else {} for language, path in glossary_paths.items()}
+                term_metadata = {language: core.load_glossary_term_meta(Path(path)) if path else {} for language, path in glossary_paths.items()}
                 outputs = {}
                 spaces_removed = 0
                 untranslated = []
@@ -10705,7 +10706,7 @@ class App(BaseTk):
                             translated=core.translate_single_text(diff_settings["url"], diff_settings["model"], source_text, source_lang,
                                                                   glossary, diff_settings["preset"], diff_settings["provider"], diff_settings["api_key"], self.diff_controller,
                                                                   chinese_basis=(source_lang == "simp_chinese" and target_lang in core.CHINESE_BASIS_TARGETS),
-                                                                  target_lang=target_lang, extra_rules=diff_settings["extra_rules"])
+                                                                  target_lang=target_lang, extra_rules=diff_settings["extra_rules"], term_meta=term_metadata[target_lang])
                         except core.StopRequested:
                             raise
                         except Exception as exc:

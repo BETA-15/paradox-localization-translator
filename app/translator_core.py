@@ -820,11 +820,11 @@ def cache_entry_is_valid(original: str, cached: str, source_lang: str,
     return not unusable_translation(original, cached, source_lang, target_lang)
 
 
-@lru_cache(maxsize=4096)
+@lru_cache(maxsize=None)
 def _glossary_term_pattern(term: str, ignorecase: bool):
     pattern = re.escape(term)
     if term[0] in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789":
-        pattern = r"(?<![A-Za-z0-9])" + pattern
+        pattern = r"(?:(?<![A-Za-z0-9])|(?<=§.)|(?<=\\n))" + pattern
     if term[-1] in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz":
         pattern += r"(?:s|es|'s|’s)?(?![A-Za-z0-9])"
     elif term[-1] in "0123456789":
@@ -4121,13 +4121,13 @@ def translate_single_text(url: str, model: str, text: str, source_lang: str = "e
                           glossary: Optional[dict] = None, preset: str = "General",
                           provider: str = "Ollama", api_key: str = "",
                           controller: Optional[TranslationController] = None,
-                          chinese_basis: bool = False, target_lang: str = DEFAULT_TARGET_LANG, *, extra_rules: str = "") -> str:
+                          chinese_basis: bool = False, target_lang: str = DEFAULT_TARGET_LANG, *, extra_rules: str = "", term_meta: Optional[dict] = None) -> str:
     """Translate one localization value while preserving Paradox tokens."""
     protected, tokens = protect_text(text)
     job = {"value": text, "protected": protected, "tokens": tokens}
     out = translate_batch(url, model, [job], source_lang, glossary=glossary, preset=preset,
                           dual_source=False, controller=controller, provider=provider, api_key=api_key,
-                          chinese_basis=chinese_basis, target_lang=target_lang, extra_rules=extra_rules)[0]
+                          chinese_basis=chinese_basis, target_lang=target_lang, extra_rules=extra_rules, term_meta=term_meta)[0]
     return restore_text(out, tokens)
 
 

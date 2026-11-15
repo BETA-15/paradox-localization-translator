@@ -5,6 +5,36 @@ import pytest
 from app import translator_core as core
 
 
+@pytest.mark.parametrize('fold_case', [True, False], ids=['prompt', 'qa'])
+@pytest.mark.parametrize('term,text,expected', [
+    ('Born', '§YBorn:§!', ['Born']),
+    ('June', '§LJune 3rd', ['June']),
+    ('Maximalist', '§oMaximalist§!', ['Maximalist']),
+    ('Born', '§CBorn', ['Born']),
+    ('Sichuan', r'\nSichuan', ['Sichuan']),
+    ('Duke', 'Dukedom', []),
+    ('Born', 'xBorn', []),
+    ('Sichuan', 'nSichuan', []),
+    ('Born', 'Born§!', ['Born']),
+    ('Sichuan', r'Sichuan\n', ['Sichuan']),
+])
+def test_paradox_token_boundaries(term, text, expected, fold_case):
+    assert core.match_glossary_terms({term: '訳'}, text, fold_case=fold_case) == expected
+
+
+def test_translate_single_text_forwards_term_meta(monkeypatch):
+    metadata = {'AOG': {'case_sensitive': True}}
+    received = []
+
+    def translate_batch(*args, **kwargs):
+        received.append(kwargs.get('term_meta'))
+        return ['translated']
+
+    monkeypatch.setattr(core, 'translate_batch', translate_batch)
+    assert core.translate_single_text('unused', 'fake', 'AOG', term_meta=metadata) == 'translated'
+    assert received == [metadata]
+
+
 @pytest.mark.parametrize('terms,text,prompt,qa,meta', [
     (['Duke'], 'the Dukes of X', ['Duke'], ['Duke'], {}),
     (['Duke'], "the Duke's army", ['Duke'], ['Duke'], {}),
