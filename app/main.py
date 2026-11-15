@@ -10050,7 +10050,7 @@ class App(BaseTk):
             m=data.get("models") or {}
             self.provider_var.set(m.get("provider",self.provider_var.get())); self.url_var.set(m.get("url",self.url_var.get())); self.model_var.set(m.get("model",self.model_var.get()))
             self.preset_var.set(m.get("preset",self.preset_var.get())); self.batch_var.set(max(1,int(m.get("batch",self.batch_var.get()) or 40))); self.workers_var.set(max(1,int(m.get("workers",self.workers_var.get()) or 1)))
-            self.extra_rules_var.set(m.get("extra_rules", ""))
+            self.extra_rules_var.set(m.get("extra_rules", self.extra_rules_var.get()))
             self.normalize_spacing_var.set(bool(m.get("normalize_spacing",_normalize_spacing_enabled(self))))
             self.performance_preset_var.set(ui_status.performance_preset_label(ui_status.performance_preset_from_label(m.get("performance_preset",self.performance_preset_var.get())))); self.repair_var.set(bool(m.get("repair",self.repair_var.get()))); self.dual_var.set(bool(m.get("dual",self.dual_var.get())))
             self.autoqa_var.set(bool(m.get("autoqa",self.autoqa_var.get()))); self.chinese_autoqa_var.set(bool(m.get("chinese_autoqa",self.chinese_autoqa_var.get()))); self.profile_var.set(m.get("profile",self.profile_var.get()))
@@ -10261,7 +10261,7 @@ class App(BaseTk):
         self.current_queue_index=max(0,int(data.get("queue_index",0) or 0))
         s=data.get("settings",{})
         self.provider_var.set(s.get("provider",self.provider_var.get())); self.url_var.set(s.get("url",self.url_var.get())); self.model_var.set(s.get("model",self.model_var.get())); self.preset_var.set(s.get("preset",self.preset_var.get()))
-        self.extra_rules_var.set(s.get("extra_rules", ""))
+        self.extra_rules_var.set(s.get("extra_rules", self.extra_rules_var.get()))
         self.normalize_spacing_var.set(bool(s.get("normalize_spacing", True)))
         self.batch_var.set(s.get("batch",40)); self.workers_var.set(s.get("workers",1)); self.repair_var.set(s.get("repair",True)); self.dual_var.set(s.get("dual",False)); self.autoqa_var.set(s.get("autoqa",True)); self.glossary_path_var.set(s.get("glossary",str(DEFAULT_GLOSSARY)))
         for item in self.queue_items:

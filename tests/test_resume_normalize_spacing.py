@@ -42,6 +42,7 @@ def test_worker_checkpoint_preserves_disabled_normalize_spacing_on_resume():
             "preset_var": "CK3", "batch_var": 40, "workers_var": 1,
             "repair_var": True, "dual_var": False, "autoqa_var": True,
             "glossary_path_var": "", "normalize_spacing_var": True,
+            "extra_rules_var": "",
             "progress_text": "",
         }.items()},
         _write_session_file=lambda **kwargs: None,
@@ -52,3 +53,22 @@ def test_worker_checkpoint_preserves_disabled_normalize_spacing_on_resume():
 
     assert settings.get("normalize_spacing") is False
     assert restored.normalize_spacing_var.get() is False
+
+
+def test_restoring_a_session_without_extra_rules_keeps_the_current_field():
+    """A2 より前の版のセッションには extra_rules が無い。そのときは今の欄の値を残す（ほかの設定と同じ）。"""
+    restored = SimpleNamespace(
+        **{name: Value(value) for name, value in {
+            "provider_var": "", "url_var": "", "model_var": "",
+            "preset_var": "CK3", "batch_var": 40, "workers_var": 1,
+            "repair_var": True, "dual_var": False, "autoqa_var": True,
+            "glossary_path_var": "", "normalize_spacing_var": True,
+            "extra_rules_var": "です・ます調にしない",
+            "progress_text": "",
+        }.items()},
+        _write_session_file=lambda **kwargs: None,
+        _refresh_queue_tree=lambda: None,
+        _save_workspace_state=lambda reason: None,
+    )
+    main.App.restore_session(restored, {"settings": {"provider": "Ollama"}, "queue": []})
+    assert restored.extra_rules_var.get() == "です・ます調にしない"
