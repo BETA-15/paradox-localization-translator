@@ -256,9 +256,16 @@ def test_diff_and_manual_qa_use_global_only(main_module,monkeypatch,tmp_path):
     assert qa==['Global']
 
 
+# ce58b8b（A2 の前の main）の値の SHA-256。git の履歴が無い浅い clone（CI）でも比べられるように、
+# 履歴を読まずに固定の値で持つ。日本語の文・指示文・キャッシュのキーを意図して変えたときだけ更新する。
+BASELINE_JAPANESE_STRINGS_SHA256 = 'e681565a788625dc5da11fd15661d75d81e61183c8eae3f26d9d2969e2b24cec'  # 2101 key
+BASELINE_PROMPTS_AND_KEYS_SHA256 = '13312485ca8b500c38b2ff08532235357599f7eb9f0b6a9ff69e3c739359f6d2'
+
+
 def test_japanese_dictionary_only_adds_six_specified_values():
     import ast
-    import subprocess
+    import hashlib
+    import json
     root=Path(__file__).resolve().parents[1]
     expected={
         'u5.extra_rules_global':'追加の翻訳指示（全体）',
@@ -267,34 +274,28 @@ def test_japanese_dictionary_only_adds_six_specified_values():
         'u5.extra_rules_too_long':'追加の翻訳指示は {limit} 字までです（今 {count} 字）。保存していません。',
         'u1.extra_rules_item_button':'追加指示…', 'u1.extra_rules_item_title':'この項目の追加指示',
     }
-    added={}
     def strings(source):
         for n in ast.parse(source).body:
             if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='STRINGS' for t in n.targets):
                 return ast.literal_eval(n.value)
         return {}
-    for p in (root/'app/i18n/japanese').glob('*.py'):
-        old=strings(subprocess.check_output(['git','show',f'ce58b8b:{p.relative_to(root)}'],cwd=root,text=True))
-        new=strings(p.read_text())
-        assert old.items() <= new.items()
-        added.update({k:v for k,v in new.items() if k not in old})
-    assert added==expected
+    new={}
+    for p in sorted((root/'app/i18n/japanese').glob('*.py')):
+        new.update(strings(p.read_text()))
+    assert {k:new.get(k) for k in expected}==expected
+    old={k:v for k,v in new.items() if k not in expected}
+    digest=hashlib.sha256(json.dumps(old,ensure_ascii=False,sort_keys=True).encode()).hexdigest()
+    assert digest==BASELINE_JAPANESE_STRINGS_SHA256
 
 
 def test_empty_prompts_and_keys_are_byte_identical_to_baseline():
-    import ast
-    import subprocess
-    root=Path(__file__).resolve().parents[1]
-    source=subprocess.check_output(['git','show','ce58b8b:app/translator_core.py'],cwd=root,text=True)
-    nodes=[n for n in ast.parse(source).body if isinstance(n,ast.FunctionDef) and n.name in {'build_system_prompt','translation_cache_key'}]
-    namespace=dict(vars(core))
-    exec(compile(ast.Module(body=nodes,type_ignores=[]),'baseline','exec'),namespace)
+    import hashlib
+    h=hashlib.sha256()
     for lang,basis in LANGUAGES:
         for glossary in [None,{'Duke':'公爵'}]:
-            args=dict(glossary=glossary,target_lang=lang,chinese_basis=basis)
-            assert core.build_system_prompt('english',extra_rules='',**args).encode()==namespace['build_system_prompt']('english',**args).encode()
-        args=('Ollama','m','General','english','Hello world')
-        assert core.translation_cache_key(*args,target_lang=lang,extra_rules='')==namespace['translation_cache_key'](*args,target_lang=lang)
+            h.update(core.build_system_prompt('english',extra_rules='',glossary=glossary,target_lang=lang,chinese_basis=basis).encode()+b'\0')
+        h.update(core.translation_cache_key('Ollama','m','General','english','Hello world',target_lang=lang,extra_rules='').encode()+b'\0')
+    assert h.hexdigest()==BASELINE_PROMPTS_AND_KEYS_SHA256
 
 
 @pytest.mark.parametrize('kind',['normal','chinese'])
