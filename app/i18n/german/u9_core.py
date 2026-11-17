@@ -6,7 +6,7 @@ STRINGS = {
     'u9.gap_missing_target': 'Schlüssel für {target_name} fehlt',
     'u9.gap_foreign_target': 'Original-/Fremdsprachentext in Übersetzung für {target_name} verblieben',
     'u9.mod_no_other_sources': 'In {mod_name} wurde kein auswertbares Original in einer anderen Lokalisierung als {target_name} gefunden.',
-    'u9.game_language_separator': '・',
+    'u9.game_language_separator': ', ',
     'u9.gap_chinese_only.target': '{count} nur im vereinfachten Chinesisch vorhandene Schlüssel mit erforderlicher Übersetzung in die Zielsprache {target_name} fehlen',
     'u9.gap_english_only.target': '{count} nur im Englischen vorhandene Schlüssel mit erforderlicher Übersetzung in die Zielsprache {target_name} fehlen',
     'u9.legacy_base_no_penalty.target': 'Hauptspiel-Schlüsselübereinstimmung aus Sicht des Übersetzungsmods für {target_name} {percent:.1f}% ({matched}/{total}) / Unter 70 % → kein Punktabzug',

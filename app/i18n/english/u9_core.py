@@ -6,7 +6,7 @@ STRINGS = {
     "u9.gap_missing_target": "Missing {target_name} key",
     "u9.gap_foreign_target": "Source/foreign text remains in the {target_name} translation",
     "u9.mod_no_other_sources": "No source localization other than {target_name} was found to analyze in {mod_name}.",
-    "u9.game_language_separator": "・",
+    "u9.game_language_separator": ", ",
     "u9.gap_chinese_only.target": "{count} Simplified-Chinese-only keys requiring {target_name} translation are missing",
     "u9.gap_english_only.target": "{count} English-only keys requiring {target_name} translation are missing",
     "u9.legacy_base_no_penalty.target": "Base-game key match from {target_name} translation mod {percent:.1f}% ({matched}/{total}) / Below 70% → no penalty",

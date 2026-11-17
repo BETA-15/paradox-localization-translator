@@ -36,7 +36,7 @@ STRINGS = {
     'u2.send_to_diff': 'Enviar para análise de diferenças',
     'u2.send_to_normal': 'Enviar para a fila de tradução normal',
     'u2.queue_missing_english': 'Adicionar à fila somente as entradas ausentes em inglês',
-    'u2.overwrite_hint': 'Sobrescrita: permite selecionar vários itens. Escolha a política de sobrescrita uma única vez no início para processar os itens concluídos em conjunto. Os itens processados com sucesso são exibidos como 「Sobrescrito」.',
+    'u2.overwrite_hint': 'Sobrescrita: permite selecionar vários itens. Escolha a política de sobrescrita uma única vez no início para processar os itens concluídos em conjunto. Os itens processados com sucesso são exibidos como “Sobrescrito”.',
     'u2.mod_item': 'mod / Item',
     'u2.chinese_localization': 'Localização em chinês',
     'u2.output': 'Saída',

@@ -6,7 +6,7 @@ STRINGS = {
     'u9.gap_missing_target': 'Falta la clave en {target_name}',
     'u9.gap_foreign_target': 'Queda texto original o extranjero en la traducción a {target_name}',
     'u9.mod_no_other_sources': 'No se encontró localización original en un idioma distinto de {target_name} que se pueda analizar en {mod_name}.',
-    'u9.game_language_separator': '・',
+    'u9.game_language_separator': ', ',
     'u9.external_english_skipped': 'Como el idioma de destino es {target_name}, la localización inglesa por sí sola no permite identificar mods de traducción. Se omitió la comparación con traducciones externas; solo se comprobaron las traducciones de este mod.',
     'u9.report_target_match_field': 'Coincidencia (mod de traducción a {target_name})',
     'u9.report_target_weighted_field': 'Coincidencia ponderada (mod de traducción a {target_name})',
