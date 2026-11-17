@@ -342,7 +342,7 @@ STRINGS = {
     'u6.error_overwriting_differences_to_translation_mod': 'Ошибка при записи различий в мод перевода на язык {target_name}.\n{value}\n\nРезервная копия: {backup_root}',
     'u6.cannot_identify_the_source_mod_s': 'Не удалось определить папку localization исходного мода',
     'u6.no_completed_yaml_files_in_the': 'В папке вывода не найдены готовые YAML на языке {target_name}',
-    'u6.write_translated_files_directly_to_the': '⚠ Файлы перевода на язык {target_name} будут записаны непосредственно в исходный мод.\n\nМод: {mod_name}\nОбъект: {mod_root}\nYAML на языке {target_name}: {mappings_count}\nПерезаписываемых существующих файлов: {existing}\n\nПеред выполнением создаются резервные копии существующих файлов.\nПри обновлении мода, Steam Workshop записанные изменения могут быть потеряны.\n\nПродолжить?',
+    'u6.write_translated_files_directly_to_the': '⚠ Файлы перевода на язык {target_name} будут записаны непосредственно в исходный мод.\n\nМод: {mod_name}\nОбъект: {mod_root}\nYAML на языке {target_name}: {mappings_count}\nПерезаписываемых существующих файлов: {existing}\n\nПеред выполнением создаются резервные копии существующих файлов.\nПри обновлении мода или Steam Workshop записанные изменения могут быть потеряны.\n\nПродолжить?',
     'u6.warning_overwrite_mod_directly': 'Предупреждение — прямая перезапись мода',
     'u6.write_to_the_source_mod_this': 'Вы действительно хотите записать файлы в исходный мод?\nЭта операция заменяет целевые файлы.',
     'u6.source_mod_overwrite': 'Перезапись исходного мода',
