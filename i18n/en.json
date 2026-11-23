@@ -34,7 +34,7 @@
     "items": [
       {
         "title": "Translate whole mods at once",
-        "text": "Add a single file, a localisation folder or an entire mod — or drag and drop it. Queue several mods; pause, resume, or stop and continue next time."
+        "text": "Add a single file, a localisation folder or an entire mod — or drag and drop it. Queue several mods; pause, resume, or stop and continue next time. You can add translation instructions for all jobs or for individual queue items."
       },
       {
         "title": "Keeps game code safe",
@@ -50,7 +50,7 @@
       },
       {
         "title": "Check and polish",
-        "text": "Compare source and translation side by side, run quality checks, search and fix any line directly, and keep a glossary for each language — or build one automatically — so names and terms stay consistent."
+        "text": "Compare source and translation side by side, run quality checks, search and fix any line directly, and keep a glossary for each language — or build one automatically — so names and terms stay consistent. For alphanumeric terms, glossary matching uses word boundaries, so “Art” does not match “Artillery”."
       },
       {
         "title": "Your choice of AI",

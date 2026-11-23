@@ -34,7 +34,7 @@
     "items": [
       {
         "title": "Tüm modu tek seferde çevirin",
-        "text": "Tek bir dosya, bir yerelleştirme klasörü veya modun tamamını ekleyin ya da sürükleyip bırakın. Birden fazla modu sıraya alın; duraklatın, sürdürün veya durdurup bir sonraki sefer devam edin."
+        "text": "Tek bir dosya, bir yerelleştirme klasörü veya modun tamamını ekleyin ya da sürükleyip bırakın. Birden fazla modu sıraya alın; duraklatın, sürdürün veya durdurup bir sonraki sefer devam edin. Tüm işler için ortak veya kuyruktaki öğelere özel çeviri talimatları ekleyebilirsiniz."
       },
       {
         "title": "Oyun kodlarını korur",
@@ -50,7 +50,7 @@
       },
       {
         "title": "Kontrol edin ve iyileştirin",
-        "text": "Kaynak metinle çeviriyi yan yana karşılaştırın, kalite kontrolleri yapın, istediğiniz satırı doğrudan arayıp düzeltin ve adlarla terimlerin tutarlı kalması için her dile ayrı bir sözlük tutun veya sözlüğü otomatik oluşturun."
+        "text": "Kaynak metinle çeviriyi yan yana karşılaştırın, kalite kontrolleri yapın, istediğiniz satırı doğrudan arayıp düzeltin ve adlarla terimlerin tutarlı kalması için her dile ayrı bir sözlük tutun veya sözlüğü otomatik oluşturun. Sözlük, harf ve rakamlardan oluşan terimleri sözcük sınırlarına göre eşleştirir. Örneğin “Art”, “Artillery” ile eşleşmez."
       },
       {
         "title": "Yapay zekânızı seçin",

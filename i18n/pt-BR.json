@@ -34,7 +34,7 @@
     "items": [
       {
         "title": "Traduza mods inteiros de uma vez",
-        "text": "Adicione um arquivo, uma pasta de localização ou um mod inteiro — ou arraste e solte. Coloque vários mods na fila; pause, retome ou pare e continue na próxima vez."
+        "text": "Adicione um arquivo, uma pasta de localização ou um mod inteiro — ou arraste e solte. Coloque vários mods na fila; pause, retome ou pare e continue na próxima vez. Você pode adicionar instruções de tradução para todas as tarefas ou para itens individuais da fila."
       },
       {
         "title": "Preserva os códigos do jogo",
@@ -50,7 +50,7 @@
       },
       {
         "title": "Revise e aprimore",
-        "text": "Compare o original e a tradução lado a lado, execute verificações de qualidade, busque e corrija qualquer linha diretamente e mantenha um glossário por idioma — ou crie um automaticamente — para garantir a consistência de nomes e termos."
+        "text": "Compare o original e a tradução lado a lado, execute verificações de qualidade, busque e corrija qualquer linha diretamente e mantenha um glossário por idioma — ou crie um automaticamente — para garantir a consistência de nomes e termos. O glossário respeita os limites das palavras ao buscar termos alfanuméricos, então “Art” não corresponde a “Artillery”."
       },
       {
         "title": "Escolha sua IA",

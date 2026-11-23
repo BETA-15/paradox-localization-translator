@@ -34,7 +34,7 @@
     "items": [
       {
         "title": "Tłumacz całe mody naraz",
-        "text": "Dodaj pojedynczy plik, folder lokalizacji lub cały mod — także przez przeciągnięcie i upuszczenie. Ustaw kilka modów w kolejce; wstrzymaj, wznów lub zatrzymaj pracę i kontynuuj następnym razem."
+        "text": "Dodaj pojedynczy plik, folder lokalizacji lub cały mod — także przez przeciągnięcie i upuszczenie. Ustaw kilka modów w kolejce; wstrzymaj, wznów lub zatrzymaj pracę i kontynuuj następnym razem. Możesz dodać instrukcje tłumaczenia wspólne dla wszystkich zadań lub osobne dla poszczególnych pozycji w kolejce."
       },
       {
         "title": "Chroni kody gry",
@@ -50,7 +50,7 @@
       },
       {
         "title": "Sprawdzaj i dopracowuj",
-        "text": "Porównuj oryginał i tłumaczenie obok siebie, sprawdzaj jakość, wyszukuj i poprawiaj dowolny wiersz bezpośrednio w aplikacji oraz prowadź glosariusz dla każdego języka — lub twórz go automatycznie — aby zachować spójność nazw i terminów."
+        "text": "Porównuj oryginał i tłumaczenie obok siebie, sprawdzaj jakość, wyszukuj i poprawiaj dowolny wiersz bezpośrednio w aplikacji oraz prowadź glosariusz dla każdego języka — lub twórz go automatycznie — aby zachować spójność nazw i terminów. Glosariusz uwzględnia granice słów przy dopasowywaniu terminów alfanumerycznych, więc „Art” nie pasuje do „Artillery”."
       },
       {
         "title": "Wybierz swoje AI",

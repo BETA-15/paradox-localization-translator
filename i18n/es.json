@@ -34,7 +34,7 @@
     "items": [
       {
         "title": "Traduce mods enteros de una vez",
-        "text": "Añade un archivo, una carpeta de localización o un mod entero, también arrastrándolo y soltándolo. Pon varios mods en cola; pausa, reanuda o detén la traducción y continúa la próxima vez."
+        "text": "Añade un archivo, una carpeta de localización o un mod entero, también arrastrándolo y soltándolo. Pon varios mods en cola; pausa, reanuda o detén la traducción y continúa la próxima vez. Puedes añadir instrucciones de traducción para todas las tareas o para elementos concretos de la cola."
       },
       {
         "title": "Protege los códigos del juego",
@@ -50,7 +50,7 @@
       },
       {
         "title": "Revisa y mejora",
-        "text": "Compara el original y la traducción en paralelo, ejecuta controles de calidad, busca y corrige cualquier línea directamente y mantén un glosario por idioma —o créalo automáticamente— para que los nombres y los términos sean coherentes."
+        "text": "Compara el original y la traducción en paralelo, ejecuta controles de calidad, busca y corrige cualquier línea directamente y mantén un glosario por idioma —o créalo automáticamente— para que los nombres y los términos sean coherentes. El glosario respeta los límites de palabra de los términos alfanuméricos, por lo que «Art» no coincide con «Artillery»."
       },
       {
         "title": "Elige tu IA",

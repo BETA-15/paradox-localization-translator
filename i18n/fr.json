@@ -34,7 +34,7 @@
     "items": [
       {
         "title": "Traduire des mods entiers",
-        "text": "Ajoutez un fichier, un dossier de localisation ou un mod entier, y compris par glisser-déposer. Mettez plusieurs mods en file d’attente ; mettez en pause, reprenez, ou arrêtez pour continuer une prochaine fois."
+        "text": "Ajoutez un fichier, un dossier de localisation ou un mod entier, y compris par glisser-déposer. Mettez plusieurs mods en file d’attente ; mettez en pause, reprenez, ou arrêtez pour continuer une prochaine fois. Vous pouvez ajouter des consignes de traduction communes à toutes les tâches ou propres à chaque élément de la file d’attente."
       },
       {
         "title": "Préserver les codes du jeu",
@@ -50,7 +50,7 @@
       },
       {
         "title": "Vérifier et peaufiner",
-        "text": "Comparez l’original et la traduction côte à côte, lancez des contrôles de qualité, recherchez et corrigez directement n’importe quelle ligne, et conservez un glossaire par langue — ou créez-en un automatiquement — pour garder des noms et des termes cohérents."
+        "text": "Comparez l’original et la traduction côte à côte, lancez des contrôles de qualité, recherchez et corrigez directement n’importe quelle ligne, et conservez un glossaire par langue — ou créez-en un automatiquement — pour garder des noms et des termes cohérents. Le glossaire respecte les limites de mots pour les termes alphanumériques : « Art » ne correspond donc pas à « Artillery »."
       },
       {
         "title": "Choisir votre IA",

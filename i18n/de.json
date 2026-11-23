@@ -34,7 +34,7 @@
     "items": [
       {
         "title": "Ganze Mods auf einmal übersetzen",
-        "text": "Füge eine einzelne Datei, einen Lokalisierungsordner oder einen ganzen Mod hinzu — auch per Drag-and-drop. Stelle mehrere Mods in die Warteschlange; pausiere, setze fort oder stoppe und mache beim nächsten Mal weiter."
+        "text": "Füge eine einzelne Datei, einen Lokalisierungsordner oder einen ganzen Mod hinzu — auch per Drag-and-drop. Stelle mehrere Mods in die Warteschlange; pausiere, setze fort oder stoppe und mache beim nächsten Mal weiter. Du kannst Übersetzungsanweisungen für alle Aufträge oder für einzelne Einträge in der Warteschlange hinzufügen."
       },
       {
         "title": "Spielcodes schützen",
@@ -50,7 +50,7 @@
       },
       {
         "title": "Prüfen und verbessern",
-        "text": "Vergleiche Original und Übersetzung nebeneinander, führe Qualitätsprüfungen durch, suche und korrigiere beliebige Zeilen direkt und pflege für jede Sprache ein Glossar — oder erstelle es automatisch —, damit Namen und Begriffe einheitlich bleiben."
+        "text": "Vergleiche Original und Übersetzung nebeneinander, führe Qualitätsprüfungen durch, suche und korrigiere beliebige Zeilen direkt und pflege für jede Sprache ein Glossar — oder erstelle es automatisch —, damit Namen und Begriffe einheitlich bleiben. Bei alphanumerischen Begriffen beachtet das Glossar Wortgrenzen, sodass „Art“ nicht auf „Artillery“ passt."
       },
       {
         "title": "Du wählst die KI",
